@@ -40,6 +40,8 @@ def main(argv: list[str] | None = None) -> None:
     # Processing
     gen_p.add_argument("--type", default="COLOR_FILL_ENGRAVE", dest="processing_type",
                        help="Processing type (default: COLOR_FILL_ENGRAVE)")
+    gen_p.add_argument("--laser", default="red", choices=["red", "blue"],
+                       help="Laser source: red=MOPA fiber, blue=diode (default: red)")
     gen_p.add_argument("--font-size", type=float, default=3.0, help="Axis label font size in points (default: 3)")
 
     # Output
@@ -48,6 +50,8 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     if args.command == "generate":
+        base_params = ProcessingParams(processing_light_source=args.laser)
+
         project = generate_gradient(
             x_param=args.x_param,
             x_min=args.x_min,
@@ -60,6 +64,7 @@ def main(argv: list[str] | None = None) -> None:
             total_width=args.width,
             total_height=args.height,
             gap=args.gap,
+            base_params=base_params,
             processing_type=args.processing_type,
             label_font_size=args.font_size,
         )

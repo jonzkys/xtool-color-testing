@@ -21,7 +21,6 @@ _DEFAULT_ANNOTATION_PARAMS = ProcessingParams(
     speed=1000,
     power=10,
     repeat=1,
-    processing_light_source="blue",
 )
 
 _PARAM_MAP = {

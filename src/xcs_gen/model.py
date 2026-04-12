@@ -23,7 +23,7 @@ class ProcessingParams:
     mopa_frequency: int = 65
     dpi: int = 500
     dot_duration: int = 100
-    processing_light_source: str = "blue"
+    processing_light_source: str = "red"  # "red" = MOPA fiber, "blue" = diode
     scan_angle: float = 0
     angle_type: int = 2
     cross_angle: bool = False
