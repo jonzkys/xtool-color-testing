@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xcs-gen"
+version = "0.1.0"
+description = "Programmatic generation of XTool .xcs laser cutter files"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = []
+
+[project.scripts]
+xcs-gen = "xcs_gen.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
