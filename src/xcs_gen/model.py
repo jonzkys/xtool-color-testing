@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from typing import Any
 
 
 def _uuid() -> str:
@@ -14,7 +15,7 @@ def _uuid() -> str:
 class ProcessingParams:
     """Laser processing parameters for a single element."""
 
-    speed: float = 1000
+    speed: int = 1000
     power: float = 50.0
     repeat: int = 1
     density: int = 100
@@ -43,14 +44,21 @@ class Rect:
     layer_color: str = ""  # assigned during build
 
 
-# Predefined layer colors - XCS uses hex color strings as layer keys.
-# We pre-generate enough for large grids. Each unique parameter set
-# needs its own layer if we want per-element control.
-LAYER_COLORS = [
-    "#00befe", "#fe0000", "#00fe00", "#fefe00", "#fe00fe", "#00fefe",
-    "#800000", "#008000", "#000080", "#808000", "#800080", "#008080",
-    "#fe8000", "#8000fe", "#00fe80", "#fe0080", "#80fe00", "#0080fe",
-]
+@dataclass
+class Line:
+    """A line display element."""
+
+    x: float
+    y: float
+    length: float
+    angle: float = 0.0  # 0 = horizontal, 90 = vertical
+    layer_color: str = ""
+    id: str = field(default_factory=_uuid)
+
+
+# Default layer colors for gradient and annotation layers.
+GRADIENT_LAYER_COLOR = "#00befe"
+ANNOTATION_LAYER_COLOR = "#aaaaaa"
 
 
 @dataclass
@@ -68,4 +76,6 @@ class XCSProject:
 
     device: Device = field(default_factory=Device)
     elements: list[Rect] = field(default_factory=list)
+    extra_displays: list[dict[str, Any]] = field(default_factory=list)
+    extra_device_entries: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     canvas_id: str = field(default_factory=_uuid)

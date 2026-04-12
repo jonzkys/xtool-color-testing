@@ -6,29 +6,25 @@ import json
 import time
 from typing import Any
 
-from .model import LAYER_COLORS, ProcessingParams, Rect, XCSProject, _uuid
+from .model import (
+    ANNOTATION_LAYER_COLOR,
+    GRADIENT_LAYER_COLOR,
+    Line,
+    ProcessingParams,
+    Rect,
+    XCSProject,
+    _uuid,
+)
 
 # Minimal 1x1 transparent PNG for the cover thumbnail.
-# XCS Studio expects a cover field but doesn't validate it strictly.
 _BLANK_COVER = (
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lE"
     "QVQIHWNgAAIABQABNjN9GQAAAABJRUeErkJggg=="
 )
 
 
-def _color_for_index(i: int) -> str:
-    """Generate a unique hex color for layer index i."""
-    if i < len(LAYER_COLORS):
-        return LAYER_COLORS[i]
-    # Generate deterministic colors beyond the preset list
-    r = (i * 47 + 30) % 256
-    g = (i * 97 + 60) % 256
-    b = (i * 157 + 90) % 256
-    return f"#{r:02x}{g:02x}{b:02x}"
-
-
-def _build_display(elem: Rect) -> dict[str, Any]:
-    """Build a display (geometry) entry for a single element."""
+def _build_rect_display(elem: Rect) -> dict[str, Any]:
+    """Build a display (geometry) entry for a rectangle element."""
     return {
         "id": elem.id,
         "name": None,
@@ -84,6 +80,73 @@ def _build_display(elem: Rect) -> dict[str, Any]:
         "fillColor": "#000000",
         "radius": 0,
         "maxRadius": min(elem.width, elem.height) / 2,
+    }
+
+
+def build_line_display(line: Line) -> dict[str, Any]:
+    """Build a display entry for a line element."""
+    # LINE uses width=length, height=0.001, angle for rotation.
+    # endPoint gives the vector of the line.
+    import math
+
+    rad = math.radians(line.angle)
+    end_x = line.length * math.cos(rad)
+    end_y = line.length * math.sin(rad)
+
+    return {
+        "id": line.id,
+        "name": None,
+        "type": "LINE",
+        "x": line.x,
+        "y": line.y,
+        "angle": line.angle,
+        "scale": {"x": 1, "y": 1},
+        "skew": {"x": 0, "y": 0},
+        "pivot": {"x": 0, "y": 0},
+        "localSkew": {"x": 0, "y": 0},
+        "offsetX": line.x,
+        "offsetY": line.y,
+        "lockRatio": False,
+        "isClosePath": False,
+        "zOrder": 1,
+        "groupTags": [],
+        "groupTag": _uuid(),
+        "layerTag": line.layer_color,
+        "layerColor": line.layer_color,
+        "visible": True,
+        "originColor": "#000000",
+        "enableTransform": True,
+        "visibleState": True,
+        "lockState": False,
+        "resourceOrigin": "",
+        "customData": {},
+        "rootComponentId": "",
+        "minCanvasVersion": "0.0.0",
+        "alpha": 1,
+        "fill": {
+            "paintType": "color",
+            "visible": False,
+            "color": 0,
+            "alpha": 1,
+        },
+        "stroke": {
+            "paintType": "color",
+            "visible": True,
+            "color": 0,
+            "alpha": 1,
+            "width": 1,
+            "cap": "butt",
+            "join": "miter",
+            "miterLimit": 4,
+            "alignment": 0.5,
+        },
+        "effects": [],
+        "width": line.length,
+        "height": 0.001,
+        "isFill": True,
+        "lineColor": 0,
+        "fillColor": "#000000",
+        "endPoint": {"x": end_x, "y": end_y},
     }
 
 
@@ -211,29 +274,72 @@ def _build_processing_data(p: ProcessingParams) -> dict[str, Any]:
     }
 
 
+def build_device_entry(
+    display_id: str,
+    display_type: str,
+    processing_type: str,
+    params: ProcessingParams,
+    is_fill: bool = True,
+) -> tuple[str, dict[str, Any]]:
+    """Build a device processing entry for any display element."""
+    return (
+        display_id,
+        {
+            "isFill": is_fill,
+            "type": display_type,
+            "processingType": processing_type,
+            "data": _build_processing_data(params),
+            "processIgnore": False,
+            "isWhiteModel": True,
+        },
+    )
+
+
 def build_xcs(project: XCSProject) -> dict[str, Any]:
     """Build the complete XCS JSON structure from a project model."""
     now_ms = int(time.time() * 1000)
 
-    # Assign layer colors to elements
-    for i, elem in enumerate(project.elements):
+    # Assign default layer color to gradient elements that don't have one
+    for elem in project.elements:
         if not elem.layer_color:
-            elem.layer_color = _color_for_index(i)
+            elem.layer_color = GRADIENT_LAYER_COLOR
 
-    # Build layer data
-    layer_data = {}
-    for i, elem in enumerate(project.elements):
-        layer_data[elem.layer_color] = {
-            "name": elem.layer_color.upper(),
-            "order": i + 1,
-            "visible": True,
-        }
+    # Collect all layer colors from all sources
+    layer_data: dict[str, dict[str, Any]] = {}
+    order = 1
 
-    # Build displays
-    displays = [_build_display(elem) for elem in project.elements]
+    # Gradient layer
+    seen_colors: set[str] = set()
+    for elem in project.elements:
+        if elem.layer_color not in seen_colors:
+            seen_colors.add(elem.layer_color)
+            layer_data[elem.layer_color] = {
+                "name": elem.layer_color.upper(),
+                "order": order,
+                "visible": True,
+            }
+            order += 1
 
-    # Build device display processing map
-    display_entries = []
+    # Extra display layers (annotations etc.)
+    for disp in project.extra_displays:
+        color = disp.get("layerColor", "")
+        if color and color not in seen_colors:
+            seen_colors.add(color)
+            layer_data[color] = {
+                "name": color.upper(),
+                "order": order,
+                "visible": True,
+            }
+            order += 1
+
+    # Build displays: rects + extras
+    displays: list[dict[str, Any]] = []
+    for elem in project.elements:
+        displays.append(_build_rect_display(elem))
+    displays.extend(project.extra_displays)
+
+    # Build device display processing map: rects + extras
+    display_entries: list[list[Any]] = []
     for elem in project.elements:
         display_entries.append([
             elem.id,
@@ -246,6 +352,8 @@ def build_xcs(project: XCSProject) -> dict[str, Any]:
                 "isWhiteModel": True,
             },
         ])
+    for entry_id, entry_data in project.extra_device_entries:
+        display_entries.append([entry_id, entry_data])
 
     return {
         "canvasId": project.canvas_id,

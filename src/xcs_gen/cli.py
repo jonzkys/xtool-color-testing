@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from .builder import write_xcs
-from .generators import gradient_grid, single_axis_sweep
+from .generators import generate_gradient
 from .model import ProcessingParams
 
 
@@ -17,52 +17,38 @@ def main(argv: list[str] | None = None) -> None:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # --- sweep command ---
-    sweep_p = sub.add_parser("sweep", help="Single-axis parameter sweep")
-    sweep_p.add_argument("--param", required=True, help="Parameter to vary (speed, power, density, frequency, etc.)")
-    sweep_p.add_argument("--min", type=float, required=True, dest="min_val")
-    sweep_p.add_argument("--max", type=float, required=True, dest="max_val")
-    sweep_p.add_argument("--steps", type=int, default=50)
-    sweep_p.add_argument("--width", type=float, default=1.0, help="Element width in mm")
-    sweep_p.add_argument("--height", type=float, default=10.0, help="Element height in mm")
-    sweep_p.add_argument("--gap", type=float, default=0.5, help="Gap between elements in mm")
-    sweep_p.add_argument("--type", default="COLOR_FILL_ENGRAVE", dest="processing_type")
-    sweep_p.add_argument("-o", "--output", required=True, help="Output .xcs file path")
+    # --- generate command ---
+    gen_p = sub.add_parser("generate", help="Generate a gradient test pattern")
 
-    # --- grid command ---
-    grid_p = sub.add_parser("grid", help="Two-axis parameter grid")
-    grid_p.add_argument("--x-param", required=True, help="Parameter for X axis")
-    grid_p.add_argument("--x-min", type=float, required=True)
-    grid_p.add_argument("--x-max", type=float, required=True)
-    grid_p.add_argument("--x-steps", type=int, default=10)
-    grid_p.add_argument("--y-param", required=True, help="Parameter for Y axis")
-    grid_p.add_argument("--y-min", type=float, required=True)
-    grid_p.add_argument("--y-max", type=float, required=True)
-    grid_p.add_argument("--y-steps", type=int, default=10)
-    grid_p.add_argument("--width", type=float, default=2.0, help="Element width in mm")
-    grid_p.add_argument("--height", type=float, default=5.0, help="Element height in mm")
-    grid_p.add_argument("--gap", type=float, default=1.0, help="Gap between elements in mm")
-    grid_p.add_argument("--type", default="COLOR_FILL_ENGRAVE", dest="processing_type")
-    grid_p.add_argument("-o", "--output", required=True, help="Output .xcs file path")
+    # X axis (required)
+    gen_p.add_argument("--x-param", required=True, help="Parameter to vary on X axis (speed, power, density, frequency, etc.)")
+    gen_p.add_argument("--x-min", type=float, required=True, help="Minimum X parameter value")
+    gen_p.add_argument("--x-max", type=float, required=True, help="Maximum X parameter value")
+    gen_p.add_argument("--x-steps", type=int, default=100, help="Number of elements along X axis (default: 100)")
+
+    # Y axis (optional - omit for single axis)
+    gen_p.add_argument("--y-param", default=None, help="Parameter to vary on Y axis (omit for single axis)")
+    gen_p.add_argument("--y-min", type=float, default=0, help="Minimum Y parameter value")
+    gen_p.add_argument("--y-max", type=float, default=0, help="Maximum Y parameter value")
+    gen_p.add_argument("--y-steps", type=int, default=10, help="Number of rows along Y axis (default: 10)")
+
+    # Layout
+    gen_p.add_argument("--width", type=float, default=100.0, help="Total gradient area width in mm (default: 100)")
+    gen_p.add_argument("--height", type=float, default=50.0, help="Total gradient area height in mm (default: 50)")
+    gen_p.add_argument("--gap", type=float, default=0.0, help="Gap between elements in mm (default: 0)")
+
+    # Processing
+    gen_p.add_argument("--type", default="COLOR_FILL_ENGRAVE", dest="processing_type",
+                       help="Processing type (default: COLOR_FILL_ENGRAVE)")
+    gen_p.add_argument("--font-size", type=float, default=3.0, help="Axis label font size in points (default: 3)")
+
+    # Output
+    gen_p.add_argument("-o", "--output", required=True, help="Output .xcs file path")
 
     args = parser.parse_args(argv)
 
-    if args.command == "sweep":
-        project = single_axis_sweep(
-            param=args.param,
-            min_val=args.min_val,
-            max_val=args.max_val,
-            steps=args.steps,
-            element_width=args.width,
-            element_height=args.height,
-            gap=args.gap,
-            processing_type=args.processing_type,
-        )
-        write_xcs(project, args.output)
-        print(f"Wrote {len(project.elements)} elements to {args.output}")
-
-    elif args.command == "grid":
-        project = gradient_grid(
+    if args.command == "generate":
+        project = generate_gradient(
             x_param=args.x_param,
             x_min=args.x_min,
             x_max=args.x_max,
@@ -71,13 +57,24 @@ def main(argv: list[str] | None = None) -> None:
             y_min=args.y_min,
             y_max=args.y_max,
             y_steps=args.y_steps,
-            element_width=args.width,
-            element_height=args.height,
+            total_width=args.width,
+            total_height=args.height,
             gap=args.gap,
             processing_type=args.processing_type,
+            label_font_size=args.font_size,
         )
+
         write_xcs(project, args.output)
-        print(f"Wrote {len(project.elements)} elements ({args.x_steps}x{args.y_steps} grid) to {args.output}")
+
+        n_elements = len(project.elements)
+        n_annotations = len(project.extra_displays)
+        elem_w = args.width / args.x_steps
+        mode = "single axis" if args.y_param is None else f"{args.x_steps}x{args.y_steps} grid"
+
+        print(f"Generated {n_elements} gradient elements ({mode})")
+        print(f"  Element size: {elem_w:.3f}mm x {args.height if args.y_param is None else args.height / args.y_steps:.3f}mm")
+        print(f"  Annotations: {n_annotations} (ticks + labels)")
+        print(f"  Written to: {args.output}")
 
 
 if __name__ == "__main__":
