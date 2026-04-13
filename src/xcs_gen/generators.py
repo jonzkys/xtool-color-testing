@@ -16,11 +16,13 @@ from .model import (
 )
 from .text import make_text_display, text_height, text_width
 
-# Default annotation processing: light vector engrave
+# Default annotation processing: blue diode, moderate settings for readable text
 _DEFAULT_ANNOTATION_PARAMS = ProcessingParams(
-    speed=1000,
-    power=10,
+    speed=230,
+    power=80,
+    density=200,
     repeat=1,
+    processing_light_source="blue",
 )
 
 _PARAM_MAP = {
@@ -98,6 +100,24 @@ def generate_gradient(
 
     project = XCSProject()
 
+    # Reserve space above gradient for summary text
+    summary_font_size = label_font_size
+    summary_h = text_height(summary_font_size) + 1.0  # text + padding
+    gradient_start_y = start_y + summary_h
+
+    # Build summary line
+    summary = _build_summary(
+        x_param=x_param, x_min=x_min, x_max=x_max, x_steps=x_steps,
+        y_param=y_param, y_min=y_min, y_max=y_max, y_steps=y_steps,
+        base_params=base_params,
+    )
+    _add_summary_text(
+        project, summary,
+        x=start_x, y=start_y,
+        font_size=summary_font_size,
+        annotation_params=annotation_params,
+    )
+
     if is_dual:
         _generate_dual_axis(
             project,
@@ -105,7 +125,7 @@ def generate_gradient(
             y_param=y_param, y_values=_linspace(y_min, y_max, y_steps),
             x_steps=x_steps, y_steps=y_steps,
             total_width=total_width, total_height=total_height,
-            gap=gap, start_x=start_x, start_y=start_y,
+            gap=gap, start_x=start_x, start_y=gradient_start_y,
             base_params=base_params, processing_type=processing_type,
             label_font_size=label_font_size, tick_length=tick_length,
             annotation_params=annotation_params,
@@ -116,13 +136,77 @@ def generate_gradient(
             x_param=x_param, x_values=_linspace(x_min, x_max, x_steps),
             x_steps=x_steps, rows=rows, row_gap=row_gap,
             total_width=total_width, row_height=total_height,
-            gap=gap, start_x=start_x, start_y=start_y,
+            gap=gap, start_x=start_x, start_y=gradient_start_y,
             base_params=base_params, processing_type=processing_type,
             label_font_size=label_font_size, tick_length=tick_length,
             annotation_params=annotation_params,
         )
 
     return project
+
+
+def _build_summary(
+    *,
+    x_param: str,
+    x_min: float,
+    x_max: float,
+    x_steps: int,
+    y_param: str | None,
+    y_min: float,
+    y_max: float,
+    y_steps: int,
+    base_params: ProcessingParams,
+) -> str:
+    """Build a 1-2 line summary string of the gradient parameters."""
+    parts = [
+        f"{x_param} {_format_value(x_param, x_min)}-{_format_value(x_param, x_max)}",
+    ]
+    if y_param:
+        parts.append(f"{y_param} {_format_value(y_param, y_min)}-{_format_value(y_param, y_max)}")
+
+    # Add fixed params (skip the one being varied)
+    x_field = _PARAM_MAP.get(x_param, x_param)
+    y_field = _PARAM_MAP.get(y_param, y_param) if y_param else None
+
+    fixed = []
+    if x_field != "power" and y_field != "power":
+        fixed.append(f"P{base_params.power}%")
+    if x_field != "speed" and y_field != "speed":
+        fixed.append(f"S{base_params.speed}")
+    if x_field != "mopa_frequency" and y_field != "mopa_frequency":
+        fixed.append(f"F{base_params.mopa_frequency}Hz")
+    if x_field != "density" and y_field != "density":
+        fixed.append(f"L{base_params.density}")
+    if x_field != "pulse_width" and y_field != "pulse_width":
+        fixed.append(f"PW{base_params.pulse_width}")
+    if x_field != "repeat" and y_field != "repeat" and base_params.repeat > 1:
+        fixed.append(f"x{base_params.repeat}")
+
+    parts.append(" ".join(fixed))
+    return " / ".join(parts)
+
+
+def _add_summary_text(
+    project: XCSProject,
+    summary: str,
+    *,
+    x: float,
+    y: float,
+    font_size: float,
+    annotation_params: ProcessingParams,
+) -> None:
+    """Add a summary text element above the gradient."""
+    ann_layer = ANNOTATION_LAYER_COLOR
+    text_disp = make_text_display(
+        summary, x=x, y=y,
+        font_size=font_size, layer_color=ann_layer,
+    )
+    project.extra_displays.append(text_disp)
+    project.extra_device_entries.append(
+        build_device_entry(
+            text_disp["id"], "TEXT", "FILL_VECTOR_ENGRAVING", annotation_params
+        )
+    )
 
 
 def _generate_wrapped(
@@ -145,11 +229,15 @@ def _generate_wrapped(
     annotation_params: ProcessingParams,
 ) -> None:
     """Generate a single-axis gradient, optionally wrapped across rows."""
-    # Distribute elements across rows
     per_row = math.ceil(x_steps / rows)
     elem_w = (total_width - max(0, per_row - 1) * gap) / per_row
 
     ann_layer = ANNOTATION_LAYER_COLOR
+
+    # For multi-row: compute the space needed for labels below each row
+    # and ensure row_gap is large enough (only matters for non-last rows)
+    ann_space = tick_length + 0.5 + text_height(label_font_size) + 0.5
+    effective_row_gap = max(row_gap, ann_space) if rows > 1 else 0
 
     for row in range(rows):
         row_start = row * per_row
@@ -158,7 +246,7 @@ def _generate_wrapped(
         if row_count <= 0:
             break
 
-        row_y = start_y + row * (row_height + row_gap)
+        row_y = start_y + row * (row_height + effective_row_gap)
 
         # Generate elements for this row
         for i in range(row_start, row_end):
@@ -177,7 +265,7 @@ def _generate_wrapped(
             )
             project.elements.append(elem)
 
-        # Row annotations: label start and end of each row
+        # Labels below each row
         bottom_y = row_y + row_height
         label_y = bottom_y + tick_length + 0.5
 
@@ -213,7 +301,6 @@ def _generate_wrapped(
         # Middle labels at intervals
         if row_count > 2:
             indices = _label_indices(row_count)
-            # Remove first and last (already added)
             indices = [idx for idx in indices if idx != 0 and idx != row_count - 1]
             for idx in indices:
                 _add_tick_and_label(
@@ -273,7 +360,6 @@ def _generate_dual_axis(
 
     ann_layer = ANNOTATION_LAYER_COLOR
 
-    # X axis: bottom
     _add_x_axis(
         project,
         x_param=x_param,
@@ -289,7 +375,6 @@ def _generate_dual_axis(
         annotation_params=annotation_params,
     )
 
-    # Y axis: left
     _add_y_axis(
         project,
         y_param=y_param,

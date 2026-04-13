@@ -178,9 +178,9 @@ def test_annotations_present():
 
     line_count = types.count("LINE")
     text_count = types.count("TEXT")
-    # 10 steps -> all get labels (<=10 means label every one)
+    # 10 steps -> all get labels (<=10 means label every one) + 1 summary text
     assert line_count == 10
-    assert text_count == 10
+    assert text_count == 11  # 10 labels + 1 summary
 
 
 def test_1000_elements():
