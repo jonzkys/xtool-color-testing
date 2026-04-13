@@ -522,6 +522,120 @@ def _add_y_axis(
         )
 
 
+def generate_from_image(
+    *,
+    image_path: str,
+    param: str = "speed",
+    param_min: float,
+    param_max: float,
+    cols: int | None = None,
+    rows: int | None = None,
+    total_width: float = 50.0,
+    total_height: float = 30.0,
+    gap: float = 0.0,
+    skip_threshold: float = 1.0,
+    start_x: float = 10.0,
+    start_y: float = 10.0,
+    base_params: ProcessingParams | None = None,
+    processing_type: str = "COLOR_FILL_ENGRAVE",
+    annotation_params: ProcessingParams | None = None,
+) -> XCSProject:
+    """Generate an XCS file from an image by mapping brightness to a laser parameter.
+
+    Args:
+        image_path: Path to input image (PNG, JPG, etc.).
+        param: Which parameter brightness controls (e.g. "speed", "power").
+        param_min: Parameter value for white (minimum energy).
+        param_max: Parameter value for black (maximum energy).
+        cols: Grid columns. Auto-computed from aspect ratio if None.
+        rows: Grid rows. Auto-computed from aspect ratio if None.
+        total_width: Output width in mm.
+        total_height: Output height in mm.
+        gap: Gap between cells in mm.
+        skip_threshold: Brightness above which cells are skipped (default 1.0 = white).
+        start_x: X origin in mm.
+        start_y: Y origin in mm.
+        base_params: Base processing parameters for non-mapped fields.
+        processing_type: Active processing type.
+        annotation_params: Processing params for summary text.
+
+    Returns:
+        XCSProject ready to be written.
+    """
+    from .image_source import image_aspect_ratio, image_to_grid
+
+    if base_params is None:
+        base_params = ProcessingParams()
+    if annotation_params is None:
+        annotation_params = _DEFAULT_ANNOTATION_PARAMS
+
+    # Resolve grid resolution
+    aspect = image_aspect_ratio(image_path)
+    if cols is None and rows is None:
+        # Default: compute from width at beam-width resolution, cap at 1000
+        cols = min(1000, int(total_width / 0.03))
+        rows = int(cols / aspect)
+    elif cols is None:
+        cols = int(rows * aspect)
+    elif rows is None:
+        rows = int(cols / aspect)
+
+    cols = max(1, cols)
+    rows = max(1, rows)
+
+    # Load image and convert to brightness grid
+    grid = image_to_grid(image_path, cols, rows)
+
+    # Compute cell dimensions
+    cell_w = (total_width - max(0, cols - 1) * gap) / cols
+    cell_h = (total_height - max(0, rows - 1) * gap) / rows
+
+    project = XCSProject()
+
+    # Summary text
+    import os
+    filename = os.path.basename(image_path)
+    summary = f"{filename} / {param} {_format_value(param, param_min)}-{_format_value(param, param_max)} / {cols}x{rows}"
+    summary_font_size = 3.0
+    summary_h = text_height(summary_font_size) + 0.3
+    _add_summary_text(
+        project, summary,
+        x=start_x, y=start_y,
+        font_size=summary_font_size,
+        annotation_params=annotation_params,
+    )
+    grid_start_y = start_y + summary_h
+
+    # Generate elements
+    skipped = 0
+    for row_idx in range(rows):
+        for col_idx in range(cols):
+            brightness = grid[row_idx][col_idx]
+
+            if brightness >= skip_threshold:
+                skipped += 1
+                continue
+
+            # Linear mapping: black (0) → param_max, white (1) → param_min
+            mapped_value = param_max - brightness * (param_max - param_min)
+
+            params = _copy_params(base_params)
+            _set_param(params, param, mapped_value)
+
+            elem = Rect(
+                x=start_x + col_idx * (cell_w + gap),
+                y=grid_start_y + row_idx * (cell_h + gap),
+                width=cell_w,
+                height=cell_h,
+                params=params,
+                processing_type=processing_type,
+                layer_color=GRADIENT_LAYER_COLOR,
+            )
+            project.elements.append(elem)
+
+    return project
+
+
 def _label_indices(n: int) -> list[int]:
     """Compute which element indices get labels. Aims for 5-10 labels."""
     if n <= 10:
