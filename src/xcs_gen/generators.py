@@ -102,7 +102,7 @@ def generate_gradient(
 
     # Reserve space above gradient for summary text
     summary_font_size = label_font_size
-    summary_h = text_height(summary_font_size) + 1.0  # text + padding
+    summary_h = text_height(summary_font_size) + 0.3  # text + minimal padding
     gradient_start_y = start_y + summary_h
 
     # Build summary line
@@ -236,7 +236,7 @@ def _generate_wrapped(
 
     # For multi-row: compute the space needed for labels below each row
     # and ensure row_gap is large enough (only matters for non-last rows)
-    ann_space = tick_length + 0.5 + text_height(label_font_size) + 0.5
+    ann_space = tick_length + 0.2 + text_height(label_font_size) + 0.2
     effective_row_gap = max(row_gap, ann_space) if rows > 1 else 0
 
     for row in range(rows):
@@ -267,7 +267,7 @@ def _generate_wrapped(
 
         # Labels below each row
         bottom_y = row_y + row_height
-        label_y = bottom_y + tick_length + 0.5
+        label_y = bottom_y + tick_length + 0.2
 
         # Start tick + label
         _add_tick_and_label(
@@ -452,7 +452,7 @@ def _add_x_axis(
 ) -> None:
     """Add X-axis tick marks and labels below the gradient."""
     indices = _label_indices(x_steps)
-    label_y = bottom_y + tick_length + 0.5
+    label_y = bottom_y + tick_length + 0.2
 
     for i in indices:
         cx = start_x + i * (elem_w + gap) + elem_w / 2
