@@ -49,6 +49,8 @@ def generate_gradient(
     y_min: float = 0,
     y_max: float = 0,
     y_steps: int = 1,
+    rows: int = 1,
+    row_gap: float = 1.0,
     total_width: float = 100.0,
     total_height: float = 50.0,
     gap: float = 0.0,
@@ -66,13 +68,15 @@ def generate_gradient(
         x_param: Parameter to vary along X axis.
         x_min: Minimum X parameter value.
         x_max: Maximum X parameter value.
-        x_steps: Number of elements along X axis.
+        x_steps: Total number of elements in the gradient.
         y_param: Parameter to vary along Y axis (None = single axis).
         y_min: Minimum Y parameter value.
         y_max: Maximum Y parameter value.
         y_steps: Number of rows along Y axis (ignored if y_param is None).
+        rows: Number of rows to wrap the gradient across (single axis only).
+        row_gap: Gap between wrapped rows in mm.
         total_width: Total gradient area width in mm.
-        total_height: Total gradient area height in mm.
+        total_height: Row height in mm (total height = rows * total_height + gaps).
         gap: Gap between elements in mm.
         start_x: X origin of gradient area in mm.
         start_y: Y origin of gradient area in mm.
@@ -92,25 +96,169 @@ def generate_gradient(
 
     is_dual = y_param is not None and y_steps > 1
 
-    # Compute element dimensions from total area
-    elem_w = (total_width - max(0, x_steps - 1) * gap) / x_steps
-    if is_dual:
-        elem_h = (total_height - max(0, y_steps - 1) * gap) / y_steps
-    else:
-        elem_h = total_height
-
-    x_values = _linspace(x_min, x_max, x_steps)
-    y_values = _linspace(y_min, y_max, y_steps) if is_dual else [0.0]
-
     project = XCSProject()
 
-    # --- Generate gradient elements ---
+    if is_dual:
+        _generate_dual_axis(
+            project,
+            x_param=x_param, x_values=_linspace(x_min, x_max, x_steps),
+            y_param=y_param, y_values=_linspace(y_min, y_max, y_steps),
+            x_steps=x_steps, y_steps=y_steps,
+            total_width=total_width, total_height=total_height,
+            gap=gap, start_x=start_x, start_y=start_y,
+            base_params=base_params, processing_type=processing_type,
+            label_font_size=label_font_size, tick_length=tick_length,
+            annotation_params=annotation_params,
+        )
+    else:
+        _generate_wrapped(
+            project,
+            x_param=x_param, x_values=_linspace(x_min, x_max, x_steps),
+            x_steps=x_steps, rows=rows, row_gap=row_gap,
+            total_width=total_width, row_height=total_height,
+            gap=gap, start_x=start_x, start_y=start_y,
+            base_params=base_params, processing_type=processing_type,
+            label_font_size=label_font_size, tick_length=tick_length,
+            annotation_params=annotation_params,
+        )
+
+    return project
+
+
+def _generate_wrapped(
+    project: XCSProject,
+    *,
+    x_param: str,
+    x_values: list[float],
+    x_steps: int,
+    rows: int,
+    row_gap: float,
+    total_width: float,
+    row_height: float,
+    gap: float,
+    start_x: float,
+    start_y: float,
+    base_params: ProcessingParams,
+    processing_type: str,
+    label_font_size: float,
+    tick_length: float,
+    annotation_params: ProcessingParams,
+) -> None:
+    """Generate a single-axis gradient, optionally wrapped across rows."""
+    # Distribute elements across rows
+    per_row = math.ceil(x_steps / rows)
+    elem_w = (total_width - max(0, per_row - 1) * gap) / per_row
+
+    ann_layer = ANNOTATION_LAYER_COLOR
+
+    for row in range(rows):
+        row_start = row * per_row
+        row_end = min(row_start + per_row, x_steps)
+        row_count = row_end - row_start
+        if row_count <= 0:
+            break
+
+        row_y = start_y + row * (row_height + row_gap)
+
+        # Generate elements for this row
+        for i in range(row_start, row_end):
+            col = i - row_start
+            params = _copy_params(base_params)
+            _set_param(params, x_param, x_values[i])
+
+            elem = Rect(
+                x=start_x + col * (elem_w + gap),
+                y=row_y,
+                width=elem_w,
+                height=row_height,
+                params=params,
+                processing_type=processing_type,
+                layer_color=GRADIENT_LAYER_COLOR,
+            )
+            project.elements.append(elem)
+
+        # Row annotations: label start and end of each row
+        bottom_y = row_y + row_height
+        label_y = bottom_y + tick_length + 0.5
+
+        # Start tick + label
+        _add_tick_and_label(
+            project,
+            param=x_param,
+            value=x_values[row_start],
+            cx=start_x + elem_w / 2,
+            bottom_y=bottom_y,
+            label_y=label_y,
+            tick_length=tick_length,
+            font_size=label_font_size,
+            layer_color=ann_layer,
+            annotation_params=annotation_params,
+        )
+
+        # End tick + label
+        end_col = row_count - 1
+        _add_tick_and_label(
+            project,
+            param=x_param,
+            value=x_values[row_end - 1],
+            cx=start_x + end_col * (elem_w + gap) + elem_w / 2,
+            bottom_y=bottom_y,
+            label_y=label_y,
+            tick_length=tick_length,
+            font_size=label_font_size,
+            layer_color=ann_layer,
+            annotation_params=annotation_params,
+        )
+
+        # Middle labels at intervals
+        if row_count > 2:
+            indices = _label_indices(row_count)
+            # Remove first and last (already added)
+            indices = [idx for idx in indices if idx != 0 and idx != row_count - 1]
+            for idx in indices:
+                _add_tick_and_label(
+                    project,
+                    param=x_param,
+                    value=x_values[row_start + idx],
+                    cx=start_x + idx * (elem_w + gap) + elem_w / 2,
+                    bottom_y=bottom_y,
+                    label_y=label_y,
+                    tick_length=tick_length,
+                    font_size=label_font_size,
+                    layer_color=ann_layer,
+                    annotation_params=annotation_params,
+                )
+
+
+def _generate_dual_axis(
+    project: XCSProject,
+    *,
+    x_param: str,
+    x_values: list[float],
+    y_param: str,
+    y_values: list[float],
+    x_steps: int,
+    y_steps: int,
+    total_width: float,
+    total_height: float,
+    gap: float,
+    start_x: float,
+    start_y: float,
+    base_params: ProcessingParams,
+    processing_type: str,
+    label_font_size: float,
+    tick_length: float,
+    annotation_params: ProcessingParams,
+) -> None:
+    """Generate a dual-axis gradient grid."""
+    elem_w = (total_width - max(0, x_steps - 1) * gap) / x_steps
+    elem_h = (total_height - max(0, y_steps - 1) * gap) / y_steps
+
     for yi, y_val in enumerate(y_values):
         for xi, x_val in enumerate(x_values):
             params = _copy_params(base_params)
             _set_param(params, x_param, x_val)
-            if is_dual:
-                _set_param(params, y_param, y_val)
+            _set_param(params, y_param, y_val)
 
             elem = Rect(
                 x=start_x + xi * (elem_w + gap),
@@ -123,7 +271,6 @@ def generate_gradient(
             )
             project.elements.append(elem)
 
-    # --- Generate axis annotations ---
     ann_layer = ANNOTATION_LAYER_COLOR
 
     # X axis: bottom
@@ -142,24 +289,65 @@ def generate_gradient(
         annotation_params=annotation_params,
     )
 
-    # Y axis: left (dual axis only)
-    if is_dual:
-        _add_y_axis(
-            project,
-            y_param=y_param,
-            y_values=y_values,
-            y_steps=y_steps,
-            elem_h=elem_h,
-            gap=gap,
-            start_y=start_y,
-            left_x=start_x,
-            tick_length=tick_length,
-            font_size=label_font_size,
-            layer_color=ann_layer,
-            annotation_params=annotation_params,
-        )
+    # Y axis: left
+    _add_y_axis(
+        project,
+        y_param=y_param,
+        y_values=y_values,
+        y_steps=y_steps,
+        elem_h=elem_h,
+        gap=gap,
+        start_y=start_y,
+        left_x=start_x,
+        tick_length=tick_length,
+        font_size=label_font_size,
+        layer_color=ann_layer,
+        annotation_params=annotation_params,
+    )
 
-    return project
+
+def _add_tick_and_label(
+    project: XCSProject,
+    *,
+    param: str,
+    value: float,
+    cx: float,
+    bottom_y: float,
+    label_y: float,
+    tick_length: float,
+    font_size: float,
+    layer_color: str,
+    annotation_params: ProcessingParams,
+) -> None:
+    """Add a single tick mark + label at a given X position."""
+    tick = Line(
+        x=cx,
+        y=bottom_y,
+        length=tick_length,
+        angle=90.0,
+        layer_color=layer_color,
+    )
+    tick_display = build_line_display(tick)
+    project.extra_displays.append(tick_display)
+    project.extra_device_entries.append(
+        build_device_entry(tick.id, "LINE", "VECTOR_ENGRAVING", annotation_params)
+    )
+
+    label = _format_value(param, value)
+    lw = text_width(label, font_size)
+    text_disp = make_text_display(
+        label,
+        x=cx - lw / 2,
+        y=label_y,
+        font_size=font_size,
+        layer_color=layer_color,
+    )
+    project.extra_displays.append(text_disp)
+    project.extra_device_entries.append(
+        build_device_entry(
+            text_disp["id"], "TEXT", "FILL_VECTOR_ENGRAVING", annotation_params
+        )
+    )
 
 
 def _add_x_axis(
@@ -179,41 +367,21 @@ def _add_x_axis(
 ) -> None:
     """Add X-axis tick marks and labels below the gradient."""
     indices = _label_indices(x_steps)
-    label_y = bottom_y + tick_length + 0.5  # small gap between tick and label
+    label_y = bottom_y + tick_length + 0.5
 
     for i in indices:
-        # Tick mark center-x for this element
         cx = start_x + i * (elem_w + gap) + elem_w / 2
-
-        # Vertical tick mark
-        tick = Line(
-            x=cx,
-            y=bottom_y,
-            length=tick_length,
-            angle=90.0,
-            layer_color=layer_color,
-        )
-        tick_display = build_line_display(tick)
-        project.extra_displays.append(tick_display)
-        project.extra_device_entries.append(
-            build_device_entry(tick.id, "LINE", "VECTOR_ENGRAVING", annotation_params)
-        )
-
-        # Label
-        label = _format_value(x_param, x_values[i])
-        lw = text_width(label, font_size)
-        text_disp = make_text_display(
-            label,
-            x=cx - lw / 2,  # center below tick
-            y=label_y,
+        _add_tick_and_label(
+            project,
+            param=x_param,
+            value=x_values[i],
+            cx=cx,
+            bottom_y=bottom_y,
+            label_y=label_y,
+            tick_length=tick_length,
             font_size=font_size,
             layer_color=layer_color,
-        )
-        project.extra_displays.append(text_disp)
-        project.extra_device_entries.append(
-            build_device_entry(
-                text_disp["id"], "TEXT", "FILL_VECTOR_ENGRAVING", annotation_params
-            )
+            annotation_params=annotation_params,
         )
 
 
@@ -237,10 +405,8 @@ def _add_y_axis(
     th = text_height(font_size)
 
     for i in indices:
-        # Center-y for this row
         cy = start_y + i * (elem_h + gap) + elem_h / 2
 
-        # Horizontal tick mark extending left
         tick = Line(
             x=left_x - tick_length,
             y=cy,
@@ -254,13 +420,12 @@ def _add_y_axis(
             build_device_entry(tick.id, "LINE", "VECTOR_ENGRAVING", annotation_params)
         )
 
-        # Label (right-aligned to the left of the tick)
         label = _format_value(y_param, y_values[i])
         lw = text_width(label, font_size)
         text_disp = make_text_display(
             label,
-            x=left_x - tick_length - 0.5 - lw,  # right-aligned
-            y=cy - th / 2,  # vertically centered
+            x=left_x - tick_length - 0.5 - lw,
+            y=cy - th / 2,
             font_size=font_size,
             layer_color=layer_color,
         )
@@ -277,11 +442,9 @@ def _label_indices(n: int) -> list[int]:
     if n <= 10:
         return list(range(n))
 
-    # Choose interval to get ~8 labels
     interval = max(1, math.ceil(n / 8))
     indices = list(range(0, n, interval))
 
-    # Always include the last element
     if indices[-1] != n - 1:
         indices.append(n - 1)
 
@@ -293,7 +456,6 @@ def _format_value(param: str, value: float) -> str:
     field = _PARAM_MAP.get(param, param)
     if field in _INT_FIELDS:
         return str(int(round(value)))
-    # Power: 1 decimal, strip trailing zero
     if value == int(value):
         return str(int(value))
     return f"{value:.1f}"

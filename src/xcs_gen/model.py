@@ -24,7 +24,7 @@ class ProcessingParams:
     dpi: int = 500
     dot_duration: int = 100
     processing_light_source: str = "red"  # "red" = MOPA fiber, "blue" = diode
-    scan_angle: float = 0
+    scan_angle: float = 90  # 90 = vertical scan (efficient for narrow elements)
     angle_type: int = 2
     cross_angle: bool = False
 

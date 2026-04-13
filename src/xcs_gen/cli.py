@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 
 from .builder import write_xcs
@@ -39,6 +40,8 @@ def main(argv: list[str] | None = None) -> None:
     gen_p.add_argument("--width", type=float, default=None, help="Total gradient area width in mm (auto-computed from steps*beam if omitted)")
     gen_p.add_argument("--height", type=float, default=50.0, help="Total gradient area height in mm (default: 50)")
     gen_p.add_argument("--gap", type=float, default=0.0, help="Gap between elements in mm (default: 0)")
+    gen_p.add_argument("--rows", type=int, default=1, help="Wrap gradient across N rows (default: 1)")
+    gen_p.add_argument("--row-gap", type=float, default=1.0, help="Gap between wrapped rows in mm (default: 1)")
     gen_p.add_argument("--beam-width", type=float, default=DEFAULT_BEAM_WIDTH,
                        help=f"Laser beam spot size in mm (default: {DEFAULT_BEAM_WIDTH})")
 
@@ -65,28 +68,23 @@ def main(argv: list[str] | None = None) -> None:
         x_steps = args.x_steps
         width = args.width
 
+        rows = args.rows
+        per_row_max = int(width / beam) if width else None
+
         # Resolve steps/width: one can be auto-computed from the other
         if x_steps is None and width is None:
-            # Neither provided: default to 100mm width, compute steps
             width = 100.0
-            x_steps = int(width / beam)
-            print(f"Auto: {x_steps} steps from {width}mm width at {beam}mm beam")
+            per_row_max = int(width / beam)
+            x_steps = per_row_max * rows
+            print(f"Auto: {x_steps} steps ({per_row_max}/row x {rows} rows) from {width}mm width at {beam}mm beam")
         elif x_steps is None:
-            # Width provided, compute steps
-            x_steps = int(width / beam)
-            print(f"Auto: {x_steps} steps from {width}mm width at {beam}mm beam")
+            per_row_max = int(width / beam)
+            x_steps = per_row_max * rows
+            print(f"Auto: {x_steps} steps ({per_row_max}/row x {rows} rows) from {width}mm width at {beam}mm beam")
         elif width is None:
-            # Steps provided, compute width
-            width = x_steps * beam
-            print(f"Auto: {width:.1f}mm width from {x_steps} steps at {beam}mm beam")
-        else:
-            # Both provided: validate
-            elem_w = (width - max(0, x_steps - 1) * args.gap) / x_steps
-            if elem_w < beam:
-                print(f"WARNING: Element width ({elem_w:.4f}mm) is smaller than beam spot ({beam}mm)")
-                print(f"  Elements will overlap. Max steps for this width: {int((width + args.gap) / (beam + args.gap))}")
-                print(f"  Or minimum width for this many steps: {x_steps * beam:.1f}mm")
-                print()
+            per_row = math.ceil(x_steps / rows)
+            width = per_row * beam
+            print(f"Auto: {width:.1f}mm width from {per_row} elements/row at {beam}mm beam")
 
         base_params = ProcessingParams(
             power=args.power,
@@ -98,6 +96,17 @@ def main(argv: list[str] | None = None) -> None:
             processing_light_source=args.laser,
         )
 
+        rows = args.rows
+        per_row = math.ceil(x_steps / rows) if rows > 1 else x_steps
+        elem_w = (width - max(0, per_row - 1) * args.gap) / per_row
+
+        # Beam width validation against per-row element width
+        if elem_w < beam:
+            print(f"WARNING: Element width ({elem_w:.4f}mm) is smaller than beam spot ({beam}mm)")
+            max_per_row = int((width + args.gap) / (beam + args.gap))
+            print(f"  Max elements per row at this width: {max_per_row}")
+            print()
+
         project = generate_gradient(
             x_param=args.x_param,
             x_min=args.x_min,
@@ -107,6 +116,8 @@ def main(argv: list[str] | None = None) -> None:
             y_min=args.y_min,
             y_max=args.y_max,
             y_steps=args.y_steps,
+            rows=rows,
+            row_gap=args.row_gap,
             total_width=width,
             total_height=args.height,
             gap=args.gap,
@@ -119,13 +130,14 @@ def main(argv: list[str] | None = None) -> None:
 
         n_elements = len(project.elements)
         n_annotations = len(project.extra_displays)
-        elem_w = (width - max(0, x_steps - 1) * args.gap) / x_steps
+        total_area_h = args.height if rows == 1 else rows * args.height + (rows - 1) * args.row_gap
         mode = "single axis" if args.y_param is None else f"{x_steps}x{args.y_steps} grid"
-        eh = args.height if args.y_param is None else args.height / args.y_steps
+        if rows > 1 and args.y_param is None:
+            mode = f"{rows} rows x {per_row}/row"
 
         print(f"Generated {n_elements} gradient elements ({mode})")
-        print(f"  Area: {width:.1f}mm x {args.height:.1f}mm")
-        print(f"  Element size: {elem_w:.4f}mm x {eh:.3f}mm ({elem_w/beam:.1f}x beam width)")
+        print(f"  Area: {width:.1f}mm x {total_area_h:.1f}mm")
+        print(f"  Element size: {elem_w:.4f}mm x {args.height:.3f}mm ({elem_w/beam:.1f}x beam width)")
         print(f"  Annotations: {n_annotations} (ticks + labels)")
         print(f"  Written to: {args.output}")
 
