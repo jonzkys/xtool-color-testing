@@ -263,3 +263,42 @@ def _is_close_path(path: SVGPath) -> bool:
     # Check for a 'Z' / 'z' close-path command in the d-string.
     d = path.d() or ""
     return d.strip().endswith(("z", "Z"))
+
+
+@dataclass
+class DetectedColor:
+    """A colour detected in the SVG, with the role it plays."""
+
+    hex: str                                       # lowercase "#rrggbb"
+    source: Literal["fill", "stroke", "both"]
+    shape_count: int
+
+
+def detect_svg_colors(svg_path: str) -> list[DetectedColor]:
+    """Return every unique fill/stroke colour used by shapes in the SVG."""
+    # Minimal parse (scale/offset don't matter for colour detection).
+    result = parse_svg(svg_path, total_width=100.0, total_height=None)
+
+    fill_counts: dict[str, int] = {}
+    stroke_counts: dict[str, int] = {}
+    for shape in result.shapes:
+        if shape.fill:
+            fill_counts[shape.fill] = fill_counts.get(shape.fill, 0) + 1
+        if shape.stroke:
+            stroke_counts[shape.stroke] = stroke_counts.get(shape.stroke, 0) + 1
+
+    out: list[DetectedColor] = []
+    for hex_color in sorted(set(fill_counts) | set(stroke_counts)):
+        in_fill = hex_color in fill_counts
+        in_stroke = hex_color in stroke_counts
+        if in_fill and in_stroke:
+            source: Literal["fill", "stroke", "both"] = "both"
+            count = max(fill_counts[hex_color], stroke_counts[hex_color])
+        elif in_fill:
+            source = "fill"
+            count = fill_counts[hex_color]
+        else:
+            source = "stroke"
+            count = stroke_counts[hex_color]
+        out.append(DetectedColor(hex=hex_color, source=source, shape_count=count))
+    return out

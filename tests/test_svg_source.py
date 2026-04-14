@@ -109,3 +109,37 @@ def test_parse_svg_aspect_preserved_when_only_width():
     result = parse_svg(path, total_width=100.0, total_height=None)
     assert abs(result.output_width_mm - 100.0) < 0.01
     assert abs(result.output_height_mm - 50.0) < 0.01
+
+
+from xcs_gen.svg_source import DetectedColor, detect_svg_colors
+
+
+def test_detect_colors_basic():
+    content = """<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="10mm" height="10mm">
+  <rect x="0" y="0" width="5" height="5" fill="#ff0000"/>
+  <rect x="5" y="0" width="5" height="5" fill="#ff0000"/>
+  <circle cx="5" cy="5" r="2" fill="none" stroke="#00ff00"/>
+</svg>
+"""
+    path = _write(content)
+    colors = detect_svg_colors(path)
+    by_hex = {c.hex: c for c in colors}
+    assert by_hex["#ff0000"].source == "fill"
+    assert by_hex["#ff0000"].shape_count == 2
+    assert by_hex["#00ff00"].source == "stroke"
+    assert by_hex["#00ff00"].shape_count == 1
+
+
+def test_detect_colors_both_fill_and_stroke():
+    content = """<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="10mm" height="10mm">
+  <rect x="0" y="0" width="5" height="5" fill="#000000" stroke="#000000"/>
+</svg>
+"""
+    path = _write(content)
+    colors = detect_svg_colors(path)
+    assert len(colors) == 1
+    assert colors[0].hex == "#000000"
+    assert colors[0].source == "both"
+    assert colors[0].shape_count == 1
