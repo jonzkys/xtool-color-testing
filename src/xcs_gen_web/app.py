@@ -29,7 +29,7 @@ def create_app() -> FastAPI:
         filename = f"{project.name or 'output'}.xcs"
         return Response(
             content=body,
-            media_type="application/json",
+            media_type="application/octet-stream",
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
             },

@@ -45,6 +45,7 @@ def _project_payload() -> dict:
 def test_generate_returns_xcs_file(client):
     resp = client.post("/api/generate", json=_project_payload())
     assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/octet-stream"
     assert "attachment" in resp.headers.get("content-disposition", "")
     # Body is valid JSON (XCS format is JSON)
     data = json.loads(resp.content)
@@ -81,3 +82,18 @@ def test_health_endpoint(client):
     resp = client.get("/api/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
+
+
+def test_generate_rejects_invalid_name_chars(client):
+    """Names with path separators or special chars should be rejected."""
+    payload = _project_payload()
+    payload["name"] = "bad/name"
+    resp = client.post("/api/generate", json=payload)
+    assert resp.status_code == 422
+
+
+def test_generate_rejects_empty_name(client):
+    payload = _project_payload()
+    payload["name"] = ""
+    resp = client.post("/api/generate", json=payload)
+    assert resp.status_code == 422

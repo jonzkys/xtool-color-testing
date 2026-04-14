@@ -62,6 +62,6 @@ class TestPlacement(BaseModel):
 class Project(BaseModel):
     """Top-level project: a collection of placed param tests."""
 
-    name: str
+    name: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._\- ]+$")
     grid_gap_mm: float = Field(default=1.0, ge=0)
     tests: list[TestPlacement]
