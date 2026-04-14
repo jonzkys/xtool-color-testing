@@ -107,9 +107,23 @@ def main(argv: list[str] | None = None) -> None:
     serve_p.add_argument("--no-browser", action="store_true",
                          help="Don't automatically open the browser")
 
+    # --- svg command ---
+    svg_p = sub.add_parser("svg", help="SVG → per-layer laser parameters")
+    svg_sub = svg_p.add_subparsers(dest="svg_command", required=True)
+
+    # svg detect
+    svg_det_p = svg_sub.add_parser("detect", help="List colours detected in an SVG")
+    svg_det_p.add_argument("input", help="Path to input SVG file")
+
     args = parser.parse_args(argv)
 
-    if args.command == "image":
+    if args.command == "svg":
+        if args.svg_command == "detect":
+            _svg_detect(args)
+            return
+        # svg generate branch added in Task 11
+
+    elif args.command == "image":
         base_params = ProcessingParams(
             power=args.power,
             speed=args.speed,
@@ -256,6 +270,26 @@ def main(argv: list[str] | None = None) -> None:
         print(f"  Element size: {elem_w:.4f}mm x {args.height:.3f}mm ({elem_w/beam:.1f}x beam width)")
         print(f"  Annotations: {n_annotations} (ticks + labels)")
         print(f"  Written to: {args.output}")
+
+
+def _svg_detect(args) -> None:
+    from .svg_source import detect_svg_colors
+
+    colors = detect_svg_colors(args.input)
+    if not colors:
+        print("No colours detected (SVG may be empty or use only unsupported elements).")
+        return
+
+    # Simple table output.
+    col_hex = max(len("colour"), max(len(c.hex) for c in colors))
+    col_src = max(len("source"), max(len(c.source) for c in colors))
+    col_cnt = max(len("shapes"), max(len(str(c.shape_count)) for c in colors))
+    fmt = f"  {{:<{col_hex}}}  {{:<{col_src}}}  {{:>{col_cnt}}}"
+
+    print(fmt.format("colour", "source", "shapes"))
+    print(fmt.format("-" * col_hex, "-" * col_src, "-" * col_cnt))
+    for c in colors:
+        print(fmt.format(c.hex, c.source, c.shape_count))
 
 
 if __name__ == "__main__":
