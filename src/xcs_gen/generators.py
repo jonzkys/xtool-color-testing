@@ -63,7 +63,7 @@ def generate_gradient(
     base_params: ProcessingParams | None = None,
     processing_type: str = "COLOR_FILL_ENGRAVE",
     label_font_size: float = 3.0,
-    tick_length: float = 2.0,
+    tick_length: float = 1.0,
     annotation_params: ProcessingParams | None = None,
 ) -> XCSProject:
     """Generate a gradient test pattern with axis annotations.
@@ -104,7 +104,7 @@ def generate_gradient(
 
     # Reserve space above gradient for summary text
     summary_font_size = label_font_size
-    summary_h = text_height(summary_font_size) + 0.3  # text + minimal padding
+    summary_h = text_height(summary_font_size) + 0.1  # text + minimal padding
     gradient_start_y = start_y + summary_h
 
     # Build summary line
@@ -238,7 +238,7 @@ def _generate_wrapped(
 
     # For multi-row: compute the space needed for labels below each row
     # and ensure row_gap is large enough (only matters for non-last rows)
-    ann_space = tick_length + 0.2 + text_height(label_font_size) + 0.2
+    ann_space = tick_length + 0.1 + text_height(label_font_size) + 0.1
     effective_row_gap = max(row_gap, ann_space) if rows > 1 else 0
 
     for row in range(rows):
@@ -269,7 +269,7 @@ def _generate_wrapped(
 
         # Labels below each row
         bottom_y = row_y + row_height
-        label_y = bottom_y + tick_length + 0.2
+        label_y = bottom_y + tick_length + 0.1
 
         # Row spans from start_x to row_right (the actual edges of the gradient)
         row_right = start_x + (row_count - 1) * (elem_w + gap) + elem_w
@@ -459,7 +459,7 @@ def _add_x_axis(
     annotation_params: ProcessingParams,
 ) -> None:
     """Add X-axis tick marks and labels below the gradient."""
-    label_y = bottom_y + tick_length + 0.2
+    label_y = bottom_y + tick_length + 0.1
     total_width = (x_steps - 1) * (elem_w + gap) + elem_w
     right_x = start_x + total_width
 
@@ -617,7 +617,7 @@ def generate_from_image(
     filename = os.path.basename(image_path)
     summary = f"{filename} / {param} {_format_value(param, param_min)}-{_format_value(param, param_max)} / {cols}x{rows}"
     summary_font_size = 3.0
-    summary_h = text_height(summary_font_size) + 0.3
+    summary_h = text_height(summary_font_size) + 0.1
     _add_summary_text(
         project, summary,
         x=start_x, y=start_y,

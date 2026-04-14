@@ -16,23 +16,23 @@ from .schemas import BaseParams, ParamTest, Project
 CANVAS_ORIGIN_X = 10.0
 CANVAS_ORIGIN_Y = 10.0
 
-# Must match generate_gradient defaults (label_font_size=3.0, tick_length=2.0).
+# Must match generate_gradient defaults.
 # Kept in sync manually; changing those generator defaults requires updating these.
 _LABEL_FONT_SIZE = 3.0
-_TICK_LENGTH = 2.0
+_TICK_LENGTH = 1.0
 
 
 def _annotation_space_below() -> float:
     """Vertical space below a gradient for the X axis tick marks + labels.
 
-    Mirrors the layout in _add_tick_and_label: tick + 0.2 gap + text + 0.2 padding.
+    Mirrors the layout in _add_tick_and_label: tick + 0.1 gap + text + 0.1 padding.
     """
-    return _TICK_LENGTH + 0.2 + text_height(_LABEL_FONT_SIZE) + 0.2
+    return _TICK_LENGTH + 0.1 + text_height(_LABEL_FONT_SIZE) + 0.1
 
 
 def _summary_space_above() -> float:
     """Vertical space above a gradient for the summary text line."""
-    return text_height(_LABEL_FONT_SIZE) + 0.3
+    return text_height(_LABEL_FONT_SIZE) + 0.1
 
 
 def _test_vertical_footprint(t: ParamTest) -> float:
