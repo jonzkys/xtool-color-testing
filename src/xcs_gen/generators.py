@@ -9,7 +9,9 @@ from .builder import build_device_entry, build_line_display
 from .model import (
     ANNOTATION_LAYER_COLOR,
     GRADIENT_LAYER_COLOR,
+    Circle,
     Line,
+    Path,
     ProcessingParams,
     Rect,
     XCSProject,
@@ -712,3 +714,103 @@ def _linspace(start: float, stop: float, n: int) -> list[float]:
         return [start]
     step = (stop - start) / (n - 1)
     return [start + i * step for i in range(n)]
+
+
+def generate_from_svg(
+    *,
+    svg_path: str,
+    layer_config: "dict[str, object] | None" = None,
+    auto_ramp: "object | None" = None,
+    total_width: float = 100.0,
+    total_height: float | None = None,
+    start_x: float = 10.0,
+    start_y: float = 10.0,
+    base_params: ProcessingParams | None = None,
+) -> XCSProject:
+    """Generate an XCSProject from an SVG with per-colour parameters.
+
+    Each unique fill or stroke colour becomes a layer. For each shape:
+    - If it has a fill colour, one Path is emitted with that layer's params
+      and processing type.
+    - If it has a stroke colour, a second Path is emitted with that layer's
+      params and processing type.
+
+    Args:
+        svg_path: filesystem path to the SVG file.
+        layer_config: optional dict of hex-colour → LayerConfig (explicit params
+            + render mode).
+        auto_ramp: optional AutoRamp; used for colours absent from layer_config.
+        total_width: output width in bed-mm.
+        total_height: output height in bed-mm. None preserves aspect ratio.
+        start_x, start_y: bed-mm offset applied to all shapes.
+        base_params: baseline ProcessingParams for auto-ramp defaults.
+
+    Returns:
+        XCSProject populated with Path elements ready for build_xcs().
+    """
+    from .svg_source import detect_svg_colors, parse_svg, resolve_layer_params
+
+    if base_params is None:
+        base_params = ProcessingParams()
+
+    # Parse once for shapes, then collect detected colour list in appearance order.
+    parse_result = parse_svg(
+        svg_path,
+        total_width=total_width,
+        total_height=total_height,
+        start_x=start_x,
+        start_y=start_y,
+    )
+    if not parse_result.shapes:
+        raise ValueError(f"No supported shapes found in {svg_path}.")
+
+    detected_in_order: list[str] = []
+    seen: set[str] = set()
+    for shape in parse_result.shapes:
+        for color in (shape.fill, shape.stroke):
+            if color and color not in seen:
+                seen.add(color)
+                detected_in_order.append(color)
+
+    if not detected_in_order:
+        raise ValueError(
+            f"No colours detected in {svg_path} (all shapes have fill='none' "
+            "and stroke='none')."
+        )
+
+    assignment = resolve_layer_params(
+        detected_colors=detected_in_order,
+        layer_config=layer_config,
+        auto_ramp=auto_ramp,
+        base_params=base_params,
+    )
+
+    project = XCSProject()
+    for shape in parse_result.shapes:
+        for color, is_fill_layer in _layers_for(shape):
+            layer = assignment[color]
+            project.paths.append(Path(
+                d=shape.d,
+                x=shape.bbox_x_mm,
+                y=shape.bbox_y_mm,
+                width=shape.bbox_width_mm,
+                height=shape.bbox_height_mm,
+                is_close_path=shape.is_close_path,
+                fill_rule=shape.fill_rule,
+                params=layer.params,
+                processing_type=layer.processing_type,
+                is_fill=is_fill_layer,
+                layer_color=color,
+            ))
+
+    return project
+
+
+def _layers_for(shape) -> list[tuple[str, bool]]:
+    """Return (colour, is_fill_layer) tuples this shape contributes to."""
+    out: list[tuple[str, bool]] = []
+    if shape.fill:
+        out.append((shape.fill, True))
+    if shape.stroke:
+        out.append((shape.stroke, False))
+    return out
