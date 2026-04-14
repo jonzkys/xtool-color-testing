@@ -147,7 +147,7 @@ Per-shape walk for each leaf SVG element:
 
 `src/xcs_gen/builder.py` adds two builders mirroring `_build_rect_display` / `build_line_display`:
 
-- `_build_path_display(path: Path) -> dict` — emits `type: "PATH"` with `dPath`, `isClosePath`, `isCompoundPath`, `fillRule`, `width`, `height`, `x`, `y`, and `graphicX` / `graphicY`. The exact convention for `graphicX` / `graphicY` is copied from `samples/shape.xcs`; the implementation verifies behavior by round-tripping a generated file through XCS Studio.
+- `_build_path_display(path: Path) -> dict` — emits `type: "PATH"` with `dPath`, `isClosePath`, `isCompoundPath`, `fillRule`, `width`, `height`, `x`, `y`, and `graphicX` / `graphicY`. Empirically verified (probe on 2026-04-14): `dPath` is written in bed-mm coordinates and `graphicX` = `graphicY` = 0. The `x` / `y` / `width` / `height` bounding box is what XCS Studio uses for selection handles and position display — must match the `dPath`'s bbox.
 - `_build_circle_display(circle: Circle) -> dict` — emits `type: "CIRCLE"` with position and size, matching `samples/shape.xcs`.
 
 `build_xcs()` iterates `project.elements`, `project.paths`, `project.circles`, and `project.extra_displays` in turn. Layer-color collection already walks every display list, so no change there. `build_device_entry()` is generic over display type and unchanged.
