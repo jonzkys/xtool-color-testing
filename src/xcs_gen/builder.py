@@ -9,7 +9,9 @@ from typing import Any
 from .model import (
     ANNOTATION_LAYER_COLOR,
     GRADIENT_LAYER_COLOR,
+    Circle,
     Line,
+    Path,
     ProcessingParams,
     Rect,
     XCSProject,
@@ -147,6 +149,135 @@ def build_line_display(line: Line) -> dict[str, Any]:
         "lineColor": 0,
         "fillColor": "#000000",
         "endPoint": {"x": end_x, "y": end_y},
+    }
+
+
+def _build_path_display(path: Path) -> dict[str, Any]:
+    """Build a display entry for an SVG path element.
+
+    PATH positioning convention (empirically verified via XCS Studio probe on
+    2026-04-14, see Task 2 of the SVG layers plan): dPath coordinates are
+    in bed-mm, graphicX = graphicY = 0. The x/y/width/height bounding box
+    must match the dPath's bbox for XCS Studio's selection handles to line
+    up with the shape.
+    """
+    return {
+        "id": path.id,
+        "name": None,
+        "type": "PATH",
+        "x": path.x,
+        "y": path.y,
+        "angle": 0,
+        "scale": {"x": 1, "y": 1},
+        "skew": {"x": 0, "y": 0},
+        "pivot": {"x": 0, "y": 0},
+        "localSkew": {"x": 0, "y": 0},
+        "offsetX": path.x,
+        "offsetY": path.y,
+        "lockRatio": False,
+        "isClosePath": path.is_close_path,
+        "isCompoundPath": path.is_compound_path,
+        "zOrder": 1,
+        "groupTags": [],
+        "groupTag": _uuid(),
+        "layerTag": path.layer_color,
+        "layerColor": path.layer_color,
+        "visible": True,
+        "originColor": "#000000",
+        "enableTransform": True,
+        "visibleState": True,
+        "lockState": False,
+        "resourceOrigin": "",
+        "customData": {},
+        "rootComponentId": "",
+        "minCanvasVersion": "0.0.0",
+        "alpha": 1,
+        "fill": {
+            "paintType": "color",
+            "visible": False,
+            "color": 0,
+            "alpha": 1,
+        },
+        "stroke": {
+            "paintType": "color",
+            "visible": True,
+            "color": 0,
+            "alpha": 1,
+            "width": 1,
+            "cap": "butt",
+            "join": "miter",
+            "miterLimit": 4,
+            "alignment": 0.5,
+        },
+        "effects": [],
+        "width": path.width,
+        "height": path.height,
+        "isFill": path.is_fill,
+        "lineColor": 0,
+        "fillColor": "#000000",
+        "dPath": path.d,
+        "graphicX": 0.0,
+        "graphicY": 0.0,
+        "fillRule": path.fill_rule,
+        "points": [],
+    }
+
+
+def _build_circle_display(circle: Circle) -> dict[str, Any]:
+    """Build a display entry for a circle element."""
+    return {
+        "id": circle.id,
+        "name": None,
+        "type": "CIRCLE",
+        "x": circle.x,
+        "y": circle.y,
+        "angle": 0,
+        "scale": {"x": 1, "y": 1},
+        "skew": {"x": 0, "y": 0},
+        "pivot": {"x": 0, "y": 0},
+        "localSkew": {"x": 0, "y": 0},
+        "offsetX": circle.x,
+        "offsetY": circle.y,
+        "lockRatio": False,
+        "isClosePath": True,
+        "zOrder": 1,
+        "groupTags": [],
+        "groupTag": _uuid(),
+        "layerTag": circle.layer_color,
+        "layerColor": circle.layer_color,
+        "visible": True,
+        "originColor": "#000000",
+        "enableTransform": True,
+        "visibleState": True,
+        "lockState": False,
+        "resourceOrigin": "",
+        "customData": {},
+        "rootComponentId": "",
+        "minCanvasVersion": "0.0.0",
+        "alpha": 1,
+        "fill": {
+            "paintType": "color",
+            "visible": False,
+            "color": 0,
+            "alpha": 1,
+        },
+        "stroke": {
+            "paintType": "color",
+            "visible": True,
+            "color": 0,
+            "alpha": 1,
+            "width": 1,
+            "cap": "butt",
+            "join": "miter",
+            "miterLimit": 4,
+            "alignment": 0.5,
+        },
+        "effects": [],
+        "width": circle.width,
+        "height": circle.height,
+        "isFill": circle.is_fill,
+        "lineColor": 0,
+        "fillColor": "#000000",
     }
 
 
