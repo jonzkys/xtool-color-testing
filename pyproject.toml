@@ -15,3 +15,7 @@ xcs-gen = "xcs_gen.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_classes = ["Test"]
