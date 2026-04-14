@@ -1,8 +1,6 @@
 """Tests for the SVG-related builder additions."""
 
-import json
-
-from xcs_gen.builder import _build_path_display, _build_circle_display, build_xcs, write_xcs
+from xcs_gen.builder import _build_path_display, _build_circle_display, build_xcs
 from xcs_gen.model import Circle, Path, ProcessingParams, XCSProject
 
 
