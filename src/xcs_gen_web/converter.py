@@ -7,13 +7,51 @@ import json
 from xcs_gen.builder import build_xcs
 from xcs_gen.generators import generate_gradient
 from xcs_gen.model import ProcessingParams, XCSProject
+from xcs_gen.text import text_height
 
-from .schemas import BaseParams, Project
+from .schemas import BaseParams, ParamTest, Project
 
 # Offset from canvas (0,0) where the composition starts. Leaves margin from
 # the edge of the XCS canvas so tests aren't flush against the origin.
 CANVAS_ORIGIN_X = 10.0
 CANVAS_ORIGIN_Y = 10.0
+
+# Must match generate_gradient defaults (label_font_size=3.0, tick_length=2.0).
+# Kept in sync manually; changing those generator defaults requires updating these.
+_LABEL_FONT_SIZE = 3.0
+_TICK_LENGTH = 2.0
+
+
+def _annotation_space_below() -> float:
+    """Vertical space below a gradient for the X axis tick marks + labels.
+
+    Mirrors the layout in _add_tick_and_label: tick + 0.2 gap + text + 0.2 padding.
+    """
+    return _TICK_LENGTH + 0.2 + text_height(_LABEL_FONT_SIZE) + 0.2
+
+
+def _summary_space_above() -> float:
+    """Vertical space above a gradient for the summary text line."""
+    return text_height(_LABEL_FONT_SIZE) + 0.3
+
+
+def _test_vertical_footprint(t: ParamTest) -> float:
+    """Total vertical space a test occupies, including summary and axis labels.
+
+    For multi-row tests (rows > 1), the generator auto-expands row_gap to fit
+    inter-row annotations, so the full stack is larger than rows * height_mm.
+    """
+    summary = _summary_space_above()
+    ann_below = _annotation_space_below()
+
+    if t.rows > 1:
+        # generate_gradient uses effective_row_gap = max(row_gap, ann_space)
+        effective_row_gap = max(1.0, ann_below)
+        gradient_h = t.rows * t.height_mm + (t.rows - 1) * effective_row_gap
+    else:
+        gradient_h = t.height_mm
+
+    return summary + gradient_h + ann_below
 
 
 def validate_placements(project: Project) -> None:
@@ -56,7 +94,7 @@ def _compute_grid_offsets(project: Project) -> dict[str, tuple[float, float]]:
         per_col_width = t.width_mm / placement.col_span
         for c in range(placement.col, placement.col + placement.col_span):
             col_widths[c] = max(col_widths.get(c, 0.0), per_col_width)
-        row_heights[placement.row] = max(row_heights.get(placement.row, 0.0), t.height_mm)
+        row_heights[placement.row] = max(row_heights.get(placement.row, 0.0), _test_vertical_footprint(t))
 
     # Compute cumulative offsets
     cols = sorted(col_widths)
