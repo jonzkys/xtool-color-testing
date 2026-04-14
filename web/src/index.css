@@ -1,0 +1,16 @@
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  color: #222;
+  background: #f6f7f9;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
