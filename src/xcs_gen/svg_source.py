@@ -302,3 +302,180 @@ def detect_svg_colors(svg_path: str) -> list[DetectedColor]:
             count = stroke_counts[hex_color]
         out.append(DetectedColor(hex=hex_color, source=source, shape_count=count))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Layer resolution: LayerConfig / AutoRamp / LayerAssignment
+# ---------------------------------------------------------------------------
+
+from .model import ProcessingParams  # noqa: E402 — appended after top-level imports
+
+RenderMode = Literal["fill_engrave", "vector_engrave", "vector_cut"]
+
+_RENDER_MODE_TO_PROCESSING: dict[str, str] = {
+    "fill_engrave": "COLOR_FILL_ENGRAVE",
+    "vector_engrave": "VECTOR_ENGRAVING",
+    "vector_cut": "VECTOR_CUTTING",
+}
+
+
+@dataclass
+class LayerConfig:
+    """Explicit params for a single colour layer."""
+
+    params: ProcessingParams
+    render_mode: RenderMode = "fill_engrave"
+
+
+@dataclass
+class AutoRamp:
+    """Automatic parameter ramp across detected colours."""
+
+    param: str                                         # e.g. "power", "speed"
+    min_value: float                                   # assigned to first in sort
+    max_value: float                                   # assigned to last in sort
+    sort_by: Literal["luminance", "hue", "order_of_appearance"] = "luminance"
+    default_render_mode: RenderMode = "fill_engrave"
+
+
+@dataclass
+class LayerAssignment:
+    """Resolved per-colour params + render mode, ready to emit."""
+
+    params: ProcessingParams
+    render_mode: RenderMode
+    processing_type: str
+
+
+def resolve_layer_params(
+    *,
+    detected_colors: list[str],
+    layer_config: dict[str, LayerConfig] | None,
+    auto_ramp: AutoRamp | None,
+    base_params: ProcessingParams,
+) -> dict[str, LayerAssignment]:
+    """Produce one LayerAssignment per detected colour.
+
+    Resolution order:
+      1. explicit layer_config entry
+      2. auto_ramp (applied only to colours not in layer_config)
+      3. ValueError if neither covers a colour.
+    """
+    layer_config = layer_config or {}
+    out: dict[str, LayerAssignment] = {}
+
+    # 1. Apply explicit entries.
+    for color, cfg in layer_config.items():
+        out[color] = LayerAssignment(
+            params=cfg.params,
+            render_mode=cfg.render_mode,
+            processing_type=_RENDER_MODE_TO_PROCESSING[cfg.render_mode],
+        )
+
+    # 2. Apply auto-ramp to remaining colours in the order they were detected.
+    remaining = [c for c in detected_colors if c not in out]
+    if remaining:
+        if auto_ramp is None:
+            raise ValueError(
+                f"No layer_config or auto_ramp covers colours: {remaining}. "
+                "Provide layer_config entries or pass an AutoRamp."
+            )
+        ordered = _sort_for_ramp(remaining, auto_ramp.sort_by)
+        values = _linspace(auto_ramp.min_value, auto_ramp.max_value, len(ordered))
+        for color, value in zip(ordered, values):
+            params = _copy_params(base_params)
+            _set_ramp_param(params, auto_ramp.param, value)
+            out[color] = LayerAssignment(
+                params=params,
+                render_mode=auto_ramp.default_render_mode,
+                processing_type=_RENDER_MODE_TO_PROCESSING[auto_ramp.default_render_mode],
+            )
+        if len(ordered) == 1:
+            print(
+                "[svg_source] auto-ramp applied to only one colour; "
+                f"assigning min_value ({auto_ramp.min_value}).",
+                file=sys.stderr,
+            )
+
+    return out
+
+
+def _sort_for_ramp(
+    colors: list[str],
+    mode: Literal["luminance", "hue", "order_of_appearance"],
+) -> list[str]:
+    if mode == "order_of_appearance":
+        return list(colors)
+    if mode == "luminance":
+        # Sort descending by luminance so that darkest ends up last (→ max_value).
+        return sorted(colors, key=_luminance, reverse=True)
+    if mode == "hue":
+        return sorted(colors, key=_hue)
+    return list(colors)
+
+
+def _luminance(hex_color: str) -> float:
+    r, g, b = _hex_to_rgb(hex_color)
+    return 0.299 * r + 0.587 * g + 0.114 * b
+
+
+def _hue(hex_color: str) -> float:
+    r, g, b = (c / 255 for c in _hex_to_rgb(hex_color))
+    mx = max(r, g, b)
+    mn = min(r, g, b)
+    d = mx - mn
+    if d == 0:
+        return 0.0
+    if mx == r:
+        h = ((g - b) / d) % 6
+    elif mx == g:
+        h = ((b - r) / d) + 2
+    else:
+        h = ((r - g) / d) + 4
+    return h * 60
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    return (
+        int(hex_color[1:3], 16),
+        int(hex_color[3:5], 16),
+        int(hex_color[5:7], 16),
+    )
+
+
+def _linspace(a: float, b: float, n: int) -> list[float]:
+    if n <= 1:
+        return [a]
+    step = (b - a) / (n - 1)
+    return [a + step * i for i in range(n)]
+
+
+def _copy_params(p: ProcessingParams) -> ProcessingParams:
+    return ProcessingParams(
+        speed=p.speed, power=p.power, repeat=p.repeat, density=p.density,
+        pulse_width=p.pulse_width, mopa_frequency=p.mopa_frequency, dpi=p.dpi,
+        dot_duration=p.dot_duration,
+        processing_light_source=p.processing_light_source,
+        scan_angle=p.scan_angle, angle_type=p.angle_type, cross_angle=p.cross_angle,
+    )
+
+
+_RAMP_FIELD_MAP = {
+    "speed": ("speed", True),
+    "power": ("power", False),
+    "frequency": ("mopa_frequency", True),
+    "mopa_frequency": ("mopa_frequency", True),
+    "density": ("density", True),
+    "passes": ("repeat", True),
+    "repeat": ("repeat", True),
+    "pulse_width": ("pulse_width", True),
+    "dpi": ("dpi", True),
+}
+
+
+def _set_ramp_param(params: ProcessingParams, name: str, value: float) -> None:
+    if name not in _RAMP_FIELD_MAP:
+        raise ValueError(f"Unknown ramp param {name!r}. "
+                         f"Valid: {sorted(_RAMP_FIELD_MAP)}")
+    field_name, is_int = _RAMP_FIELD_MAP[name]
+    setattr(params, field_name, int(round(value)) if is_int else value)
