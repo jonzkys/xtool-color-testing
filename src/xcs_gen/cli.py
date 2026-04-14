@@ -100,6 +100,13 @@ def main(argv: list[str] | None = None) -> None:
     # Output
     img_p.add_argument("-o", "--output", required=True, help="Output .xcs file path")
 
+    # --- serve command ---
+    serve_p = sub.add_parser("serve", help="Launch the web UI locally")
+    serve_p.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
+    serve_p.add_argument("--port", type=int, default=8000, help="Port to bind (default: 8000)")
+    serve_p.add_argument("--no-browser", action="store_true",
+                         help="Don't automatically open the browser")
+
     args = parser.parse_args(argv)
 
     if args.command == "image":
@@ -144,6 +151,33 @@ def main(argv: list[str] | None = None) -> None:
 
         if n_elements == 0:
             print("  WARNING: No elements generated. Image may be all white or above skip threshold.")
+
+    elif args.command == "serve":
+        import webbrowser
+        import uvicorn
+        from pathlib import Path
+
+        # Warn if web/dist doesn't exist yet
+        web_dist = Path(__file__).parent.parent.parent / "web" / "dist"
+        if not web_dist.exists() or not (web_dist / "index.html").exists():
+            print("Warning: web/dist/index.html not found.")
+            print("  Run 'cd web && npm install && npm run build' to build the frontend.")
+            print("  The API will still work at /api/* endpoints.")
+            print()
+
+        url = f"http://{args.host}:{args.port}"
+        print(f"Starting xcs-gen web UI at {url}")
+
+        if not args.no_browser:
+            webbrowser.open(url)
+
+        uvicorn.run(
+            "xcs_gen_web.app:app",
+            host=args.host,
+            port=args.port,
+            log_level="info",
+        )
+        return
 
     elif args.command == "generate":
         beam = args.beam_width
