@@ -85,7 +85,7 @@ def project_to_xcs(project: Project) -> XCSProject:
 
     # Canvas origin in mm (all generated tests offset from here)
     canvas_origin_x = 10.0
-    canvas_origin_y = 0.0
+    canvas_origin_y = 10.0
 
     offsets = _compute_grid_offsets(project)
 

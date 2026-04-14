@@ -93,11 +93,17 @@ def test_vertical_placement_offsets():
         ],
     )
     xcs = project_to_xcs(project)
-    # Split elements by y - first test group is top, second is below
-    min_y_t1 = min(e.y for e in xcs.elements)
-    max_y_t1 = max(e.y for e in xcs.elements if e.y < max(el.y for el in xcs.elements) * 0.6)
-    min_y_t2 = min(e.y for e in xcs.elements if e.y > max_y_t1)
-    assert min_y_t2 > max_y_t1  # second test is below first
+
+    # Single-axis tests place all their elements at the same y (one row).
+    # With 2 stacked tests we should see 2 distinct y values.
+    distinct_ys = sorted({round(e.y, 2) for e in xcs.elements})
+    assert len(distinct_ys) == 2
+    assert distinct_ys[1] > distinct_ys[0]  # second test is below first
+
+    # The vertical separation should be at least the first test's height
+    # (5mm) - actually more because of summary text space. Just check > 0.
+    separation = distinct_ys[1] - distinct_ys[0]
+    assert separation >= 5.0  # first test is 5mm tall, minimum separation
 
 
 def test_overlap_detection():
