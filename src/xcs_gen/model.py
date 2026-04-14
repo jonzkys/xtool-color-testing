@@ -110,8 +110,8 @@ class XCSProject:
 
     device: Device = field(default_factory=Device)
     elements: list[Rect] = field(default_factory=list)
-    paths: list["Path"] = field(default_factory=list)
-    circles: list["Circle"] = field(default_factory=list)
+    paths: list[Path] = field(default_factory=list)
+    circles: list[Circle] = field(default_factory=list)
     extra_displays: list[dict[str, Any]] = field(default_factory=list)
     extra_device_entries: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     canvas_id: str = field(default_factory=_uuid)
