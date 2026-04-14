@@ -100,9 +100,76 @@ def main(argv: list[str] | None = None) -> None:
     # Output
     img_p.add_argument("-o", "--output", required=True, help="Output .xcs file path")
 
+    # --- serve command ---
+    serve_p = sub.add_parser("serve", help="Launch the web UI locally")
+    serve_p.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
+    serve_p.add_argument("--port", type=int, default=8000, help="Port to bind (default: 8000)")
+    serve_p.add_argument("--no-browser", action="store_true",
+                         help="Don't automatically open the browser")
+
+    # --- svg command ---
+    svg_p = sub.add_parser("svg", help="SVG → per-layer laser parameters")
+    svg_sub = svg_p.add_subparsers(dest="svg_command", required=True)
+
+    # svg detect
+    svg_det_p = svg_sub.add_parser("detect", help="List colours detected in an SVG")
+    svg_det_p.add_argument("input", help="Path to input SVG file")
+
+    # svg generate
+    svg_gen_p = svg_sub.add_parser("generate", help="Convert an SVG to an .xcs file")
+    svg_gen_p.add_argument("input", help="Path to input SVG file")
+    svg_gen_p.add_argument("-o", "--output", required=True, help="Output .xcs file path")
+    svg_gen_p.add_argument("--width", type=float, default=100.0,
+                           help="Output width in mm (default: 100)")
+    svg_gen_p.add_argument("--height", type=float, default=None,
+                           help="Output height in mm (default: preserve aspect ratio)")
+    svg_gen_p.add_argument("--start-x", type=float, default=10.0,
+                           help="X origin on the bed in mm (default: 10)")
+    svg_gen_p.add_argument("--start-y", type=float, default=10.0,
+                           help="Y origin on the bed in mm (default: 10)")
+
+    # Auto-ramp flags
+    svg_gen_p.add_argument("--ramp-param", default=None,
+                           help="Parameter to auto-ramp across detected colours")
+    svg_gen_p.add_argument("--ramp-min", type=float, default=None,
+                           help="Ramp min (assigned to first colour in sort)")
+    svg_gen_p.add_argument("--ramp-max", type=float, default=None,
+                           help="Ramp max (assigned to last colour in sort)")
+    svg_gen_p.add_argument("--ramp-sort", default="luminance",
+                           choices=["luminance", "hue", "order_of_appearance"],
+                           help="Sort mode for auto-ramp (default: luminance)")
+    svg_gen_p.add_argument("--ramp-mode", default="fill_engrave",
+                           choices=["fill_engrave", "vector_engrave", "vector_cut"],
+                           help="Render mode for auto-ramp (default: fill_engrave)")
+
+    # Explicit per-colour overrides (repeatable)
+    svg_gen_p.add_argument("--color", action="append", default=[], dest="color_overrides",
+                           help="Per-colour override: '<hex>:<mode>:<speed>,<power>,<freq>,<density>,<passes>,<pulse_width>'. Blank fields inherit from --base-* flags.")
+
+    # Shared base-params flags (same as image/generate)
+    svg_gen_p.add_argument("--power", type=float, default=50.0, help="Laser power %% (default: 50)")
+    svg_gen_p.add_argument("--speed", type=int, default=1000, help="Speed mm/s (default: 1000)")
+    svg_gen_p.add_argument("--frequency", type=int, default=65, help="MOPA frequency Hz (default: 65)")
+    svg_gen_p.add_argument("--density", type=int, default=100, help="Lines per cm (default: 100)")
+    svg_gen_p.add_argument("--passes", type=int, default=1, help="Number of passes (default: 1)")
+    svg_gen_p.add_argument("--pulse-width", type=int, default=200, help="Pulse width ns (default: 200)")
+    svg_gen_p.add_argument("--laser", default="red", choices=["red", "blue"],
+                           help="Laser source (default: red)")
+
     args = parser.parse_args(argv)
 
-    if args.command == "image":
+    if args.command == "svg":
+        try:
+            if args.svg_command == "detect":
+                _svg_detect(args)
+                return
+            if args.svg_command == "generate":
+                _svg_generate(args)
+                return
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            raise SystemExit(f"error: {exc}")
+
+    elif args.command == "image":
         base_params = ProcessingParams(
             power=args.power,
             speed=args.speed,
@@ -144,6 +211,33 @@ def main(argv: list[str] | None = None) -> None:
 
         if n_elements == 0:
             print("  WARNING: No elements generated. Image may be all white or above skip threshold.")
+
+    elif args.command == "serve":
+        import webbrowser
+        import uvicorn
+        from pathlib import Path
+
+        # Warn if web/dist doesn't exist yet
+        web_dist = Path(__file__).parent.parent.parent / "web" / "dist"
+        if not web_dist.exists() or not (web_dist / "index.html").exists():
+            print("Warning: web/dist/index.html not found.")
+            print("  Run 'cd web && npm install && npm run build' to build the frontend.")
+            print("  The API will still work at /api/* endpoints.")
+            print()
+
+        url = f"http://{args.host}:{args.port}"
+        print(f"Starting xcs-gen web UI at {url}")
+
+        if not args.no_browser:
+            webbrowser.open(url)
+
+        uvicorn.run(
+            "xcs_gen_web.app:app",
+            host=args.host,
+            port=args.port,
+            log_level="info",
+        )
+        return
 
     elif args.command == "generate":
         beam = args.beam_width
@@ -222,6 +316,127 @@ def main(argv: list[str] | None = None) -> None:
         print(f"  Element size: {elem_w:.4f}mm x {args.height:.3f}mm ({elem_w/beam:.1f}x beam width)")
         print(f"  Annotations: {n_annotations} (ticks + labels)")
         print(f"  Written to: {args.output}")
+
+
+def _svg_detect(args) -> None:
+    from .svg_source import detect_svg_colors
+
+    colors = detect_svg_colors(args.input)
+    if not colors:
+        print("No colours detected (SVG may be empty or use only unsupported elements).")
+        return
+
+    # Simple table output.
+    col_hex = max(len("colour"), max(len(c.hex) for c in colors))
+    col_src = max(len("source"), max(len(c.source) for c in colors))
+    col_cnt = max(len("shapes"), max(len(str(c.shape_count)) for c in colors))
+    fmt = f"  {{:<{col_hex}}}  {{:<{col_src}}}  {{:>{col_cnt}}}"
+
+    print(fmt.format("colour", "source", "shapes"))
+    print(fmt.format("-" * col_hex, "-" * col_src, "-" * col_cnt))
+    for c in colors:
+        print(fmt.format(c.hex, c.source, c.shape_count))
+
+
+def _svg_generate(args) -> None:
+    from .builder import write_xcs
+    from .generators import generate_from_svg
+    from .model import ProcessingParams
+    from .svg_source import AutoRamp, LayerConfig
+
+    base_params = ProcessingParams(
+        power=args.power, speed=args.speed,
+        mopa_frequency=args.frequency, density=args.density,
+        repeat=args.passes, pulse_width=args.pulse_width,
+        processing_light_source=args.laser,
+    )
+
+    # Parse --color overrides
+    layer_config: dict[str, LayerConfig] = {}
+    for override in args.color_overrides:
+        color, cfg = _parse_color_override(override, base_params)
+        layer_config[color] = cfg
+
+    # Build AutoRamp if any ramp flags were given
+    auto_ramp = None
+    if args.ramp_param is not None:
+        if args.ramp_min is None or args.ramp_max is None:
+            raise SystemExit("--ramp-param requires --ramp-min and --ramp-max.")
+        auto_ramp = AutoRamp(
+            param=args.ramp_param,
+            min_value=args.ramp_min,
+            max_value=args.ramp_max,
+            sort_by=args.ramp_sort,
+            default_render_mode=args.ramp_mode,
+        )
+
+    project = generate_from_svg(
+        svg_path=args.input,
+        layer_config=layer_config or None,
+        auto_ramp=auto_ramp,
+        total_width=args.width,
+        total_height=args.height,
+        start_x=args.start_x,
+        start_y=args.start_y,
+        base_params=base_params,
+    )
+
+    write_xcs(project, args.output)
+
+    print(f"Generated {len(project.paths)} path displays from {args.input}")
+    print(f"  Written to: {args.output}")
+
+
+def _parse_color_override(override: str, base: "ProcessingParams"):
+    """Parse '<hex>:<mode>:<speed>,<power>,<freq>,<density>,<passes>,<pulse_width>'.
+
+    Blank fields inherit from base. Mode defaults to 'fill_engrave' if blank.
+    """
+    from .model import ProcessingParams
+    from .svg_source import LayerConfig
+
+    try:
+        hex_part, mode_part, rest = override.split(":", 2)
+    except ValueError:
+        raise SystemExit(
+            f"Invalid --color value {override!r}. "
+            "Expected '<hex>:<mode>:<speed>,<power>,<freq>,<density>,<passes>,<pulse_width>'."
+        )
+
+    color = hex_part.strip().lower()
+    if not (color.startswith("#") and len(color) == 7):
+        raise SystemExit(f"Invalid hex colour in --color: {hex_part!r}")
+
+    mode = mode_part.strip() or "fill_engrave"
+    if mode not in ("fill_engrave", "vector_engrave", "vector_cut"):
+        raise SystemExit(
+            f"Invalid mode in --color: {mode!r}. "
+            "Must be fill_engrave | vector_engrave | vector_cut."
+        )
+
+    fields = rest.split(",")
+    if len(fields) != 6:
+        raise SystemExit(
+            f"Invalid --color fields {rest!r}. Expected 6 comma-separated numbers."
+        )
+
+    def _num(value: str, default, cast):
+        value = value.strip()
+        return default if value == "" else cast(value)
+
+    speed = _num(fields[0], base.speed, lambda s: int(round(float(s))))
+    power = _num(fields[1], base.power, float)
+    frequency = _num(fields[2], base.mopa_frequency, int)
+    density = _num(fields[3], base.density, int)
+    passes = _num(fields[4], base.repeat, int)
+    pulse_width = _num(fields[5], base.pulse_width, int)
+
+    params = ProcessingParams(
+        speed=speed, power=power, mopa_frequency=frequency,
+        density=density, repeat=passes, pulse_width=pulse_width,
+        processing_light_source=base.processing_light_source,
+    )
+    return color, LayerConfig(params=params, render_mode=mode)
 
 
 if __name__ == "__main__":

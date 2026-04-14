@@ -8,10 +8,16 @@ version = "0.1.0"
 description = "Programmatic generation of XTool .xcs laser cutter files"
 requires-python = ">=3.10"
 license = "MIT"
-dependencies = ["Pillow>=10.0"]
+dependencies = ["Pillow>=10.0", "fastapi>=0.110", "uvicorn[standard]>=0.27", "svgelements>=1.9"]
 
 [project.scripts]
 xcs-gen = "xcs_gen.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::pytest.PytestCollectionWarning",
+]

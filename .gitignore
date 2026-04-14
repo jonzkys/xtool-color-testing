@@ -32,3 +32,10 @@ output/
 *.xcs
 !samples/*.xcs
 .superpowers/
+
+# Frontend build artifacts
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
+web/vite.config.d.ts
+web/vite.config.js

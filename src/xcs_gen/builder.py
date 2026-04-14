@@ -9,7 +9,9 @@ from typing import Any
 from .model import (
     ANNOTATION_LAYER_COLOR,
     GRADIENT_LAYER_COLOR,
+    Circle,
     Line,
+    Path,
     ProcessingParams,
     Rect,
     XCSProject,
@@ -147,6 +149,135 @@ def build_line_display(line: Line) -> dict[str, Any]:
         "lineColor": 0,
         "fillColor": "#000000",
         "endPoint": {"x": end_x, "y": end_y},
+    }
+
+
+def _build_path_display(path: Path) -> dict[str, Any]:
+    """Build a display entry for an SVG path element.
+
+    PATH positioning convention (empirically verified via XCS Studio probe on
+    2026-04-14, see Task 2 of the SVG layers plan): dPath coordinates are
+    in bed-mm, graphicX = graphicY = 0. The x/y/width/height bounding box
+    must match the dPath's bbox for XCS Studio's selection handles to line
+    up with the shape.
+    """
+    return {
+        "id": path.id,
+        "name": None,
+        "type": "PATH",
+        "x": path.x,
+        "y": path.y,
+        "angle": 0,
+        "scale": {"x": 1, "y": 1},
+        "skew": {"x": 0, "y": 0},
+        "pivot": {"x": 0, "y": 0},
+        "localSkew": {"x": 0, "y": 0},
+        "offsetX": path.x,
+        "offsetY": path.y,
+        "lockRatio": False,
+        "isClosePath": path.is_close_path,
+        "isCompoundPath": path.is_compound_path,
+        "zOrder": 1,
+        "groupTags": [],
+        "groupTag": _uuid(),
+        "layerTag": path.layer_color,
+        "layerColor": path.layer_color,
+        "visible": True,
+        "originColor": "#000000",
+        "enableTransform": True,
+        "visibleState": True,
+        "lockState": False,
+        "resourceOrigin": "",
+        "customData": {},
+        "rootComponentId": "",
+        "minCanvasVersion": "0.0.0",
+        "alpha": 1,
+        "fill": {
+            "paintType": "color",
+            "visible": False,
+            "color": 0,
+            "alpha": 1,
+        },
+        "stroke": {
+            "paintType": "color",
+            "visible": True,
+            "color": 0,
+            "alpha": 1,
+            "width": 1,
+            "cap": "butt",
+            "join": "miter",
+            "miterLimit": 4,
+            "alignment": 0.5,
+        },
+        "effects": [],
+        "width": path.width,
+        "height": path.height,
+        "isFill": path.is_fill,
+        "lineColor": 0,
+        "fillColor": "#000000",
+        "dPath": path.d,
+        "graphicX": 0.0,
+        "graphicY": 0.0,
+        "fillRule": path.fill_rule,
+        "points": [],
+    }
+
+
+def _build_circle_display(circle: Circle) -> dict[str, Any]:
+    """Build a display entry for a circle element."""
+    return {
+        "id": circle.id,
+        "name": None,
+        "type": "CIRCLE",
+        "x": circle.x,
+        "y": circle.y,
+        "angle": 0,
+        "scale": {"x": 1, "y": 1},
+        "skew": {"x": 0, "y": 0},
+        "pivot": {"x": 0, "y": 0},
+        "localSkew": {"x": 0, "y": 0},
+        "offsetX": circle.x,
+        "offsetY": circle.y,
+        "lockRatio": False,
+        "isClosePath": True,
+        "zOrder": 1,
+        "groupTags": [],
+        "groupTag": _uuid(),
+        "layerTag": circle.layer_color,
+        "layerColor": circle.layer_color,
+        "visible": True,
+        "originColor": "#000000",
+        "enableTransform": True,
+        "visibleState": True,
+        "lockState": False,
+        "resourceOrigin": "",
+        "customData": {},
+        "rootComponentId": "",
+        "minCanvasVersion": "0.0.0",
+        "alpha": 1,
+        "fill": {
+            "paintType": "color",
+            "visible": False,
+            "color": 0,
+            "alpha": 1,
+        },
+        "stroke": {
+            "paintType": "color",
+            "visible": True,
+            "color": 0,
+            "alpha": 1,
+            "width": 1,
+            "cap": "butt",
+            "join": "miter",
+            "miterLimit": 4,
+            "alignment": 0.5,
+        },
+        "effects": [],
+        "width": circle.width,
+        "height": circle.height,
+        "isFill": circle.is_fill,
+        "lineColor": 0,
+        "fillColor": "#000000",
     }
 
 
@@ -299,30 +430,13 @@ def build_xcs(project: XCSProject) -> dict[str, Any]:
     """Build the complete XCS JSON structure from a project model."""
     now_ms = int(time.time() * 1000)
 
-    # Assign default layer color to gradient elements that don't have one
-    for elem in project.elements:
-        if not elem.layer_color:
-            elem.layer_color = GRADIENT_LAYER_COLOR
-
     # Collect all layer colors from all sources
     layer_data: dict[str, dict[str, Any]] = {}
     order = 1
-
-    # Gradient layer
     seen_colors: set[str] = set()
-    for elem in project.elements:
-        if elem.layer_color not in seen_colors:
-            seen_colors.add(elem.layer_color)
-            layer_data[elem.layer_color] = {
-                "name": elem.layer_color.upper(),
-                "order": order,
-                "visible": True,
-            }
-            order += 1
 
-    # Extra display layers (annotations etc.)
-    for disp in project.extra_displays:
-        color = disp.get("layerColor", "")
+    def _add_layer(color: str) -> None:
+        nonlocal order
         if color and color not in seen_colors:
             seen_colors.add(color)
             layer_data[color] = {
@@ -332,13 +446,28 @@ def build_xcs(project: XCSProject) -> dict[str, Any]:
             }
             order += 1
 
-    # Build displays: rects + extras
+    for elem in project.elements:
+        if not elem.layer_color:
+            elem.layer_color = GRADIENT_LAYER_COLOR
+        _add_layer(elem.layer_color)
+    for p in project.paths:
+        _add_layer(p.layer_color)
+    for c in project.circles:
+        _add_layer(c.layer_color)
+    for disp in project.extra_displays:
+        _add_layer(disp.get("layerColor", ""))
+
+    # Build displays: rects + paths + circles + extras
     displays: list[dict[str, Any]] = []
     for elem in project.elements:
         displays.append(_build_rect_display(elem))
+    for p in project.paths:
+        displays.append(_build_path_display(p))
+    for c in project.circles:
+        displays.append(_build_circle_display(c))
     displays.extend(project.extra_displays)
 
-    # Build device display processing map: rects + extras
+    # Build device display processing map: rects + paths + circles + extras
     display_entries: list[list[Any]] = []
     for elem in project.elements:
         display_entries.append([
@@ -348,6 +477,30 @@ def build_xcs(project: XCSProject) -> dict[str, Any]:
                 "type": "RECT",
                 "processingType": elem.processing_type,
                 "data": _build_processing_data(elem.params),
+                "processIgnore": False,
+                "isWhiteModel": True,
+            },
+        ])
+    for p in project.paths:
+        display_entries.append([
+            p.id,
+            {
+                "isFill": p.is_fill,
+                "type": "PATH",
+                "processingType": p.processing_type,
+                "data": _build_processing_data(p.params),
+                "processIgnore": False,
+                "isWhiteModel": True,
+            },
+        ])
+    for c in project.circles:
+        display_entries.append([
+            c.id,
+            {
+                "isFill": c.is_fill,
+                "type": "CIRCLE",
+                "processingType": c.processing_type,
+                "data": _build_processing_data(c.params),
                 "processIgnore": False,
                 "isWhiteModel": True,
             },

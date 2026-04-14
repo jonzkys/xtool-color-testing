@@ -79,6 +79,47 @@ xcs-gen --param speed --min 100 --max 5000 --steps 50 --output speed_test.xcs
 
 Currently tested with **XTool F2 Ultra** (`GS004-CLASS-4`). Device IDs and power configurations may differ for other models.
 
+## Web UI
+
+A browser-based UI for composing multiple param tests into one XCS file.
+
+### First-time setup
+
+```bash
+cd web
+npm install
+npm run build
+cd ..
+```
+
+### Run
+
+```bash
+xcs-gen serve
+```
+
+This launches a local server at http://localhost:8000 and opens it in your default browser.
+
+Options:
+- `--port N` — change the port (default 8000)
+- `--host HOST` — change the bind host (default 127.0.0.1)
+- `--no-browser` — don't open the browser automatically
+
+### Development
+
+For frontend development with hot reload:
+
+```bash
+# Terminal 1: run the API
+xcs-gen serve --no-browser
+
+# Terminal 2: run Vite dev server (proxies /api/* to the backend)
+cd web
+npm run dev
+```
+
+Then open the URL printed by Vite (usually http://localhost:5173).
+
 ## License
 
 MIT
