@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 
 def _uuid() -> str:
@@ -56,6 +56,40 @@ class Line:
     id: str = field(default_factory=_uuid)
 
 
+@dataclass
+class Path:
+    """An SVG path display element."""
+
+    d: str  # absolute-coord SVG path d string
+    x: float  # bounding box top-left in bed mm
+    y: float
+    width: float
+    height: float
+    is_close_path: bool
+    is_compound_path: bool = False
+    fill_rule: Literal["evenodd", "nonzero"] = "evenodd"
+    params: ProcessingParams = field(default_factory=ProcessingParams)
+    processing_type: str = "COLOR_FILL_ENGRAVE"
+    is_fill: bool = True
+    id: str = field(default_factory=_uuid)
+    layer_color: str = ""
+
+
+@dataclass
+class Circle:
+    """A circle display element."""
+
+    x: float  # bounding box top-left (not center), bed mm
+    y: float
+    width: float  # diameter
+    height: float
+    params: ProcessingParams = field(default_factory=ProcessingParams)
+    processing_type: str = "VECTOR_ENGRAVING"
+    is_fill: bool = True
+    id: str = field(default_factory=_uuid)
+    layer_color: str = ""
+
+
 # Default layer colors for gradient and annotation layers.
 GRADIENT_LAYER_COLOR = "#00befe"
 ANNOTATION_LAYER_COLOR = "#aaaaaa"
@@ -76,6 +110,8 @@ class XCSProject:
 
     device: Device = field(default_factory=Device)
     elements: list[Rect] = field(default_factory=list)
+    paths: list["Path"] = field(default_factory=list)
+    circles: list["Circle"] = field(default_factory=list)
     extra_displays: list[dict[str, Any]] = field(default_factory=list)
     extra_device_entries: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     canvas_id: str = field(default_factory=_uuid)
