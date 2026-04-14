@@ -93,3 +93,53 @@ def test_generate_from_svg_roundtrips_through_builder():
     out = build_xcs(project)
     types = [d["type"] for d in out["canvas"][0]["displays"]]
     assert types.count("PATH") == 2
+
+
+from pathlib import Path as _Path
+
+from xcs_gen.svg_source import detect_svg_colors
+
+
+SAMPLE_PIKACHU = _Path(__file__).parent.parent / "samples" / "Pikachu.svg"
+
+
+def test_pikachu_colors_detected():
+    if not SAMPLE_PIKACHU.exists():
+        import pytest
+        pytest.skip("samples/Pikachu.svg missing")
+    colors = detect_svg_colors(str(SAMPLE_PIKACHU))
+    hex_set = {c.hex for c in colors}
+    # Pikachu has at least black outlines and yellow body.
+    assert "#000000" in hex_set
+    assert "#ffd73e" in hex_set
+
+
+def test_pikachu_round_trip(tmp_path):
+    if not SAMPLE_PIKACHU.exists():
+        import pytest
+        pytest.skip("samples/Pikachu.svg missing")
+
+    from xcs_gen.builder import write_xcs
+
+    project = generate_from_svg(
+        svg_path=str(SAMPLE_PIKACHU),
+        total_width=80.0,
+        auto_ramp=AutoRamp(
+            param="power", min_value=20, max_value=80, sort_by="luminance",
+        ),
+    )
+    # Every path has a non-empty d and a layer_color.
+    for p in project.paths:
+        assert p.d
+        assert p.layer_color.startswith("#")
+        assert p.width >= 0
+        assert p.height >= 0
+
+    # Round-trip through builder and write.
+    out = tmp_path / "pikachu.xcs"
+    write_xcs(project, str(out))
+    import json as _json
+    with open(out) as f:
+        data = _json.load(f)
+    display_types = [d["type"] for d in data["canvas"][0]["displays"]]
+    assert display_types.count("PATH") == len(project.paths)
