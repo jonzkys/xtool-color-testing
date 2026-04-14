@@ -115,13 +115,56 @@ def main(argv: list[str] | None = None) -> None:
     svg_det_p = svg_sub.add_parser("detect", help="List colours detected in an SVG")
     svg_det_p.add_argument("input", help="Path to input SVG file")
 
+    # svg generate
+    svg_gen_p = svg_sub.add_parser("generate", help="Convert an SVG to an .xcs file")
+    svg_gen_p.add_argument("input", help="Path to input SVG file")
+    svg_gen_p.add_argument("-o", "--output", required=True, help="Output .xcs file path")
+    svg_gen_p.add_argument("--width", type=float, default=100.0,
+                           help="Output width in mm (default: 100)")
+    svg_gen_p.add_argument("--height", type=float, default=None,
+                           help="Output height in mm (default: preserve aspect ratio)")
+    svg_gen_p.add_argument("--start-x", type=float, default=10.0,
+                           help="X origin on the bed in mm (default: 10)")
+    svg_gen_p.add_argument("--start-y", type=float, default=10.0,
+                           help="Y origin on the bed in mm (default: 10)")
+
+    # Auto-ramp flags
+    svg_gen_p.add_argument("--ramp-param", default=None,
+                           help="Parameter to auto-ramp across detected colours")
+    svg_gen_p.add_argument("--ramp-min", type=float, default=None,
+                           help="Ramp min (assigned to first colour in sort)")
+    svg_gen_p.add_argument("--ramp-max", type=float, default=None,
+                           help="Ramp max (assigned to last colour in sort)")
+    svg_gen_p.add_argument("--ramp-sort", default="luminance",
+                           choices=["luminance", "hue", "order_of_appearance"],
+                           help="Sort mode for auto-ramp (default: luminance)")
+    svg_gen_p.add_argument("--ramp-mode", default="fill_engrave",
+                           choices=["fill_engrave", "vector_engrave", "vector_cut"],
+                           help="Render mode for auto-ramp (default: fill_engrave)")
+
+    # Explicit per-colour overrides (repeatable)
+    svg_gen_p.add_argument("--color", action="append", default=[], dest="color_overrides",
+                           help="Per-colour override: '<hex>:<mode>:<speed>,<power>,<freq>,<density>,<passes>,<pulse_width>'. Blank fields inherit from --base-* flags.")
+
+    # Shared base-params flags (same as image/generate)
+    svg_gen_p.add_argument("--power", type=float, default=50.0, help="Laser power %% (default: 50)")
+    svg_gen_p.add_argument("--speed", type=int, default=1000, help="Speed mm/s (default: 1000)")
+    svg_gen_p.add_argument("--frequency", type=int, default=65, help="MOPA frequency Hz (default: 65)")
+    svg_gen_p.add_argument("--density", type=int, default=100, help="Lines per cm (default: 100)")
+    svg_gen_p.add_argument("--passes", type=int, default=1, help="Number of passes (default: 1)")
+    svg_gen_p.add_argument("--pulse-width", type=int, default=200, help="Pulse width ns (default: 200)")
+    svg_gen_p.add_argument("--laser", default="red", choices=["red", "blue"],
+                           help="Laser source (default: red)")
+
     args = parser.parse_args(argv)
 
     if args.command == "svg":
         if args.svg_command == "detect":
             _svg_detect(args)
             return
-        # svg generate branch added in Task 11
+        if args.svg_command == "generate":
+            _svg_generate(args)
+            return
 
     elif args.command == "image":
         base_params = ProcessingParams(
@@ -290,6 +333,107 @@ def _svg_detect(args) -> None:
     print(fmt.format("-" * col_hex, "-" * col_src, "-" * col_cnt))
     for c in colors:
         print(fmt.format(c.hex, c.source, c.shape_count))
+
+
+def _svg_generate(args) -> None:
+    from .builder import write_xcs
+    from .generators import generate_from_svg
+    from .model import ProcessingParams
+    from .svg_source import AutoRamp, LayerConfig
+
+    base_params = ProcessingParams(
+        power=args.power, speed=args.speed,
+        mopa_frequency=args.frequency, density=args.density,
+        repeat=args.passes, pulse_width=args.pulse_width,
+        processing_light_source=args.laser,
+    )
+
+    # Parse --color overrides
+    layer_config: dict[str, LayerConfig] = {}
+    for override in args.color_overrides:
+        color, cfg = _parse_color_override(override, base_params)
+        layer_config[color] = cfg
+
+    # Build AutoRamp if any ramp flags were given
+    auto_ramp = None
+    if args.ramp_param is not None:
+        if args.ramp_min is None or args.ramp_max is None:
+            raise SystemExit("--ramp-param requires --ramp-min and --ramp-max.")
+        auto_ramp = AutoRamp(
+            param=args.ramp_param,
+            min_value=args.ramp_min,
+            max_value=args.ramp_max,
+            sort_by=args.ramp_sort,
+            default_render_mode=args.ramp_mode,
+        )
+
+    project = generate_from_svg(
+        svg_path=args.input,
+        layer_config=layer_config or None,
+        auto_ramp=auto_ramp,
+        total_width=args.width,
+        total_height=args.height,
+        start_x=args.start_x,
+        start_y=args.start_y,
+        base_params=base_params,
+    )
+
+    write_xcs(project, args.output)
+
+    print(f"Generated {len(project.paths)} path displays from {args.input}")
+    print(f"  Written to: {args.output}")
+
+
+def _parse_color_override(override: str, base: "ProcessingParams"):
+    """Parse '<hex>:<mode>:<speed>,<power>,<freq>,<density>,<passes>,<pulse_width>'.
+
+    Blank fields inherit from base. Mode defaults to 'fill_engrave' if blank.
+    """
+    from .model import ProcessingParams
+    from .svg_source import LayerConfig
+
+    try:
+        hex_part, mode_part, rest = override.split(":", 2)
+    except ValueError:
+        raise SystemExit(
+            f"Invalid --color value {override!r}. "
+            "Expected '<hex>:<mode>:<speed>,<power>,<freq>,<density>,<passes>,<pulse_width>'."
+        )
+
+    color = hex_part.strip().lower()
+    if not (color.startswith("#") and len(color) == 7):
+        raise SystemExit(f"Invalid hex colour in --color: {hex_part!r}")
+
+    mode = mode_part.strip() or "fill_engrave"
+    if mode not in ("fill_engrave", "vector_engrave", "vector_cut"):
+        raise SystemExit(
+            f"Invalid mode in --color: {mode!r}. "
+            "Must be fill_engrave | vector_engrave | vector_cut."
+        )
+
+    fields = rest.split(",")
+    if len(fields) != 6:
+        raise SystemExit(
+            f"Invalid --color fields {rest!r}. Expected 6 comma-separated numbers."
+        )
+
+    def _num(value: str, default, cast):
+        value = value.strip()
+        return default if value == "" else cast(value)
+
+    speed = _num(fields[0], base.speed, lambda s: int(round(float(s))))
+    power = _num(fields[1], base.power, float)
+    frequency = _num(fields[2], base.mopa_frequency, int)
+    density = _num(fields[3], base.density, int)
+    passes = _num(fields[4], base.repeat, int)
+    pulse_width = _num(fields[5], base.pulse_width, int)
+
+    params = ProcessingParams(
+        speed=speed, power=power, mopa_frequency=frequency,
+        density=density, repeat=passes, pulse_width=pulse_width,
+        processing_light_source=base.processing_light_source,
+    )
+    return color, LayerConfig(params=params, render_mode=mode)
 
 
 if __name__ == "__main__":
