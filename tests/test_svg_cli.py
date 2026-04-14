@@ -107,3 +107,21 @@ def test_svg_generate_color_syntax_blank_fields(tmp_path):
         if e[1]["data"]["COLOR_FILL_ENGRAVE"]["parameter"]["customize"]["power"] == 42
     )
     assert black_entry is not None
+
+
+def test_svg_detect_missing_file_clean_error(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        main(["svg", "detect", "/nonexistent/path/nope.svg"])
+    # Error code 1 (not 0 or 2-from-argparse), message starts with 'error:'
+    assert str(excinfo.value).startswith("error:")
+
+
+def test_svg_generate_missing_file_clean_error(tmp_path, capsys):
+    out_path = str(tmp_path / "out.xcs")
+    with pytest.raises(SystemExit) as excinfo:
+        main([
+            "svg", "generate", "/nonexistent/path/nope.svg",
+            "-o", out_path,
+            "--ramp-param", "power", "--ramp-min", "20", "--ramp-max", "80",
+        ])
+    assert str(excinfo.value).startswith("error:")

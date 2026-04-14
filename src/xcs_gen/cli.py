@@ -159,12 +159,15 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     if args.command == "svg":
-        if args.svg_command == "detect":
-            _svg_detect(args)
-            return
-        if args.svg_command == "generate":
-            _svg_generate(args)
-            return
+        try:
+            if args.svg_command == "detect":
+                _svg_detect(args)
+                return
+            if args.svg_command == "generate":
+                _svg_generate(args)
+                return
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            raise SystemExit(f"error: {exc}")
 
     elif args.command == "image":
         base_params = ProcessingParams(
