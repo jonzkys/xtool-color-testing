@@ -63,7 +63,7 @@ def generate_gradient(
     base_params: ProcessingParams | None = None,
     processing_type: str = "COLOR_FILL_ENGRAVE",
     label_font_size: float = 3.0,
-    tick_length: float = 1.0,
+    tick_length: float = 0.5,
     annotation_params: ProcessingParams | None = None,
 ) -> XCSProject:
     """Generate a gradient test pattern with axis annotations.
@@ -104,7 +104,7 @@ def generate_gradient(
 
     # Reserve space above gradient for summary text
     summary_font_size = label_font_size
-    summary_h = text_height(summary_font_size) + 0.1  # text + minimal padding
+    summary_h = text_height(summary_font_size) + 0.05  # text + minimal padding
     gradient_start_y = start_y + summary_h
 
     # Build summary line
@@ -238,7 +238,7 @@ def _generate_wrapped(
 
     # For multi-row: compute the space needed for labels below each row
     # and ensure row_gap is large enough (only matters for non-last rows)
-    ann_space = tick_length + 0.1 + text_height(label_font_size) + 0.1
+    ann_space = tick_length + 0.05 + text_height(label_font_size) + 0.05
     effective_row_gap = max(row_gap, ann_space) if rows > 1 else 0
 
     for row in range(rows):
@@ -269,7 +269,7 @@ def _generate_wrapped(
 
         # Labels below each row
         bottom_y = row_y + row_height
-        label_y = bottom_y + tick_length + 0.1
+        label_y = bottom_y + tick_length + 0.05
 
         # Row spans from start_x to row_right (the actual edges of the gradient)
         row_right = start_x + (row_count - 1) * (elem_w + gap) + elem_w
@@ -286,6 +286,7 @@ def _generate_wrapped(
             font_size=label_font_size,
             layer_color=ann_layer,
             annotation_params=annotation_params,
+            align="start",
         )
 
         # End tick + label (aligned to right edge of gradient)
@@ -300,6 +301,7 @@ def _generate_wrapped(
             font_size=label_font_size,
             layer_color=ann_layer,
             annotation_params=annotation_params,
+            align="end",
         )
 
         # Middle labels: evenly spaced along the row width between start and end
@@ -411,8 +413,15 @@ def _add_tick_and_label(
     font_size: float,
     layer_color: str,
     annotation_params: ProcessingParams,
+    align: str = "center",  # "start" | "center" | "end"
 ) -> None:
-    """Add a single tick mark + label at a given X position."""
+    """Add a single tick mark + label at a given X position.
+
+    align controls horizontal positioning of the label relative to the tick:
+    - "start": label's left edge sits at cx (use for the first/leftmost label)
+    - "center": label is centered on cx (use for middle labels)
+    - "end": label's right edge sits at cx (use for the last/rightmost label)
+    """
     tick = Line(
         x=cx,
         y=bottom_y,
@@ -428,9 +437,16 @@ def _add_tick_and_label(
 
     label = _format_value(param, value)
     lw = text_width(label, font_size)
+    if align == "start":
+        label_x = cx
+    elif align == "end":
+        label_x = cx - lw
+    else:
+        label_x = cx - lw / 2
+
     text_disp = make_text_display(
         label,
-        x=cx - lw / 2,
+        x=label_x,
         y=label_y,
         font_size=font_size,
         layer_color=layer_color,
@@ -459,7 +475,7 @@ def _add_x_axis(
     annotation_params: ProcessingParams,
 ) -> None:
     """Add X-axis tick marks and labels below the gradient."""
-    label_y = bottom_y + tick_length + 0.1
+    label_y = bottom_y + tick_length + 0.05
     total_width = (x_steps - 1) * (elem_w + gap) + elem_w
     right_x = start_x + total_width
 
@@ -470,6 +486,12 @@ def _add_x_axis(
     for frac in frac_positions:
         cx = start_x + frac * total_width
         idx = min(x_steps - 1, int(round(frac * (x_steps - 1))))
+        if frac == 0.0:
+            align = "start"
+        elif frac == 1.0:
+            align = "end"
+        else:
+            align = "center"
         _add_tick_and_label(
             project,
             param=x_param,
@@ -481,6 +503,7 @@ def _add_x_axis(
             font_size=font_size,
             layer_color=layer_color,
             annotation_params=annotation_params,
+            align=align,
         )
 
 
@@ -617,7 +640,7 @@ def generate_from_image(
     filename = os.path.basename(image_path)
     summary = f"{filename} / {param} {_format_value(param, param_min)}-{_format_value(param, param_max)} / {cols}x{rows}"
     summary_font_size = 3.0
-    summary_h = text_height(summary_font_size) + 0.1
+    summary_h = text_height(summary_font_size) + 0.05
     _add_summary_text(
         project, summary,
         x=start_x, y=start_y,
