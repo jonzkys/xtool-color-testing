@@ -31,3 +31,4 @@ Thumbs.db
 output/
 *.xcs
 !samples/*.xcs
+.superpowers/
