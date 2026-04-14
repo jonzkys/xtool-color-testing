@@ -430,30 +430,13 @@ def build_xcs(project: XCSProject) -> dict[str, Any]:
     """Build the complete XCS JSON structure from a project model."""
     now_ms = int(time.time() * 1000)
 
-    # Assign default layer color to gradient elements that don't have one
-    for elem in project.elements:
-        if not elem.layer_color:
-            elem.layer_color = GRADIENT_LAYER_COLOR
-
     # Collect all layer colors from all sources
     layer_data: dict[str, dict[str, Any]] = {}
     order = 1
-
-    # Gradient layer
     seen_colors: set[str] = set()
-    for elem in project.elements:
-        if elem.layer_color not in seen_colors:
-            seen_colors.add(elem.layer_color)
-            layer_data[elem.layer_color] = {
-                "name": elem.layer_color.upper(),
-                "order": order,
-                "visible": True,
-            }
-            order += 1
 
-    # Extra display layers (annotations etc.)
-    for disp in project.extra_displays:
-        color = disp.get("layerColor", "")
+    def _add_layer(color: str) -> None:
+        nonlocal order
         if color and color not in seen_colors:
             seen_colors.add(color)
             layer_data[color] = {
@@ -463,13 +446,28 @@ def build_xcs(project: XCSProject) -> dict[str, Any]:
             }
             order += 1
 
-    # Build displays: rects + extras
+    for elem in project.elements:
+        if not elem.layer_color:
+            elem.layer_color = GRADIENT_LAYER_COLOR
+        _add_layer(elem.layer_color)
+    for p in project.paths:
+        _add_layer(p.layer_color)
+    for c in project.circles:
+        _add_layer(c.layer_color)
+    for disp in project.extra_displays:
+        _add_layer(disp.get("layerColor", ""))
+
+    # Build displays: rects + paths + circles + extras
     displays: list[dict[str, Any]] = []
     for elem in project.elements:
         displays.append(_build_rect_display(elem))
+    for p in project.paths:
+        displays.append(_build_path_display(p))
+    for c in project.circles:
+        displays.append(_build_circle_display(c))
     displays.extend(project.extra_displays)
 
-    # Build device display processing map: rects + extras
+    # Build device display processing map: rects + paths + circles + extras
     display_entries: list[list[Any]] = []
     for elem in project.elements:
         display_entries.append([
@@ -479,6 +477,30 @@ def build_xcs(project: XCSProject) -> dict[str, Any]:
                 "type": "RECT",
                 "processingType": elem.processing_type,
                 "data": _build_processing_data(elem.params),
+                "processIgnore": False,
+                "isWhiteModel": True,
+            },
+        ])
+    for p in project.paths:
+        display_entries.append([
+            p.id,
+            {
+                "isFill": p.is_fill,
+                "type": "PATH",
+                "processingType": p.processing_type,
+                "data": _build_processing_data(p.params),
+                "processIgnore": False,
+                "isWhiteModel": True,
+            },
+        ])
+    for c in project.circles:
+        display_entries.append([
+            c.id,
+            {
+                "isFill": c.is_fill,
+                "type": "CIRCLE",
+                "processingType": c.processing_type,
+                "data": _build_processing_data(c.params),
                 "processIgnore": False,
                 "isWhiteModel": True,
             },
