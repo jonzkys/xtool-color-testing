@@ -1,6 +1,5 @@
 """Tests for svg_source parsing."""
 
-import io
 import tempfile
 
 from xcs_gen.svg_source import ParsedShape, parse_svg
