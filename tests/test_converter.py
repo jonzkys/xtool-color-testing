@@ -1,7 +1,6 @@
 """Tests for Project → XCSProject conversion."""
 
 import pytest
-from pydantic import ValidationError
 
 from xcs_gen_web.converter import project_to_xcs, validate_placements
 from xcs_gen_web.schemas import BaseParams, ParamTest, Project, TestPlacement

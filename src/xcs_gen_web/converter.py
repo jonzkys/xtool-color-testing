@@ -8,7 +8,12 @@ from xcs_gen.builder import build_xcs
 from xcs_gen.generators import generate_gradient
 from xcs_gen.model import ProcessingParams, XCSProject
 
-from .schemas import BaseParams, ParamTest, Project, TestPlacement
+from .schemas import BaseParams, Project
+
+# Offset from canvas (0,0) where the composition starts. Leaves margin from
+# the edge of the XCS canvas so tests aren't flush against the origin.
+CANVAS_ORIGIN_X = 10.0
+CANVAS_ORIGIN_Y = 10.0
 
 
 def validate_placements(project: Project) -> None:
@@ -80,18 +85,20 @@ def _compute_grid_offsets(project: Project) -> dict[str, tuple[float, float]]:
 
 
 def project_to_xcs(project: Project) -> XCSProject:
-    """Convert a Project into a single merged XCSProject."""
-    validate_placements(project)
+    """Convert a Project into a single merged XCSProject.
 
-    # Canvas origin in mm (all generated tests offset from here)
-    canvas_origin_x = 10.0
-    canvas_origin_y = 10.0
+    Raises:
+        ValueError: If any grid placements overlap.
+    """
+    validate_placements(project)
 
     offsets = _compute_grid_offsets(project)
 
-    # Generate each test with its computed offset
+    # Generate each test with its computed offset, merging all under a single canvas_id.
+    # The builder requires one canvas_id per XCSProject; extra_device_entries
+    # reference display UUIDs (not canvas_id), so the merge is safe.
     merged = XCSProject()
-    for placement in project.tests:
+    for i, placement in enumerate(project.tests):
         t = placement.test
         x_off, y_off = offsets[t.id]
 
@@ -101,6 +108,7 @@ def project_to_xcs(project: Project) -> XCSProject:
             x_max=t.x_max,
             x_steps=t.x_steps,
             y_param=t.y_param,
+            # y_* sentinels are ignored when y_param is None (see generate_gradient).
             y_min=t.y_min if t.y_min is not None else 0,
             y_max=t.y_max if t.y_max is not None else 0,
             y_steps=t.y_steps if t.y_steps is not None else 1,
@@ -108,13 +116,12 @@ def project_to_xcs(project: Project) -> XCSProject:
             total_width=t.width_mm,
             total_height=t.height_mm,
             gap=t.gap_mm,
-            start_x=canvas_origin_x + x_off,
-            start_y=canvas_origin_y + y_off,
+            start_x=CANVAS_ORIGIN_X + x_off,
+            start_y=CANVAS_ORIGIN_Y + y_off,
             base_params=_to_processing_params(t.base_params),
         )
 
-        # Merge into the combined project under the first canvas_id we see
-        if merged.canvas_id != generated.canvas_id and not merged.elements and not merged.extra_displays:
+        if i == 0:
             merged.canvas_id = generated.canvas_id
         merged.elements.extend(generated.elements)
         merged.extra_displays.extend(generated.extra_displays)
