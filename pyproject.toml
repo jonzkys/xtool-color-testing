@@ -18,4 +18,6 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_classes = ["Test"]
+filterwarnings = [
+    "ignore::pytest.PytestCollectionWarning",
+]
