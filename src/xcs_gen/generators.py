@@ -269,12 +269,15 @@ def _generate_wrapped(
         bottom_y = row_y + row_height
         label_y = bottom_y + tick_length + 0.2
 
-        # Start tick + label
+        # Row spans from start_x to row_right (the actual edges of the gradient)
+        row_right = start_x + (row_count - 1) * (elem_w + gap) + elem_w
+
+        # Start tick + label (aligned to left edge of gradient)
         _add_tick_and_label(
             project,
             param=x_param,
             value=x_values[row_start],
-            cx=start_x + elem_w / 2,
+            cx=start_x,
             bottom_y=bottom_y,
             label_y=label_y,
             tick_length=tick_length,
@@ -283,13 +286,12 @@ def _generate_wrapped(
             annotation_params=annotation_params,
         )
 
-        # End tick + label
-        end_col = row_count - 1
+        # End tick + label (aligned to right edge of gradient)
         _add_tick_and_label(
             project,
             param=x_param,
             value=x_values[row_end - 1],
-            cx=start_x + end_col * (elem_w + gap) + elem_w / 2,
+            cx=row_right,
             bottom_y=bottom_y,
             label_y=label_y,
             tick_length=tick_length,
@@ -298,16 +300,20 @@ def _generate_wrapped(
             annotation_params=annotation_params,
         )
 
-        # Middle labels at intervals
+        # Middle labels: evenly spaced along the row width between start and end
+        n_middle = 3  # 3 middle ticks = 5 total labels per row (start + 3 + end)
         if row_count > 2:
-            indices = _label_indices(row_count)
-            indices = [idx for idx in indices if idx != 0 and idx != row_count - 1]
-            for idx in indices:
+            for m in range(1, n_middle + 1):
+                frac = m / (n_middle + 1)
+                # Position along row width
+                cx = start_x + frac * (row_right - start_x)
+                # Corresponding element index
+                idx = min(row_count - 1, int(round(frac * (row_count - 1))))
                 _add_tick_and_label(
                     project,
                     param=x_param,
                     value=x_values[row_start + idx],
-                    cx=start_x + idx * (elem_w + gap) + elem_w / 2,
+                    cx=cx,
                     bottom_y=bottom_y,
                     label_y=label_y,
                     tick_length=tick_length,
@@ -451,15 +457,21 @@ def _add_x_axis(
     annotation_params: ProcessingParams,
 ) -> None:
     """Add X-axis tick marks and labels below the gradient."""
-    indices = _label_indices(x_steps)
     label_y = bottom_y + tick_length + 0.2
+    total_width = (x_steps - 1) * (elem_w + gap) + elem_w
+    right_x = start_x + total_width
 
-    for i in indices:
-        cx = start_x + i * (elem_w + gap) + elem_w / 2
+    # Start + 3 middle + end = 5 labels
+    n_middle = 3
+    frac_positions = [0.0] + [(m / (n_middle + 1)) for m in range(1, n_middle + 1)] + [1.0]
+
+    for frac in frac_positions:
+        cx = start_x + frac * total_width
+        idx = min(x_steps - 1, int(round(frac * (x_steps - 1))))
         _add_tick_and_label(
             project,
             param=x_param,
-            value=x_values[i],
+            value=x_values[idx],
             cx=cx,
             bottom_y=bottom_y,
             label_y=label_y,
@@ -486,11 +498,17 @@ def _add_y_axis(
     annotation_params: ProcessingParams,
 ) -> None:
     """Add Y-axis tick marks and labels to the left of the gradient."""
-    indices = _label_indices(y_steps)
     th = text_height(font_size)
+    total_height = (y_steps - 1) * (elem_h + gap) + elem_h
+    bottom_y = start_y + total_height
 
-    for i in indices:
-        cy = start_y + i * (elem_h + gap) + elem_h / 2
+    # Start (top) + 3 middle + end (bottom) = 5 labels, aligned to edges
+    n_middle = 3
+    frac_positions = [0.0] + [(m / (n_middle + 1)) for m in range(1, n_middle + 1)] + [1.0]
+
+    for frac in frac_positions:
+        cy = start_y + frac * total_height
+        idx = min(y_steps - 1, int(round(frac * (y_steps - 1))))
 
         tick = Line(
             x=left_x - tick_length,
@@ -505,7 +523,7 @@ def _add_y_axis(
             build_device_entry(tick.id, "LINE", "VECTOR_ENGRAVING", annotation_params)
         )
 
-        label = _format_value(y_param, y_values[i])
+        label = _format_value(y_param, y_values[idx])
         lw = text_width(label, font_size)
         text_disp = make_text_display(
             label,
