@@ -160,3 +160,22 @@ class DetectedLayer(BaseModel):
     color: str
     shape_count: int
     is_fill: bool  # True = appears as a fill, False = appears only as stroke
+
+
+class SvgPreviewRequest(BaseModel):
+    """Request a preview SVG matching what the backend would actually engrave.
+
+    Applies layer enabling + optional boolean subtraction, returning a flat SVG
+    string the UI can display. Response shape: {"svg": "<svg ..."}.
+    """
+
+    svg_content: str = Field(min_length=1, max_length=10_000_000)
+    width_mm: float = Field(default=100.0, gt=0, le=500)
+    enabled_colors: list[str] | None = None  # None = keep all colors
+    subtract_overlaps: bool = False
+
+
+class SvgPreviewResponse(BaseModel):
+    """Transformed SVG ready for client-side rendering."""
+
+    svg: str

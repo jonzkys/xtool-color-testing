@@ -54,3 +54,25 @@ export async function detectSvgLayers(svg_content: string, width_mm: number): Pr
   }
   return resp.json();
 }
+
+export async function previewSvg(
+  svg_content: string,
+  opts: { enabled_colors?: string[] | null; subtract_overlaps?: boolean; width_mm?: number } = {},
+): Promise<string> {
+  const resp = await fetch("/api/svg-preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      svg_content,
+      width_mm: opts.width_mm ?? 100,
+      enabled_colors: opts.enabled_colors ?? null,
+      subtract_overlaps: opts.subtract_overlaps ?? false,
+    }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.detail ?? `HTTP ${resp.status}`);
+  }
+  const data = await resp.json();
+  return data.svg as string;
+}

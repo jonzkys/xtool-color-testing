@@ -14,10 +14,16 @@ from .schemas import (
     Project,
     SvgDetectRequest,
     SvgLayersRequest,
+    SvgPreviewRequest,
+    SvgPreviewResponse,
     SvgStackRequest,
 )
 from .svg_converter import svg_stack_to_xcs_bytes
-from .svg_layers_converter import detect_svg_layers, svg_layers_to_xcs_bytes
+from .svg_layers_converter import (
+    detect_svg_layers,
+    svg_layers_to_xcs_bytes,
+    svg_preview,
+)
 
 
 def create_app() -> FastAPI:
@@ -63,6 +69,13 @@ def create_app() -> FastAPI:
     def svg_detect(request: SvgDetectRequest) -> list[DetectedLayer]:
         try:
             return detect_svg_layers(request)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/api/svg-preview", response_model=SvgPreviewResponse)
+    def svg_preview_endpoint(request: SvgPreviewRequest) -> SvgPreviewResponse:
+        try:
+            return svg_preview(request)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 

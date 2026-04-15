@@ -24,6 +24,8 @@ from .schemas import (
     LayerSpec,
     SvgDetectRequest,
     SvgLayersRequest,
+    SvgPreviewRequest,
+    SvgPreviewResponse,
 )
 from .svg_subtract import subtract_overlapping_shapes
 
@@ -209,6 +211,68 @@ def svg_layers_to_xcs(request: SvgLayersRequest) -> XCSProject:
         raise ValueError("No paths emitted - check that the SVG has supported shapes.")
 
     return project
+
+
+def svg_preview(request: SvgPreviewRequest) -> SvgPreviewResponse:
+    """Apply layer filtering + optional subtraction, return a preview SVG string.
+
+    The response SVG is a minimal rendering with one <path> per remaining
+    shape, using the shape's original fill color. viewBox matches the
+    ParseResult's output dims so the UI can drop it into the preview pane.
+    """
+    temp_path = _write_svg_to_temp(request.svg_content)
+    try:
+        parsed = parse_svg(
+            temp_path,
+            total_width=request.width_mm,
+            total_height=None,
+        )
+    finally:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+
+    shapes = list(parsed.shapes)
+
+    # Filter to enabled colors if provided
+    if request.enabled_colors is not None:
+        enabled = set(request.enabled_colors)
+        shapes = [s for s in shapes if _shape_primary_color(s) in enabled]
+
+    # Apply subtraction if requested (respects the enabled filter)
+    if request.subtract_overlaps and shapes:
+        shapes = subtract_overlapping_shapes(shapes)
+
+    # Build viewBox from parsed output dims, falling back to shapes' bbox union
+    if parsed.output_width_mm > 0 and parsed.output_height_mm > 0:
+        view_w = parsed.output_width_mm
+        view_h = parsed.output_height_mm
+    elif shapes:
+        min_x = min(s.bbox_x_mm for s in shapes)
+        min_y = min(s.bbox_y_mm for s in shapes)
+        max_x = max(s.bbox_x_mm + s.bbox_width_mm for s in shapes)
+        max_y = max(s.bbox_y_mm + s.bbox_height_mm for s in shapes)
+        view_w = max(max_x - min_x, 1.0)
+        view_h = max(max_y - min_y, 1.0)
+    else:
+        view_w = view_h = 1.0
+
+    parts: list[str] = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="0 0 {view_w:.4f} {view_h:.4f}" '
+        f'width="100%" height="100%" preserveAspectRatio="xMidYMid meet">'
+    ]
+    for shape in shapes:
+        fill = shape.fill or "none"
+        stroke = shape.stroke or "none"
+        parts.append(
+            f'<path d="{shape.d}" fill="{fill}" stroke="{stroke}" '
+            f'fill-rule="{shape.fill_rule}" />'
+        )
+    parts.append("</svg>")
+
+    return SvgPreviewResponse(svg="".join(parts))
 
 
 def svg_layers_to_xcs_bytes(request: SvgLayersRequest) -> bytes:

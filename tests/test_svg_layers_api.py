@@ -142,6 +142,55 @@ def test_api_detect_endpoint():
     assert all("color" in l and "shape_count" in l and "is_fill" in l for l in layers)
 
 
+def test_api_preview_returns_svg_string():
+    """Preview endpoint returns an SVG string; filters + subtraction applied."""
+    client = TestClient(create_app())
+
+    # No filtering, no subtraction - should return all shapes
+    resp = client.post("/api/svg-preview", json={
+        "svg_content": PIKACHU_SVG.read_text(),
+        "width_mm": 50,
+        "enabled_colors": None,
+        "subtract_overlaps": False,
+    })
+    assert resp.status_code == 200
+    svg_all = resp.json()["svg"]
+    assert svg_all.startswith("<svg")
+    assert "<path" in svg_all
+    path_count_full = svg_all.count("<path")
+
+    # Filter to one color - should have fewer paths
+    resp2 = client.post("/api/svg-preview", json={
+        "svg_content": PIKACHU_SVG.read_text(),
+        "width_mm": 50,
+        "enabled_colors": ["#ffd73e"],
+        "subtract_overlaps": False,
+    })
+    assert resp2.status_code == 200
+    svg_filtered = resp2.json()["svg"]
+    assert svg_filtered.count("<path") < path_count_full
+    # Only the yellow fill should be present
+    assert "#ffd73e" in svg_filtered
+    assert "#000000" not in svg_filtered
+
+
+def test_api_preview_subtract_changes_paths():
+    """With subtract_overlaps, bottom layers get holes - the yellow body path changes."""
+    client = TestClient(create_app())
+    original = client.post("/api/svg-preview", json={
+        "svg_content": PIKACHU_SVG.read_text(),
+        "width_mm": 50,
+        "subtract_overlaps": False,
+    }).json()["svg"]
+    subtracted = client.post("/api/svg-preview", json={
+        "svg_content": PIKACHU_SVG.read_text(),
+        "width_mm": 50,
+        "subtract_overlaps": True,
+    }).json()["svg"]
+    # Subtracted path data should differ from the original
+    assert original != subtracted
+
+
 def test_api_layers_endpoint():
     client = TestClient(create_app())
     payload = {

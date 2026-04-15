@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { NumberField } from "./fields/NumberField";
 import { SelectField } from "./fields/SelectField";
 import { defaultBaseParams } from "../defaults";
-import { detectSvgLayers, svgLayersAndDownload } from "../generate";
+import { detectSvgLayers, previewSvg, svgLayersAndDownload } from "../generate";
 import type { DetectedLayer, LayerSpec, SvgLayersRequest, SvgProcessingType } from "../types";
 
 const PROCESSING_TYPES: { value: SvgProcessingType; label: string }[] = [
@@ -46,6 +46,9 @@ export function SvgLayersPage() {
   const [detectError, setDetectError] = useState<string | undefined>();
   const [generating, setGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
+  // When subtract_overlaps is on we display the server-computed subtracted SVG
+  // instead of the raw upload, so the preview matches what will be engraved.
+  const [subtractedSvg, setSubtractedSvg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selected = useMemo(
@@ -57,6 +60,24 @@ export function SvgLayersPage() {
     () => new Set(request.layers.filter((l) => l.enabled).map((l) => l.color)),
     [request.layers],
   );
+
+  // Fetch a server-subtracted SVG whenever subtract_overlaps is on and the
+  // inputs that affect it change. When off, clear so the original is used.
+  useEffect(() => {
+    if (!request.subtract_overlaps || !request.svg_content) {
+      setSubtractedSvg(null);
+      return;
+    }
+    let cancelled = false;
+    previewSvg(request.svg_content, {
+      enabled_colors: [...enabledColors],
+      subtract_overlaps: true,
+      width_mm: request.width_mm,
+    })
+      .then((svg) => { if (!cancelled) setSubtractedSvg(svg); })
+      .catch(() => { if (!cancelled) setSubtractedSvg(null); });
+    return () => { cancelled = true; };
+  }, [request.subtract_overlaps, request.svg_content, request.width_mm, enabledColors]);
 
   function updateReq(patch: Partial<SvgLayersRequest>) {
     setRequest((prev) => ({ ...prev, ...patch }));
@@ -264,7 +285,7 @@ export function SvgLayersPage() {
           Preview {selectedColor && `— highlighted: ${selectedColor}`}
         </div>
         <SvgPreview
-          svg={request.svg_content}
+          svg={subtractedSvg ?? request.svg_content}
           highlightColor={selectedColor}
           enabledColors={enabledColors}
         />
