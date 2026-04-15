@@ -136,3 +136,117 @@ def _repair(geom):
     if len(polys) == 1:
         return polys[0]
     return unary_union(polys)
+
+
+# ---------------------------------------------------------------------------
+# Hatch segment generation
+# ---------------------------------------------------------------------------
+
+import math
+from dataclasses import replace
+
+from .model import Line, ProcessingParams
+
+
+def generate_hatch_segments(
+    polygon: Polygon | MultiPolygon,
+    hatch_pass,  # HatchPass
+    *,
+    layer_color: str,
+    fallback_params: ProcessingParams,
+) -> list[Line]:
+    """Produce clipped Line segments for one pass through one polygon.
+
+    Each segment is one Line instance, carrying the per-segment params and
+    processing_type='VECTOR_ENGRAVING'. The caller appends these to
+    XCSProject.extra_displays and extra_device_entries.
+    """
+    if polygon.is_empty:
+        return []
+
+    base = hatch_pass.base_params or fallback_params
+    angle = hatch_pass.angle
+    spacing = hatch_pass.spacing
+    if spacing <= 0:
+        return []
+
+    # Rotate polygon so the hatch lines become horizontal.
+    rotated = _rotate_polygon(polygon, -angle)
+    if rotated.is_empty:
+        return []
+    minx, miny, maxx, maxy = rotated.bounds
+    if maxx - minx < spacing or maxy - miny < spacing:
+        # Shape smaller than one hatch spacing in either direction → no lines.
+        return []
+
+    # Walk y from bottom to top in the rotated frame.
+    y = miny + spacing / 2.0
+    lines: list[Line] = []
+    while y < maxy:
+        scan = LineString([(minx - 1.0, y), (maxx + 1.0, y)])
+        clipped = rotated.intersection(scan)
+        for seg in _iter_linestrings(clipped):
+            line = _segment_to_line(
+                seg, angle=angle, layer_color=layer_color, params=_copy_params(base),
+            )
+            if line is not None:
+                lines.append(line)
+        y += spacing
+
+    return lines
+
+
+def _rotate_polygon(polygon: Polygon | MultiPolygon, angle_deg: float):
+    from shapely.affinity import rotate
+    return rotate(polygon, angle_deg, origin=(0, 0), use_radians=False)
+
+
+def _iter_linestrings(geom):
+    """Yield LineString parts from whatever shapely.intersection returned."""
+    if geom.is_empty:
+        return
+    if isinstance(geom, LineString):
+        yield geom
+        return
+    if isinstance(geom, MultiLineString):
+        yield from geom.geoms
+        return
+    # GeometryCollection: extract LineString parts only.
+    for sub in getattr(geom, "geoms", []):
+        if isinstance(sub, LineString):
+            yield sub
+
+
+def _segment_to_line(
+    seg: LineString,
+    *,
+    angle: float,
+    layer_color: str,
+    params: ProcessingParams,
+) -> Line | None:
+    coords = list(seg.coords)
+    if len(coords) < 2:
+        return None
+    # Segment is in the rotated frame (horizontal). Length is the x-extent.
+    x0_rot, y_rot = coords[0]
+    x1_rot, _ = coords[-1]
+    length = abs(x1_rot - x0_rot)
+    if length <= 0:
+        return None
+
+    # Rotate the start point back to original bed-mm frame.
+    rad = math.radians(angle)
+    cos_a, sin_a = math.cos(rad), math.sin(rad)
+    start_x = cos_a * x0_rot - sin_a * y_rot
+    start_y = sin_a * x0_rot + cos_a * y_rot
+
+    return Line(
+        x=start_x, y=start_y, length=length, angle=angle,
+        layer_color=layer_color,
+        params=params,
+        processing_type="VECTOR_ENGRAVING",
+    )
+
+
+def _copy_params(p: ProcessingParams) -> ProcessingParams:
+    return replace(p)
