@@ -98,3 +98,7 @@ class SvgStackRequest(BaseModel):
 
     stack_passes: int = Field(default=1, ge=1, le=10)
     stack_step_deg: float = Field(default=90.0, gt=0.0, le=360.0)
+
+    # When true, filled shapes are Boolean-subtracted by all higher-z shapes,
+    # so adjacent layers don't engrave the same pixel twice.
+    subtract_overlaps: bool = False

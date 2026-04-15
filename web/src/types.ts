@@ -75,4 +75,5 @@ export interface SvgStackRequest {
   scan_angle: number;
   stack_passes: number;
   stack_step_deg: number;
+  subtract_overlaps: boolean;
 }

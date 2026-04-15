@@ -25,6 +25,7 @@ function defaultRequest(): SvgStackRequest {
     scan_angle: 90,
     stack_passes: 2,
     stack_step_deg: 90,
+    subtract_overlaps: false,
   };
 }
 
@@ -166,6 +167,25 @@ export function SvgStackPage() {
             value={request.stack_step_deg}
             onChange={(v) => updateReq({ stack_step_deg: v })}
           />
+        </Section>
+
+        <Section title="Layer overlaps">
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12 }}>
+            <input
+              type="checkbox"
+              checked={request.subtract_overlaps}
+              onChange={(e) => updateReq({ subtract_overlaps: e.target.checked })}
+              style={{ marginTop: 2 }}
+            />
+            <span style={{ color: "#555" }}>
+              Subtract overlaps
+              <div style={{ color: "#888", fontSize: 11, marginTop: 2 }}>
+                Remove areas from lower layers that are covered by higher ones.
+                Each pixel gets engraved only once, saving time and preventing
+                double-engraved regions.
+              </div>
+            </span>
+          </label>
         </Section>
 
         <Section title="Base parameters (fixed)">

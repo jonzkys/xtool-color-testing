@@ -18,6 +18,7 @@ from xcs_gen.svg_source import parse_svg
 
 from .converter import _to_processing_params
 from .schemas import SvgStackRequest
+from .svg_subtract import subtract_overlapping_shapes
 
 
 def _shape_layer_color(shape) -> str:
@@ -63,6 +64,14 @@ def svg_stack_to_xcs(request: SvgStackRequest) -> XCSProject:
     if not parse_result.shapes:
         raise ValueError("No supported shapes found in SVG.")
 
+    shapes = parse_result.shapes
+    if request.subtract_overlaps:
+        shapes = subtract_overlapping_shapes(shapes)
+        if not shapes:
+            raise ValueError(
+                "All shapes were fully subtracted by higher layers - nothing to engrave."
+            )
+
     # Base params with the user's chosen scan_angle applied.
     base = replace(
         _to_processing_params(request.base_params),
@@ -75,7 +84,7 @@ def svg_stack_to_xcs(request: SvgStackRequest) -> XCSProject:
     # so XCS Studio groups them into the same visual layers an SVG import would.
     # All layers share the request's processing params regardless of color.
     primary_paths: list[Path] = []
-    for shape in parse_result.shapes:
+    for shape in shapes:
         p = Path(
             d=shape.d,
             x=shape.bbox_x_mm,
