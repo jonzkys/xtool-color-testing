@@ -170,14 +170,23 @@ export function SvgLayersPage() {
         />
         {detectError && <div style={{ color: "#a02840", fontSize: 12, marginBottom: 8 }}>{detectError}</div>}
 
-        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 8 }}>
+        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 4 }}>
           Layers {hasLayers && `(${request.layers.length})`}
         </div>
+        {hasLayers && (
+          <div style={{ fontSize: 10, color: "#999", marginBottom: 6 }}>
+            Top of list = drawn on top. Subtraction removes lower layers where upper ones cover them.
+          </div>
+        )}
         {!hasLayers && (
           <div style={{ fontSize: 12, color: "#999" }}>Upload an SVG to detect layers.</div>
         )}
         <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-          {request.layers.map((l) => {
+          {/* Reverse so topmost (last drawn in SVG) appears at the top of the list,
+              matching Photoshop/Illustrator conventions and making the "subtract
+              overlaps" behaviour visually intuitive. Order doesn't affect the
+              backend request - the converter maps by color. */}
+          {[...request.layers].reverse().map((l) => {
             const isSel = selectedColor === l.color;
             return (
               <li key={l.color}>
@@ -279,8 +288,8 @@ export function SvgLayersPage() {
         )}
       </div>
 
-      {/* RIGHT: preview */}
-      <div style={{ overflow: "auto", padding: 16, background: "#f6f7f9" }}>
+      {/* RIGHT: preview — flex-column so the SVG pane fills the remaining height */}
+      <div style={{ padding: 16, background: "#f6f7f9", display: "flex", flexDirection: "column", minHeight: 0 }}>
         <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 8 }}>
           Preview {selectedColor && `— highlighted: ${selectedColor}`}
         </div>
@@ -382,6 +391,26 @@ function SvgPreview({
     const svgEl = wrapper.querySelector("svg");
     if (!svgEl) return;
 
+    // Make the uploaded SVG fill its container responsively. Uploaded SVGs
+    // often have fixed width/height attrs that stop them scaling to the
+    // available space.
+    const originalW = svgEl.getAttribute("width");
+    const originalH = svgEl.getAttribute("height");
+    if (!svgEl.getAttribute("viewBox") && originalW && originalH) {
+      // Some SVGs have width/height but no viewBox; synthesize one so scaling works.
+      const w = parseFloat(originalW);
+      const h = parseFloat(originalH);
+      if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+        svgEl.setAttribute("viewBox", `0 0 ${w} ${h}`);
+      }
+    }
+    svgEl.setAttribute("width", "100%");
+    svgEl.setAttribute("height", "100%");
+    svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    svgEl.style.width = "100%";
+    svgEl.style.height = "100%";
+    svgEl.style.display = "block";
+
     const elements = svgEl.querySelectorAll<SVGElement>("*");
 
     const colorOf = (el: SVGElement): string | null => {
@@ -433,12 +462,13 @@ function SvgPreview({
       ref={wrapperRef}
       style={{
         background: "white", border: "1px solid #ddd", borderRadius: 4,
-        padding: 16, minHeight: 400, display: "flex",
+        padding: 8, flex: 1, minHeight: 0, display: "flex",
         alignItems: "center", justifyContent: "center",
+        overflow: "hidden",
       }}
     >
       <div
-        style={{ maxWidth: "100%", maxHeight: "70vh" }}
+        style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
         dangerouslySetInnerHTML={{ __html: svg }}
       />
     </div>
