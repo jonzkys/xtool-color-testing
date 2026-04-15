@@ -218,3 +218,59 @@ def test_generate_from_svg_max_segments_enforced(tmp_path):
             },
             max_segments=50,
         )
+
+
+def test_pikachu_hatched_yellow_round_trip(tmp_path):
+    """Pikachu with a hatched yellow layer generates cleanly and passes build_xcs."""
+    if not SAMPLE_PIKACHU.exists():
+        import pytest
+        pytest.skip("samples/Pikachu.svg missing")
+
+    from xcs_gen.builder import write_xcs
+    from xcs_gen.svg_source import HatchPass, HatchRamp
+
+    from xcs_gen.svg_source import AutoRamp
+
+    project = generate_from_svg(
+        svg_path=str(SAMPLE_PIKACHU),
+        total_width=80.0,
+        layer_config={
+            "#ffd73e": LayerConfig(
+                params=ProcessingParams(),
+                render_mode="hatched",
+                hatch_passes=[
+                    HatchPass(
+                        angle=0, spacing=1.0,
+                        ramps=[HatchRamp(param="power", axis="perp", min_value=30, max_value=70)],
+                    ),
+                ],
+            ),
+            "#000000": LayerConfig(
+                params=ProcessingParams(speed=500, power=80),
+                render_mode="vector_engrave",
+            ),
+        },
+        auto_ramp=AutoRamp(param="power", min_value=20, max_value=80, sort_by="luminance"),
+        max_segments=100000,
+    )
+
+    # Yellow produces LINEs, black produces a PATH per shape.
+    line_count = sum(1 for d in project.extra_displays if d.get("type") == "LINE")
+    path_count = len(project.paths)
+    assert line_count > 0
+    assert path_count > 0
+
+    # Each LINE has a matching device entry.
+    line_ids = {d["id"] for d in project.extra_displays if d.get("type") == "LINE"}
+    entry_ids = {eid for eid, _ in project.extra_device_entries}
+    assert line_ids.issubset(entry_ids)
+
+    # Round-trip through builder + json.
+    out = tmp_path / "pikachu_hatched.xcs"
+    write_xcs(project, str(out))
+    import json as _json
+    with open(out) as f:
+        data = _json.load(f)
+    display_types = [d["type"] for d in data["canvas"][0]["displays"]]
+    assert display_types.count("LINE") == line_count
+    assert display_types.count("PATH") == path_count
