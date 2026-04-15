@@ -98,10 +98,10 @@ cd ..
 xcs-gen serve
 ```
 
-This launches a local server at http://localhost:8000 and opens it in your default browser.
+This launches a local server at http://localhost:6000 and opens it in your default browser.
 
 Options:
-- `--port N` — change the port (default 8000)
+- `--port N` — change the port (default 6000)
 - `--host HOST` — change the bind host (default 127.0.0.1)
 - `--no-browser` — don't open the browser automatically
 
