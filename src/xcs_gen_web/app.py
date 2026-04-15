@@ -9,9 +9,12 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 from .converter import project_to_xcs_bytes
+from .raster_to_svg import RasterTraceOptions, decode_base64_image, png_to_svg
 from .schemas import (
     DetectedLayer,
     Project,
+    RasterToSvgRequest,
+    RasterToSvgResponse,
     SvgDetectRequest,
     SvgLayersRequest,
     SvgPreviewRequest,
@@ -78,6 +81,27 @@ def create_app() -> FastAPI:
             return svg_preview(request)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/api/raster-to-svg", response_model=RasterToSvgResponse)
+    def raster_to_svg_endpoint(request: RasterToSvgRequest) -> RasterToSvgResponse:
+        try:
+            img_bytes, fmt = decode_base64_image(request.image_data)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Could not decode image: {e}")
+
+        try:
+            svg = png_to_svg(
+                img_bytes, image_format=fmt,
+                options=RasterTraceOptions(
+                    color_precision=request.color_precision,
+                    layer_difference=request.layer_difference,
+                    filter_speckle=request.filter_speckle,
+                ),
+            )
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Trace failed: {e}")
+
+        return RasterToSvgResponse(svg=svg)
 
     @app.post("/api/svg-layers")
     def svg_layers(request: SvgLayersRequest) -> Response:

@@ -55,6 +55,29 @@ export async function detectSvgLayers(svg_content: string, width_mm: number): Pr
   return resp.json();
 }
 
+export interface RasterTraceOptions {
+  color_precision: number;
+  layer_difference: number;
+  filter_speckle: number;
+}
+
+export async function rasterToSvg(
+  image_data_url: string,
+  options: RasterTraceOptions,
+): Promise<string> {
+  const resp = await fetch("/api/raster-to-svg", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image_data: image_data_url, ...options }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.detail ?? `HTTP ${resp.status}`);
+  }
+  const data = await resp.json();
+  return data.svg as string;
+}
+
 export async function previewSvg(
   svg_content: string,
   opts: { enabled_colors?: string[] | null; subtract_overlaps?: boolean; width_mm?: number } = {},

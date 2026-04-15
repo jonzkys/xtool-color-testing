@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { NumberField } from "./fields/NumberField";
 import { SelectField } from "./fields/SelectField";
 import { defaultBaseParams } from "../defaults";
-import { detectSvgLayers, previewSvg, svgLayersAndDownload } from "../generate";
+import { detectSvgLayers, previewSvg, rasterToSvg, svgLayersAndDownload } from "../generate";
+import type { RasterTraceOptions } from "../generate";
 import type { DetectedLayer, LayerSpec, SvgLayersRequest, SvgProcessingType } from "../types";
 
 const PROCESSING_TYPES: { value: SvgProcessingType; label: string }[] = [
@@ -49,6 +50,15 @@ export function SvgLayersPage() {
   // When subtract_overlaps is on we display the server-computed subtracted SVG
   // instead of the raw upload, so the preview matches what will be engraved.
   const [subtractedSvg, setSubtractedSvg] = useState<string | null>(null);
+  // Raster -> SVG support. When the user uploads a PNG/JPG we keep its data URL
+  // so we can re-trace with different options without re-uploading.
+  const [rasterDataUrl, setRasterDataUrl] = useState<string | null>(null);
+  const [traceOptions, setTraceOptions] = useState<RasterTraceOptions>({
+    color_precision: 4,
+    layer_difference: 32,
+    filter_speckle: 8,
+  });
+  const [tracing, setTracing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selected = useMemo(
@@ -99,23 +109,79 @@ export function SvgLayersPage() {
     }));
   }
 
-  async function handleFile(file: File) {
-    if (!file) return;
-    const text = await file.text();
-    setFilename(file.name);
-    const suggested = file.name.replace(/\.svg$/i, "").replace(/[^A-Za-z0-9._\- ]/g, "_").slice(0, 64) || "svg-layers";
-    setDetectError(undefined);
-    setRequest((prev) => ({ ...prev, svg_content: text, name: suggested, layers: [] }));
-
-    // Detect colors
+  async function applyDetectedSvg(svgText: string, suggestedName: string) {
+    setRequest((prev) => ({ ...prev, svg_content: svgText, name: suggestedName, layers: [] }));
     try {
-      const detected = await detectSvgLayers(text, 50);
+      const detected = await detectSvgLayers(svgText, 50);
       const layers = detected.map(defaultLayerFromDetected);
       setRequest((prev) => ({ ...prev, layers }));
       setSelectedColor(layers[0]?.color ?? null);
     } catch (err) {
       setDetectError((err as Error).message);
     }
+  }
+
+  async function fileToDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleFile(file: File) {
+    if (!file) return;
+    setDetectError(undefined);
+    setFilename(file.name);
+    const suggested =
+      file.name.replace(/\.(svg|png|jpe?g)$/i, "").replace(/[^A-Za-z0-9._\- ]/g, "_").slice(0, 64) ||
+      "svg-layers";
+
+    const isRaster = /\.(png|jpe?g)$/i.test(file.name) || file.type.startsWith("image/");
+    const isSvg = /\.svg$/i.test(file.name) || file.type === "image/svg+xml";
+
+    if (isSvg || !isRaster) {
+      // SVG path
+      setRasterDataUrl(null);
+      const text = await file.text();
+      await applyDetectedSvg(text, suggested);
+      return;
+    }
+
+    // Raster path: vectorize via backend, then feed the SVG through detection.
+    const dataUrl = await fileToDataUrl(file);
+    setRasterDataUrl(dataUrl);
+    setTracing(true);
+    try {
+      const svg = await rasterToSvg(dataUrl, traceOptions);
+      await applyDetectedSvg(svg, suggested);
+    } catch (err) {
+      setDetectError((err as Error).message);
+    } finally {
+      setTracing(false);
+    }
+  }
+
+  async function retrace(opts: RasterTraceOptions) {
+    if (!rasterDataUrl) return;
+    setDetectError(undefined);
+    setTracing(true);
+    try {
+      const svg = await rasterToSvg(rasterDataUrl, opts);
+      const currentName = request.name;
+      await applyDetectedSvg(svg, currentName);
+    } catch (err) {
+      setDetectError((err as Error).message);
+    } finally {
+      setTracing(false);
+    }
+  }
+
+  function updateTraceOptions(patch: Partial<RasterTraceOptions>) {
+    const next = { ...traceOptions, ...patch };
+    setTraceOptions(next);
+    if (rasterDataUrl) void retrace(next);
   }
 
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -162,13 +228,40 @@ export function SvgLayersPage() {
             color: filename ? "#336" : "#666", fontSize: 12, marginBottom: 12,
           }}
         >
-          {filename ? `${filename}` : "Drop SVG or click"}
+          {filename ? `${filename}` : "Drop SVG / PNG / JPG or click"}
+          {tracing && <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>Tracing...</div>}
         </div>
         <input
-          ref={fileInputRef} type="file" accept=".svg,image/svg+xml"
+          ref={fileInputRef} type="file" accept=".svg,image/svg+xml,.png,image/png,.jpg,.jpeg,image/jpeg"
           onChange={onFileChange} style={{ display: "none" }}
         />
         {detectError && <div style={{ color: "#a02840", fontSize: 12, marginBottom: 8 }}>{detectError}</div>}
+
+        {rasterDataUrl && (
+          <div style={{ marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid #eee" }}>
+            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 4 }}>
+              Trace options (PNG/JPG)
+            </div>
+            <div style={{ fontSize: 10, color: "#999", marginBottom: 6 }}>
+              Re-vectorizes on change. Lower values = fewer layers.
+            </div>
+            <NumberField
+              label="Color precision (1-8)"
+              value={traceOptions.color_precision} integer min={1} max={8}
+              onChange={(v) => updateTraceOptions({ color_precision: v })}
+            />
+            <NumberField
+              label="Layer difference (0-255)"
+              value={traceOptions.layer_difference} integer min={0} max={255}
+              onChange={(v) => updateTraceOptions({ layer_difference: v })}
+            />
+            <NumberField
+              label="Filter speckle (0-100)"
+              value={traceOptions.filter_speckle} integer min={0} max={100}
+              onChange={(v) => updateTraceOptions({ filter_speckle: v })}
+            />
+          </div>
+        )}
 
         <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 4 }}>
           Layers {hasLayers && `(${request.layers.length})`}

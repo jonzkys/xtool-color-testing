@@ -179,3 +179,20 @@ class SvgPreviewResponse(BaseModel):
     """Transformed SVG ready for client-side rendering."""
 
     svg: str
+
+
+class RasterToSvgRequest(BaseModel):
+    """Request to vectorize a PNG/JPG via vtracer.
+
+    Image is sent as base64 (or data URL). Response is an SVG string that
+    can be fed into the existing SVG-layers endpoints.
+    """
+
+    image_data: str = Field(min_length=1, max_length=20_000_000)  # ~15 MB PNG
+    color_precision: int = Field(default=4, ge=1, le=8)
+    layer_difference: int = Field(default=32, ge=0, le=255)
+    filter_speckle: int = Field(default=8, ge=0, le=100)
+
+
+class RasterToSvgResponse(BaseModel):
+    svg: str
