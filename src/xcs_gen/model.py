@@ -46,7 +46,13 @@ class Rect:
 
 @dataclass
 class Line:
-    """A line display element."""
+    """A line display element.
+
+    When a line carries its own `params` / `processing_type`, those are used
+    verbatim by the caller when building device entries (typical for hatched
+    output). When `params is None`, the caller supplies params externally (as
+    annotation ticks do with fixed annotation params).
+    """
 
     x: float
     y: float
@@ -54,6 +60,8 @@ class Line:
     angle: float = 0.0  # 0 = horizontal, 90 = vertical
     layer_color: str = ""
     id: str = field(default_factory=_uuid)
+    params: ProcessingParams | None = None
+    processing_type: str = "VECTOR_ENGRAVING"
 
 
 @dataclass

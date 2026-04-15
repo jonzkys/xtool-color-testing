@@ -35,6 +35,9 @@ export function defaultTest(name = "New test"): ParamTest {
     height_mm: 5,
     gap_mm: 0,
     base_params: defaultBaseParams(),
+    crosshatch_enabled: false,
+    crosshatch_passes: 2,
+    crosshatch_step_deg: 90,
   };
 }
 

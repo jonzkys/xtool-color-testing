@@ -310,21 +310,58 @@ def detect_svg_colors(svg_path: str) -> list[DetectedColor]:
 
 from .model import ProcessingParams  # noqa: E402 — appended after top-level imports
 
-RenderMode = Literal["fill_engrave", "vector_engrave", "vector_cut"]
+RenderMode = Literal["fill_engrave", "vector_engrave", "vector_cut", "hatched"]
 
 _RENDER_MODE_TO_PROCESSING: dict[str, str] = {
     "fill_engrave": "COLOR_FILL_ENGRAVE",
     "vector_engrave": "VECTOR_ENGRAVING",
     "vector_cut": "VECTOR_CUTTING",
+    "hatched": "VECTOR_ENGRAVING",  # applied per-segment LINE display
 }
+
+
+RampAxis = Literal["perp", "parallel", "x", "y"]
+
+
+@dataclass
+class HatchRamp:
+    """Linearly interpolate one ProcessingParams field (or 'spacing') across the shape.
+
+    The `axis` determines which dimension of the shape drives the interpolation:
+      perp     — perpendicular to the hatch angle (classic top-to-bottom fade for 0°)
+      parallel — along the hatch angle (segments along a line vary)
+      x, y     — shape bbox axes, regardless of hatch angle
+    """
+
+    param: str          # "power", "speed", "frequency", "density", "passes",
+                        # "pulse_width", or "spacing"
+    axis: RampAxis
+    min_value: float
+    max_value: float
+
+
+@dataclass
+class HatchPass:
+    """One sweep of parallel hatch lines through the shape."""
+
+    angle: float = 0.0                              # degrees, 0 = horizontal
+    spacing: float = 0.5                            # mm between adjacent lines
+    base_params: ProcessingParams | None = None     # None → LayerConfig.params
+    ramps: list[HatchRamp] = field(default_factory=list)
 
 
 @dataclass
 class LayerConfig:
-    """Explicit params for a single colour layer."""
+    """Explicit params for a single colour layer.
+
+    When `render_mode == "hatched"`, `hatch_passes` must be non-empty and each
+    pass describes a sweep of parallel hatch lines. Non-hatched render modes
+    must have an empty `hatch_passes` list (validated by the resolver).
+    """
 
     params: ProcessingParams
     render_mode: RenderMode = "fill_engrave"
+    hatch_passes: list[HatchPass] = field(default_factory=list)
 
 
 @dataclass
@@ -362,6 +399,7 @@ def resolve_layer_params(
       3. ValueError if neither covers a colour.
     """
     layer_config = layer_config or {}
+    _validate_layer_configs(layer_config)
     out: dict[str, LayerAssignment] = {}
 
     # 1. Apply explicit entries.
@@ -479,3 +517,29 @@ def _set_ramp_param(params: ProcessingParams, name: str, value: float) -> None:
                          f"Valid: {sorted(_RAMP_FIELD_MAP)}")
     field_name, is_int = _RAMP_FIELD_MAP[name]
     setattr(params, field_name, int(round(value)) if is_int else value)
+
+
+_VALID_RAMP_PARAMS = set(_RAMP_FIELD_MAP) | {"spacing"}
+
+
+def _validate_layer_configs(layer_config: dict[str, LayerConfig]) -> None:
+    """Validate render-mode-specific invariants on all explicit LayerConfigs."""
+    for color, cfg in layer_config.items():
+        if cfg.render_mode == "hatched":
+            if not cfg.hatch_passes:
+                raise ValueError(
+                    f"layer {color!r} has render_mode='hatched' but no hatch_passes"
+                )
+            for i, hp in enumerate(cfg.hatch_passes):
+                for r in hp.ramps:
+                    if r.param not in _VALID_RAMP_PARAMS:
+                        raise ValueError(
+                            f"layer {color!r} pass {i}: unknown ramp param "
+                            f"{r.param!r}. Valid: {sorted(_VALID_RAMP_PARAMS)}"
+                        )
+        else:
+            if cfg.hatch_passes:
+                raise ValueError(
+                    f"layer {color!r} has hatch_passes but render_mode="
+                    f"{cfg.render_mode!r} (expected 'hatched')"
+                )

@@ -33,9 +33,16 @@ describe("validateProject", () => {
     expect(issues.some((i) => i.severity === "error")).toBe(true);
   });
 
-  it("warns when element width is below beam spot", () => {
+  it("errors when element width is below beam spot", () => {
     // 100 steps over 2mm = 0.02mm/element, below 0.03mm beam
     const project = projectWithTest({ x_steps: 100, width_mm: 2 });
+    const issues = validateProject(project);
+    expect(issues.some((i) => i.message.includes("beam") && i.severity === "error")).toBe(true);
+  });
+
+  it("warns when element width is close to beam spot (< 2x)", () => {
+    // 100 steps over 4mm = 0.04mm/element, between 1x and 2x beam (0.03-0.06)
+    const project = projectWithTest({ x_steps: 100, width_mm: 4 });
     const issues = validateProject(project);
     expect(issues.some((i) => i.message.includes("beam") && i.severity === "warning")).toBe(true);
   });

@@ -32,6 +32,10 @@ export interface ParamTest {
   height_mm: number;
   gap_mm: number;
   base_params: BaseParams;
+
+  crosshatch_enabled: boolean;
+  crosshatch_passes: number;
+  crosshatch_step_deg: number;
 }
 
 export interface TestPlacement {

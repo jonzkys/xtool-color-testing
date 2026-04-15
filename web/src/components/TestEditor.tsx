@@ -108,6 +108,34 @@ export function TestEditor({ placement, issues, onChange, onDelete }: Props) {
         />
       </Section>
 
+      <Section title="Crosshatch (stacked passes)">
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <input
+            type="checkbox"
+            checked={t.crosshatch_enabled}
+            onChange={(e) => updateTest({ crosshatch_enabled: e.target.checked })}
+          />
+          <span style={{ fontSize: 12, color: "#555" }}>Enable crosshatch</span>
+        </label>
+        {t.crosshatch_enabled && (
+          <>
+            <NumberField
+              label="Passes"
+              value={t.crosshatch_passes}
+              integer
+              min={2}
+              max={10}
+              onChange={(v) => updateTest({ crosshatch_passes: v })}
+            />
+            <NumberField
+              label="Rotation step (°)"
+              value={t.crosshatch_step_deg}
+              onChange={(v) => updateTest({ crosshatch_step_deg: v })}
+            />
+          </>
+        )}
+      </Section>
+
       <Section title="Grid placement">
         <NumberField label="Row" value={placement.row} integer min={0} onChange={(v) => updatePlacement({ row: v })} />
         <NumberField label="Col" value={placement.col} integer min={0} onChange={(v) => updatePlacement({ col: v })} />
