@@ -127,9 +127,15 @@ def svg_layers_to_xcs(request: SvgLayersRequest) -> XCSProject:
     if not layer_by_color:
         raise ValueError("No enabled layers - enable at least one.")
 
-    # Keep only shapes whose color maps to an enabled layer.
+    # Subtraction runs against the FULL z-stack so disabled layers still
+    # occlude shapes below them (hide-but-still-mask), matching how
+    # design tools treat hidden layers. Then we filter to enabled colors.
+    shapes = list(parse_result.shapes)
+    if request.subtract_overlaps:
+        shapes = subtract_overlapping_shapes(shapes)
+
     shapes = [
-        shape for shape in parse_result.shapes
+        shape for shape in shapes
         if _shape_primary_color(shape) in layer_by_color
     ]
     if not shapes:
@@ -137,13 +143,6 @@ def svg_layers_to_xcs(request: SvgLayersRequest) -> XCSProject:
             "No SVG shapes matched any enabled layer color. Re-detect colors "
             "or enable the layer(s) you want to engrave."
         )
-
-    if request.subtract_overlaps:
-        shapes = subtract_overlapping_shapes(shapes)
-        if not shapes:
-            raise ValueError(
-                "All shapes were fully subtracted by higher layers - nothing to engrave."
-            )
 
     project = XCSProject()
 
@@ -235,14 +234,15 @@ def svg_preview(request: SvgPreviewRequest) -> SvgPreviewResponse:
 
     shapes = list(parsed.shapes)
 
-    # Filter to enabled colors if provided
+    # Subtraction runs against the FULL z-stack so disabled layers still
+    # occlude shapes below them. Then we filter down to enabled colors so
+    # the preview matches what will actually be engraved.
+    if request.subtract_overlaps and shapes:
+        shapes = subtract_overlapping_shapes(shapes)
+
     if request.enabled_colors is not None:
         enabled = set(request.enabled_colors)
         shapes = [s for s in shapes if _shape_primary_color(s) in enabled]
-
-    # Apply subtraction if requested (respects the enabled filter)
-    if request.subtract_overlaps and shapes:
-        shapes = subtract_overlapping_shapes(shapes)
 
     # Build viewBox from parsed output dims, falling back to shapes' bbox union
     if parsed.output_width_mm > 0 and parsed.output_height_mm > 0:

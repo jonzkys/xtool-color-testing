@@ -68,6 +68,41 @@ def test_stroke_only_shapes_pass_through():
     assert any(s.stroke == "#000000" and s.fill is None for s in result)
 
 
+def test_api_preview_disabled_layer_still_occludes():
+    """With a disabled middle layer, lower layers should still show its hole.
+
+    E.g. disable yellow on Pikachu and the black silhouette below should
+    still have its yellow-shaped hole (because subtraction uses the full
+    z-stack; enable/disable only gates whether a layer ends up in the
+    preview).
+    """
+    import json
+    from fastapi.testclient import TestClient
+    from xcs_gen_web.app import create_app
+
+    client = TestClient(create_app())
+    svg = PIKACHU_SVG.read_text()
+
+    # Unsubtracted black shape - full silhouette
+    all_enabled = client.post("/api/svg-preview", json={
+        "svg_content": svg, "width_mm": 50,
+        "enabled_colors": ["#000000"],
+        "subtract_overlaps": False,
+    }).json()["svg"]
+
+    # With subtraction and yellow disabled, black should still be occluded
+    # by yellow (subtraction sees the full z-stack)
+    yellow_off = client.post("/api/svg-preview", json={
+        "svg_content": svg, "width_mm": 50,
+        "enabled_colors": ["#000000"],  # yellow etc. NOT in enabled list
+        "subtract_overlaps": True,
+    }).json()["svg"]
+
+    # The subtracted version should have a different (smaller) d-string than the
+    # un-subtracted version.
+    assert all_enabled != yellow_off
+
+
 def test_pikachu_subtraction_reduces_but_preserves_colors():
     """Real SVG regression: subtraction keeps each layer color present in the output,
     but removes at least some pixels from under higher layers."""
