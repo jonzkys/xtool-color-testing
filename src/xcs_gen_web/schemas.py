@@ -72,3 +72,29 @@ class Project(BaseModel):
     name: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._\- ]+$")
     grid_gap_mm: float = Field(default=1.0, ge=0)
     tests: list[TestPlacement]
+
+
+class SvgStackRequest(BaseModel):
+    """Request to convert an SVG into a stacked XCS file.
+
+    All shapes in the SVG get the same processing params; the file is built
+    once, then duplicated N-1 more times with each pass's scan_angle rotated
+    by stack_step_deg. Output is the XCS file bytes.
+    """
+
+    name: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._\- ]+$")
+    svg_content: str = Field(min_length=1, max_length=10_000_000)  # 10MB cap
+    width_mm: float = Field(gt=0, le=500)
+    height_mm: float | None = Field(default=None, gt=0, le=500)
+    start_x: float = Field(default=10.0, ge=0)
+    start_y: float = Field(default=10.0, ge=0)
+
+    base_params: BaseParams
+    processing_type: Literal[
+        "COLOR_FILL_ENGRAVE", "FILL_VECTOR_ENGRAVING",
+        "VECTOR_ENGRAVING", "VECTOR_CUTTING",
+    ] = "COLOR_FILL_ENGRAVE"
+    scan_angle: float = Field(default=90.0, ge=0.0, le=360.0)
+
+    stack_passes: int = Field(default=1, ge=1, le=10)
+    stack_step_deg: float = Field(default=90.0, gt=0.0, le=360.0)

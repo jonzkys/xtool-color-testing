@@ -9,7 +9,8 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 from .converter import project_to_xcs_bytes
-from .schemas import Project
+from .schemas import Project, SvgStackRequest
+from .svg_converter import svg_stack_to_xcs_bytes
 
 
 def create_app() -> FastAPI:
@@ -27,6 +28,22 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(e))
 
         filename = f"{project.name or 'output'}.xcs"
+        return Response(
+            content=body,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+
+    @app.post("/api/svg-stack")
+    def svg_stack(request: SvgStackRequest) -> Response:
+        try:
+            body = svg_stack_to_xcs_bytes(request)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        filename = f"{request.name or 'svg-stack'}.xcs"
         return Response(
             content=body,
             media_type="application/octet-stream",

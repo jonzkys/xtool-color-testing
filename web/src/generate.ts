@@ -1,10 +1,10 @@
-import type { Project } from "./types";
+import type { Project, SvgStackRequest } from "./types";
 
-export async function generateAndDownload(project: Project): Promise<void> {
-  const resp = await fetch("/api/generate", {
+async function postAndDownload(endpoint: string, body: unknown, filename: string): Promise<void> {
+  const resp = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(project),
+    body: JSON.stringify(body),
   });
 
   if (!resp.ok) {
@@ -17,8 +17,6 @@ export async function generateAndDownload(project: Project): Promise<void> {
   }
 
   const blob = await resp.blob();
-  const filename = `${project.name || "output"}.xcs`;
-
   const url = URL.createObjectURL(blob);
   try {
     const a = document.createElement("a");
@@ -30,4 +28,12 @@ export async function generateAndDownload(project: Project): Promise<void> {
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+export async function generateAndDownload(project: Project): Promise<void> {
+  return postAndDownload("/api/generate", project, `${project.name || "output"}.xcs`);
+}
+
+export async function svgStackAndDownload(request: SvgStackRequest): Promise<void> {
+  return postAndDownload("/api/svg-stack", request, `${request.name || "svg-stack"}.xcs`);
 }

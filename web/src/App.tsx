@@ -4,13 +4,17 @@ import { TestList } from "./components/TestList";
 import { TestEditor } from "./components/TestEditor";
 import { Preview } from "./components/Preview";
 import { WarningBanner } from "./components/fields/WarningBanner";
+import { SvgStackPage } from "./components/SvgStackPage";
 import { defaultProject, defaultPlacement, newId } from "./defaults";
 import { loadProject, saveProject } from "./storage";
 import { generateAndDownload } from "./generate";
 import { hasErrors, validateProject } from "./validation";
 import type { Project, TestPlacement } from "./types";
 
+type Tab = "tests" | "svg";
+
 export default function App() {
+  const [tab, setTab] = useState<Tab>("tests");
   const [project, setProject] = useState<Project>(() => loadProject() ?? defaultProject());
   const [selectedId, setSelectedId] = useState<string | null>(
     project.tests[0]?.test.id ?? null,
@@ -97,46 +101,55 @@ export default function App() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
       <TopBar
-        title={project.name}
+        title={tab === "tests" ? project.name : "SVG stack"}
         generateDisabled={disableGenerate}
         generating={generating}
         onGenerate={handleGenerate}
         errorMessage={genError}
+        showGenerate={tab === "tests"}
+        tab={tab}
+        onTabChange={setTab}
       />
-      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "260px 1fr 1fr", minHeight: 0 }}>
-        <div style={{ borderRight: "1px solid #ddd", background: "white", overflow: "auto" }}>
-          <TestList
-            project={project}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            onAdd={addTest}
-            onProjectChange={updateProject}
-          />
+      {tab === "tests" ? (
+        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "260px 1fr 1fr", minHeight: 0 }}>
+          <div style={{ borderRight: "1px solid #ddd", background: "white", overflow: "auto" }}>
+            <TestList
+              project={project}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onAdd={addTest}
+              onProjectChange={updateProject}
+            />
+          </div>
+          <div style={{ borderRight: "1px solid #ddd", background: "white", overflow: "auto" }}>
+            {selected ? (
+              <>
+                {issues.length > 0 && (
+                  <div style={{ padding: "12px 16px 0" }}>
+                    <WarningBanner issues={issues.filter((i) => i.field.includes(`tests[${project.tests.indexOf(selected)}]`))} />
+                  </div>
+                )}
+                <TestEditor
+                  placement={selected}
+                  issues={issues}
+                  onChange={updatePlacement}
+                  onDelete={deleteSelected}
+                  onDuplicate={duplicateSelected}
+                />
+              </>
+            ) : (
+              <div style={{ padding: 32, color: "#999" }}>No test selected. Add one from the left.</div>
+            )}
+          </div>
+          <div style={{ background: "white", overflow: "auto" }}>
+            <Preview project={project} issues={issues} />
+          </div>
         </div>
-        <div style={{ borderRight: "1px solid #ddd", background: "white", overflow: "auto" }}>
-          {selected ? (
-            <>
-              {issues.length > 0 && (
-                <div style={{ padding: "12px 16px 0" }}>
-                  <WarningBanner issues={issues.filter((i) => i.field.includes(`tests[${project.tests.indexOf(selected)}]`))} />
-                </div>
-              )}
-              <TestEditor
-                placement={selected}
-                issues={issues}
-                onChange={updatePlacement}
-                onDelete={deleteSelected}
-                onDuplicate={duplicateSelected}
-              />
-            </>
-          ) : (
-            <div style={{ padding: 32, color: "#999" }}>No test selected. Add one from the left.</div>
-          )}
+      ) : (
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <SvgStackPage />
         </div>
-        <div style={{ background: "white", overflow: "auto" }}>
-          <Preview project={project} issues={issues} />
-        </div>
-      </div>
+      )}
     </div>
   );
 }

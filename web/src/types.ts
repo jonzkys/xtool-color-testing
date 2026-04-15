@@ -56,3 +56,23 @@ export interface ValidationIssue {
   message: string;
   severity: "error" | "warning";
 }
+
+export type SvgProcessingType =
+  | "COLOR_FILL_ENGRAVE"
+  | "FILL_VECTOR_ENGRAVING"
+  | "VECTOR_ENGRAVING"
+  | "VECTOR_CUTTING";
+
+export interface SvgStackRequest {
+  name: string;
+  svg_content: string;
+  width_mm: number;
+  height_mm: number | null;
+  start_x: number;
+  start_y: number;
+  base_params: BaseParams;
+  processing_type: SvgProcessingType;
+  scan_angle: number;
+  stack_passes: number;
+  stack_step_deg: number;
+}
