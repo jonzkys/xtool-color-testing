@@ -165,6 +165,13 @@ def project_to_xcs(project: Project) -> XCSProject:
         t = placement.test
         x_off, y_off = offsets[t.id]
 
+        # Crosshatch suffix shown in the per-test summary line (e.g. "x3@60°").
+        summary_suffix = ""
+        if t.crosshatch_enabled and t.crosshatch_passes > 1:
+            step = t.crosshatch_step_deg
+            step_str = str(int(step)) if step == int(step) else f"{step:g}"
+            summary_suffix = f"x{t.crosshatch_passes} at {step_str}deg"
+
         generated = generate_gradient(
             x_param=t.x_param,
             x_min=t.x_min,
@@ -182,6 +189,7 @@ def project_to_xcs(project: Project) -> XCSProject:
             start_x=CANVAS_ORIGIN_X + x_off,
             start_y=CANVAS_ORIGIN_Y + y_off,
             base_params=_to_processing_params(t.base_params),
+            summary_suffix=summary_suffix,
         )
 
         if i == 0:

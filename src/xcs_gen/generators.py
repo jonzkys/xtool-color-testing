@@ -65,6 +65,7 @@ def generate_gradient(
     label_font_size: float = 3.0,
     tick_length: float = 0.5,
     annotation_params: ProcessingParams | None = None,
+    summary_suffix: str = "",
 ) -> XCSProject:
     """Generate a gradient test pattern with axis annotations.
 
@@ -113,6 +114,8 @@ def generate_gradient(
         y_param=y_param, y_min=y_min, y_max=y_max, y_steps=y_steps,
         base_params=base_params,
     )
+    if summary_suffix:
+        summary = f"{summary} / {summary_suffix}"
     _add_summary_text(
         project, summary,
         x=start_x, y=start_y,
