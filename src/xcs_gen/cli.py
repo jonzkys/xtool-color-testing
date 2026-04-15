@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> None:
     # --- serve command ---
     serve_p = sub.add_parser("serve", help="Launch the web UI locally")
     serve_p.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
-    serve_p.add_argument("--port", type=int, default=6000, help="Port to bind (default: 6000)")
+    serve_p.add_argument("--port", type=int, default=4000, help="Port to bind (default: 4000)")
     serve_p.add_argument("--no-browser", action="store_true",
                          help="Don't automatically open the browser")
 
