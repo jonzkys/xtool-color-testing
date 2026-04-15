@@ -53,6 +53,11 @@ export function SvgLayersPage() {
     [request.layers, selectedColor],
   );
 
+  const enabledColors = useMemo(
+    () => new Set(request.layers.filter((l) => l.enabled).map((l) => l.color)),
+    [request.layers],
+  );
+
   function updateReq(patch: Partial<SvgLayersRequest>) {
     setRequest((prev) => ({ ...prev, ...patch }));
   }
@@ -258,7 +263,11 @@ export function SvgLayersPage() {
         <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 8 }}>
           Preview {selectedColor && `— highlighted: ${selectedColor}`}
         </div>
-        <SvgPreview svg={request.svg_content} highlightColor={selectedColor} />
+        <SvgPreview
+          svg={request.svg_content}
+          highlightColor={selectedColor}
+          enabledColors={enabledColors}
+        />
       </div>
     </div>
   );
@@ -333,9 +342,17 @@ function LayerEditor({
   );
 }
 
-function SvgPreview({ svg, highlightColor }: { svg: string; highlightColor: string | null }) {
-  // We inject a <style> into the SVG dim-ing any shape whose fill/stroke isn't
-  // the highlighted color. Using the uploaded SVG as-is via dangerouslySetInnerHTML.
+function SvgPreview({
+  svg, highlightColor, enabledColors,
+}: {
+  svg: string;
+  highlightColor: string | null;
+  enabledColors: Set<string>;
+}) {
+  // Walks the rendered SVG DOM and for each leaf element:
+  // - hides it entirely if its color isn't in enabledColors (layer disabled)
+  // - dims to 15% if its color doesn't match highlightColor (other enabled layers)
+  // - shows at full opacity if it matches highlightColor (currently editing)
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -344,37 +361,43 @@ function SvgPreview({ svg, highlightColor }: { svg: string; highlightColor: stri
     const svgEl = wrapper.querySelector("svg");
     if (!svgEl) return;
 
-    // Walk all elements and set an inline opacity based on fill match
     const elements = svgEl.querySelectorAll<SVGElement>("*");
-    elements.forEach((el) => {
-      el.style.opacity = "";  // reset
-    });
 
-    if (!highlightColor) return;
-
-    const matches = (colorAttr: string | null): boolean => {
-      if (!colorAttr) return false;
-      return normalizeColor(colorAttr) === highlightColor;
-    };
-
-    elements.forEach((el) => {
+    const colorOf = (el: SVGElement): string | null => {
       const fill = el.getAttribute("fill");
       const stroke = el.getAttribute("stroke");
-      // Also check inline style
       const style = el.getAttribute("style") || "";
       const styleFill = style.match(/fill:\s*([^;]+)/)?.[1];
       const styleStroke = style.match(/stroke:\s*([^;]+)/)?.[1];
+      const candidates = [fill, stroke, styleFill ?? null, styleStroke ?? null];
+      for (const c of candidates) {
+        if (c && c !== "none") return normalizeColor(c);
+      }
+      return null;
+    };
 
-      const hit =
-        matches(fill) || matches(stroke) ||
-        matches(styleFill ?? null) || matches(styleStroke ?? null);
+    elements.forEach((el) => {
+      // Reset
+      el.style.opacity = "";
+      el.style.display = "";
+      // Skip structural elements (svg, g, defs, etc.) that don't have their own color
+      if (el.tagName === "svg" || el.tagName === "g" || el.tagName === "defs") return;
 
-      // Only dim leaf elements (not the <svg> or <g>)
-      if (!hit && el.tagName !== "svg" && el.tagName !== "g") {
+      const color = colorOf(el);
+      if (!color) return;  // leave uncolored elements visible
+
+      // Hide entirely if this element's layer is disabled
+      if (!enabledColors.has(color)) {
+        el.style.display = "none";
+        return;
+      }
+
+      // Dim if not the highlighted layer
+      if (highlightColor && color !== highlightColor) {
         el.style.opacity = "0.15";
       }
     });
-  }, [svg, highlightColor]);
+  }, [svg, highlightColor, enabledColors]);
 
   if (!svg) {
     return (
