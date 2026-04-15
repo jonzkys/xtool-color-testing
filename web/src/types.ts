@@ -77,3 +77,32 @@ export interface SvgStackRequest {
   stack_step_deg: number;
   subtract_overlaps: boolean;
 }
+
+export interface LayerSpec {
+  color: string;
+  name: string;
+  enabled: boolean;
+  processing_type: SvgProcessingType;
+  scan_angle: number;
+  base_params: BaseParams;
+  crosshatch_enabled: boolean;
+  crosshatch_passes: number;
+  crosshatch_step_deg: number;
+}
+
+export interface SvgLayersRequest {
+  name: string;
+  svg_content: string;
+  width_mm: number;
+  height_mm: number | null;
+  start_x: number;
+  start_y: number;
+  layers: LayerSpec[];
+  subtract_overlaps: boolean;
+}
+
+export interface DetectedLayer {
+  color: string;
+  shape_count: number;
+  is_fill: boolean;
+}

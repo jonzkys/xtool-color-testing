@@ -9,8 +9,15 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 from .converter import project_to_xcs_bytes
-from .schemas import Project, SvgStackRequest
+from .schemas import (
+    DetectedLayer,
+    Project,
+    SvgDetectRequest,
+    SvgLayersRequest,
+    SvgStackRequest,
+)
 from .svg_converter import svg_stack_to_xcs_bytes
+from .svg_layers_converter import detect_svg_layers, svg_layers_to_xcs_bytes
 
 
 def create_app() -> FastAPI:
@@ -44,6 +51,29 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(e))
 
         filename = f"{request.name or 'svg-stack'}.xcs"
+        return Response(
+            content=body,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+
+    @app.post("/api/svg-detect-layers", response_model=list[DetectedLayer])
+    def svg_detect(request: SvgDetectRequest) -> list[DetectedLayer]:
+        try:
+            return detect_svg_layers(request)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/api/svg-layers")
+    def svg_layers(request: SvgLayersRequest) -> Response:
+        try:
+            body = svg_layers_to_xcs_bytes(request)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        filename = f"{request.name or 'svg-layers'}.xcs"
         return Response(
             content=body,
             media_type="application/octet-stream",

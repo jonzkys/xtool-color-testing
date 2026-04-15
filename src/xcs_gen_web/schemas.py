@@ -102,3 +102,61 @@ class SvgStackRequest(BaseModel):
     # When true, filled shapes are Boolean-subtracted by all higher-z shapes,
     # so adjacent layers don't engrave the same pixel twice.
     subtract_overlaps: bool = False
+
+
+# Color layer pattern - lowercase hex, "none" sentinel allowed for stroke-only shapes
+_COLOR_PATTERN = r"^(#[0-9a-f]{6}|none)$"
+
+
+class LayerSpec(BaseModel):
+    """Per-color processing config for the SVG Layers tab."""
+
+    color: str = Field(pattern=_COLOR_PATTERN)
+    name: str = Field(min_length=1, max_length=64)
+    enabled: bool = True
+
+    processing_type: Literal[
+        "COLOR_FILL_ENGRAVE", "FILL_VECTOR_ENGRAVING",
+        "VECTOR_ENGRAVING", "VECTOR_CUTTING",
+    ] = "COLOR_FILL_ENGRAVE"
+    scan_angle: float = Field(default=90.0, ge=0.0, le=360.0)
+    base_params: BaseParams
+
+    # Per-layer crosshatch (same semantics as ParamTest crosshatch).
+    crosshatch_enabled: bool = False
+    crosshatch_passes: int = Field(default=2, ge=2, le=10)
+    crosshatch_step_deg: float = Field(default=90.0, gt=0.0, le=360.0)
+
+
+class SvgLayersRequest(BaseModel):
+    """Request to convert an SVG with per-color processing params to an XCS file.
+
+    Each unique SVG fill (and optionally stroke) color is configurable via a
+    LayerSpec. Disabled layers are skipped. subtract_overlaps only considers
+    enabled layers when computing the z-stack.
+    """
+
+    name: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._\- ]+$")
+    svg_content: str = Field(min_length=1, max_length=10_000_000)
+    width_mm: float = Field(gt=0, le=500)
+    height_mm: float | None = Field(default=None, gt=0, le=500)
+    start_x: float = Field(default=10.0, ge=0)
+    start_y: float = Field(default=10.0, ge=0)
+
+    layers: list[LayerSpec] = Field(min_length=1)
+    subtract_overlaps: bool = False
+
+
+class SvgDetectRequest(BaseModel):
+    """Request to detect the unique colors present in an SVG."""
+
+    svg_content: str = Field(min_length=1, max_length=10_000_000)
+    width_mm: float = Field(default=100.0, gt=0, le=500)
+
+
+class DetectedLayer(BaseModel):
+    """One color detected in an SVG with a usage count."""
+
+    color: str
+    shape_count: int
+    is_fill: bool  # True = appears as a fill, False = appears only as stroke

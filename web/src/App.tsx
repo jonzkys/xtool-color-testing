@@ -5,13 +5,14 @@ import { TestEditor } from "./components/TestEditor";
 import { Preview } from "./components/Preview";
 import { WarningBanner } from "./components/fields/WarningBanner";
 import { SvgStackPage } from "./components/SvgStackPage";
+import { SvgLayersPage } from "./components/SvgLayersPage";
 import { defaultProject, defaultPlacement, newId } from "./defaults";
 import { loadProject, saveProject } from "./storage";
 import { generateAndDownload } from "./generate";
 import { hasErrors, validateProject } from "./validation";
 import type { Project, TestPlacement } from "./types";
 
-type Tab = "tests" | "svg";
+type Tab = "tests" | "svg" | "layers";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("tests");
@@ -101,7 +102,7 @@ export default function App() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
       <TopBar
-        title={tab === "tests" ? project.name : "SVG stack"}
+        title={tab === "tests" ? project.name : tab === "svg" ? "SVG stack" : "SVG layers"}
         generateDisabled={disableGenerate}
         generating={generating}
         onGenerate={handleGenerate}
@@ -145,9 +146,13 @@ export default function App() {
             <Preview project={project} issues={issues} />
           </div>
         </div>
-      ) : (
+      ) : tab === "svg" ? (
         <div style={{ flex: 1, minHeight: 0 }}>
           <SvgStackPage />
+        </div>
+      ) : (
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <SvgLayersPage />
         </div>
       )}
     </div>
