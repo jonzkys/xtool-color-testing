@@ -168,3 +168,61 @@ def test_svg_generate_multi_pass_cross_hatch(tmp_path):
     angles = {round(d["angle"], 1) for d in lines}
     assert 0.0 in angles
     assert 90.0 in angles
+
+
+def test_svg_generate_config_file(tmp_path):
+    import yaml
+    cfg = tmp_path / "layers.yaml"
+    cfg.write_text(yaml.safe_dump({
+        "layers": {
+            "#000000": {
+                "render_mode": "hatched",
+                "hatch_passes": [
+                    {"angle": 0, "spacing": 1.0,
+                     "ramps": [{"param": "power", "axis": "perp", "min": 30, "max": 70}]},
+                ],
+            },
+            "#ffffff": {"render_mode": "fill_engrave", "power": 30},
+        },
+    }))
+
+    svg_path = _write_svg(TWO_COLOR)
+    out_path = str(tmp_path / "out.xcs")
+    main([
+        "svg", "generate", svg_path,
+        "-o", out_path,
+        "--width", "50",
+        "--config", str(cfg),
+    ])
+    with open(out_path) as f:
+        data = json.load(f)
+    types = [d["type"] for d in data["canvas"][0]["displays"]]
+    assert types.count("LINE") > 0
+    assert types.count("PATH") > 0
+
+
+def test_svg_generate_config_overridden_by_cli(tmp_path):
+    """--color / --hatch override the YAML entry for that color."""
+    import yaml
+    cfg = tmp_path / "layers.yaml"
+    cfg.write_text(yaml.safe_dump({
+        "layers": {
+            "#000000": {"render_mode": "fill_engrave", "power": 10},
+            "#ffffff": {"render_mode": "fill_engrave", "power": 10},
+        },
+    }))
+    svg_path = _write_svg(TWO_COLOR)
+    out_path = str(tmp_path / "out.xcs")
+    main([
+        "svg", "generate", svg_path,
+        "-o", out_path,
+        "--width", "50",
+        "--config", str(cfg),
+        "--color", "#000000:vector_cut:500,99,65,100,1,200",
+    ])
+    with open(out_path) as f:
+        data = json.load(f)
+    dev_entries = data["device"]["data"]["value"][0][1]["displays"]["value"]
+    cuts = [e for e in dev_entries if e[1]["processingType"] == "VECTOR_CUTTING"]
+    assert len(cuts) == 1
+    assert cuts[0][1]["data"]["VECTOR_CUTTING"]["parameter"]["customize"]["power"] == 99

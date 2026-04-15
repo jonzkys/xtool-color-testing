@@ -752,6 +752,7 @@ def generate_from_svg(
     start_x: float = 10.0,
     start_y: float = 10.0,
     base_params: ProcessingParams | None = None,
+    max_segments: int = 50000,
 ) -> XCSProject:
     """Generate an XCSProject from an SVG with per-colour parameters.
 
@@ -814,6 +815,9 @@ def generate_from_svg(
     from .hatch import generate_hatch_segments, svg_d_to_polygon
     from .builder import build_device_entry, build_line_display
 
+    segment_count = 0
+    per_color_counts: dict[str, int] = {}
+
     project = XCSProject()
     for shape in parse_result.shapes:
         for color, is_fill_layer in _layers_for(shape):
@@ -836,6 +840,15 @@ def generate_from_svg(
                         fallback_params=layer.params,
                     )
                     for seg in segments:
+                        segment_count += 1
+                        per_color_counts[color] = per_color_counts.get(color, 0) + 1
+                        if segment_count > max_segments:
+                            worst = max(per_color_counts, key=per_color_counts.get)
+                            raise ValueError(
+                                f"hatched output exceeded max_segments={max_segments} "
+                                f"(color {worst!r} contributes {per_color_counts[worst]}). "
+                                "Increase spacing, reduce passes, or raise --max-segments."
+                            )
                         project.extra_displays.append(build_line_display(seg))
                         project.extra_device_entries.append(
                             build_device_entry(

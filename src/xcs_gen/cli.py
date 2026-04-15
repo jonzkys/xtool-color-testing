@@ -156,6 +156,13 @@ def main(argv: list[str] | None = None) -> None:
         ),
     )
 
+    svg_gen_p.add_argument("--config", default=None,
+                           help="Path to a YAML config file describing layers.")
+    svg_gen_p.add_argument("--max-segments", type=int, default=50000,
+                           help="Hard cap on hatched segments (default: 50000)")
+    svg_gen_p.add_argument("--min-spacing", type=float, default=0.01,
+                           help="Minimum hatch line spacing in mm (default: 0.01)")
+
     # Shared base-params flags (same as image/generate)
     svg_gen_p.add_argument("--power", type=float, default=50.0, help="Laser power %% (default: 50)")
     svg_gen_p.add_argument("--speed", type=int, default=1000, help="Speed mm/s (default: 1000)")
@@ -361,8 +368,20 @@ def _svg_generate(args) -> None:
         processing_light_source=args.laser,
     )
 
-    # Parse --color overrides
-    layer_config: dict[str, LayerConfig] = {}
+    # Load YAML config if provided. CLI overrides win later.
+    yaml_layer_config: dict = {}
+    yaml_auto_ramp = None
+    if args.config:
+        from .svg_config import load_svg_config
+        loaded = load_svg_config(args.config)
+        # Note: YAML's defaults could merge with base_params, but we keep CLI
+        # flags as authoritative — YAML defaults are lower precedence.
+        yaml_layer_config = loaded.layer_config
+        yaml_auto_ramp = loaded.auto_ramp
+    # Seed layer_config with YAML; will be overridden by --color/--hatch below.
+
+    # Parse --color overrides (CLI > YAML)
+    layer_config: dict[str, LayerConfig] = dict(yaml_layer_config)
     for override in args.color_overrides:
         color, cfg = _parse_color_override(override, base_params)
         layer_config[color] = cfg
@@ -400,6 +419,12 @@ def _svg_generate(args) -> None:
             sort_by=args.ramp_sort,
             default_render_mode=args.ramp_mode,
         )
+    elif yaml_auto_ramp is not None:
+        auto_ramp = yaml_auto_ramp
+
+    # Surface --min-spacing to hatch.py via module-level constant override.
+    from . import hatch as _hatch
+    _hatch.MIN_SPACING_DEFAULT = args.min_spacing
 
     project = generate_from_svg(
         svg_path=args.input,
@@ -410,6 +435,7 @@ def _svg_generate(args) -> None:
         start_x=args.start_x,
         start_y=args.start_y,
         base_params=base_params,
+        max_segments=args.max_segments,
     )
 
     write_xcs(project, args.output)

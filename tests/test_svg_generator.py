@@ -195,3 +195,26 @@ def test_generate_from_svg_rejects_hatched_on_stroke_layer():
                 ),
             },
         )
+
+
+def test_generate_from_svg_max_segments_enforced(tmp_path):
+    """When max_segments is set low, hatched shapes refuse to generate."""
+    import pytest
+    path = _write(TWO_COLOR)
+    from xcs_gen.svg_source import HatchPass
+    with pytest.raises(ValueError, match="max_segments"):
+        generate_from_svg(
+            svg_path=path,
+            total_width=100.0,
+            layer_config={
+                "#000000": LayerConfig(
+                    params=ProcessingParams(),
+                    render_mode="hatched",
+                    hatch_passes=[HatchPass(angle=0, spacing=0.1)],  # 500 lines
+                ),
+                "#ffffff": LayerConfig(
+                    params=ProcessingParams(), render_mode="fill_engrave",
+                ),
+            },
+            max_segments=50,
+        )
