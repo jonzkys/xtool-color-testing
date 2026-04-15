@@ -112,3 +112,111 @@ def test_layer_assignment_carries_processing_type():
         base_params=_base(),
     )
     assert assignment["#000000"].processing_type == "VECTOR_CUTTING"
+
+
+import pytest
+
+from xcs_gen.svg_source import HatchPass, HatchRamp
+
+
+def test_hatchpass_and_hatchramp_defaults():
+    r = HatchRamp(param="power", axis="perp", min_value=20, max_value=80)
+    assert r.param == "power"
+    assert r.axis == "perp"
+    assert r.min_value == 20
+    assert r.max_value == 80
+
+    p = HatchPass()
+    assert p.angle == 0.0
+    assert p.spacing == 0.5
+    assert p.base_params is None
+    assert p.ramps == []
+
+
+def test_layerconfig_accepts_hatch_passes():
+    from xcs_gen.model import ProcessingParams
+    from xcs_gen.svg_source import LayerConfig
+    cfg = LayerConfig(
+        params=ProcessingParams(),
+        render_mode="hatched",
+        hatch_passes=[HatchPass(angle=0, spacing=0.4)],
+    )
+    assert cfg.render_mode == "hatched"
+    assert len(cfg.hatch_passes) == 1
+
+
+def test_resolve_rejects_hatched_with_no_passes():
+    from xcs_gen.model import ProcessingParams
+    from xcs_gen.svg_source import LayerConfig, resolve_layer_params
+    with pytest.raises(ValueError, match="hatched"):
+        resolve_layer_params(
+            detected_colors=["#ffd73e"],
+            layer_config={
+                "#ffd73e": LayerConfig(
+                    params=ProcessingParams(),
+                    render_mode="hatched",
+                    hatch_passes=[],
+                ),
+            },
+            auto_ramp=None,
+            base_params=ProcessingParams(),
+        )
+
+
+def test_resolve_rejects_non_hatched_with_passes():
+    from xcs_gen.model import ProcessingParams
+    from xcs_gen.svg_source import LayerConfig, resolve_layer_params
+    with pytest.raises(ValueError, match="hatch_passes"):
+        resolve_layer_params(
+            detected_colors=["#ffd73e"],
+            layer_config={
+                "#ffd73e": LayerConfig(
+                    params=ProcessingParams(),
+                    render_mode="fill_engrave",
+                    hatch_passes=[HatchPass(angle=0, spacing=0.4)],
+                ),
+            },
+            auto_ramp=None,
+            base_params=ProcessingParams(),
+        )
+
+
+def test_resolve_rejects_invalid_ramp_param():
+    from xcs_gen.model import ProcessingParams
+    from xcs_gen.svg_source import LayerConfig, resolve_layer_params
+    with pytest.raises(ValueError, match="bogus"):
+        resolve_layer_params(
+            detected_colors=["#ffd73e"],
+            layer_config={
+                "#ffd73e": LayerConfig(
+                    params=ProcessingParams(),
+                    render_mode="hatched",
+                    hatch_passes=[HatchPass(
+                        angle=0, spacing=0.4,
+                        ramps=[HatchRamp(param="bogus", axis="perp", min_value=0, max_value=1)],
+                    )],
+                ),
+            },
+            auto_ramp=None,
+            base_params=ProcessingParams(),
+        )
+
+
+def test_resolve_hatched_assignment_processing_type():
+    from xcs_gen.model import ProcessingParams
+    from xcs_gen.svg_source import LayerConfig, resolve_layer_params
+    result = resolve_layer_params(
+        detected_colors=["#ffd73e"],
+        layer_config={
+            "#ffd73e": LayerConfig(
+                params=ProcessingParams(),
+                render_mode="hatched",
+                hatch_passes=[HatchPass(angle=0, spacing=0.4)],
+            ),
+        },
+        auto_ramp=None,
+        base_params=ProcessingParams(),
+    )
+    # Hatched segments go out as VECTOR_ENGRAVING LINE displays.
+    assert result["#ffd73e"].processing_type == "VECTOR_ENGRAVING"
+    assert result["#ffd73e"].render_mode == "hatched"
