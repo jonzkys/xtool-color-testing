@@ -4,7 +4,7 @@ import { TestList } from "./components/TestList";
 import { TestEditor } from "./components/TestEditor";
 import { Preview } from "./components/Preview";
 import { WarningBanner } from "./components/fields/WarningBanner";
-import { defaultProject, defaultPlacement } from "./defaults";
+import { defaultProject, defaultPlacement, newId } from "./defaults";
 import { loadProject, saveProject } from "./storage";
 import { generateAndDownload } from "./generate";
 import { hasErrors, validateProject } from "./validation";
@@ -57,6 +57,29 @@ export default function App() {
     setSelectedId(project.tests.find((p) => p.test.id !== selected.test.id)?.test.id ?? null);
   }
 
+  function duplicateSelected() {
+    if (!selected) return;
+    // Place the copy on the next free row (at col 0) so it doesn't overlap.
+    const usedRows = new Set(project.tests.map((p) => p.row));
+    let row = 0;
+    while (usedRows.has(row)) row += 1;
+    const copy: TestPlacement = {
+      ...selected,
+      row,
+      col: 0,
+      col_span: 1,
+      test: {
+        ...selected.test,
+        id: newId(),
+        name: `${selected.test.name} (copy)`,
+        // Deep-copy base_params so edits don't affect the original
+        base_params: { ...selected.test.base_params },
+      },
+    };
+    setProject((prev) => ({ ...prev, tests: [...prev.tests, copy] }));
+    setSelectedId(copy.test.id);
+  }
+
   async function handleGenerate() {
     setGenError(undefined);
     setGenerating(true);
@@ -103,6 +126,7 @@ export default function App() {
                 issues={issues}
                 onChange={updatePlacement}
                 onDelete={deleteSelected}
+                onDuplicate={duplicateSelected}
               />
             </>
           ) : (

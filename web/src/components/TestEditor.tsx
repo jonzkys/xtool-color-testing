@@ -8,9 +8,10 @@ interface Props {
   issues: ValidationIssue[];
   onChange: (next: TestPlacement) => void;
   onDelete: () => void;
+  onDuplicate: () => void;
 }
 
-export function TestEditor({ placement, issues, onChange, onDelete }: Props) {
+export function TestEditor({ placement, issues, onChange, onDelete, onDuplicate }: Props) {
   const t = placement.test;
 
   function updateTest(patch: Partial<ParamTest>) {
@@ -41,6 +42,16 @@ export function TestEditor({ placement, issues, onChange, onDelete }: Props) {
             border: "1px solid transparent", borderRadius: 4,
           }}
         />
+        <button
+          onClick={onDuplicate}
+          style={{
+            marginLeft: 8, padding: "6px 12px",
+            background: "#eee", border: "1px solid #ccc",
+            borderRadius: 4, color: "#336",
+          }}
+        >
+          Duplicate
+        </button>
         <button
           onClick={onDelete}
           style={{
