@@ -808,25 +808,62 @@ def generate_from_svg(
         base_params=base_params,
     )
 
+    from .hatch import generate_hatch_segments, svg_d_to_polygon
+    from .builder import build_device_entry, build_line_display
+
     project = XCSProject()
     for shape in parse_result.shapes:
         for color, is_fill_layer in _layers_for(shape):
             layer = assignment[color]
-            project.paths.append(Path(
-                d=shape.d,
-                x=shape.bbox_x_mm,
-                y=shape.bbox_y_mm,
-                width=shape.bbox_width_mm,
-                height=shape.bbox_height_mm,
-                is_close_path=shape.is_close_path,
-                fill_rule=shape.fill_rule,
-                params=layer.params,
-                processing_type=layer.processing_type,
-                is_fill=is_fill_layer,
-                layer_color=color,
-            ))
+            if layer.render_mode == "hatched":
+                if not is_fill_layer:
+                    raise ValueError(
+                        f"layer {color!r} has render_mode='hatched' but this "
+                        "shape uses the color as a stroke. Hatched fills only "
+                        "make sense on fill layers; use 'vector_engrave' or "
+                        "'vector_cut' for stroke layers."
+                    )
+                cfg = layer_config_for(layer_config, color) if layer_config else None
+                polygon = svg_d_to_polygon(shape.d, fill_rule=shape.fill_rule)
+                passes = (cfg.hatch_passes if cfg else [])
+                for hp in passes:
+                    segments = generate_hatch_segments(
+                        polygon, hp,
+                        layer_color=color,
+                        fallback_params=layer.params,
+                    )
+                    for seg in segments:
+                        project.extra_displays.append(build_line_display(seg))
+                        project.extra_device_entries.append(
+                            build_device_entry(
+                                seg.id, "LINE",
+                                seg.processing_type,
+                                seg.params or layer.params,
+                            )
+                        )
+            else:
+                project.paths.append(Path(
+                    d=shape.d,
+                    x=shape.bbox_x_mm,
+                    y=shape.bbox_y_mm,
+                    width=shape.bbox_width_mm,
+                    height=shape.bbox_height_mm,
+                    is_close_path=shape.is_close_path,
+                    fill_rule=shape.fill_rule,
+                    params=layer.params,
+                    processing_type=layer.processing_type,
+                    is_fill=is_fill_layer,
+                    layer_color=color,
+                ))
 
     return project
+
+
+def layer_config_for(layer_config, color: str):
+    """Helper: safe lookup of a LayerConfig by color (or None)."""
+    if layer_config is None:
+        return None
+    return layer_config.get(color)
 
 
 def _layers_for(shape) -> list[tuple[str, bool]]:

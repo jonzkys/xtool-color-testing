@@ -143,3 +143,55 @@ def test_pikachu_round_trip(tmp_path):
         data = _json.load(f)
     display_types = [d["type"] for d in data["canvas"][0]["displays"]]
     assert display_types.count("PATH") == len(project.paths)
+
+
+def test_generate_from_svg_hatched_layer_emits_lines(tmp_path):
+    """A hatched layer emits Lines into extra_displays/extra_device_entries."""
+    path = _write(TWO_COLOR)
+    from xcs_gen.svg_source import HatchPass
+    project = generate_from_svg(
+        svg_path=path,
+        total_width=100.0,
+        layer_config={
+            "#000000": LayerConfig(
+                params=ProcessingParams(),
+                render_mode="hatched",
+                hatch_passes=[HatchPass(angle=0, spacing=1.0)],
+            ),
+            "#ffffff": LayerConfig(
+                params=ProcessingParams(),
+                render_mode="fill_engrave",
+            ),
+        },
+    )
+    # The black half gets hatched; should produce many LINE displays.
+    line_displays = [d for d in project.extra_displays if d.get("type") == "LINE"]
+    assert len(line_displays) > 0
+    # There should be matching device entries by id.
+    line_ids = {d["id"] for d in line_displays}
+    entry_ids = {eid for eid, _ in project.extra_device_entries}
+    assert line_ids.issubset(entry_ids)
+
+
+def test_generate_from_svg_rejects_hatched_on_stroke_layer():
+    """A color that only appears as a stroke cannot have render_mode='hatched'."""
+    import pytest
+    content = """<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="10" height="10">
+  <rect x="0" y="0" width="5" height="5" fill="none" stroke="#ff0000"/>
+</svg>
+"""
+    path = _write(content)
+    from xcs_gen.svg_source import HatchPass
+    with pytest.raises(ValueError, match="stroke"):
+        generate_from_svg(
+            svg_path=path,
+            total_width=100.0,
+            layer_config={
+                "#ff0000": LayerConfig(
+                    params=ProcessingParams(),
+                    render_mode="hatched",
+                    hatch_passes=[HatchPass(angle=0, spacing=1.0)],
+                ),
+            },
+        )
