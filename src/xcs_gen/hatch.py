@@ -17,6 +17,8 @@ from svgelements import Path as SVGPath
 
 FillRule = Literal["evenodd", "nonzero"]
 
+MIN_SPACING_DEFAULT = 0.01  # mm; minimum hatch line spacing (overridable by CLI in Task 11)
+
 
 def svg_d_to_polygon(d: str, *, fill_rule: FillRule = "evenodd") -> Polygon | MultiPolygon:
     """Convert an SVG path d-string to a shapely Polygon (or MultiPolygon).
@@ -183,16 +185,37 @@ def generate_hatch_segments(
     world_minx, world_miny, world_maxx, world_maxy = polygon.bounds
     # For perp/parallel, we work in the rotated frame (perp = y in rotated coords).
 
-    # Walk y from bottom to top in the rotated frame.
-    y = miny + spacing / 2.0
+    spacing_ramp = next(
+        (r for r in hatch_pass.ramps if r.param == "spacing"), None
+    )
+
+    y = miny
     lines: list[Line] = []
+    min_spacing = MIN_SPACING_DEFAULT
     while y < maxy:
-        scan = LineString([(minx - 1.0, y), (maxx + 1.0, y)])
+        step = spacing
+        if spacing_ramp is not None:
+            # Compute spacing at the current y in the rotated frame.
+            pos = _ramp_position(
+                ramp=spacing_ramp,
+                mid_rot=(minx + (maxx - minx) / 2, y),
+                mid_world=(0, 0),  # unused for perp/parallel axes
+                rot_bounds=(minx, miny, maxx, maxy),
+                world_bounds=(world_minx, world_miny, world_maxx, world_maxy),
+            )
+            step = spacing_ramp.min_value + pos * (spacing_ramp.max_value - spacing_ramp.min_value)
+            if step < min_spacing:
+                step = min_spacing
+        # Center the line within its step band so placement is symmetric.
+        y_center = y + step / 2
+        if y_center >= maxy:
+            break
+
+        scan = LineString([(minx - 1.0, y_center), (maxx + 1.0, y_center)])
         clipped = rotated.intersection(scan)
         for seg in _iter_linestrings(clipped):
             mid_rot = seg.interpolate(0.5, normalized=True)
             mid_rot_xy = (mid_rot.x, mid_rot.y)
-            # World-space midpoint (rotate back) for x/y ramps.
             rad = math.radians(angle)
             cos_a, sin_a = math.cos(rad), math.sin(rad)
             mid_world = (
@@ -203,7 +226,7 @@ def generate_hatch_segments(
             params = _copy_params(base)
             for ramp in hatch_pass.ramps:
                 if ramp.param == "spacing":
-                    continue  # handled by spacing walk (Task 7); ignored here.
+                    continue
                 pos = _ramp_position(
                     ramp=ramp,
                     mid_rot=mid_rot_xy, mid_world=mid_world,
@@ -218,7 +241,7 @@ def generate_hatch_segments(
             )
             if line is not None:
                 lines.append(line)
-        y += spacing
+        y += step
 
     return lines
 

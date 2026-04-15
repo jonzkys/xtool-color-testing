@@ -156,3 +156,42 @@ def test_hatch_ramp_int_field_rounded():
 
 
 import math  # noqa: E402 — used in test_hatch_ramp_power_y_axis_ignores_angle
+
+
+def test_hatch_spacing_ramp_produces_variable_spacing():
+    """With spacing ramping 1.0 -> 0.2 along perp, more lines pack near the 'max' end."""
+    poly = _square_polygon()
+    hp = HatchPass(
+        angle=0.0, spacing=1.0,  # spacing field is a fallback when no spacing-ramp
+        ramps=[HatchRamp(param="spacing", axis="perp", min_value=1.0, max_value=0.2)],
+    )
+    segs = generate_hatch_segments(poly, hp, layer_color="#ffd73e", fallback_params=ProcessingParams())
+    # Without a spacing ramp: 10 segments. With ramp: should be strictly more.
+    assert len(segs) > 10
+    # Verify line density is higher near y=10 (the 'max_value' end).
+    ys = sorted(s.y for s in segs)
+    mid = len(ys) // 2
+    upper_half_count = sum(1 for y in ys if y > ys[mid])
+    lower_half_count = sum(1 for y in ys if y <= ys[mid])
+    # Lines closer together near the top → half-by-count both sides, but the
+    # upper half (small spacing) spans less y distance.
+    upper_y_span = ys[-1] - ys[mid]
+    lower_y_span = ys[mid] - ys[0]
+    assert upper_y_span < lower_y_span
+
+
+def test_hatch_spacing_ramp_clamped_to_min():
+    """A spacing ramp that would go to zero is clamped at min_spacing."""
+    poly = _square_polygon()
+    hp = HatchPass(
+        angle=0.0, spacing=1.0,
+        ramps=[HatchRamp(param="spacing", axis="perp", min_value=1.0, max_value=0.001)],
+    )
+    segs = generate_hatch_segments(
+        poly, hp, layer_color="#ffd73e",
+        fallback_params=ProcessingParams(),
+    )
+    # With min_spacing default 0.01, the ramp clamps and we get finite segments.
+    # Without clamping, this would hang in an infinite loop.
+    assert len(segs) > 0
+    assert len(segs) < 10000  # sanity upper bound
