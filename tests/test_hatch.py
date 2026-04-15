@@ -106,3 +106,53 @@ def test_hatch_segments_uses_pass_base_params_when_set():
     fallback = ProcessingParams(power=10)
     segs = generate_hatch_segments(poly, hp, layer_color="#ffd73e", fallback_params=fallback)
     assert all(s.params.power == 99 for s in segs)
+
+
+from xcs_gen.svg_source import HatchRamp
+
+
+def test_hatch_ramp_power_perp_axis():
+    """Power ramps from 30 at bottom to 70 at top (axis=perp for angle=0)."""
+    poly = _square_polygon()
+    hp = HatchPass(
+        angle=0.0, spacing=1.0,
+        ramps=[HatchRamp(param="power", axis="perp", min_value=30, max_value=70)],
+    )
+    segs = generate_hatch_segments(poly, hp, layer_color="#ffd73e", fallback_params=ProcessingParams())
+    assert len(segs) == 10
+    powers = [s.params.power for s in segs]
+    # Monotonically increasing from near-30 to near-70.
+    assert abs(powers[0] - 32.0) < 0.5   # first midpoint at y=0.5 in a 10-tall bbox → ~32
+    assert abs(powers[-1] - 68.0) < 0.5  # last midpoint at y=9.5 → ~68
+    for i in range(1, len(powers)):
+        assert powers[i] > powers[i - 1]
+
+
+def test_hatch_ramp_power_y_axis_ignores_angle():
+    """axis='y' projects the midpoint onto the bbox y, regardless of hatch angle."""
+    poly = _square_polygon()
+    hp = HatchPass(
+        angle=45.0, spacing=1.0,
+        ramps=[HatchRamp(param="power", axis="y", min_value=10, max_value=90)],
+    )
+    segs = generate_hatch_segments(poly, hp, layer_color="#ffd73e", fallback_params=ProcessingParams())
+    assert len(segs) > 0
+    # Segment midpoints with smaller world-space y get smaller power.
+    sorted_segs = sorted(segs, key=lambda s: s.y + (math.sin(math.radians(s.angle)) * s.length / 2))
+    powers_low_to_high = [s.params.power for s in sorted_segs]
+    assert powers_low_to_high[0] < powers_low_to_high[-1]
+
+
+def test_hatch_ramp_int_field_rounded():
+    """Ramp on an int field (e.g. speed) produces rounded int values."""
+    poly = _square_polygon()
+    hp = HatchPass(
+        angle=0.0, spacing=1.0,
+        ramps=[HatchRamp(param="speed", axis="perp", min_value=500, max_value=1500)],
+    )
+    segs = generate_hatch_segments(poly, hp, layer_color="#ff0000", fallback_params=ProcessingParams())
+    for s in segs:
+        assert isinstance(s.params.speed, int)
+
+
+import math  # noqa: E402 — used in test_hatch_ramp_power_y_axis_ignores_angle

@@ -179,6 +179,10 @@ def generate_hatch_segments(
         # Shape smaller than one hatch spacing in either direction → no lines.
         return []
 
+    # Precompute world-space bbox for ramps that use x/y axes.
+    world_minx, world_miny, world_maxx, world_maxy = polygon.bounds
+    # For perp/parallel, we work in the rotated frame (perp = y in rotated coords).
+
     # Walk y from bottom to top in the rotated frame.
     y = miny + spacing / 2.0
     lines: list[Line] = []
@@ -186,8 +190,31 @@ def generate_hatch_segments(
         scan = LineString([(minx - 1.0, y), (maxx + 1.0, y)])
         clipped = rotated.intersection(scan)
         for seg in _iter_linestrings(clipped):
+            mid_rot = seg.interpolate(0.5, normalized=True)
+            mid_rot_xy = (mid_rot.x, mid_rot.y)
+            # World-space midpoint (rotate back) for x/y ramps.
+            rad = math.radians(angle)
+            cos_a, sin_a = math.cos(rad), math.sin(rad)
+            mid_world = (
+                cos_a * mid_rot_xy[0] - sin_a * mid_rot_xy[1],
+                sin_a * mid_rot_xy[0] + cos_a * mid_rot_xy[1],
+            )
+
+            params = _copy_params(base)
+            for ramp in hatch_pass.ramps:
+                if ramp.param == "spacing":
+                    continue  # handled by spacing walk (Task 7); ignored here.
+                pos = _ramp_position(
+                    ramp=ramp,
+                    mid_rot=mid_rot_xy, mid_world=mid_world,
+                    rot_bounds=(minx, miny, maxx, maxy),
+                    world_bounds=(world_minx, world_miny, world_maxx, world_maxy),
+                )
+                value = ramp.min_value + pos * (ramp.max_value - ramp.min_value)
+                _set_param_on(params, ramp.param, value)
+
             line = _segment_to_line(
-                seg, angle=angle, layer_color=layer_color, params=_copy_params(base),
+                seg, angle=angle, layer_color=layer_color, params=params,
             )
             if line is not None:
                 lines.append(line)
@@ -250,3 +277,50 @@ def _segment_to_line(
 
 def _copy_params(p: ProcessingParams) -> ProcessingParams:
     return replace(p)
+
+
+def _ramp_position(
+    *,
+    ramp,  # HatchRamp
+    mid_rot: tuple[float, float],
+    mid_world: tuple[float, float],
+    rot_bounds: tuple[float, float, float, float],
+    world_bounds: tuple[float, float, float, float],
+) -> float:
+    """Return a 0..1 position for the midpoint along the ramp's axis."""
+    if ramp.axis == "perp":
+        # Perpendicular to hatch direction == y in rotated frame.
+        lo, hi = rot_bounds[1], rot_bounds[3]
+        v = mid_rot[1]
+    elif ramp.axis == "parallel":
+        lo, hi = rot_bounds[0], rot_bounds[2]
+        v = mid_rot[0]
+    elif ramp.axis == "x":
+        lo, hi = world_bounds[0], world_bounds[2]
+        v = mid_world[0]
+    elif ramp.axis == "y":
+        lo, hi = world_bounds[1], world_bounds[3]
+        v = mid_world[1]
+    else:
+        return 0.0
+    span = hi - lo
+    if span <= 0:
+        return 0.0
+    t = (v - lo) / span
+    if t < 0.0:
+        t = 0.0
+    elif t > 1.0:
+        t = 1.0
+    return t
+
+
+_INT_PARAM_FIELDS = {"speed", "density", "passes", "pulse_width"}
+
+
+def _set_param_on(params: ProcessingParams, name: str, value: float) -> None:
+    """Write a ramped value into a ProcessingParams field. 'passes' maps to 'repeat'."""
+    attr = "repeat" if name == "passes" else name
+    if name == "frequency":
+        attr = "mopa_frequency"
+    is_int = name in _INT_PARAM_FIELDS
+    setattr(params, attr, int(round(value)) if is_int else value)
