@@ -38,6 +38,13 @@ class ParamTest(BaseModel):
     gap_mm: float = Field(default=0.0, ge=0)
     base_params: BaseParams
 
+    # Crosshatch: stacks N passes with different scanAngles on each element.
+    # First pass uses the base scan angle (currently 90° for vertical scan);
+    # each subsequent pass adds crosshatch_step_deg.
+    crosshatch_enabled: bool = False
+    crosshatch_passes: int = Field(default=2, ge=2, le=10)
+    crosshatch_step_deg: float = Field(default=90.0, gt=0.0, le=360.0)
+
     @model_validator(mode="after")
     def validate_ranges(self) -> "ParamTest":
         if self.x_min == self.x_max:

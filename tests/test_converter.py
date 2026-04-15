@@ -141,3 +141,66 @@ def test_non_overlapping_valid():
         ],
     )
     validate_placements(project)  # Should not raise
+
+
+def test_beam_width_validation_rejects_sub_beam_elements():
+    """Elements narrower than the beam spot cause a ValueError."""
+    # 100 steps over 2mm = 0.02mm/element, below 0.03mm beam
+    t = ParamTest(
+        id="t1", name="Narrow", x_param="speed", x_min=500, x_max=2000, x_steps=100,
+        rows=1, width_mm=2.0, height_mm=5.0, gap_mm=0.0, base_params=_base(),
+    )
+    project = Project(
+        name="Test", grid_gap_mm=1.0,
+        tests=[TestPlacement(test=t, row=0, col=0, col_span=1)],
+    )
+    with pytest.raises(ValueError, match="beam"):
+        project_to_xcs(project)
+
+
+def test_crosshatch_stacks_passes():
+    """crosshatch_enabled + passes=3 produces 3x the gradient rects at different scanAngles."""
+    t = _test()
+    t = t.model_copy(update={
+        "crosshatch_enabled": True,
+        "crosshatch_passes": 3,
+        "crosshatch_step_deg": 60.0,
+    })
+    project = Project(
+        name="Test", grid_gap_mm=1.0,
+        tests=[TestPlacement(test=t, row=0, col=0, col_span=1)],
+    )
+    xcs = project_to_xcs(project)
+
+    # 10 steps × 3 passes = 30 total rects
+    assert len(xcs.elements) == 30
+
+    # 3 distinct scan angles across the elements
+    angles = sorted({e.params.scan_angle for e in xcs.elements})
+    assert len(angles) == 3
+
+    # Base angle is 90 (default), so expect 90, 150, 210
+    assert 90 in angles
+    assert 150 in angles
+    assert 210 in angles
+
+
+def test_crosshatch_disabled_does_not_stack():
+    """Without crosshatch, only the primary pass is emitted."""
+    project = Project(
+        name="Test", grid_gap_mm=1.0,
+        tests=[TestPlacement(test=_test(), row=0, col=0, col_span=1)],
+    )
+    xcs = project_to_xcs(project)
+    assert len(xcs.elements) == 10
+
+
+def test_crosshatch_single_scan_angle_when_disabled():
+    """All elements share one scan angle when crosshatch is off."""
+    project = Project(
+        name="Test", grid_gap_mm=1.0,
+        tests=[TestPlacement(test=_test(), row=0, col=0, col_span=1)],
+    )
+    xcs = project_to_xcs(project)
+    angles = {e.params.scan_angle for e in xcs.elements}
+    assert len(angles) == 1

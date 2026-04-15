@@ -57,13 +57,21 @@ export function validateProject(project: Project): ValidationIssue[] {
       }
     }
 
-    // Beam width check (warning)
+    // Beam width check: each gradient element must be wider than the beam spot.
+    // Sub-beam widths cause adjacent elements to merge (no visible gradient).
+    // Crosshatch makes this worse since each pass also has short scan lines.
     const perRow = Math.ceil(t.x_steps / t.rows);
     const elemW = (t.width_mm - Math.max(0, perRow - 1) * t.gap_mm) / perRow;
     if (elemW > 0 && elemW < BEAM_WIDTH_MM) {
       issues.push({
         field: `${prefix}.width_mm`,
-        message: `Element width ${elemW.toFixed(4)}mm is below beam spot ${BEAM_WIDTH_MM}mm`,
+        message: `Element width ${elemW.toFixed(4)}mm is below beam spot ${BEAM_WIDTH_MM}mm - adjacent elements will merge`,
+        severity: "error",
+      });
+    } else if (elemW > 0 && elemW < BEAM_WIDTH_MM * 2) {
+      issues.push({
+        field: `${prefix}.width_mm`,
+        message: `Element width ${elemW.toFixed(4)}mm is close to beam spot (${BEAM_WIDTH_MM}mm) - may have limited contrast`,
         severity: "warning",
       });
     }

@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import json
+import math
+from dataclasses import replace
 
 from xcs_gen.builder import build_xcs
 from xcs_gen.generators import generate_gradient
-from xcs_gen.model import ProcessingParams, XCSProject
+from xcs_gen.model import ProcessingParams, Rect, XCSProject, _uuid
 from xcs_gen.text import text_height
 
 from .schemas import BaseParams, ParamTest, Project
+
+# F2 Ultra MOPA beam spot size. Mirrors web/src/validation.ts BEAM_WIDTH_MM.
+BEAM_WIDTH_MM = 0.03
 
 # Offset from canvas (0,0) where the composition starts. Leaves margin from
 # the edge of the XCS canvas so tests aren't flush against the origin.
@@ -69,6 +74,24 @@ def validate_placements(project: Project) -> None:
             occupied[cell] = placement.test.name
 
 
+def validate_beam_widths(project: Project) -> None:
+    """Raise ValueError if any test has element width below the beam spot size.
+
+    Sub-beam-width elements will merge into each other when engraved, producing
+    no visible gradient. This is a hard block: the generated file would be wrong.
+    """
+    for placement in project.tests:
+        t = placement.test
+        per_row = math.ceil(t.x_steps / t.rows)
+        elem_w = (t.width_mm - max(0, per_row - 1) * t.gap_mm) / per_row
+        if elem_w > 0 and elem_w < BEAM_WIDTH_MM:
+            raise ValueError(
+                f"Test '{t.name}': element width {elem_w:.4f}mm is below beam "
+                f"spot {BEAM_WIDTH_MM}mm - adjacent elements will merge. "
+                f"Reduce steps or increase width."
+            )
+
+
 def _to_processing_params(bp: BaseParams) -> ProcessingParams:
     return ProcessingParams(
         power=bp.power,
@@ -126,9 +149,11 @@ def project_to_xcs(project: Project) -> XCSProject:
     """Convert a Project into a single merged XCSProject.
 
     Raises:
-        ValueError: If any grid placements overlap.
+        ValueError: If any grid placements overlap or any element width
+            is below the beam spot size.
     """
     validate_placements(project)
+    validate_beam_widths(project)
 
     offsets = _compute_grid_offsets(project)
 
@@ -164,6 +189,30 @@ def project_to_xcs(project: Project) -> XCSProject:
         merged.elements.extend(generated.elements)
         merged.extra_displays.extend(generated.extra_displays)
         merged.extra_device_entries.extend(generated.extra_device_entries)
+
+        # Crosshatch: stack additional passes with rotated scanAngles over the
+        # same gradient rects. Annotations are only emitted for the first pass.
+        if t.crosshatch_enabled and t.crosshatch_passes > 1:
+            for pass_i in range(1, t.crosshatch_passes):
+                angle_offset = (pass_i * t.crosshatch_step_deg) % 360
+                for elem in generated.elements:
+                    new_params = replace(
+                        elem.params,
+                        scan_angle=(elem.params.scan_angle + angle_offset) % 360,
+                    )
+                    merged.elements.append(
+                        Rect(
+                            x=elem.x,
+                            y=elem.y,
+                            width=elem.width,
+                            height=elem.height,
+                            params=new_params,
+                            processing_type=elem.processing_type,
+                            is_fill=elem.is_fill,
+                            id=_uuid(),
+                            layer_color=elem.layer_color,
+                        )
+                    )
 
     return merged
 
