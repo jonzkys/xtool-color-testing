@@ -65,6 +65,7 @@ def generate_gradient(
     label_font_size: float = 3.0,
     tick_length: float = 0.5,
     annotation_params: ProcessingParams | None = None,
+    summary_suffix: str = "",
 ) -> XCSProject:
     """Generate a gradient test pattern with axis annotations.
 
@@ -113,6 +114,8 @@ def generate_gradient(
         y_param=y_param, y_min=y_min, y_max=y_max, y_steps=y_steps,
         base_params=base_params,
     )
+    if summary_suffix:
+        summary = f"{summary} / {summary_suffix}"
     _add_summary_text(
         project, summary,
         x=start_x, y=start_y,
@@ -749,6 +752,7 @@ def generate_from_svg(
     start_x: float = 10.0,
     start_y: float = 10.0,
     base_params: ProcessingParams | None = None,
+    max_segments: int = 50000,
 ) -> XCSProject:
     """Generate an XCSProject from an SVG with per-colour parameters.
 
@@ -808,25 +812,74 @@ def generate_from_svg(
         base_params=base_params,
     )
 
+    from .hatch import generate_hatch_segments, svg_d_to_polygon
+    from .builder import build_device_entry, build_line_display
+
+    segment_count = 0
+    per_color_counts: dict[str, int] = {}
+
     project = XCSProject()
     for shape in parse_result.shapes:
         for color, is_fill_layer in _layers_for(shape):
             layer = assignment[color]
-            project.paths.append(Path(
-                d=shape.d,
-                x=shape.bbox_x_mm,
-                y=shape.bbox_y_mm,
-                width=shape.bbox_width_mm,
-                height=shape.bbox_height_mm,
-                is_close_path=shape.is_close_path,
-                fill_rule=shape.fill_rule,
-                params=layer.params,
-                processing_type=layer.processing_type,
-                is_fill=is_fill_layer,
-                layer_color=color,
-            ))
+            if layer.render_mode == "hatched":
+                if not is_fill_layer:
+                    raise ValueError(
+                        f"layer {color!r} has render_mode='hatched' but this "
+                        "shape uses the color as a stroke. Hatched fills only "
+                        "make sense on fill layers; use 'vector_engrave' or "
+                        "'vector_cut' for stroke layers."
+                    )
+                cfg = layer_config_for(layer_config, color) if layer_config else None
+                polygon = svg_d_to_polygon(shape.d, fill_rule=shape.fill_rule)
+                passes = (cfg.hatch_passes if cfg else [])
+                for hp in passes:
+                    segments = generate_hatch_segments(
+                        polygon, hp,
+                        layer_color=color,
+                        fallback_params=layer.params,
+                    )
+                    for seg in segments:
+                        segment_count += 1
+                        per_color_counts[color] = per_color_counts.get(color, 0) + 1
+                        if segment_count > max_segments:
+                            worst = max(per_color_counts, key=per_color_counts.get)
+                            raise ValueError(
+                                f"hatched output exceeded max_segments={max_segments} "
+                                f"(color {worst!r} contributes {per_color_counts[worst]}). "
+                                "Increase spacing, reduce passes, or raise --max-segments."
+                            )
+                        project.extra_displays.append(build_line_display(seg))
+                        project.extra_device_entries.append(
+                            build_device_entry(
+                                seg.id, "LINE",
+                                seg.processing_type,
+                                seg.params or layer.params,
+                            )
+                        )
+            else:
+                project.paths.append(Path(
+                    d=shape.d,
+                    x=shape.bbox_x_mm,
+                    y=shape.bbox_y_mm,
+                    width=shape.bbox_width_mm,
+                    height=shape.bbox_height_mm,
+                    is_close_path=shape.is_close_path,
+                    fill_rule=shape.fill_rule,
+                    params=layer.params,
+                    processing_type=layer.processing_type,
+                    is_fill=is_fill_layer,
+                    layer_color=color,
+                ))
 
     return project
+
+
+def layer_config_for(layer_config, color: str):
+    """Helper: safe lookup of a LayerConfig by color (or None)."""
+    if layer_config is None:
+        return None
+    return layer_config.get(color)
 
 
 def _layers_for(shape) -> list[tuple[str, bool]]:

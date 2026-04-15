@@ -125,3 +125,104 @@ def test_svg_generate_missing_file_clean_error(tmp_path, capsys):
             "--ramp-param", "power", "--ramp-min", "20", "--ramp-max", "80",
         ])
     assert str(excinfo.value).startswith("error:")
+
+
+def test_svg_generate_single_hatch_flag(tmp_path):
+    svg_path = _write_svg(TWO_COLOR)
+    out_path = str(tmp_path / "out.xcs")
+    main([
+        "svg", "generate", svg_path,
+        "-o", out_path,
+        "--width", "50",
+        "--hatch", "#000000:angle=0,spacing=1.0:power=perp:30:70",
+        "--color", "#ffffff:fill_engrave:1000,30,65,100,1,200",
+    ])
+    with open(out_path) as f:
+        data = json.load(f)
+    displays = data["canvas"][0]["displays"]
+    types = [d["type"] for d in displays]
+    # Hatched layer produces many LINE displays.
+    assert types.count("LINE") > 0
+
+
+def test_svg_generate_multi_pass_cross_hatch(tmp_path):
+    """Two --hatch flags with the same color compose into cross-hatching."""
+    svg_path = _write_svg(TWO_COLOR)
+    out_path = str(tmp_path / "out.xcs")
+    main([
+        "svg", "generate", svg_path,
+        "-o", out_path,
+        "--width", "50",
+        "--hatch", "#000000:angle=0,spacing=1.0:power=perp:30:70",
+        "--hatch", "#000000:angle=90,spacing=1.0:power=perp:30:70",
+        "--color", "#ffffff:fill_engrave:1000,30,65,100,1,200",
+    ])
+    with open(out_path) as f:
+        data = json.load(f)
+    displays = data["canvas"][0]["displays"]
+    lines = [d for d in displays if d["type"] == "LINE"]
+    # Two passes on the black half → roughly 2× the line count of a single pass.
+    # Just assert it's substantial.
+    assert len(lines) > 10
+    # At least one line at angle=0 and one at angle=90.
+    angles = {round(d["angle"], 1) for d in lines}
+    assert 0.0 in angles
+    assert 90.0 in angles
+
+
+def test_svg_generate_config_file(tmp_path):
+    import yaml
+    cfg = tmp_path / "layers.yaml"
+    cfg.write_text(yaml.safe_dump({
+        "layers": {
+            "#000000": {
+                "render_mode": "hatched",
+                "hatch_passes": [
+                    {"angle": 0, "spacing": 1.0,
+                     "ramps": [{"param": "power", "axis": "perp", "min": 30, "max": 70}]},
+                ],
+            },
+            "#ffffff": {"render_mode": "fill_engrave", "power": 30},
+        },
+    }))
+
+    svg_path = _write_svg(TWO_COLOR)
+    out_path = str(tmp_path / "out.xcs")
+    main([
+        "svg", "generate", svg_path,
+        "-o", out_path,
+        "--width", "50",
+        "--config", str(cfg),
+    ])
+    with open(out_path) as f:
+        data = json.load(f)
+    types = [d["type"] for d in data["canvas"][0]["displays"]]
+    assert types.count("LINE") > 0
+    assert types.count("PATH") > 0
+
+
+def test_svg_generate_config_overridden_by_cli(tmp_path):
+    """--color / --hatch override the YAML entry for that color."""
+    import yaml
+    cfg = tmp_path / "layers.yaml"
+    cfg.write_text(yaml.safe_dump({
+        "layers": {
+            "#000000": {"render_mode": "fill_engrave", "power": 10},
+            "#ffffff": {"render_mode": "fill_engrave", "power": 10},
+        },
+    }))
+    svg_path = _write_svg(TWO_COLOR)
+    out_path = str(tmp_path / "out.xcs")
+    main([
+        "svg", "generate", svg_path,
+        "-o", out_path,
+        "--width", "50",
+        "--config", str(cfg),
+        "--color", "#000000:vector_cut:500,99,65,100,1,200",
+    ])
+    with open(out_path) as f:
+        data = json.load(f)
+    dev_entries = data["device"]["data"]["value"][0][1]["displays"]["value"]
+    cuts = [e for e in dev_entries if e[1]["processingType"] == "VECTOR_CUTTING"]
+    assert len(cuts) == 1
+    assert cuts[0][1]["data"]["VECTOR_CUTTING"]["parameter"]["customize"]["power"] == 99

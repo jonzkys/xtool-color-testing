@@ -143,3 +143,134 @@ def test_pikachu_round_trip(tmp_path):
         data = _json.load(f)
     display_types = [d["type"] for d in data["canvas"][0]["displays"]]
     assert display_types.count("PATH") == len(project.paths)
+
+
+def test_generate_from_svg_hatched_layer_emits_lines(tmp_path):
+    """A hatched layer emits Lines into extra_displays/extra_device_entries."""
+    path = _write(TWO_COLOR)
+    from xcs_gen.svg_source import HatchPass
+    project = generate_from_svg(
+        svg_path=path,
+        total_width=100.0,
+        layer_config={
+            "#000000": LayerConfig(
+                params=ProcessingParams(),
+                render_mode="hatched",
+                hatch_passes=[HatchPass(angle=0, spacing=1.0)],
+            ),
+            "#ffffff": LayerConfig(
+                params=ProcessingParams(),
+                render_mode="fill_engrave",
+            ),
+        },
+    )
+    # The black half gets hatched; should produce many LINE displays.
+    line_displays = [d for d in project.extra_displays if d.get("type") == "LINE"]
+    assert len(line_displays) > 0
+    # There should be matching device entries by id.
+    line_ids = {d["id"] for d in line_displays}
+    entry_ids = {eid for eid, _ in project.extra_device_entries}
+    assert line_ids.issubset(entry_ids)
+
+
+def test_generate_from_svg_rejects_hatched_on_stroke_layer():
+    """A color that only appears as a stroke cannot have render_mode='hatched'."""
+    import pytest
+    content = """<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="10" height="10">
+  <rect x="0" y="0" width="5" height="5" fill="none" stroke="#ff0000"/>
+</svg>
+"""
+    path = _write(content)
+    from xcs_gen.svg_source import HatchPass
+    with pytest.raises(ValueError, match="stroke"):
+        generate_from_svg(
+            svg_path=path,
+            total_width=100.0,
+            layer_config={
+                "#ff0000": LayerConfig(
+                    params=ProcessingParams(),
+                    render_mode="hatched",
+                    hatch_passes=[HatchPass(angle=0, spacing=1.0)],
+                ),
+            },
+        )
+
+
+def test_generate_from_svg_max_segments_enforced(tmp_path):
+    """When max_segments is set low, hatched shapes refuse to generate."""
+    import pytest
+    path = _write(TWO_COLOR)
+    from xcs_gen.svg_source import HatchPass
+    with pytest.raises(ValueError, match="max_segments"):
+        generate_from_svg(
+            svg_path=path,
+            total_width=100.0,
+            layer_config={
+                "#000000": LayerConfig(
+                    params=ProcessingParams(),
+                    render_mode="hatched",
+                    hatch_passes=[HatchPass(angle=0, spacing=0.1)],  # 500 lines
+                ),
+                "#ffffff": LayerConfig(
+                    params=ProcessingParams(), render_mode="fill_engrave",
+                ),
+            },
+            max_segments=50,
+        )
+
+
+def test_pikachu_hatched_yellow_round_trip(tmp_path):
+    """Pikachu with a hatched yellow layer generates cleanly and passes build_xcs."""
+    if not SAMPLE_PIKACHU.exists():
+        import pytest
+        pytest.skip("samples/Pikachu.svg missing")
+
+    from xcs_gen.builder import write_xcs
+    from xcs_gen.svg_source import HatchPass, HatchRamp
+
+    from xcs_gen.svg_source import AutoRamp
+
+    project = generate_from_svg(
+        svg_path=str(SAMPLE_PIKACHU),
+        total_width=80.0,
+        layer_config={
+            "#ffd73e": LayerConfig(
+                params=ProcessingParams(),
+                render_mode="hatched",
+                hatch_passes=[
+                    HatchPass(
+                        angle=0, spacing=1.0,
+                        ramps=[HatchRamp(param="power", axis="perp", min_value=30, max_value=70)],
+                    ),
+                ],
+            ),
+            "#000000": LayerConfig(
+                params=ProcessingParams(speed=500, power=80),
+                render_mode="vector_engrave",
+            ),
+        },
+        auto_ramp=AutoRamp(param="power", min_value=20, max_value=80, sort_by="luminance"),
+        max_segments=100000,
+    )
+
+    # Yellow produces LINEs, black produces a PATH per shape.
+    line_count = sum(1 for d in project.extra_displays if d.get("type") == "LINE")
+    path_count = len(project.paths)
+    assert line_count > 0
+    assert path_count > 0
+
+    # Each LINE has a matching device entry.
+    line_ids = {d["id"] for d in project.extra_displays if d.get("type") == "LINE"}
+    entry_ids = {eid for eid, _ in project.extra_device_entries}
+    assert line_ids.issubset(entry_ids)
+
+    # Round-trip through builder + json.
+    out = tmp_path / "pikachu_hatched.xcs"
+    write_xcs(project, str(out))
+    import json as _json
+    with open(out) as f:
+        data = _json.load(f)
+    display_types = [d["type"] for d in data["canvas"][0]["displays"]]
+    assert display_types.count("LINE") == line_count
+    assert display_types.count("PATH") == path_count
