@@ -20,6 +20,20 @@ from .converter import _to_processing_params
 from .schemas import SvgStackRequest
 
 
+def _shape_layer_color(shape) -> str:
+    """Pick a layer color for a shape: prefer fill, fall back to stroke, then default.
+
+    Keeping each shape on its own fill-colored layer lets XCS Studio group and
+    display the SVG the way a native import would, rather than flattening every
+    shape onto one generic layer.
+    """
+    if shape.fill:
+        return shape.fill
+    if shape.stroke:
+        return shape.stroke
+    return GRADIENT_LAYER_COLOR
+
+
 def svg_stack_to_xcs(request: SvgStackRequest) -> XCSProject:
     """Parse SVG, apply single-layer params, stack N passes with rotations.
 
@@ -56,9 +70,10 @@ def svg_stack_to_xcs(request: SvgStackRequest) -> XCSProject:
     )
 
     project = XCSProject()
-    layer_color = GRADIENT_LAYER_COLOR  # single-layer: all shapes share one color
 
-    # Primary pass (first set of Paths).
+    # Primary pass: one Path per SVG shape, colored by the shape's own fill/stroke
+    # so XCS Studio groups them into the same visual layers an SVG import would.
+    # All layers share the request's processing params regardless of color.
     primary_paths: list[Path] = []
     for shape in parse_result.shapes:
         p = Path(
@@ -72,7 +87,7 @@ def svg_stack_to_xcs(request: SvgStackRequest) -> XCSProject:
             params=base,
             processing_type=request.processing_type,
             is_fill=True,
-            layer_color=layer_color,
+            layer_color=_shape_layer_color(shape),
         )
         project.paths.append(p)
         primary_paths.append(p)

@@ -47,6 +47,26 @@ def test_svg_stack_single_pass_produces_paths():
     assert angles == {90.0}
 
 
+def test_svg_stack_preserves_shape_colors():
+    """Each shape keeps its original SVG fill as its layer_color so XCS Studio
+    displays it the way a native SVG import would (not flattened onto one layer)."""
+    project = svg_stack_to_xcs(_request())
+    # Pikachu SVG has at least 5 distinct fill colours
+    layer_colors = {p.layer_color for p in project.paths}
+    assert len(layer_colors) >= 3
+    # Common colours that should be present
+    assert "#000000" in layer_colors  # outlines
+    assert "#ffd73e" in layer_colors  # yellow body
+
+
+def test_svg_stack_stacked_passes_keep_per_shape_color():
+    """Stacked passes reuse the same per-shape color as their primary pass."""
+    single = svg_stack_to_xcs(_request(stack_passes=1))
+    stacked = svg_stack_to_xcs(_request(stack_passes=3))
+    # Each stacked pass doubles (or triples) the path count but shouldn't introduce new colors.
+    assert {p.layer_color for p in stacked.paths} == {p.layer_color for p in single.paths}
+
+
 def test_svg_stack_multiple_passes_duplicates_with_rotation():
     project = svg_stack_to_xcs(_request(stack_passes=3, stack_step_deg=60.0))
     # 3 passes = 3× the primary path count
