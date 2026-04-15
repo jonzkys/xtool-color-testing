@@ -6,7 +6,6 @@ bed-mm) that the v1 parser emits.
 
 from __future__ import annotations
 
-import re
 from typing import Literal
 
 from shapely import make_valid
@@ -90,40 +89,46 @@ def svg_d_to_polygon(d: str, *, fill_rule: FillRule = "evenodd") -> Polygon | Mu
 def _path_to_rings(path: SVGPath) -> list[list[tuple[float, float]]]:
     """Flatten an SVGPath into a list of rings (closed coordinate loops).
 
-    Each 'M' command starts a new ring. svgelements' .as_points() samples any
-    curved segments at an internal default error tolerance.
+    Walks svgelements' segment structure so absolute/relative commands resolve
+    correctly. Each Move segment starts a new ring. Curved segments (CubicBezier,
+    QuadraticBezier, Arc) are sampled at a fixed tolerance.
     """
-    d = path.d() or ""
-    segments = _split_on_moveto(d)
+    from svgelements import Arc, Close, CubicBezier, Line, Move, QuadraticBezier
+
     rings: list[list[tuple[float, float]]] = []
-    for seg_d in segments:
-        try:
-            seg_path = SVGPath(seg_d)
-        except Exception:
+    current: list[tuple[float, float]] = []
+
+    def _flush() -> None:
+        if len(current) >= 3:
+            if current[0] != current[-1]:
+                current.append(current[0])
+            rings.append(list(current))
+
+    for seg in path.segments():
+        if isinstance(seg, Move):
+            _flush()
+            current.clear()
+            if seg.end is not None:
+                current.append((float(seg.end.x), float(seg.end.y)))
+        elif isinstance(seg, Close):
+            # Implicit close: pop a copy of the start point on flush.
             continue
-        pts = [(float(p[0]), float(p[1])) for p in seg_path.as_points()]
-        if len(pts) >= 3:
-            if pts[0] != pts[-1]:
-                pts.append(pts[0])
-            rings.append(pts)
+        elif isinstance(seg, Line):
+            if seg.end is not None:
+                current.append((float(seg.end.x), float(seg.end.y)))
+        elif isinstance(seg, (CubicBezier, QuadraticBezier, Arc)):
+            # Sample the curve at multiple points for fidelity.
+            for t in (0.25, 0.5, 0.75, 1.0):
+                pt = seg.point(t)
+                current.append((float(pt.x), float(pt.y)))
+        else:
+            # Unknown segment type: at least record its endpoint if available.
+            end = getattr(seg, "end", None)
+            if end is not None:
+                current.append((float(end.x), float(end.y)))
+
+    _flush()
     return rings
-
-
-_MOVE_RE = re.compile(r"([Mm])")
-
-
-def _split_on_moveto(d: str) -> list[str]:
-    """Split a path d-string into subpaths, each starting with an M/m command."""
-    if not d.strip():
-        return []
-    tokens = _MOVE_RE.split(d)
-    # _MOVE_RE.split returns ['', 'M', 'body', 'M', 'body', ...]
-    segments: list[str] = []
-    i = 1
-    while i < len(tokens):
-        segments.append(tokens[i] + tokens[i + 1])
-        i += 2
-    return segments
 
 
 def _repair(geom):
