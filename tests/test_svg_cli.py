@@ -125,3 +125,46 @@ def test_svg_generate_missing_file_clean_error(tmp_path, capsys):
             "--ramp-param", "power", "--ramp-min", "20", "--ramp-max", "80",
         ])
     assert str(excinfo.value).startswith("error:")
+
+
+def test_svg_generate_single_hatch_flag(tmp_path):
+    svg_path = _write_svg(TWO_COLOR)
+    out_path = str(tmp_path / "out.xcs")
+    main([
+        "svg", "generate", svg_path,
+        "-o", out_path,
+        "--width", "50",
+        "--hatch", "#000000:angle=0,spacing=1.0:power=perp:30:70",
+        "--color", "#ffffff:fill_engrave:1000,30,65,100,1,200",
+    ])
+    with open(out_path) as f:
+        data = json.load(f)
+    displays = data["canvas"][0]["displays"]
+    types = [d["type"] for d in displays]
+    # Hatched layer produces many LINE displays.
+    assert types.count("LINE") > 0
+
+
+def test_svg_generate_multi_pass_cross_hatch(tmp_path):
+    """Two --hatch flags with the same color compose into cross-hatching."""
+    svg_path = _write_svg(TWO_COLOR)
+    out_path = str(tmp_path / "out.xcs")
+    main([
+        "svg", "generate", svg_path,
+        "-o", out_path,
+        "--width", "50",
+        "--hatch", "#000000:angle=0,spacing=1.0:power=perp:30:70",
+        "--hatch", "#000000:angle=90,spacing=1.0:power=perp:30:70",
+        "--color", "#ffffff:fill_engrave:1000,30,65,100,1,200",
+    ])
+    with open(out_path) as f:
+        data = json.load(f)
+    displays = data["canvas"][0]["displays"]
+    lines = [d for d in displays if d["type"] == "LINE"]
+    # Two passes on the black half → roughly 2× the line count of a single pass.
+    # Just assert it's substantial.
+    assert len(lines) > 10
+    # At least one line at angle=0 and one at angle=90.
+    angles = {round(d["angle"], 1) for d in lines}
+    assert 0.0 in angles
+    assert 90.0 in angles

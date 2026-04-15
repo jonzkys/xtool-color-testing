@@ -146,6 +146,16 @@ def main(argv: list[str] | None = None) -> None:
     svg_gen_p.add_argument("--color", action="append", default=[], dest="color_overrides",
                            help="Per-colour override: '<hex>:<mode>:<speed>,<power>,<freq>,<density>,<passes>,<pulse_width>'. Blank fields inherit from --base-* flags.")
 
+    svg_gen_p.add_argument(
+        "--hatch", action="append", default=[], dest="hatch_overrides",
+        help=(
+            "Per-colour hatched pass: '<hex>:<key=val,key=val,...>:<ramp>:<ramp>...'. "
+            "Pass-level keys: angle, spacing, power, speed, frequency, density, "
+            "passes, pulse_width. Each ramp is '<param>=<axis>:<min>:<max>'. "
+            "Repeat the flag with the same colour for multi-pass cross-hatching."
+        ),
+    )
+
     # Shared base-params flags (same as image/generate)
     svg_gen_p.add_argument("--power", type=float, default=50.0, help="Laser power %% (default: 50)")
     svg_gen_p.add_argument("--speed", type=int, default=1000, help="Speed mm/s (default: 1000)")
@@ -357,6 +367,27 @@ def _svg_generate(args) -> None:
         color, cfg = _parse_color_override(override, base_params)
         layer_config[color] = cfg
 
+    # Fold in --hatch passes (may share a color across multiple flags → multi-pass).
+    hatch_layers: dict[str, list] = {}
+    for override in getattr(args, "hatch_overrides", []):
+        color, hp = _parse_hatch_override(override, base_params)
+        hatch_layers.setdefault(color, []).append(hp)
+    for color, passes in hatch_layers.items():
+        from .svg_source import LayerConfig
+        existing = layer_config.get(color)
+        params = existing.params if existing else ProcessingParams(
+            power=base_params.power, speed=base_params.speed,
+            mopa_frequency=base_params.mopa_frequency,
+            density=base_params.density, repeat=base_params.repeat,
+            pulse_width=base_params.pulse_width,
+            processing_light_source=base_params.processing_light_source,
+        )
+        layer_config[color] = LayerConfig(
+            params=params,
+            render_mode="hatched",
+            hatch_passes=passes,
+        )
+
     # Build AutoRamp if any ramp flags were given
     auto_ramp = None
     if args.ramp_param is not None:
@@ -437,6 +468,81 @@ def _parse_color_override(override: str, base: "ProcessingParams"):
         processing_light_source=base.processing_light_source,
     )
     return color, LayerConfig(params=params, render_mode=mode)
+
+
+def _parse_hatch_override(override: str, base):
+    """Parse a --hatch flag value into (color, HatchPass).
+
+    Format: '<hex>:<key=val,key=val,...>:<ramp>:<ramp>...'
+    Each ramp is '<param>=<axis>:<min>:<max>'.
+
+    Because we split on ':' and each ramp itself contains 2 colons, ramp_parts
+    arrives as flat triples — we re-group below.
+    """
+    from .svg_source import HatchPass, HatchRamp
+
+    try:
+        hex_part, pass_kv_part, *ramp_parts = override.split(":")
+    except ValueError:
+        raise SystemExit(
+            f"Invalid --hatch value {override!r}. "
+            "Expected '<hex>:<key=val,...>:<ramp1>:<ramp2>...'"
+        )
+
+    color = hex_part.strip().lower()
+    if not (color.startswith("#") and len(color) == 7):
+        raise SystemExit(f"Invalid hex colour in --hatch: {hex_part!r}")
+
+    angle = 0.0
+    spacing = 0.5
+    param_overrides: dict[str, object] = {}
+    for kv in pass_kv_part.split(","):
+        kv = kv.strip()
+        if not kv:
+            continue
+        if "=" not in kv:
+            raise SystemExit(f"Invalid --hatch pass key '{kv}' in {override!r}")
+        k, v = kv.split("=", 1)
+        if k == "angle":
+            angle = float(v)
+        elif k == "spacing":
+            spacing = float(v)
+        else:
+            param_overrides[k] = v
+
+    # Re-group ramps from ramp_parts into triples.
+    if len(ramp_parts) % 3 != 0:
+        raise SystemExit(
+            f"Invalid --hatch {override!r}: ramp sections must be "
+            "'<param>=<axis>:<min>:<max>' (three colons per ramp)."
+        )
+    ramps: list[HatchRamp] = []
+    for i in range(0, len(ramp_parts), 3):
+        head = ramp_parts[i]
+        if "=" not in head:
+            raise SystemExit(f"Invalid ramp head {head!r} in --hatch {override!r}")
+        param, axis = head.split("=", 1)
+        try:
+            min_v = float(ramp_parts[i + 1])
+            max_v = float(ramp_parts[i + 2])
+        except ValueError:
+            raise SystemExit(f"Invalid ramp min/max in --hatch {override!r}")
+        if axis not in ("perp", "parallel", "x", "y"):
+            raise SystemExit(
+                f"Invalid ramp axis {axis!r} in --hatch {override!r}. "
+                "Must be perp | parallel | x | y."
+            )
+        ramps.append(HatchRamp(
+            param=param.strip(), axis=axis,  # type: ignore[arg-type]
+            min_value=min_v, max_value=max_v,
+        ))
+
+    base_params = None
+    if param_overrides:
+        from .svg_config import _params_from_flat
+        base_params = _params_from_flat(param_overrides, base=base)
+
+    return color, HatchPass(angle=angle, spacing=spacing, base_params=base_params, ramps=ramps)
 
 
 if __name__ == "__main__":
