@@ -753,6 +753,7 @@ def generate_from_svg(
     start_y: float = 10.0,
     base_params: ProcessingParams | None = None,
     max_segments: int = 50000,
+    min_spacing: float | None = None,
 ) -> XCSProject:
     """Generate an XCSProject from an SVG with per-colour parameters.
 
@@ -838,6 +839,7 @@ def generate_from_svg(
                         polygon, hp,
                         layer_color=color,
                         fallback_params=layer.params,
+                        min_spacing=min_spacing,
                     )
                     for seg in segments:
                         segment_count += 1

@@ -422,10 +422,6 @@ def _svg_generate(args) -> None:
     elif yaml_auto_ramp is not None:
         auto_ramp = yaml_auto_ramp
 
-    # Surface --min-spacing to hatch.py via module-level constant override.
-    from . import hatch as _hatch
-    _hatch.MIN_SPACING_DEFAULT = args.min_spacing
-
     project = generate_from_svg(
         svg_path=args.input,
         layer_config=layer_config or None,
@@ -436,6 +432,7 @@ def _svg_generate(args) -> None:
         start_y=args.start_y,
         base_params=base_params,
         max_segments=args.max_segments,
+        min_spacing=args.min_spacing,
     )
 
     write_xcs(project, args.output)

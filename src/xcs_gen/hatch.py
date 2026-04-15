@@ -161,6 +161,7 @@ def generate_hatch_segments(
     *,
     layer_color: str,
     fallback_params: ProcessingParams,
+    min_spacing: float | None = None,
 ) -> list[Line]:
     """Produce clipped Line segments for one pass through one polygon.
 
@@ -196,7 +197,8 @@ def generate_hatch_segments(
 
     y = miny
     lines: list[Line] = []
-    min_spacing = MIN_SPACING_DEFAULT
+    if min_spacing is None:
+        min_spacing = MIN_SPACING_DEFAULT
     while y < maxy:
         step = spacing
         if spacing_ramp is not None:
