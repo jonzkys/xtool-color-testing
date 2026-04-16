@@ -61,7 +61,32 @@ export type SvgProcessingType =
   | "COLOR_FILL_ENGRAVE"
   | "FILL_VECTOR_ENGRAVING"
   | "VECTOR_ENGRAVING"
-  | "VECTOR_CUTTING";
+  | "VECTOR_CUTTING"
+  | "HATCHED_LINES";
+
+export type HatchRampParam =
+  | "power"
+  | "speed"
+  | "frequency"
+  | "density"
+  | "passes"
+  | "pulse_width"
+  | "spacing";
+
+export type HatchRampAxis = "perp" | "parallel" | "x" | "y";
+
+export interface HatchRampSpec {
+  param: HatchRampParam;
+  axis: HatchRampAxis;
+  min: number;
+  max: number;
+}
+
+export interface HatchPassSpec {
+  angle: number;       // degrees, 0 = horizontal
+  spacing: number;     // mm between hatch lines
+  ramps: HatchRampSpec[];
+}
 
 export interface SvgStackRequest {
   name: string;
@@ -88,6 +113,7 @@ export interface LayerSpec {
   crosshatch_enabled: boolean;
   crosshatch_passes: number;
   crosshatch_step_deg: number;
+  hatch_passes: HatchPassSpec[];   // non-empty iff processing_type === "HATCHED_LINES"
 }
 
 export interface SvgLayersRequest {
