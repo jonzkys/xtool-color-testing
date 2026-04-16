@@ -14,3 +14,15 @@ button {
   font: inherit;
   cursor: pointer;
 }
+
+/* Help icon with on-hover/focus tooltip */
+.help-icon:hover,
+.help-icon:focus-visible {
+  color: #336;
+  border-color: #336;
+  outline: none;
+}
+.help-icon:hover .help-tip,
+.help-icon:focus-visible .help-tip {
+  opacity: 1;
+}

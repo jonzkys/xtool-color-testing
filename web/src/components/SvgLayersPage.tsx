@@ -261,24 +261,28 @@ export function SvgLayersPage() {
               Re-vectorizes on change. Lower values = fewer layers.
             </div>
             <NumberField
-              label="Max colors (0 = off, 2-32 typical)"
+              label="Max colors (0 = off)"
               value={traceOptions.max_colors} integer min={0} max={256}
               onChange={(v) => updateTraceOptions({ max_colors: v })}
+              help="Pre-quantizes the image to this many colors using PIL median-cut BEFORE vtracer sees it. The most effective control for photos. Set to 0 to disable. Typical: 3-8 for clean output, 16+ for more detail."
             />
             <NumberField
               label="Color precision (1-8)"
               value={traceOptions.color_precision} integer min={1} max={8}
               onChange={(v) => updateTraceOptions({ color_precision: v })}
+              help="Bit depth vtracer uses internally for color quantization. Lower = chunkier color groups; higher = preserves subtle differences. Default 4 is a balance."
             />
             <NumberField
               label="Layer difference (0-255)"
               value={traceOptions.layer_difference} integer min={0} max={255}
               onChange={(v) => updateTraceOptions({ layer_difference: v })}
+              help="Minimum visual distance between two output layers. Higher values merge near-identical colors into one layer. Bump this if you see lots of barely-different shades. Default 32; 64-96 for aggressive merging."
             />
             <NumberField
               label="Filter speckle (0-100)"
               value={traceOptions.filter_speckle} integer min={0} max={100}
               onChange={(v) => updateTraceOptions({ filter_speckle: v })}
+              help="Drops isolated regions smaller than this many pixels - kills noise from JPEG artifacts and photo grain. Higher = cleaner output but loses fine detail. Default 8."
             />
           </div>
         )}
