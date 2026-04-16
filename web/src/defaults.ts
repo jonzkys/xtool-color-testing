@@ -1,4 +1,4 @@
-import type { BaseParams, ParamTest, Project, TestPlacement } from "./types";
+import type { BaseParams, HatchPassSpec, ParamTest, Project, TestPlacement } from "./types";
 
 let idCounter = 0;
 export function newId(): string {
@@ -56,4 +56,8 @@ export function defaultProject(): Project {
     grid_gap_mm: 1,
     tests: [defaultPlacement()],
   };
+}
+
+export function defaultHatchPass(angle = 0): HatchPassSpec {
+  return { angle, spacing: 0.5, ramps: [] };
 }
