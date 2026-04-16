@@ -108,6 +108,24 @@ class SvgStackRequest(BaseModel):
 _COLOR_PATTERN = r"^(#[0-9a-f]{6}|none)$"
 
 
+class HatchRamp(BaseModel):
+    """One linear ramp interpolating a parameter across the shape."""
+
+    param: Literal["power", "speed", "frequency", "density",
+                   "passes", "pulse_width", "spacing"]
+    axis: Literal["perp", "parallel", "x", "y"]
+    min: float
+    max: float
+
+
+class HatchPass(BaseModel):
+    """One sweep of parallel hatch lines through a shape."""
+
+    angle: float = 0.0
+    spacing: float = Field(default=0.5, gt=0.0)
+    ramps: list[HatchRamp] = Field(default_factory=list)
+
+
 class LayerSpec(BaseModel):
     """Per-color processing config for the SVG Layers tab."""
 
@@ -118,14 +136,28 @@ class LayerSpec(BaseModel):
     processing_type: Literal[
         "COLOR_FILL_ENGRAVE", "FILL_VECTOR_ENGRAVING",
         "VECTOR_ENGRAVING", "VECTOR_CUTTING",
+        "HATCHED_LINES",
     ] = "COLOR_FILL_ENGRAVE"
     scan_angle: float = Field(default=90.0, ge=0.0, le=360.0)
     base_params: BaseParams
 
-    # Per-layer crosshatch (same semantics as ParamTest crosshatch).
+    # Per-layer crosshatch (same semantics as ParamTest crosshatch). Ignored
+    # when processing_type == "HATCHED_LINES" (which carries its own multi-pass).
     crosshatch_enabled: bool = False
     crosshatch_passes: int = Field(default=2, ge=2, le=10)
     crosshatch_step_deg: float = Field(default=90.0, gt=0.0, le=360.0)
+
+    # v2 hatched render mode: required non-empty when processing_type ==
+    # "HATCHED_LINES", ignored otherwise.
+    hatch_passes: list[HatchPass] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_hatched(self):
+        if self.processing_type == "HATCHED_LINES" and not self.hatch_passes:
+            raise ValueError(
+                f"layer {self.color!r}: HATCHED_LINES requires at least one hatch pass"
+            )
+        return self
 
 
 class SvgLayersRequest(BaseModel):

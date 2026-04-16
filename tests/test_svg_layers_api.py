@@ -218,3 +218,54 @@ def test_api_layers_endpoint():
     assert "pika.xcs" in resp.headers["content-disposition"]
     data = json.loads(resp.content)
     assert "canvas" in data
+
+
+def test_layerspec_accepts_hatched_lines_with_passes():
+    from xcs_gen_web.schemas import HatchPass, HatchRamp, LayerSpec
+    from xcs_gen_web.schemas import BaseParams
+    spec = LayerSpec(
+        color="#ffd73e",
+        name="yellow",
+        processing_type="HATCHED_LINES",
+        base_params=BaseParams(power=50, speed=1000, frequency=65,
+                               density=100, passes=1, pulse_width=200, laser="red"),
+        hatch_passes=[
+            HatchPass(angle=0, spacing=0.5,
+                      ramps=[HatchRamp(param="power", axis="perp", min=30, max=70)]),
+        ],
+    )
+    assert spec.processing_type == "HATCHED_LINES"
+    assert len(spec.hatch_passes) == 1
+    assert spec.hatch_passes[0].ramps[0].param == "power"
+
+
+def test_layerspec_rejects_hatched_with_empty_passes():
+    import pytest
+    from pydantic import ValidationError
+    from xcs_gen_web.schemas import BaseParams, LayerSpec
+    with pytest.raises(ValidationError) as exc:
+        LayerSpec(
+            color="#ffd73e",
+            name="yellow",
+            processing_type="HATCHED_LINES",
+            base_params=BaseParams(power=50, speed=1000, frequency=65,
+                                   density=100, passes=1, pulse_width=200, laser="red"),
+            hatch_passes=[],
+        )
+    assert "HATCHED_LINES" in str(exc.value)
+
+
+def test_layerspec_non_hatched_with_passes_is_allowed():
+    """Non-hatched layers with hatch_passes don't fail (the converter ignores them)."""
+    from xcs_gen_web.schemas import BaseParams, HatchPass, LayerSpec
+    spec = LayerSpec(
+        color="#000000",
+        name="black",
+        processing_type="VECTOR_CUTTING",
+        base_params=BaseParams(power=80, speed=500, frequency=65,
+                               density=100, passes=1, pulse_width=200, laser="red"),
+        hatch_passes=[HatchPass(angle=0, spacing=0.5)],
+    )
+    assert spec.processing_type == "VECTOR_CUTTING"
+    # hatch_passes survive on the model but won't be used by the converter.
+    assert len(spec.hatch_passes) == 1
