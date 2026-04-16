@@ -1,4 +1,4 @@
-import type { Project, ValidationIssue } from "./types";
+import type { LayerSpec, Project, ValidationIssue } from "./types";
 
 export const BEAM_WIDTH_MM = 0.03;
 
@@ -99,4 +99,37 @@ export function validateProject(project: Project): ValidationIssue[] {
 
 export function hasErrors(issues: ValidationIssue[]): boolean {
   return issues.some((i) => i.severity === "error");
+}
+
+export function validateLayerSpec(layer: LayerSpec, idx: number): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+
+  if (layer.processing_type === "HATCHED_LINES" && layer.hatch_passes.length === 0) {
+    issues.push({
+      field: `layers[${idx}].hatch_passes`,
+      message: "Hatched layer requires at least one pass",
+      severity: "error",
+    });
+  }
+
+  layer.hatch_passes.forEach((hp, p) => {
+    if (hp.spacing <= 0) {
+      issues.push({
+        field: `layers[${idx}].hatch_passes[${p}].spacing`,
+        message: "Spacing must be greater than 0",
+        severity: "error",
+      });
+    }
+    hp.ramps.forEach((r, ri) => {
+      if (r.min === r.max) {
+        issues.push({
+          field: `layers[${idx}].hatch_passes[${p}].ramps[${ri}]`,
+          message: "Ramp min equals max — value will be constant across the shape",
+          severity: "warning",
+        });
+      }
+    });
+  });
+
+  return issues;
 }

@@ -70,3 +70,73 @@ describe("validateProject", () => {
     expect(BEAM_WIDTH_MM).toBe(0.03);
   });
 });
+
+import { validateLayerSpec } from "./validation";
+
+describe("validateLayerSpec — hatched", () => {
+  function bp() {
+    return {
+      power: 50, speed: 1000, frequency: 65, density: 100,
+      passes: 1, pulse_width: 200, laser: "red" as const,
+    };
+  }
+
+  it("errors when HATCHED_LINES has zero passes", () => {
+    const layer = {
+      color: "#ffd73e", name: "yellow", enabled: true,
+      processing_type: "HATCHED_LINES" as const,
+      scan_angle: 90, base_params: bp(),
+      crosshatch_enabled: false, crosshatch_passes: 2, crosshatch_step_deg: 90,
+      hatch_passes: [],
+    };
+    const issues = validateLayerSpec(layer, 0);
+    expect(issues.some(
+      (i) => i.severity === "error" && i.field === "layers[0].hatch_passes"
+    )).toBe(true);
+  });
+
+  it("errors when a pass spacing is <= 0", () => {
+    const layer = {
+      color: "#ffd73e", name: "yellow", enabled: true,
+      processing_type: "HATCHED_LINES" as const,
+      scan_angle: 90, base_params: bp(),
+      crosshatch_enabled: false, crosshatch_passes: 2, crosshatch_step_deg: 90,
+      hatch_passes: [{ angle: 0, spacing: 0, ramps: [] }],
+    };
+    const issues = validateLayerSpec(layer, 0);
+    expect(issues.some(
+      (i) => i.severity === "error" && i.field === "layers[0].hatch_passes[0].spacing"
+    )).toBe(true);
+  });
+
+  it("warns when ramp min equals max", () => {
+    const layer = {
+      color: "#ffd73e", name: "yellow", enabled: true,
+      processing_type: "HATCHED_LINES" as const,
+      scan_angle: 90, base_params: bp(),
+      crosshatch_enabled: false, crosshatch_passes: 2, crosshatch_step_deg: 90,
+      hatch_passes: [{
+        angle: 0, spacing: 0.5,
+        ramps: [{ param: "power" as const, axis: "perp" as const, min: 50, max: 50 }],
+      }],
+    };
+    const issues = validateLayerSpec(layer, 0);
+    expect(issues.some(
+      (i) => i.severity === "warning"
+          && i.field === "layers[0].hatch_passes[0].ramps[0]"
+    )).toBe(true);
+  });
+
+  it("does not flag non-hatched layer with empty hatch_passes", () => {
+    const layer = {
+      color: "#000000", name: "black", enabled: true,
+      processing_type: "VECTOR_CUTTING" as const,
+      scan_angle: 90, base_params: bp(),
+      crosshatch_enabled: false, crosshatch_passes: 2, crosshatch_step_deg: 90,
+      hatch_passes: [],
+    };
+    const issues = validateLayerSpec(layer, 0);
+    expect(issues.filter((i) => i.field.startsWith("layers[0].hatch_passes")))
+      .toEqual([]);
+  });
+});
