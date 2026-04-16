@@ -215,7 +215,7 @@ export function SvgLayersPage() {
   const disabled = !hasLayers || !request.layers.some((l) => l.enabled) || generating;
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "220px 400px 1fr", height: "100%", minHeight: 0 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "260px 400px minmax(0, 50vw)", height: "100%", minHeight: 0 }}>
       {/* LEFT: layer list */}
       <div style={{ borderRight: "1px solid #ddd", background: "white", overflow: "auto", padding: 12 }}>
         <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 8 }}>
