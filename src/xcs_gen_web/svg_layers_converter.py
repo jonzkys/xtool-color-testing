@@ -95,12 +95,27 @@ def _shape_primary_color(shape: ParsedShape) -> str | None:
     return None
 
 
-def svg_layers_to_xcs(request: SvgLayersRequest) -> XCSProject:
-    """Parse SVG, group shapes by color, emit Paths per enabled layer.
+def build_svg_layers_project(
+    request: SvgLayersRequest,
+    *,
+    max_segments: int = 50000,
+) -> XCSProject:
+    """Parse SVG, group shapes by color, emit Paths or hatch Lines per layer.
+
+    For HATCHED_LINES layers, emits Line segments via the hatch module into
+    ``project.extra_displays`` / ``project.extra_device_entries`` instead of
+    Path elements.  All other processing types emit Path elements exactly as
+    before.
+
+    Args:
+        request: The SVG layers conversion request.
+        max_segments: Hard cap on total hatched Line segments.  Raises
+            ValueError if exceeded (with the worst-offending color in the
+            message).
 
     Raises:
-        ValueError: on parse failure, no shapes, or no enabled layers with
-            matching shapes.
+        ValueError: on parse failure, no shapes, no enabled layers, or
+            hatched output exceeding *max_segments*.
     """
     temp_path = _write_svg_to_temp(request.svg_content)
     try:
@@ -146,7 +161,12 @@ def svg_layers_to_xcs(request: SvgLayersRequest) -> XCSProject:
 
     project = XCSProject()
 
+    # Segment counters for hatched layers (used for max_segments cap).
+    segment_count = 0
+    per_color_counts: dict[str, int] = {}
+
     # Primary pass: one Path per shape using its layer's params.
+    # HATCHED_LINES shapes are handled separately (no Path emitted for them).
     # Track (shape_color, original_Path) pairs so we can restack per-layer crosshatch.
     primary: list[tuple[str, Path]] = []
     for shape in shapes:
@@ -154,6 +174,48 @@ def svg_layers_to_xcs(request: SvgLayersRequest) -> XCSProject:
         if color is None or color not in layer_by_color:
             continue
         layer = layer_by_color[color]
+
+        if layer.processing_type == "HATCHED_LINES":
+            from xcs_gen.hatch import svg_d_to_polygon, generate_hatch_segments
+            from xcs_gen.builder import build_line_display, build_device_entry
+            from xcs_gen.svg_source import HatchPass as LibHatchPass
+            from xcs_gen.svg_source import HatchRamp as LibHatchRamp
+
+            layer_params = _to_processing_params(layer.base_params)
+            polygon = svg_d_to_polygon(shape.d, fill_rule=shape.fill_rule)
+            for hp in layer.hatch_passes:
+                lib_hp = LibHatchPass(
+                    angle=hp.angle,
+                    spacing=hp.spacing,
+                    ramps=[
+                        LibHatchRamp(param=r.param, axis=r.axis,
+                                     min_value=r.min, max_value=r.max)
+                        for r in hp.ramps
+                    ],
+                )
+                segments = generate_hatch_segments(
+                    polygon, lib_hp,
+                    layer_color=color,
+                    fallback_params=layer_params,
+                )
+                for seg in segments:
+                    segment_count += 1
+                    per_color_counts[color] = per_color_counts.get(color, 0) + 1
+                    if segment_count > max_segments:
+                        worst = max(per_color_counts, key=per_color_counts.get)
+                        raise ValueError(
+                            f"hatched output exceeded max_segments={max_segments} "
+                            f"(color {worst!r} contributes {per_color_counts[worst]}). "
+                            "Increase spacing, reduce passes, or raise max_segments."
+                        )
+                    project.extra_displays.append(build_line_display(seg))
+                    project.extra_device_entries.append(
+                        build_device_entry(
+                            seg.id, "LINE", seg.processing_type,
+                            seg.params or layer_params,
+                        )
+                    )
+            continue  # skip Path emission below for hatched layers
 
         params = replace(
             _to_processing_params(layer.base_params),
@@ -206,10 +268,22 @@ def svg_layers_to_xcs(request: SvgLayersRequest) -> XCSProject:
                     )
                 )
 
-    if not project.paths:
+    if not project.paths and not project.extra_displays:
         raise ValueError("No paths emitted - check that the SVG has supported shapes.")
 
     return project
+
+
+def svg_layers_to_xcs(request: SvgLayersRequest) -> XCSProject:
+    """Parse SVG, group shapes by color, emit Paths per enabled layer.
+
+    Delegates to :func:`build_svg_layers_project`.
+
+    Raises:
+        ValueError: on parse failure, no shapes, or no enabled layers with
+            matching shapes.
+    """
+    return build_svg_layers_project(request)
 
 
 def svg_preview(request: SvgPreviewRequest) -> SvgPreviewResponse:
@@ -276,7 +350,7 @@ def svg_preview(request: SvgPreviewRequest) -> SvgPreviewResponse:
 
 
 def svg_layers_to_xcs_bytes(request: SvgLayersRequest) -> bytes:
-    """Convert to .xcs file bytes."""
-    xcs = svg_layers_to_xcs(request)
+    """Convert to .xcs file bytes (JSON-encoded)."""
+    xcs = build_svg_layers_project(request)
     data = build_xcs(xcs)
     return json.dumps(data, separators=(",", ":")).encode("utf-8")

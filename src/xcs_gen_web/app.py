@@ -114,7 +114,7 @@ def create_app() -> FastAPI:
         filename = f"{request.name or 'svg-layers'}.xcs"
         return Response(
             content=body,
-            media_type="application/octet-stream",
+            media_type="application/json",
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
             },

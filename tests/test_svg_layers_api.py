@@ -269,3 +269,120 @@ def test_layerspec_non_hatched_with_passes_is_allowed():
     assert spec.processing_type == "VECTOR_CUTTING"
     # hatch_passes survive on the model but won't be used by the converter.
     assert len(spec.hatch_passes) == 1
+
+
+TWO_COLOR_SVG = """<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <rect x="0" y="0" width="50" height="50" fill="#000000"/>
+  <rect x="50" y="50" width="50" height="50" fill="#ffd73e"/>
+</svg>
+"""
+
+
+def test_layers_request_emits_lines_for_hatched_layer():
+    from xcs_gen_web.schemas import (
+        BaseParams, HatchPass, HatchRamp, LayerSpec, SvgLayersRequest,
+    )
+    from xcs_gen_web.svg_layers_converter import build_svg_layers_project
+    bp = BaseParams(power=50, speed=1000, frequency=65, density=100,
+                    passes=1, pulse_width=200, laser="red")
+    req = SvgLayersRequest(
+        name="t",
+        svg_content=TWO_COLOR_SVG,
+        width_mm=50,
+        layers=[
+            LayerSpec(color="#000000", name="black", processing_type="VECTOR_ENGRAVING",
+                      base_params=bp),
+            LayerSpec(
+                color="#ffd73e", name="yellow", processing_type="HATCHED_LINES",
+                base_params=bp,
+                hatch_passes=[HatchPass(
+                    angle=0, spacing=1.0,
+                    ramps=[HatchRamp(param="power", axis="perp", min=30, max=70)],
+                )],
+            ),
+        ],
+    )
+    project = build_svg_layers_project(req)
+    # Black layer → one Path. Yellow layer → many LINE displays.
+    assert len(project.paths) >= 1
+    line_displays = [d for d in project.extra_displays if d.get("type") == "LINE"]
+    assert len(line_displays) > 0
+    # Each LINE has a matching device entry by id.
+    line_ids = {d["id"] for d in line_displays}
+    entry_ids = {eid for eid, _ in project.extra_device_entries}
+    assert line_ids.issubset(entry_ids)
+
+
+def test_layers_hatched_max_segments_cap():
+    """Hatched output exceeding max_segments raises with a clear message."""
+    import pytest
+    from xcs_gen_web.schemas import BaseParams, HatchPass, LayerSpec, SvgLayersRequest
+    from xcs_gen_web.svg_layers_converter import build_svg_layers_project
+    bp = BaseParams(power=50, speed=1000, frequency=65, density=100,
+                    passes=1, pulse_width=200, laser="red")
+    req = SvgLayersRequest(
+        name="t", svg_content=TWO_COLOR_SVG, width_mm=50,
+        layers=[
+            LayerSpec(
+                color="#ffd73e", name="yellow", processing_type="HATCHED_LINES",
+                base_params=bp,
+                hatch_passes=[HatchPass(angle=0, spacing=0.05)],  # very dense
+            ),
+            LayerSpec(color="#000000", name="black",
+                      processing_type="VECTOR_ENGRAVING", base_params=bp),
+        ],
+    )
+    with pytest.raises(ValueError, match="max_segments"):
+        build_svg_layers_project(req, max_segments=20)
+
+
+def test_api_layers_endpoint_with_hatched_layer():
+    from fastapi.testclient import TestClient
+    from xcs_gen_web.app import create_app
+    client = TestClient(create_app())
+    payload = {
+        "name": "hatched-test",
+        "svg_content": TWO_COLOR_SVG,
+        "width_mm": 50,
+        "layers": [
+            {"color": "#000000", "name": "black",
+             "processing_type": "VECTOR_ENGRAVING",
+             "base_params": {"power": 80, "speed": 500, "frequency": 65,
+                              "density": 100, "passes": 1, "pulse_width": 200,
+                              "laser": "red"}},
+            {"color": "#ffd73e", "name": "yellow",
+             "processing_type": "HATCHED_LINES",
+             "base_params": {"power": 50, "speed": 1000, "frequency": 65,
+                              "density": 100, "passes": 1, "pulse_width": 200,
+                              "laser": "red"},
+             "hatch_passes": [
+                 {"angle": 0, "spacing": 1.0,
+                  "ramps": [{"param": "power", "axis": "perp", "min": 30, "max": 70}]},
+             ]},
+        ],
+    }
+    resp = client.post("/api/svg-layers", json=payload)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/json")
+    assert len(resp.content) > 1000  # non-trivial XCS body
+
+
+def test_api_layers_endpoint_rejects_hatched_with_empty_passes():
+    from fastapi.testclient import TestClient
+    from xcs_gen_web.app import create_app
+    client = TestClient(create_app())
+    payload = {
+        "name": "bad", "svg_content": TWO_COLOR_SVG, "width_mm": 50,
+        "layers": [
+            {"color": "#ffd73e", "name": "yellow",
+             "processing_type": "HATCHED_LINES",
+             "base_params": {"power": 50, "speed": 1000, "frequency": 65,
+                              "density": 100, "passes": 1, "pulse_width": 200,
+                              "laser": "red"},
+             "hatch_passes": []},
+        ],
+    }
+    resp = client.post("/api/svg-layers", json=payload)
+    assert resp.status_code == 422  # Pydantic validation error
+    assert "HATCHED_LINES" in resp.text
