@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { NumberField } from "./fields/NumberField";
 import { SelectField } from "./fields/SelectField";
-import { defaultBaseParams } from "../defaults";
+import { defaultBaseParams, defaultHatchPass } from "../defaults";
 import { DEFAULT_RASTER_TRACE_OPTIONS, detectSvgLayers, previewSvg, rasterToSvg, svgLayersAndDownload } from "../generate";
 import type { RasterTraceOptions } from "../generate";
 import type { DetectedLayer, LayerSpec, SvgLayersRequest, SvgProcessingType } from "../types";
+import { HatchPassesEditor } from "./HatchPassesEditor";
+import { validateLayerSpec } from "../validation";
 
 const PROCESSING_TYPES: { value: SvgProcessingType; label: string }[] = [
   { value: "COLOR_FILL_ENGRAVE", label: "Color fill engrave" },
   { value: "FILL_VECTOR_ENGRAVING", label: "Fill vector engrave" },
   { value: "VECTOR_ENGRAVING", label: "Vector engrave" },
   { value: "VECTOR_CUTTING", label: "Vector cut" },
+  { value: "HATCHED_LINES", label: "Hatched lines" },
 ];
 
 function defaultLayerFromDetected(detected: DetectedLayer): LayerSpec {
@@ -24,6 +27,7 @@ function defaultLayerFromDetected(detected: DetectedLayer): LayerSpec {
     crosshatch_enabled: false,
     crosshatch_passes: 2,
     crosshatch_step_deg: 90,
+    hatch_passes: [],
   };
 }
 
@@ -212,7 +216,13 @@ export function SvgLayersPage() {
   }
 
   const hasLayers = request.layers.length > 0;
-  const disabled = !hasLayers || !request.layers.some((l) => l.enabled) || generating;
+  const hatchedHasErrors = request.layers.some(
+    (l, i) => l.enabled && validateLayerSpec(l, i).some((iss) => iss.severity === "error")
+  );
+  const disabled = !hasLayers
+    || !request.layers.some((l) => l.enabled)
+    || generating
+    || hatchedHasErrors;
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "260px 400px minmax(0, 50vw)", height: "100%", minHeight: 0 }}>
@@ -397,6 +407,7 @@ export function SvgLayersPage() {
         {selected ? (
           <LayerEditor
             layer={selected}
+            layerIdx={request.layers.findIndex((l) => l.color === selected.color)}
             onPatch={(p) => updateLayer(selected.color, p)}
             onBasePatch={(p) => updateBase(selected.color, p)}
           />
@@ -421,12 +432,15 @@ export function SvgLayersPage() {
 }
 
 function LayerEditor({
-  layer, onPatch, onBasePatch,
+  layer, layerIdx, onPatch, onBasePatch,
 }: {
   layer: LayerSpec;
+  layerIdx: number;
   onPatch: (p: Partial<LayerSpec>) => void;
   onBasePatch: (p: Partial<LayerSpec["base_params"]>) => void;
 }) {
+  const hatchIssues = validateLayerSpec(layer, layerIdx);
+
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
@@ -449,27 +463,46 @@ function LayerEditor({
           label="Processing type"
           value={layer.processing_type}
           options={PROCESSING_TYPES}
-          onChange={(v) => onPatch({ processing_type: v })}
+          onChange={(v) => {
+            const patch: Partial<LayerSpec> = { processing_type: v };
+            if (v === "HATCHED_LINES" && layer.hatch_passes.length === 0) {
+              patch.hatch_passes = [defaultHatchPass(0)];
+            }
+            onPatch(patch);
+          }}
         />
-        <NumberField label="Scan angle (°)" value={layer.scan_angle} onChange={(v) => onPatch({ scan_angle: v })} />
-      </Section>
-
-      <Section title="Crosshatch (per-layer stacking)">
-        <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <input
-            type="checkbox"
-            checked={layer.crosshatch_enabled}
-            onChange={(e) => onPatch({ crosshatch_enabled: e.target.checked })}
-          />
-          <span style={{ fontSize: 12, color: "#555" }}>Enable crosshatch</span>
-        </label>
-        {layer.crosshatch_enabled && (
-          <>
-            <NumberField label="Passes" value={layer.crosshatch_passes} integer min={2} max={10} onChange={(v) => onPatch({ crosshatch_passes: v })} />
-            <NumberField label="Rotation step (°)" value={layer.crosshatch_step_deg} onChange={(v) => onPatch({ crosshatch_step_deg: v })} />
-          </>
+        {layer.processing_type !== "HATCHED_LINES" && (
+          <NumberField label="Scan angle (°)" value={layer.scan_angle} onChange={(v) => onPatch({ scan_angle: v })} />
         )}
       </Section>
+
+      {layer.processing_type !== "HATCHED_LINES" && (
+        <Section title="Crosshatch (per-layer stacking)">
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <input
+              type="checkbox"
+              checked={layer.crosshatch_enabled}
+              onChange={(e) => onPatch({ crosshatch_enabled: e.target.checked })}
+            />
+            <span style={{ fontSize: 12, color: "#555" }}>Enable crosshatch</span>
+          </label>
+          {layer.crosshatch_enabled && (
+            <>
+              <NumberField label="Passes" value={layer.crosshatch_passes} integer min={2} max={10} onChange={(v) => onPatch({ crosshatch_passes: v })} />
+              <NumberField label="Rotation step (°)" value={layer.crosshatch_step_deg} onChange={(v) => onPatch({ crosshatch_step_deg: v })} />
+            </>
+          )}
+        </Section>
+      )}
+
+      {layer.processing_type === "HATCHED_LINES" && (
+        <HatchPassesEditor
+          passes={layer.hatch_passes}
+          onChange={(next) => onPatch({ hatch_passes: next })}
+          issues={hatchIssues}
+          layerIdx={layerIdx}
+        />
+      )}
 
       <Section title="Base parameters">
         <NumberField label="Power %" value={layer.base_params.power} onChange={(v) => onBasePatch({ power: v })} />
