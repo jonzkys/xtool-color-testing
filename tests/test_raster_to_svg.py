@@ -23,6 +23,28 @@ def test_png_to_svg_returns_svg_string():
     assert "<path" in svg
 
 
+def test_max_colors_caps_palette():
+    """PIL pre-quantization drastically reduces vtracer's output palette.
+
+    vtracer's color_precision can still introduce ±1-channel splits on
+    pre-quantized pixels, so max_colors is a strong guideline rather than
+    a hard cap. With a very tight target (3 colors), the actual output
+    should stay well under what the unquantized trace produces.
+    """
+    import re
+    baseline = png_to_svg(PIKA_PNG.read_bytes(), image_format="png")
+    baseline_n = len(set(re.findall(r'fill="([^"]+)"', baseline)))
+
+    opts = RasterTraceOptions(max_colors=3)
+    svg = png_to_svg(PIKA_PNG.read_bytes(), image_format="png", options=opts)
+    capped_n = len(set(re.findall(r'fill="([^"]+)"', svg)))
+
+    # Hard cap of 2x target catches pathological splits without being brittle.
+    assert capped_n <= 6
+    # And it has to be fewer than the unquantized baseline.
+    assert capped_n < baseline_n
+
+
 def test_aggressive_quantization_reduces_colors():
     """Very low color_precision collapses the palette to a tiny number of colors."""
     import re

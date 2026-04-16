@@ -96,6 +96,7 @@ def create_app() -> FastAPI:
                     color_precision=request.color_precision,
                     layer_difference=request.layer_difference,
                     filter_speckle=request.filter_speckle,
+                    max_colors=request.max_colors,
                 ),
             )
         except Exception as e:

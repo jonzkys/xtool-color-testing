@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { NumberField } from "./fields/NumberField";
 import { SelectField } from "./fields/SelectField";
 import { defaultBaseParams } from "../defaults";
-import { detectSvgLayers, previewSvg, rasterToSvg, svgLayersAndDownload } from "../generate";
+import { DEFAULT_RASTER_TRACE_OPTIONS, detectSvgLayers, previewSvg, rasterToSvg, svgLayersAndDownload } from "../generate";
 import type { RasterTraceOptions } from "../generate";
 import type { DetectedLayer, LayerSpec, SvgLayersRequest, SvgProcessingType } from "../types";
 
@@ -53,11 +53,9 @@ export function SvgLayersPage() {
   // Raster -> SVG support. When the user uploads a PNG/JPG we keep its data URL
   // so we can re-trace with different options without re-uploading.
   const [rasterDataUrl, setRasterDataUrl] = useState<string | null>(null);
-  const [traceOptions, setTraceOptions] = useState<RasterTraceOptions>({
-    color_precision: 4,
-    layer_difference: 32,
-    filter_speckle: 8,
-  });
+  const [traceOptions, setTraceOptions] = useState<RasterTraceOptions>(
+    () => ({ ...DEFAULT_RASTER_TRACE_OPTIONS }),
+  );
   const [tracing, setTracing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -184,6 +182,12 @@ export function SvgLayersPage() {
     if (rasterDataUrl) void retrace(next);
   }
 
+  function resetTraceOptions() {
+    const defaults = { ...DEFAULT_RASTER_TRACE_OPTIONS };
+    setTraceOptions(defaults);
+    if (rasterDataUrl) void retrace(defaults);
+  }
+
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (f) void handleFile(f);
@@ -239,12 +243,28 @@ export function SvgLayersPage() {
 
         {rasterDataUrl && (
           <div style={{ marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid #eee" }}>
-            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 4 }}>
-              Trace options (PNG/JPG)
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666" }}>
+                Trace options (PNG/JPG)
+              </div>
+              <button
+                onClick={resetTraceOptions}
+                style={{
+                  fontSize: 10, padding: "2px 6px", background: "transparent",
+                  border: "1px solid #bbb", borderRadius: 3, color: "#555",
+                }}
+              >
+                Reset
+              </button>
             </div>
             <div style={{ fontSize: 10, color: "#999", marginBottom: 6 }}>
               Re-vectorizes on change. Lower values = fewer layers.
             </div>
+            <NumberField
+              label="Max colors (0 = off, 2-32 typical)"
+              value={traceOptions.max_colors} integer min={0} max={256}
+              onChange={(v) => updateTraceOptions({ max_colors: v })}
+            />
             <NumberField
               label="Color precision (1-8)"
               value={traceOptions.color_precision} integer min={1} max={8}

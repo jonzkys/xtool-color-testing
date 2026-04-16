@@ -192,6 +192,8 @@ class RasterToSvgRequest(BaseModel):
     color_precision: int = Field(default=4, ge=1, le=8)
     layer_difference: int = Field(default=32, ge=0, le=255)
     filter_speckle: int = Field(default=8, ge=0, le=100)
+    # 0 = no PIL pre-quantization, 2-256 = cap palette before vtracer
+    max_colors: int = Field(default=0, ge=0, le=256)
 
 
 class RasterToSvgResponse(BaseModel):

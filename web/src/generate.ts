@@ -59,7 +59,15 @@ export interface RasterTraceOptions {
   color_precision: number;
   layer_difference: number;
   filter_speckle: number;
+  max_colors: number;  // 0 = disabled, 2-256 = PIL pre-quantize palette size
 }
+
+export const DEFAULT_RASTER_TRACE_OPTIONS: RasterTraceOptions = {
+  color_precision: 4,
+  layer_difference: 32,
+  filter_speckle: 8,
+  max_colors: 6,  // Default for raster: cap palette at 6 colors - best UX for photos
+};
 
 export async function rasterToSvg(
   image_data_url: string,
