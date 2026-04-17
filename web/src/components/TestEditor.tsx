@@ -149,8 +149,8 @@ export function TestEditor({ placement, issues, onChange, onDelete, onDuplicate 
 
       <Section title="Registration markers">
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
-          <label style={{ fontSize: 12 }}>
-            Mode
+          <label style={{ display: "block" }}>
+            <span style={{ display: "block", fontSize: 12, color: "#555", marginBottom: 2 }}>Mode</span>
             <select
               value={t.registration.mode}
               onChange={(e) => updateTest({
@@ -164,8 +164,8 @@ export function TestEditor({ placement, issues, onChange, onDelete, onDuplicate 
               <option value="full">Full (QR + ArUco)</option>
             </select>
           </label>
-          <label style={{ fontSize: 12 }}>
-            QR payload
+          <label style={{ display: "block" }}>
+            <span style={{ display: "block", fontSize: 12, color: "#555", marginBottom: 2 }}>QR payload</span>
             <select
               value={t.registration.qr_mode}
               onChange={(e) => updateTest({
