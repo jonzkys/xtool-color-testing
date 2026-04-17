@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 import segno
 
-from ..builder import _build_rect_display, build_device_entry
+from ..builder import build_device_entry, build_rect_display
 from ..model import (
     ANNOTATION_LAYER_COLOR,
     ProcessingParams,
@@ -126,7 +126,7 @@ def _emit_bit_matrix(
             # Add as an extra_display so it joins the annotation stream
             # (rather than as project.elements which would mix with the
             # gradient layer). Build the display + device entry directly.
-            disp = _build_rect_display(elem)
+            disp = build_rect_display(elem)
             project.extra_displays.append(disp)
             project.extra_device_entries.append(
                 build_device_entry(

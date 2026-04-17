@@ -85,6 +85,11 @@ def _build_rect_display(elem: Rect) -> dict[str, Any]:
     }
 
 
+def build_rect_display(elem: Rect) -> dict[str, Any]:
+    """Public wrapper around the internal rect display builder."""
+    return _build_rect_display(elem)
+
+
 def build_line_display(line: Line) -> dict[str, Any]:
     """Build a display entry for a line element."""
     # LINE uses width=length, height=0.001, angle for rotation.

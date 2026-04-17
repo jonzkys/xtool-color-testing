@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import uuid
 from dataclasses import replace
 
 from .builder import build_device_entry, build_line_display
@@ -47,7 +48,6 @@ _INT_FIELDS = {"speed", "repeat", "density", "pulse_width", "mopa_frequency", "d
 
 def _default_test_id() -> str:
     """Generate a short random ID for a test when no explicit one is provided."""
-    import uuid
     return uuid.uuid4().hex[:8]
 
 
