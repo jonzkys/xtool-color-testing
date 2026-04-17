@@ -77,6 +77,16 @@ describe("deleteMaterial", () => {
     const s2 = deleteMaterial(s, brassId);
     expect(s2.active_material_id).toBe(s.materials[0].id);
   });
+
+  test("sets active_material_id to empty string when the only material is deleted", () => {
+    let s = bootstrapLibrary();
+    // Remove the preset first so deleteMaterial won't throw
+    s = deletePreset(s, s.presets[0].id);
+    const onlyId = s.materials[0].id;
+    const s2 = deleteMaterial(s, onlyId);
+    expect(s2.active_material_id).toBe("");
+    expect(s2.materials).toHaveLength(0);
+  });
 });
 
 describe("renameMaterial", () => {
@@ -197,6 +207,11 @@ describe("setDefaultPreset", () => {
     const s2 = setDefaultPreset(s, secondId);
     expect(s2.presets[0].is_default).toBe(false);
     expect(s2.presets[1].is_default).toBe(true);
+  });
+
+  test("throws on unknown preset id", () => {
+    const s = bootstrapLibrary();
+    expect(() => setDefaultPreset(s, "nope")).toThrow();
   });
 
   test("does not affect presets in other materials", () => {

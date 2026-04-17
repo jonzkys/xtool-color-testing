@@ -127,7 +127,10 @@ export function deletePreset(s: LibraryState, id: string): LibraryState {
   if (target.is_default) {
     const firstInMat = remaining.findIndex((p) => p.material_id === target.material_id);
     if (firstInMat !== -1) {
-      remaining[firstInMat] = { ...remaining[firstInMat], is_default: true };
+      const promoted = remaining.map((p, i) =>
+        i === firstInMat ? { ...p, is_default: true } : p
+      );
+      return { ...s, presets: promoted };
     }
   }
   return { ...s, presets: remaining };
@@ -150,7 +153,7 @@ export function updatePreset(
 
 export function setDefaultPreset(s: LibraryState, id: string): LibraryState {
   const target = s.presets.find((p) => p.id === id);
-  if (!target) return s;
+  if (!target) throw new Error(`No preset with id ${id}`);
   return {
     ...s,
     presets: s.presets.map((p) => {
