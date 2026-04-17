@@ -219,8 +219,8 @@ export function SvgStackPage() {
         )}
       </div>
 
-      {/* RIGHT: preview */}
-      <div style={{ overflow: "auto", padding: 16, background: "#f6f7f9" }}>
+      {/* RIGHT: preview (capped to 1/3 of viewport width) */}
+      <div style={{ overflow: "auto", padding: 16, background: "#f6f7f9", maxWidth: "33vw" }}>
         <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 8 }}>
           Preview
         </div>

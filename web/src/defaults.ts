@@ -59,5 +59,7 @@ export function defaultProject(): Project {
 }
 
 export function defaultHatchPass(angle = 0): HatchPassSpec {
-  return { angle, spacing: 0.5, ramps: [] };
+  // Default spacing = thickness so the hatched output is a continuous fill
+  // out of the box. Increase spacing > thickness for visible gaps.
+  return { angle, spacing: 0.1, thickness: 0.1, ramps: [] };
 }

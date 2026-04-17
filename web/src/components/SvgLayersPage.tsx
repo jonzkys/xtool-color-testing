@@ -225,7 +225,7 @@ export function SvgLayersPage() {
     || hatchedHasErrors;
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "260px 400px minmax(0, 50vw)", height: "100%", minHeight: 0 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "260px 1fr minmax(0, 33vw)", height: "100%", minHeight: 0 }}>
       {/* LEFT: layer list */}
       <div style={{ borderRight: "1px solid #ddd", background: "white", overflow: "auto", padding: 12 }}>
         <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 8 }}>

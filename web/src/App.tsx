@@ -112,7 +112,7 @@ export default function App() {
         onTabChange={setTab}
       />
       {tab === "tests" ? (
-        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "260px 1fr 1fr", minHeight: 0 }}>
+        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "260px 1fr minmax(0, 33vw)", minHeight: 0 }}>
           <div style={{ borderRight: "1px solid #ddd", background: "white", overflow: "auto" }}>
             <TestList
               project={project}

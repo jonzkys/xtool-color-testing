@@ -120,6 +120,13 @@ export function validateLayerSpec(layer: LayerSpec, idx: number): ValidationIssu
         severity: "error",
       });
     }
+    if (hp.thickness <= 0) {
+      issues.push({
+        field: `layers[${idx}].hatch_passes[${p}].thickness`,
+        message: "Thickness must be greater than 0",
+        severity: "error",
+      });
+    }
     hp.ramps.forEach((r, ri) => {
       if (r.min === r.max) {
         issues.push({

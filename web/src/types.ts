@@ -84,7 +84,8 @@ export interface HatchRampSpec {
 
 export interface HatchPassSpec {
   angle: number;       // degrees, 0 = horizontal
-  spacing: number;     // mm between hatch lines
+  spacing: number;     // mm between hatch line centers
+  thickness: number;   // mm; height of each hatch line's filled rect
   ramps: HatchRampSpec[];
 }
 

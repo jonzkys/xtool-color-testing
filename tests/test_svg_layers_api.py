@@ -279,7 +279,7 @@ TWO_COLOR_SVG = """<?xml version="1.0"?>
 """
 
 
-def test_layers_request_emits_lines_for_hatched_layer():
+def test_layers_request_emits_rects_for_hatched_layer():
     from xcs_gen_web.schemas import (
         BaseParams, HatchPass, HatchRamp, LayerSpec, SvgLayersRequest,
     )
@@ -304,14 +304,14 @@ def test_layers_request_emits_lines_for_hatched_layer():
         ],
     )
     project = build_svg_layers_project(req)
-    # Black layer → one Path. Yellow layer → many LINE displays.
+    # Black layer → one Path. Yellow layer → many rotated RECT displays.
     assert len(project.paths) >= 1
-    line_displays = [d for d in project.extra_displays if d.get("type") == "LINE"]
-    assert len(line_displays) > 0
-    # Each LINE has a matching device entry by id.
-    line_ids = {d["id"] for d in line_displays}
+    rect_displays = [d for d in project.extra_displays if d.get("type") == "RECT"]
+    assert len(rect_displays) > 0
+    # Each RECT has a matching device entry by id.
+    rect_ids = {d["id"] for d in rect_displays}
     entry_ids = {eid for eid, _ in project.extra_device_entries}
-    assert line_ids.issubset(entry_ids)
+    assert rect_ids.issubset(entry_ids)
 
 
 def test_layers_hatched_max_segments_cap():

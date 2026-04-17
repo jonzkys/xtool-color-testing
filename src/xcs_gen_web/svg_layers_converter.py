@@ -15,7 +15,7 @@ from collections import Counter
 from dataclasses import replace
 
 from xcs_gen.builder import build_xcs
-from xcs_gen.model import GRADIENT_LAYER_COLOR, Path, XCSProject, _uuid
+from xcs_gen.model import GRADIENT_LAYER_COLOR, Path, Rect, XCSProject, _uuid
 from xcs_gen.svg_source import ParsedShape, parse_svg
 
 from .converter import _to_processing_params
@@ -177,12 +177,16 @@ def build_svg_layers_project(
 
         if layer.processing_type == "HATCHED_LINES":
             from xcs_gen.hatch import svg_d_to_polygon, generate_hatch_segments
-            from xcs_gen.builder import build_line_display, build_device_entry
+            from xcs_gen.builder import _build_rect_display, build_device_entry
             from xcs_gen.svg_source import HatchPass as LibHatchPass
             from xcs_gen.svg_source import HatchRamp as LibHatchRamp
 
             layer_params = _to_processing_params(layer.base_params)
             polygon = svg_d_to_polygon(shape.d, fill_rule=shape.fill_rule)
+            # Thin filled RECT per hatch line (rotated to the hatch angle) instead
+            # of LINE elements: XCS Studio handles RECT fills consistently when a
+            # material preset is later applied, where LINE clusters get flattened
+            # into a single fill region with the per-line params lost.
             for hp in layer.hatch_passes:
                 lib_hp = LibHatchPass(
                     angle=hp.angle,
@@ -208,11 +212,29 @@ def build_svg_layers_project(
                             f"(color {worst!r} contributes {per_color_counts[worst]}). "
                             "Increase spacing, reduce passes, or raise max_segments."
                         )
-                    project.extra_displays.append(build_line_display(seg))
+
+                    # Each hatch segment becomes a thin filled RECT, rotated to
+                    # the hatch angle so it lies along the line's direction.
+                    # scan_angle=0 (relative to the rect) means the laser scans
+                    # along the rect's long axis — i.e. along the hatch line.
+                    seg_params = replace(
+                        seg.params or layer_params, scan_angle=0,
+                    )
+                    rect = Rect(
+                        x=seg.x, y=seg.y,
+                        width=seg.length, height=hp.thickness,
+                        params=seg_params,
+                        processing_type="COLOR_FILL_ENGRAVE",
+                        is_fill=True,
+                        layer_color=color,
+                    )
+                    rect_display = _build_rect_display(rect)
+                    rect_display["angle"] = hp.angle  # rotate around (x, y)
+
+                    project.extra_displays.append(rect_display)
                     project.extra_device_entries.append(
                         build_device_entry(
-                            seg.id, "LINE", seg.processing_type,
-                            seg.params or layer_params,
+                            rect.id, "RECT", "COLOR_FILL_ENGRAVE", seg_params,
                         )
                     )
             continue  # skip Path emission below for hatched layers

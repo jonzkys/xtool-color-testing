@@ -101,7 +101,7 @@ describe("validateLayerSpec — hatched", () => {
       processing_type: "HATCHED_LINES" as const,
       scan_angle: 90, base_params: bp(),
       crosshatch_enabled: false, crosshatch_passes: 2, crosshatch_step_deg: 90,
-      hatch_passes: [{ angle: 0, spacing: 0, ramps: [] }],
+      hatch_passes: [{ angle: 0, spacing: 0, thickness: 0.1, ramps: [] }],
     };
     const issues = validateLayerSpec(layer, 0);
     expect(issues.some(
@@ -116,7 +116,7 @@ describe("validateLayerSpec — hatched", () => {
       scan_angle: 90, base_params: bp(),
       crosshatch_enabled: false, crosshatch_passes: 2, crosshatch_step_deg: 90,
       hatch_passes: [{
-        angle: 0, spacing: 0.5,
+        angle: 0, spacing: 0.5, thickness: 0.1,
         ramps: [{ param: "power" as const, axis: "perp" as const, min: 50, max: 50 }],
       }],
     };

@@ -120,6 +120,11 @@ export function HatchPassesEditor(props: HatchPassesEditorProps) {
                 onChange={(v) => updatePass(p, { spacing: v })}
                 issue={spacingIssue?.message}
               />
+              <NumberField
+                label="Thickness (mm)"
+                value={hp.thickness}
+                onChange={(v) => updatePass(p, { thickness: v })}
+              />
             </div>
 
             <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>

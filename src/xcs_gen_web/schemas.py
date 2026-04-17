@@ -122,7 +122,11 @@ class HatchPass(BaseModel):
     """One sweep of parallel hatch lines through a shape."""
 
     angle: float = 0.0
-    spacing: float = Field(default=0.5, gt=0.0)
+    spacing: float = Field(default=0.1, gt=0.0)
+    # Line thickness in mm. Each hatched segment is emitted as a thin filled RECT
+    # of this height, rotated to the hatch angle. Default = spacing for a
+    # continuous (gap-free) fill; set spacing > thickness for visible gaps.
+    thickness: float = Field(default=0.1, gt=0.0)
     ramps: list[HatchRamp] = Field(default_factory=list)
 
 
