@@ -1,4 +1,4 @@
-import type { ParamTest, TestPlacement, ValidationIssue } from "../types";
+import type { ParamTest, QrMode, RegistrationMode, TestPlacement, ValidationIssue } from "../types";
 import { PARAM_NAMES } from "../types";
 import { NumberField } from "./fields/NumberField";
 import { SelectField } from "./fields/SelectField";
@@ -145,6 +145,46 @@ export function TestEditor({ placement, issues, onChange, onDelete, onDuplicate 
             />
           </>
         )}
+      </Section>
+
+      <Section title="Registration markers">
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+          <label style={{ fontSize: 12 }}>
+            Mode
+            <select
+              value={t.registration.mode}
+              onChange={(e) => updateTest({
+                registration: { ...t.registration, mode: e.target.value as RegistrationMode },
+              })}
+              style={{ display: "block", marginTop: 2, padding: "4px 6px", border: "1px solid #ccc", borderRadius: 4, font: "inherit", background: "white" }}
+            >
+              <option value="off">Off</option>
+              <option value="auto">Auto</option>
+              <option value="compact">Compact (QR only)</option>
+              <option value="full">Full (QR + ArUco)</option>
+            </select>
+          </label>
+          <label style={{ fontSize: 12 }}>
+            QR payload
+            <select
+              value={t.registration.qr_mode}
+              onChange={(e) => updateTest({
+                registration: { ...t.registration, qr_mode: e.target.value as QrMode },
+              })}
+              disabled={t.registration.mode === "off"}
+              style={{ display: "block", marginTop: 2, padding: "4px 6px", border: "1px solid #ccc", borderRadius: 4, font: "inherit", background: "white" }}
+            >
+              <option value="inline">Inline spec</option>
+              <option value="id_only">ID only</option>
+            </select>
+          </label>
+        </div>
+        <p style={{ fontSize: 11, color: "#666", margin: 0 }}>
+          Burns a QR code (and optional ArUco markers in Full mode) onto the
+          annotation layer so you can photograph the result and auto-extract
+          colors. ID-only QR uses less space but requires the test to still be
+          in this browser's local storage when you upload the photo.
+        </p>
       </Section>
 
       <Section title="Grid placement">
