@@ -19,6 +19,13 @@ class BaseParams(BaseModel):
     laser: Literal["red", "blue"]
 
 
+class RegistrationConfig(BaseModel):
+    """Config for the photo-ingest registration block burned into a test."""
+
+    mode: Literal["auto", "compact", "full", "off"] = "off"
+    qr_mode: Literal["inline", "id_only"] = "inline"
+
+
 class ParamTest(BaseModel):
     """A single param test (one band/grid in the composition)."""
 
@@ -44,6 +51,7 @@ class ParamTest(BaseModel):
     crosshatch_enabled: bool = False
     crosshatch_passes: int = Field(default=2, ge=2, le=10)
     crosshatch_step_deg: float = Field(default=90.0, gt=0.0, le=360.0)
+    registration: RegistrationConfig = Field(default_factory=RegistrationConfig)
 
     @model_validator(mode="after")
     def validate_ranges(self) -> "ParamTest":

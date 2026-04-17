@@ -190,6 +190,9 @@ def project_to_xcs(project: Project) -> XCSProject:
             start_y=CANVAS_ORIGIN_Y + y_off,
             base_params=_to_processing_params(t.base_params),
             summary_suffix=summary_suffix,
+            registration_mode=t.registration.mode,
+            registration_qr_mode=t.registration.qr_mode,
+            test_id=t.id,
         )
 
         if i == 0:

@@ -97,3 +97,21 @@ def test_generate_rejects_empty_name(client):
     payload["name"] = ""
     resp = client.post("/api/generate", json=payload)
     assert resp.status_code == 422
+
+
+def test_generate_with_registration_markers(client):
+    payload = _project_payload()
+    payload["tests"][0]["test"]["registration"] = {
+        "mode": "compact",
+        "qr_mode": "inline",
+    }
+    resp = client.post("/api/generate", json=payload)
+    assert resp.status_code == 200
+    data = json.loads(resp.content)
+    # With registration, the displays list must include extras for markers.
+    displays = data["canvas"][0]["displays"]
+    # Baseline (no registration) for comparison
+    baseline_payload = _project_payload()
+    baseline = client.post("/api/generate", json=baseline_payload)
+    baseline_displays = json.loads(baseline.content)["canvas"][0]["displays"]
+    assert len(displays) > len(baseline_displays)

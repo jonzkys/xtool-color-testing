@@ -6,6 +6,14 @@ export const PARAM_NAMES = [
 
 export type ParamName = (typeof PARAM_NAMES)[number];
 
+export type RegistrationMode = "auto" | "compact" | "full" | "off";
+export type QrMode = "inline" | "id_only";
+
+export interface RegistrationConfig {
+  mode: RegistrationMode;
+  qr_mode: QrMode;
+}
+
 export interface BaseParams {
   power: number;
   speed: number;
@@ -36,6 +44,7 @@ export interface ParamTest {
   crosshatch_enabled: boolean;
   crosshatch_passes: number;
   crosshatch_step_deg: number;
+  registration: RegistrationConfig;
 }
 
 export interface TestPlacement {
