@@ -65,3 +65,14 @@ def test_encode_inline_without_y_axis():
     decoded = decode_payload(encoded)
     assert "y" not in decoded
     assert decoded["t"] == "grid"
+
+
+def test_encode_inline_rejects_spec_without_id():
+    spec = {"t": "grid", "x": {"p": "speed", "min": 100, "max": 5000, "n": 50}}
+    with pytest.raises(PayloadError, match="id"):
+        encode_inline(spec)
+
+
+def test_encode_id_only_rejects_empty_string():
+    with pytest.raises(PayloadError, match="non-empty"):
+        encode_id_only("")

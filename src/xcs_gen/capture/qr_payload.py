@@ -24,12 +24,16 @@ def encode_inline(spec: dict[str, Any]) -> str:
     Keys are kept short (already-abbreviated by the caller); this function
     only adds the version tag and serializes with minimal whitespace.
     """
+    if "id" not in spec:
+        raise PayloadError("spec missing required field: id")
     payload = {"v": _SCHEMA_VERSION, **spec}
     return json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
 
 
 def encode_id_only(test_id: str) -> str:
     """Encode just the schema version + ID."""
+    if not test_id:
+        raise PayloadError("test_id must be non-empty")
     return json.dumps({"v": _SCHEMA_VERSION, "id": test_id}, separators=(",", ":"))
 
 
