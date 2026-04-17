@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, test, vi } from "vitest";
 import { loadProject, saveProject, STORAGE_KEY } from "./storage";
 import { defaultProject } from "./defaults";
 
@@ -76,5 +76,38 @@ describe("storage", () => {
     for (const placement of loaded!.tests) {
       expect(placement.test.registration).toEqual({ mode: "full", qr_mode: "id_only" });
     }
+  });
+});
+
+import { loadLibrary, saveLibrary, LIBRARY_STORAGE_KEY } from "./storage";
+import { bootstrapLibrary } from "./library";
+
+describe("library persistence", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  test("loadLibrary returns null when key missing", () => {
+    expect(loadLibrary()).toBeNull();
+  });
+
+  test("saveLibrary + loadLibrary roundtrip", () => {
+    const s = bootstrapLibrary();
+    saveLibrary(s);
+    const loaded = loadLibrary();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.version).toBe(1);
+    expect(loaded!.materials).toHaveLength(1);
+    expect(loaded!.materials[0].name).toBe("Stainless Steel");
+  });
+
+  test("loadLibrary returns null on malformed JSON", () => {
+    localStorage.setItem(LIBRARY_STORAGE_KEY, "not-json");
+    expect(loadLibrary()).toBeNull();
+  });
+
+  test("loadLibrary returns null when state is missing required fields", () => {
+    localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify({ version: 1 }));
+    expect(loadLibrary()).toBeNull();
   });
 });

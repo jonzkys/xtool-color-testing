@@ -9,7 +9,6 @@ import {
   setActiveMaterial,
   setDefaultPreset,
   updatePreset,
-  type LibraryState,
   type Preset,
 } from "./library";
 

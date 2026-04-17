@@ -1,4 +1,5 @@
 import type { Project, RegistrationConfig } from "./types";
+import type { LibraryState } from "./library";
 
 export const STORAGE_KEY = "xcs-gen:project:v1";
 
@@ -39,5 +40,38 @@ export function saveProject(project: Project): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
   } catch {
     // Silently ignore (quota exceeded, disabled, etc.). State is lost on reload.
+  }
+}
+
+export const LIBRARY_STORAGE_KEY = "xcs-gen:library:v1";
+
+function isValidLibrary(obj: unknown): obj is LibraryState {
+  if (!obj || typeof obj !== "object") return false;
+  const s = obj as Partial<LibraryState>;
+  return (
+    s.version === 1 &&
+    typeof s.active_material_id === "string" &&
+    Array.isArray(s.materials) &&
+    Array.isArray(s.presets)
+  );
+}
+
+export function loadLibrary(): LibraryState | null {
+  try {
+    const raw = localStorage.getItem(LIBRARY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!isValidLibrary(parsed)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function saveLibrary(state: LibraryState): void {
+  try {
+    localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Silently ignore.
   }
 }
