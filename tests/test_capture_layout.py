@@ -18,8 +18,8 @@ def test_compact_mode_returns_qr_only():
     )
     assert layout.qr is not None
     assert layout.aruco_markers == []
-    # QR should sit just outside the grid, in a corner
-    assert layout.qr.x >= 10.0 or layout.qr.x + layout.qr.size <= 10.0 + 22.0
+    # QR should sit entirely to the left of the grid
+    assert layout.qr.x + layout.qr.size <= 10.0
 
 
 def test_full_mode_returns_qr_plus_3_aruco():
@@ -83,14 +83,39 @@ def test_marker_positions_do_not_overlap_grid():
         grid_x=10.0, grid_y=10.0, grid_w=50.0, grid_h=50.0,
         mode="full",
     )
-    grid_right = 10.0 + 50.0
-    grid_bottom = 10.0 + 50.0
+    grid_x, grid_y, grid_right, grid_bottom = 10.0, 10.0, 10.0 + 50.0, 10.0 + 50.0
     for m in layout.aruco_markers:
         m_right = m.x + m.size
         m_bottom = m.y + m.size
         # Either entirely left of grid, right of grid, above, or below
         outside = (
-            m_right <= 10.0 or m.x >= grid_right
-            or m_bottom <= 10.0 or m.y >= grid_bottom
+            m_right <= grid_x or m.x >= grid_right
+            or m_bottom <= grid_y or m.y >= grid_bottom
         )
-        assert outside, f"marker at ({m.x},{m.y}) size {m.size} overlaps grid"
+        assert outside, f"ArUco marker at ({m.x},{m.y}) size {m.size} overlaps grid"
+
+    # Also verify the QR is entirely outside the grid rectangle
+    assert layout.qr is not None
+    qr = layout.qr
+    qr_right = qr.x + qr.size
+    qr_bottom = qr.y + qr.size
+    qr_outside = (
+        qr_right <= grid_x or qr.x >= grid_right
+        or qr_bottom <= grid_y or qr.y >= grid_bottom
+    )
+    assert qr_outside, f"QR at ({qr.x},{qr.y}) size {qr.size} overlaps grid"
+
+
+def test_auto_mode_at_exact_threshold_uses_compact():
+    # The promotion to full uses strict >, so a grid exactly at the threshold
+    # on both axes must stay in compact (QR-only) mode with zero ArUco markers.
+    layout = compute_layout(
+        grid_x=10.0, grid_y=10.0,
+        grid_w=AUTO_FULL_THRESHOLD_MM,
+        grid_h=AUTO_FULL_THRESHOLD_MM,
+        mode="auto",
+    )
+    assert layout.aruco_markers == [], (
+        "Expected compact mode (no ArUco markers) when grid_w == grid_h == "
+        f"AUTO_FULL_THRESHOLD_MM ({AUTO_FULL_THRESHOLD_MM})"
+    )

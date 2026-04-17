@@ -54,6 +54,11 @@ def compute_layout(
     """Compute marker positions for a test grid placed at (grid_x, grid_y)
     with dimensions (grid_w, grid_h).
 
+    In "auto" mode, upgrades to full only when BOTH grid_w AND grid_h are
+    strictly greater than ``AUTO_FULL_THRESHOLD_MM`` (i.e. ``>``, not ``>=``).
+    A grid where either dimension equals the threshold exactly remains in
+    compact (QR-only) mode.
+
     Returns a RegistrationLayout with QR position and zero or three ArUco
     marker positions depending on mode.
     """
