@@ -6,6 +6,8 @@ import math
 from dataclasses import replace
 
 from .builder import build_device_entry, build_line_display
+from .capture.layout import compute_layout
+from .capture.marker_render import emit_registration_markers, qr_payload_for_test
 from .model import (
     ANNOTATION_LAYER_COLOR,
     GRADIENT_LAYER_COLOR,
@@ -43,6 +45,12 @@ _PARAM_MAP = {
 _INT_FIELDS = {"speed", "repeat", "density", "pulse_width", "mopa_frequency", "dpi"}
 
 
+def _default_test_id() -> str:
+    """Generate a short random ID for a test when no explicit one is provided."""
+    import uuid
+    return uuid.uuid4().hex[:8]
+
+
 def generate_gradient(
     *,
     x_param: str,
@@ -66,6 +74,9 @@ def generate_gradient(
     tick_length: float = 0.5,
     annotation_params: ProcessingParams | None = None,
     summary_suffix: str = "",
+    registration_mode: str = "off",  # "auto" | "compact" | "full" | "off"
+    registration_qr_mode: str = "inline",  # "inline" | "id_only"
+    test_id: str | None = None,
 ) -> XCSProject:
     """Generate a gradient test pattern with axis annotations.
 
@@ -144,6 +155,34 @@ def generate_gradient(
             gap=gap, start_x=start_x, start_y=gradient_start_y,
             base_params=base_params, processing_type=processing_type,
             label_font_size=label_font_size, tick_length=tick_length,
+            annotation_params=annotation_params,
+        )
+
+    if registration_mode != "off":
+        layout = compute_layout(
+            grid_x=start_x,
+            grid_y=gradient_start_y,
+            grid_w=total_width,
+            grid_h=(total_height * rows) if not is_dual else total_height,
+            mode=registration_mode,  # type: ignore[arg-type]
+            qr_mode=registration_qr_mode,  # type: ignore[arg-type]
+        )
+        qr_text = qr_payload_for_test(
+            test_id=test_id or _default_test_id(),
+            x_param=x_param, x_min=x_min, x_max=x_max, x_steps=x_steps,
+            y_param=y_param, y_min=y_min, y_max=y_max, y_steps=y_steps,
+            grid_w=total_width,
+            grid_h=(total_height * rows) if not is_dual else total_height,
+            rows=rows,
+            gap=gap,
+            base_params=base_params,
+            kind="grid",
+            mode=registration_qr_mode,
+        )
+        emit_registration_markers(
+            project,
+            layout=layout,
+            qr_text=qr_text,
             annotation_params=annotation_params,
         )
 
