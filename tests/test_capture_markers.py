@@ -117,3 +117,80 @@ def test_generate_gradient_with_registration_adds_markers():
         test_id="testid01",
     )
     assert len(with_reg.extra_displays) > len(without.extra_displays)
+
+
+def test_registration_markers_stay_within_canvas_compact():
+    """Compact+inline registration must not place any geometry at negative x/y."""
+    from xcs_gen.generators import generate_gradient
+
+    proj = generate_gradient(
+        x_param="speed", x_min=500, x_max=2000, x_steps=10,
+        total_width=22.0, total_height=5.0,
+        start_x=10.0, start_y=10.0,
+        registration_mode="compact",
+        registration_qr_mode="inline",
+        test_id="abcd1234",
+    )
+    for disp in proj.extra_displays:
+        assert disp["x"] >= 0, f"display at negative x: {disp['x']}"
+        assert disp["y"] >= 0, f"display at negative y: {disp['y']}"
+    for elem in proj.elements:
+        assert elem.x >= 0
+        assert elem.y >= 0
+
+
+def test_registration_markers_stay_within_canvas_full():
+    """Full-mode registration must also keep everything inside the canvas."""
+    from xcs_gen.generators import generate_gradient
+
+    proj = generate_gradient(
+        x_param="speed", x_min=500, x_max=2000, x_steps=10,
+        total_width=22.0, total_height=5.0,
+        start_x=10.0, start_y=10.0,
+        registration_mode="full",
+        registration_qr_mode="inline",
+        test_id="abcd1234",
+    )
+    for disp in proj.extra_displays:
+        assert disp["x"] >= 0, f"display at negative x: {disp['x']}"
+        assert disp["y"] >= 0, f"display at negative y: {disp['y']}"
+    for elem in proj.elements:
+        assert elem.x >= 0
+        assert elem.y >= 0
+
+
+def test_registration_markers_stay_within_canvas_id_only():
+    """id_only QR uses a smaller reservation; still must not go negative."""
+    from xcs_gen.generators import generate_gradient
+
+    proj = generate_gradient(
+        x_param="speed", x_min=500, x_max=2000, x_steps=10,
+        total_width=22.0, total_height=5.0,
+        start_x=10.0, start_y=10.0,
+        registration_mode="compact",
+        registration_qr_mode="id_only",
+        test_id="abcd1234",
+    )
+    for disp in proj.extra_displays:
+        assert disp["x"] >= 0, f"display at negative x: {disp['x']}"
+        assert disp["y"] >= 0, f"display at negative y: {disp['y']}"
+    for elem in proj.elements:
+        assert elem.x >= 0
+        assert elem.y >= 0
+
+
+def test_registration_reservation_helper():
+    """Helper returns 0 when off, qr_size + margin otherwise."""
+    from xcs_gen.capture.layout import (
+        MARKER_MARGIN_MM,
+        _QR_SIZE_ID_ONLY_MM,
+        _QR_SIZE_INLINE_MM,
+        registration_reservation_mm,
+    )
+
+    assert registration_reservation_mm("off", "inline") == 0.0
+    assert registration_reservation_mm("off", "id_only") == 0.0
+    assert registration_reservation_mm("compact", "inline") == _QR_SIZE_INLINE_MM + MARKER_MARGIN_MM
+    assert registration_reservation_mm("compact", "id_only") == _QR_SIZE_ID_ONLY_MM + MARKER_MARGIN_MM
+    assert registration_reservation_mm("full", "inline") == _QR_SIZE_INLINE_MM + MARKER_MARGIN_MM
+    assert registration_reservation_mm("auto", "inline") == _QR_SIZE_INLINE_MM + MARKER_MARGIN_MM

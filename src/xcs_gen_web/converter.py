@@ -7,6 +7,7 @@ import math
 from dataclasses import replace
 
 from xcs_gen.builder import build_xcs
+from xcs_gen.capture.layout import registration_reservation_mm
 from xcs_gen.generators import generate_gradient
 from xcs_gen.model import ProcessingParams, Rect, XCSProject, _uuid
 from xcs_gen.text import text_height
@@ -45,6 +46,11 @@ def _test_vertical_footprint(t: ParamTest) -> float:
 
     For multi-row tests (rows > 1), the generator auto-expands row_gap to fit
     inter-row annotations, so the full stack is larger than rows * height_mm.
+
+    When registration markers are enabled, the generator shifts the entire
+    test content down by the registration reservation so markers don't end up
+    at negative coordinates; add that shift to the footprint so stacked tests
+    don't overlap.
     """
     summary = _summary_space_above()
     ann_below = _annotation_space_below()
@@ -56,7 +62,24 @@ def _test_vertical_footprint(t: ParamTest) -> float:
     else:
         gradient_h = t.height_mm
 
-    return summary + gradient_h + ann_below
+    reg_shift = registration_reservation_mm(
+        t.registration.mode, t.registration.qr_mode
+    )
+
+    return reg_shift + summary + gradient_h + ann_below
+
+
+def _test_horizontal_footprint(t: ParamTest) -> float:
+    """Total horizontal space a test occupies.
+
+    Matches _test_vertical_footprint: when registration is enabled the grid
+    shifts right by the reservation, so the column must allocate that extra
+    width.
+    """
+    reg_shift = registration_reservation_mm(
+        t.registration.mode, t.registration.qr_mode
+    )
+    return reg_shift + t.width_mm
 
 
 def validate_placements(project: Project) -> None:
@@ -113,8 +136,9 @@ def _compute_grid_offsets(project: Project) -> dict[str, tuple[float, float]]:
 
     for placement in project.tests:
         t = placement.test
-        # Width this placement contributes per column
-        per_col_width = t.width_mm / placement.col_span
+        # Width this placement contributes per column, including any space
+        # reserved for registration markers.
+        per_col_width = _test_horizontal_footprint(t) / placement.col_span
         for c in range(placement.col, placement.col + placement.col_span):
             col_widths[c] = max(col_widths.get(c, 0.0), per_col_width)
         row_heights[placement.row] = max(row_heights.get(placement.row, 0.0), _test_vertical_footprint(t))

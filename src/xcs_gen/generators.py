@@ -7,7 +7,7 @@ import uuid
 from dataclasses import replace
 
 from .builder import build_device_entry, build_line_display
-from .capture.layout import compute_layout
+from .capture.layout import compute_layout, registration_reservation_mm
 from .capture.marker_render import emit_registration_markers, qr_payload_for_test
 from .model import (
     ANNOTATION_LAYER_COLOR,
@@ -118,6 +118,15 @@ def generate_gradient(
     summary_font_size = label_font_size
     summary_h = text_height(summary_font_size) + 0.05  # text + minimal padding
     gradient_start_y = start_y + summary_h
+
+    # Registration markers (when enabled) occupy space at the top-left of the
+    # test content. Shift the grid/summary/labels right and down so the QR
+    # sits within the canvas rather than at negative coordinates.
+    _reg_shift = registration_reservation_mm(registration_mode, registration_qr_mode)
+    if _reg_shift > 0:
+        start_x += _reg_shift
+        start_y += _reg_shift
+        gradient_start_y += _reg_shift
 
     # Build summary line
     summary = _build_summary(

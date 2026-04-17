@@ -26,6 +26,20 @@ _ARUCO_SIZE_MM = 5.0
 MARKER_MARGIN_MM = 1.5
 
 
+def registration_reservation_mm(mode: str, qr_mode: str) -> float:
+    """How much space the registration block needs at the top-left, in mm.
+
+    Returns 0 if mode == "off". Otherwise returns qr_size + MARKER_MARGIN_MM,
+    which is sufficient for both compact and full mode (the ArUco corner
+    markers in full mode are smaller than the QR, so the QR reservation
+    covers both).
+    """
+    if mode == "off":
+        return 0.0
+    qr_size = _QR_SIZE_INLINE_MM if qr_mode == "inline" else _QR_SIZE_ID_ONLY_MM
+    return qr_size + MARKER_MARGIN_MM
+
+
 @dataclass
 class MarkerPosition:
     """A physical marker's top-left position and edge length in mm."""
