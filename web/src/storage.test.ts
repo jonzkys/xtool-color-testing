@@ -47,4 +47,34 @@ describe("storage", () => {
     vi.stubGlobal("localStorage", broken);
     expect(() => saveProject(defaultProject())).not.toThrow();
   });
+
+  it("migrates legacy projects missing registration on load", () => {
+    // Simulate a project stored before registration was added: strip it out.
+    const project = defaultProject();
+    const legacy = JSON.parse(JSON.stringify(project)) as typeof project;
+    for (const placement of legacy.tests) {
+      delete (placement.test as Partial<typeof placement.test>).registration;
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(legacy));
+
+    const loaded = loadProject();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.tests.length).toBeGreaterThan(0);
+    for (const placement of loaded!.tests) {
+      expect(placement.test.registration).toEqual({ mode: "off", qr_mode: "inline" });
+    }
+  });
+
+  it("leaves existing registration untouched on load", () => {
+    const project = defaultProject();
+    for (const placement of project.tests) {
+      placement.test.registration = { mode: "full", qr_mode: "id_only" };
+    }
+    saveProject(project);
+    const loaded = loadProject();
+    expect(loaded).not.toBeNull();
+    for (const placement of loaded!.tests) {
+      expect(placement.test.registration).toEqual({ mode: "full", qr_mode: "id_only" });
+    }
+  });
 });
