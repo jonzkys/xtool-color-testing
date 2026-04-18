@@ -51,11 +51,24 @@ export default function App() {
   }
 
   function addTest() {
-    // Pick next free row at col 0
     const usedRows = new Set(project.tests.map((p) => p.row));
     let row = 0;
     while (usedRows.has(row)) row += 1;
     const placement = defaultPlacement(row, 0);
+
+    // Inherit material_id from the most recent test (or library active material).
+    const lastTest = project.tests[project.tests.length - 1]?.test;
+    const inheritedMaterialId = lastTest?.material_id ?? library.active_material_id;
+    if (inheritedMaterialId) {
+      placement.test.material_id = inheritedMaterialId;
+      const defaultPreset = library.presets.find(
+        (p) => p.material_id === inheritedMaterialId && p.is_default,
+      );
+      if (defaultPreset) {
+        placement.test.base_params = { ...defaultPreset.base_params };
+      }
+    }
+
     setProject((prev) => ({ ...prev, tests: [...prev.tests, placement] }));
     setSelectedId(placement.test.id);
   }
@@ -145,6 +158,7 @@ export default function App() {
                 <TestEditor
                   placement={selected}
                   issues={issues}
+                  library={library}
                   onChange={updatePlacement}
                   onDelete={deleteSelected}
                   onDuplicate={duplicateSelected}

@@ -2,16 +2,19 @@ import type { ParamTest, QrMode, RegistrationMode, TestPlacement, ValidationIssu
 import { PARAM_NAMES } from "../types";
 import { NumberField } from "./fields/NumberField";
 import { SelectField } from "./fields/SelectField";
+import type { LibraryState } from "../library";
+import { MaterialPresetPicker } from "./MaterialPresetPicker";
 
 interface Props {
   placement: TestPlacement;
   issues: ValidationIssue[];
+  library: LibraryState;
   onChange: (next: TestPlacement) => void;
   onDelete: () => void;
   onDuplicate: () => void;
 }
 
-export function TestEditor({ placement, issues, onChange, onDelete, onDuplicate }: Props) {
+export function TestEditor({ placement, issues, library, onChange, onDelete, onDuplicate }: Props) {
   const t = placement.test;
 
   function updateTest(patch: Partial<ParamTest>) {
@@ -103,6 +106,18 @@ export function TestEditor({ placement, issues, onChange, onDelete, onDuplicate 
         <NumberField label="Gap (mm)" value={t.gap_mm} onChange={(v) => updateTest({ gap_mm: v })} />
         <NumberField label="Rows (wrapping)" value={t.rows} integer min={1} onChange={(v) => updateTest({ rows: v })} />
       </Section>
+
+      <MaterialPresetPicker
+        library={library}
+        materialId={t.material_id}
+        baseParams={t.base_params}
+        onApply={(materialId, baseParams) => {
+          onChange({
+            ...placement,
+            test: { ...t, material_id: materialId, base_params: { ...baseParams } },
+          });
+        }}
+      />
 
       <Section title="Base parameters (fixed)">
         <NumberField label="Power %" value={t.base_params.power} onChange={(v) => updateBase({ power: v })} />
