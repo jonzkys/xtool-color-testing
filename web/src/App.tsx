@@ -6,13 +6,15 @@ import { Preview } from "./components/Preview";
 import { WarningBanner } from "./components/fields/WarningBanner";
 import { SvgStackPage } from "./components/SvgStackPage";
 import { SvgLayersPage } from "./components/SvgLayersPage";
+import { LibraryPage } from "./components/LibraryPage";
 import { defaultProject, defaultPlacement, newId } from "./defaults";
-import { loadProject, saveProject } from "./storage";
+import { loadProject, saveProject, loadLibrary, saveLibrary } from "./storage";
+import { bootstrapLibrary, type LibraryState } from "./library";
 import { generateAndDownload } from "./generate";
 import { hasErrors, validateProject } from "./validation";
 import type { Project, TestPlacement } from "./types";
 
-type Tab = "tests" | "svg" | "layers";
+type Tab = "tests" | "svg" | "layers" | "library";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("tests");
@@ -22,11 +24,16 @@ export default function App() {
   );
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | undefined>();
+  const [library, setLibrary] = useState<LibraryState>(() => loadLibrary() ?? bootstrapLibrary());
 
   // Persist on every change
   useEffect(() => {
     saveProject(project);
   }, [project]);
+
+  useEffect(() => {
+    saveLibrary(library);
+  }, [library]);
 
   const issues = useMemo(() => validateProject(project), [project]);
 
@@ -102,7 +109,12 @@ export default function App() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
       <TopBar
-        title={tab === "tests" ? project.name : tab === "svg" ? "SVG stack" : "SVG layers"}
+        title={
+          tab === "tests" ? project.name
+          : tab === "svg" ? "SVG stack"
+          : tab === "layers" ? "SVG layers"
+          : "Library"
+        }
         generateDisabled={disableGenerate}
         generating={generating}
         onGenerate={handleGenerate}
@@ -150,9 +162,13 @@ export default function App() {
         <div style={{ flex: 1, minHeight: 0 }}>
           <SvgStackPage />
         </div>
-      ) : (
+      ) : tab === "layers" ? (
         <div style={{ flex: 1, minHeight: 0 }}>
           <SvgLayersPage />
+        </div>
+      ) : (
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <LibraryPage library={library} onChange={setLibrary} />
         </div>
       )}
     </div>

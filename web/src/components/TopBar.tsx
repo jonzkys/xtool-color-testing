@@ -1,4 +1,4 @@
-type Tab = "tests" | "svg" | "layers";
+type Tab = "tests" | "svg" | "layers" | "library";
 
 interface Props {
   title: string;
@@ -27,6 +27,7 @@ export function TopBar({
         <TabButton active={tab === "tests"} onClick={() => onTabChange("tests")}>Param tests</TabButton>
         <TabButton active={tab === "svg"} onClick={() => onTabChange("svg")}>SVG stack</TabButton>
         <TabButton active={tab === "layers"} onClick={() => onTabChange("layers")}>SVG layers</TabButton>
+        <TabButton active={tab === "library"} onClick={() => onTabChange("library")}>Library</TabButton>
       </div>
 
       <div style={{ color: "#888" }}>|</div>
