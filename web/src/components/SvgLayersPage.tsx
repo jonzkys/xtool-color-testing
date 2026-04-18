@@ -7,6 +7,8 @@ import type { RasterTraceOptions } from "../generate";
 import type { DetectedLayer, LayerSpec, SvgLayersRequest, SvgProcessingType } from "../types";
 import { HatchPassesEditor } from "./HatchPassesEditor";
 import { validateLayerSpec } from "../validation";
+import type { LibraryState } from "../library";
+import { MaterialPresetPicker } from "./MaterialPresetPicker";
 
 const PROCESSING_TYPES: { value: SvgProcessingType; label: string }[] = [
   { value: "COLOR_FILL_ENGRAVE", label: "Color fill engrave" },
@@ -16,18 +18,28 @@ const PROCESSING_TYPES: { value: SvgProcessingType; label: string }[] = [
   { value: "HATCHED_LINES", label: "Hatched lines" },
 ];
 
-function defaultLayerFromDetected(detected: DetectedLayer): LayerSpec {
+function seedLayerBaseParams(library: LibraryState) {
+  const defaultPreset = library.presets.find(
+    (p) => p.material_id === library.active_material_id && p.is_default,
+  );
+  return defaultPreset
+    ? { materialId: library.active_material_id, baseParams: { ...defaultPreset.base_params } }
+    : { materialId: null as string | null, baseParams: defaultBaseParams() };
+}
+
+function defaultLayerFromDetected(detected: DetectedLayer, library: LibraryState): LayerSpec {
+  const seed = seedLayerBaseParams(library);
   return {
     color: detected.color,
     name: detected.color,
     enabled: true,
     processing_type: detected.is_fill ? "COLOR_FILL_ENGRAVE" : "VECTOR_ENGRAVING",
     scan_angle: 90,
-    base_params: defaultBaseParams(),
+    base_params: seed.baseParams,
     crosshatch_enabled: false,
     crosshatch_passes: 2,
     crosshatch_step_deg: 90,
-    material_id: null,
+    material_id: seed.materialId,
     hatch_passes: [],
   };
 }
@@ -45,7 +57,11 @@ function defaultRequest(): SvgLayersRequest {
   };
 }
 
-export function SvgLayersPage() {
+interface Props {
+  library: LibraryState;
+}
+
+export function SvgLayersPage({ library }: Props) {
   const [request, setRequest] = useState<SvgLayersRequest>(() => defaultRequest());
   const [filename, setFilename] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
@@ -116,7 +132,7 @@ export function SvgLayersPage() {
     setRequest((prev) => ({ ...prev, svg_content: svgText, name: suggestedName, layers: [] }));
     try {
       const detected = await detectSvgLayers(svgText, 50);
-      const layers = detected.map(defaultLayerFromDetected);
+      const layers = detected.map((d) => defaultLayerFromDetected(d, library));
       setRequest((prev) => ({ ...prev, layers }));
       setSelectedColor(layers[0]?.color ?? null);
     } catch (err) {
@@ -409,6 +425,7 @@ export function SvgLayersPage() {
           <LayerEditor
             layer={selected}
             layerIdx={request.layers.findIndex((l) => l.color === selected.color)}
+            library={library}
             onPatch={(p) => updateLayer(selected.color, p)}
             onBasePatch={(p) => updateBase(selected.color, p)}
           />
@@ -433,10 +450,11 @@ export function SvgLayersPage() {
 }
 
 function LayerEditor({
-  layer, layerIdx, onPatch, onBasePatch,
+  layer, layerIdx, library, onPatch, onBasePatch,
 }: {
   layer: LayerSpec;
   layerIdx: number;
+  library: LibraryState;
   onPatch: (p: Partial<LayerSpec>) => void;
   onBasePatch: (p: Partial<LayerSpec["base_params"]>) => void;
 }) {
@@ -506,6 +524,14 @@ function LayerEditor({
       )}
 
       <Section title="Base parameters">
+        <MaterialPresetPicker
+          library={library}
+          materialId={layer.material_id}
+          baseParams={layer.base_params}
+          onApply={(materialId, baseParams) => {
+            onPatch({ material_id: materialId, base_params: { ...baseParams } });
+          }}
+        />
         <NumberField label="Power %" value={layer.base_params.power} onChange={(v) => onBasePatch({ power: v })} />
         <NumberField label="Speed (mm/s)" value={layer.base_params.speed} integer onChange={(v) => onBasePatch({ speed: v })} />
         <NumberField label="Frequency (Hz)" value={layer.base_params.frequency} integer onChange={(v) => onBasePatch({ frequency: v })} />
