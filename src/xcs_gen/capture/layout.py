@@ -16,7 +16,7 @@ AUTO_FULL_THRESHOLD_MM = 80.0
 
 # QR dimensions by payload mode, chosen to burn reliably on blue-diode.
 _QR_SIZE_INLINE_MM = 12.0
-_QR_SIZE_ID_ONLY_MM = 9.0
+_QR_SIZE_ID_ONLY_MM = 7.0
 
 # ArUco marker physical size in full mode.
 _ARUCO_SIZE_MM = 5.0
