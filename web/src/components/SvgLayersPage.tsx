@@ -423,6 +423,7 @@ export function SvgLayersPage({ library }: Props) {
       <div style={{ borderRight: "1px solid #ddd", background: "white", overflow: "auto", padding: 16 }}>
         {selected ? (
           <LayerEditor
+            key={selected.color}
             layer={selected}
             layerIdx={request.layers.findIndex((l) => l.color === selected.color)}
             library={library}
