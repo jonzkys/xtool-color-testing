@@ -174,7 +174,7 @@ export default function App() {
         </div>
       ) : tab === "svg" ? (
         <div style={{ flex: 1, minHeight: 0 }}>
-          <SvgStackPage />
+          <SvgStackPage library={library} />
         </div>
       ) : tab === "layers" ? (
         <div style={{ flex: 1, minHeight: 0 }}>

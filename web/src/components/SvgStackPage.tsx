@@ -4,6 +4,8 @@ import { SelectField } from "./fields/SelectField";
 import { defaultBaseParams } from "../defaults";
 import { svgStackAndDownload } from "../generate";
 import type { SvgProcessingType, SvgStackRequest } from "../types";
+import type { LibraryState } from "../library";
+import { MaterialPresetPicker } from "./MaterialPresetPicker";
 
 const PROCESSING_TYPES: { value: SvgProcessingType; label: string }[] = [
   { value: "COLOR_FILL_ENGRAVE", label: "Color fill engrave" },
@@ -12,7 +14,11 @@ const PROCESSING_TYPES: { value: SvgProcessingType; label: string }[] = [
   { value: "VECTOR_CUTTING", label: "Vector cut" },
 ];
 
-function defaultRequest(): SvgStackRequest {
+function defaultRequest(library: LibraryState): SvgStackRequest {
+  const defaultPreset = library.presets.find(
+    (p) => p.material_id === library.active_material_id && p.is_default,
+  );
+  const base = defaultPreset ? { ...defaultPreset.base_params } : defaultBaseParams();
   return {
     name: "svg-stack",
     svg_content: "",
@@ -20,18 +26,22 @@ function defaultRequest(): SvgStackRequest {
     height_mm: null,
     start_x: 10,
     start_y: 10,
-    base_params: defaultBaseParams(),
+    base_params: base,
     processing_type: "COLOR_FILL_ENGRAVE",
     scan_angle: 90,
     stack_passes: 2,
     stack_step_deg: 90,
-    material_id: null,
+    material_id: library.active_material_id ?? null,
     subtract_overlaps: false,
   };
 }
 
-export function SvgStackPage() {
-  const [request, setRequest] = useState<SvgStackRequest>(() => defaultRequest());
+interface Props {
+  library: LibraryState;
+}
+
+export function SvgStackPage({ library }: Props) {
+  const [request, setRequest] = useState<SvgStackRequest>(() => defaultRequest(library));
   const [filename, setFilename] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
@@ -190,6 +200,14 @@ export function SvgStackPage() {
         </Section>
 
         <Section title="Base parameters (fixed)">
+          <MaterialPresetPicker
+            library={library}
+            materialId={request.material_id}
+            baseParams={request.base_params}
+            onApply={(materialId, baseParams) => {
+              setRequest((prev) => ({ ...prev, material_id: materialId, base_params: { ...baseParams } }));
+            }}
+          />
           <NumberField label="Power %" value={request.base_params.power} onChange={(v) => updateBase({ power: v })} />
           <NumberField label="Speed (mm/s)" value={request.base_params.speed} integer onChange={(v) => updateBase({ speed: v })} />
           <NumberField label="Frequency (Hz)" value={request.base_params.frequency} integer onChange={(v) => updateBase({ frequency: v })} />
