@@ -3,7 +3,14 @@
 import pytest
 from pydantic import ValidationError
 
-from xcs_gen_web.schemas import BaseParams, ParamTest, Project, TestPlacement
+from xcs_gen_web.schemas import (
+    BaseParams,
+    ParamTest,
+    Project,
+    SvgLayersRequest,
+    SvgStackRequest,
+    TestPlacement,
+)
 
 
 def _valid_base_params() -> dict:
@@ -91,3 +98,82 @@ def test_project_with_placement():
     p = Project(name="Test", grid_gap_mm=1.0, tests=[placement])
     assert len(p.tests) == 1
     assert p.tests[0].row == 0
+
+
+# ---------------------------------------------------------------------------
+# material_id round-trip and rejection tests
+# ---------------------------------------------------------------------------
+
+def _project_payload(**test_overrides) -> dict:
+    """Build a minimal Project payload, applying overrides to the inner ParamTest."""
+    test_data = _valid_test()
+    test_data.update(test_overrides)
+    return {
+        "name": "Test",
+        "grid_gap_mm": 1.0,
+        "tests": [{"test": test_data, "row": 0, "col": 0, "col_span": 1}],
+    }
+
+
+def test_paramtest_material_id_round_trips_string():
+    project = Project(**_project_payload(material_id="mat-abc123"))
+    assert project.tests[0].test.material_id == "mat-abc123"
+
+
+def test_paramtest_material_id_defaults_to_none():
+    project = Project(**_project_payload())
+    assert project.tests[0].test.material_id is None
+
+
+def test_paramtest_material_id_rejects_non_string():
+    with pytest.raises(ValidationError):
+        Project(**_project_payload(material_id=42))
+
+
+def _svg_stack_payload(**overrides) -> dict:
+    base = {
+        "name": "stack",
+        "svg_content": "<svg/>",
+        "width_mm": 50.0,
+        "base_params": _valid_base_params(),
+    }
+    base.update(overrides)
+    return base
+
+
+def test_svg_stack_material_id_round_trips_string():
+    req = SvgStackRequest(**_svg_stack_payload(material_id="mat-abc"))
+    assert req.material_id == "mat-abc"
+
+
+def test_svg_stack_material_id_rejects_non_string():
+    with pytest.raises(ValidationError):
+        SvgStackRequest(**_svg_stack_payload(material_id=123))
+
+
+def _svg_layers_payload(**layer_overrides) -> dict:
+    layer = {
+        "color": "#ff0000",
+        "name": "red",
+        "enabled": True,
+        "processing_type": "COLOR_FILL_ENGRAVE",
+        "scan_angle": 90.0,
+        "base_params": _valid_base_params(),
+    }
+    layer.update(layer_overrides)
+    return {
+        "name": "layers",
+        "svg_content": "<svg/>",
+        "width_mm": 50.0,
+        "layers": [layer],
+    }
+
+
+def test_svg_layers_material_id_round_trips_string():
+    req = SvgLayersRequest(**_svg_layers_payload(material_id="mat-xyz"))
+    assert req.layers[0].material_id == "mat-xyz"
+
+
+def test_svg_layers_material_id_rejects_non_string():
+    with pytest.raises(ValidationError):
+        SvgLayersRequest(**_svg_layers_payload(material_id=1))
