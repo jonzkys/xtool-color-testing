@@ -76,19 +76,31 @@ export function MaterialPresetPicker({ library, materialId, baseParams, onApply 
         </label>
         <label style={{ display: "block" }}>
           <span style={{ display: "block", fontSize: 12, color: "#555", marginBottom: 2 }}>Preset</span>
-          <select
-            value={dropdownPresetId}
-            onChange={(e) => setDropdownPresetId(e.target.value)}
-            disabled={presetsForDropdown.length === 0}
-            style={{ padding: "4px 6px", border: "1px solid #ccc", borderRadius: 4, font: "inherit", background: "white" }}
-          >
-            {presetsForDropdown.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}{p.is_default ? " (default)" : ""}
-              </option>
-            ))}
-            {presetsForDropdown.length === 0 && <option>No presets</option>}
-          </select>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span
+              aria-hidden
+              style={{
+                width: 16, height: 16, borderRadius: 3,
+                background: selectedPreset?.color ?? "transparent",
+                border: "1px solid " + (selectedPreset?.color ? "#999" : "#ccc"),
+                flexShrink: 0,
+              }}
+              title={selectedPreset?.color ?? "no color set"}
+            />
+            <select
+              value={dropdownPresetId}
+              onChange={(e) => setDropdownPresetId(e.target.value)}
+              disabled={presetsForDropdown.length === 0}
+              style={{ padding: "4px 6px", border: "1px solid #ccc", borderRadius: 4, font: "inherit", background: "white" }}
+            >
+              {presetsForDropdown.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.color ? "● " : ""}{p.name}{p.is_default ? " (default)" : ""}
+                </option>
+              ))}
+              {presetsForDropdown.length === 0 && <option>No presets</option>}
+            </select>
+          </div>
         </label>
         <button
           onClick={doApply}
