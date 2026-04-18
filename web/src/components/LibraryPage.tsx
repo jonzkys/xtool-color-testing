@@ -186,13 +186,13 @@ function PresetCard({
 }) {
   return (
     <div style={{ border: "1px solid #ddd", borderRadius: 6, padding: 12, background: "white" }}>
-      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
         <input
           value={preset.name}
           onChange={(e) => onPatch({ name: e.target.value })}
-          style={{ flex: 1, padding: "4px 6px", fontSize: 14, fontWeight: 600, border: "1px solid transparent", borderRadius: 3 }}
+          style={{ flex: 1, minWidth: 0, padding: "4px 6px", fontSize: 14, fontWeight: 600, border: "1px solid transparent", borderRadius: 3 }}
         />
-        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, flexShrink: 0 }}>
           <input
             type="radio"
             checked={preset.is_default}
