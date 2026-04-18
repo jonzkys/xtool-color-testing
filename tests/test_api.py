@@ -115,3 +115,17 @@ def test_generate_with_registration_markers(client):
     baseline = client.post("/api/generate", json=baseline_payload)
     baseline_displays = json.loads(baseline.content)["canvas"][0]["displays"]
     assert len(displays) > len(baseline_displays)
+
+
+def test_generate_accepts_material_id(client):
+    payload = _project_payload()
+    payload["tests"][0]["test"]["material_id"] = "mat-abc123"
+    resp = client.post("/api/generate", json=payload)
+    assert resp.status_code == 200
+
+
+def test_generate_accepts_null_material_id(client):
+    payload = _project_payload()
+    payload["tests"][0]["test"]["material_id"] = None
+    resp = client.post("/api/generate", json=payload)
+    assert resp.status_code == 200

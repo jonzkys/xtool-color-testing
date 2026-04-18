@@ -79,6 +79,37 @@ describe("storage", () => {
   });
 });
 
+describe("material_id migration", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", mockStorage());
+  });
+
+  test("migrateProject backfills material_id: null on legacy tests", () => {
+    const legacy = {
+      name: "legacy",
+      grid_gap_mm: 1,
+      tests: [{
+        test: {
+          id: "t1", name: "Legacy",
+          x_param: "speed", x_min: 100, x_max: 500, x_steps: 10,
+          width_mm: 30, height_mm: 5, gap_mm: 0, rows: 1,
+          base_params: {
+            power: 14.6, speed: 1000, frequency: 125, density: 5000,
+            passes: 1, pulse_width: 200, laser: "red",
+          },
+          crosshatch_enabled: false, crosshatch_passes: 2, crosshatch_step_deg: 90,
+          registration: { mode: "off", qr_mode: "inline" },
+        },
+        row: 0, col: 0, col_span: 1,
+      }],
+    };
+    localStorage.setItem("xcs-gen:project:v1", JSON.stringify(legacy));
+    const loaded = loadProject();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.tests[0].test.material_id).toBeNull();
+  });
+});
+
 import { loadLibrary, saveLibrary, LIBRARY_STORAGE_KEY } from "./storage";
 import { bootstrapLibrary } from "./library";
 

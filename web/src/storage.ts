@@ -16,8 +16,13 @@ const DEFAULT_REGISTRATION: RegistrationConfig = { mode: "off", qr_mode: "inline
 export function migrateProject(project: Project): Project {
   if (project && Array.isArray(project.tests)) {
     for (const placement of project.tests) {
-      if (placement && placement.test && placement.test.registration === undefined) {
-        placement.test.registration = { ...DEFAULT_REGISTRATION };
+      if (placement && placement.test) {
+        if (placement.test.registration === undefined) {
+          placement.test.registration = { ...DEFAULT_REGISTRATION };
+        }
+        if (placement.test.material_id === undefined) {
+          placement.test.material_id = null;
+        }
       }
     }
   }

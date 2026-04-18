@@ -52,6 +52,7 @@ class ParamTest(BaseModel):
     crosshatch_passes: int = Field(default=2, ge=2, le=10)
     crosshatch_step_deg: float = Field(default=90.0, gt=0.0, le=360.0)
     registration: RegistrationConfig = Field(default_factory=RegistrationConfig)
+    material_id: str | None = None
 
     @model_validator(mode="after")
     def validate_ranges(self) -> "ParamTest":
@@ -109,6 +110,7 @@ class SvgStackRequest(BaseModel):
 
     # When true, filled shapes are Boolean-subtracted by all higher-z shapes,
     # so adjacent layers don't engrave the same pixel twice.
+    material_id: str | None = None
     subtract_overlaps: bool = False
 
 
@@ -161,6 +163,7 @@ class LayerSpec(BaseModel):
 
     # v2 hatched render mode: required non-empty when processing_type ==
     # "HATCHED_LINES", ignored otherwise.
+    material_id: str | None = None
     hatch_passes: list[HatchPass] = Field(default_factory=list)
 
     @model_validator(mode="after")

@@ -45,6 +45,7 @@ export interface ParamTest {
   crosshatch_passes: number;
   crosshatch_step_deg: number;
   registration: RegistrationConfig;
+  material_id: string | null;
 }
 
 export interface TestPlacement {
@@ -110,6 +111,7 @@ export interface SvgStackRequest {
   scan_angle: number;
   stack_passes: number;
   stack_step_deg: number;
+  material_id: string | null;
   subtract_overlaps: boolean;
 }
 
@@ -123,6 +125,7 @@ export interface LayerSpec {
   crosshatch_enabled: boolean;
   crosshatch_passes: number;
   crosshatch_step_deg: number;
+  material_id: string | null;
   hatch_passes: HatchPassSpec[];   // non-empty iff processing_type === "HATCHED_LINES"
 }
 

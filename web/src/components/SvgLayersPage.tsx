@@ -27,6 +27,7 @@ function defaultLayerFromDetected(detected: DetectedLayer): LayerSpec {
     crosshatch_enabled: false,
     crosshatch_passes: 2,
     crosshatch_step_deg: 90,
+    material_id: null,
     hatch_passes: [],
   };
 }

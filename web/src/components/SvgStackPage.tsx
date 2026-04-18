@@ -25,6 +25,7 @@ function defaultRequest(): SvgStackRequest {
     scan_angle: 90,
     stack_passes: 2,
     stack_step_deg: 90,
+    material_id: null,
     subtract_overlaps: false,
   };
 }

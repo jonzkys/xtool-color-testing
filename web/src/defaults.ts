@@ -39,6 +39,7 @@ export function defaultTest(name = "New test"): ParamTest {
     crosshatch_passes: 2,
     crosshatch_step_deg: 90,
     registration: { mode: "off", qr_mode: "inline" },
+    material_id: null,
   };
 }
 
