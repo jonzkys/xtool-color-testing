@@ -95,7 +95,7 @@ export function MaterialPresetPicker({ library, materialId, baseParams, onApply 
             >
               {presetsForDropdown.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.color ? "● " : ""}{p.name}{p.is_default ? " (default)" : ""}
+                  {p.name}{p.is_default ? " (default)" : ""}
                 </option>
               ))}
               {presetsForDropdown.length === 0 && <option>No presets</option>}
