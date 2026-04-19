@@ -9,9 +9,10 @@ const DEFAULT_REGISTRATION: RegistrationConfig = { mode: "off", qr_mode: "inline
  * Migrates a parsed project from an older schema version into the current shape.
  * Keeps projects already matching the current schema unchanged (idempotent).
  *
- * Currently handles:
- *  - Task 5 added `registration: RegistrationConfig` to `ParamTest`. Older
- *    stored projects lack this field; backfill it with a safe "off" default.
+ * Handles:
+ *  - registration: added as a required field; backfill "off" when absent.
+ *  - material_id: used to be `string | null`; is now required. Coerce null /
+ *    undefined / empty to "" so the UI can prompt for a real value.
  */
 export function migrateProject(project: Project): Project {
   if (project && Array.isArray(project.tests)) {
@@ -20,10 +21,30 @@ export function migrateProject(project: Project): Project {
         if (placement.test.registration === undefined) {
           placement.test.registration = { ...DEFAULT_REGISTRATION };
         }
-        if (placement.test.material_id === undefined) {
-          placement.test.material_id = null;
+        if (
+          placement.test.material_id === undefined
+          || placement.test.material_id === null
+        ) {
+          placement.test.material_id = "";
         }
       }
+    }
+  }
+  return project;
+}
+
+/**
+ * Fill any empty `material_id` on tests with the library's active material.
+ * Called after project + library are both loaded so the two stores stay
+ * consistent. Returns the same project object (mutates in place) for callers.
+ */
+export function backfillProjectMaterialIds(
+  project: Project, library: LibraryState,
+): Project {
+  if (!library.active_material_id) return project;
+  for (const placement of project.tests) {
+    if (!placement.test.material_id) {
+      placement.test.material_id = library.active_material_id;
     }
   }
   return project;

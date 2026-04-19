@@ -9,7 +9,9 @@ import { SvgLayersPage } from "./components/SvgLayersPage";
 import { LibraryPage } from "./components/LibraryPage";
 import { PalettePage } from "./components/PalettePage";
 import { defaultProject, defaultPlacement, newId } from "./defaults";
-import { loadProject, saveProject, loadLibrary, saveLibrary } from "./storage";
+import {
+  backfillProjectMaterialIds, loadLibrary, loadProject, saveLibrary, saveProject,
+} from "./storage";
 import { bootstrapLibrary, type LibraryState } from "./library";
 import { generateAndDownload } from "./generate";
 import { hasErrors, validateProject } from "./validation";
@@ -19,13 +21,19 @@ type Tab = "tests" | "svg" | "layers" | "library" | "palette";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("tests");
-  const [project, setProject] = useState<Project>(() => loadProject() ?? defaultProject());
+  const [library, setLibrary] = useState<LibraryState>(() => loadLibrary() ?? bootstrapLibrary());
+  const [project, setProject] = useState<Project>(() => {
+    const loaded = loadProject() ?? defaultProject();
+    // Fill empty material_ids from the library's active material so freshly
+    // loaded projects don't land with a blocked Generate button.
+    const lib = loadLibrary() ?? bootstrapLibrary();
+    return backfillProjectMaterialIds(loaded, lib);
+  });
   const [selectedId, setSelectedId] = useState<string | null>(
     project.tests[0]?.test.id ?? null,
   );
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | undefined>();
-  const [library, setLibrary] = useState<LibraryState>(() => loadLibrary() ?? bootstrapLibrary());
 
   // Persist on every change
   useEffect(() => {
@@ -59,9 +67,12 @@ export default function App() {
 
     // Inherit material_id from the most recent test (or library active material).
     const lastTest = project.tests[project.tests.length - 1]?.test;
-    const inheritedMaterialId = lastTest?.material_id ?? library.active_material_id;
+    const inheritedMaterialId =
+      (lastTest?.material_id && lastTest.material_id !== ""
+        ? lastTest.material_id
+        : library.active_material_id) || "";
+    placement.test.material_id = inheritedMaterialId;
     if (inheritedMaterialId) {
-      placement.test.material_id = inheritedMaterialId;
       const defaultPreset = library.presets.find(
         (p) => p.material_id === inheritedMaterialId && p.is_default,
       );
@@ -118,7 +129,13 @@ export default function App() {
     }
   }
 
-  const disableGenerate = project.tests.length === 0 || hasErrors(issues);
+  // Block generate if any test is missing a material (required for palette scoping).
+  const anyTestMissingMaterial = project.tests.some((p) => !p.test.material_id);
+  const disableGenerate =
+    project.tests.length === 0 || hasErrors(issues) || anyTestMissingMaterial;
+  const topBarError = anyTestMissingMaterial
+    ? "Pick a material on every test"
+    : genError;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
@@ -133,7 +150,7 @@ export default function App() {
         generateDisabled={disableGenerate}
         generating={generating}
         onGenerate={handleGenerate}
-        errorMessage={genError}
+        errorMessage={topBarError}
         showGenerate={tab === "tests"}
         tab={tab}
         onTabChange={setTab}

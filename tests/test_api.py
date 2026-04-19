@@ -35,6 +35,7 @@ def _project_payload() -> dict:
                         "density": 5000, "passes": 1, "pulse_width": 200,
                         "laser": "red",
                     },
+                    "material_id": "mat-test",
                 },
                 "row": 0, "col": 0, "col_span": 1,
             }
@@ -124,8 +125,9 @@ def test_generate_accepts_material_id(client):
     assert resp.status_code == 200
 
 
-def test_generate_accepts_null_material_id(client):
+def test_generate_rejects_missing_material_id(client):
+    """material_id is required — /api/generate should 422 when it's absent."""
     payload = _project_payload()
-    payload["tests"][0]["test"]["material_id"] = None
+    del payload["tests"][0]["test"]["material_id"]
     resp = client.post("/api/generate", json=payload)
-    assert resp.status_code == 200
+    assert resp.status_code == 422

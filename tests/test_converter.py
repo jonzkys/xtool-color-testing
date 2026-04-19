@@ -18,7 +18,7 @@ def _test(id_: str = "t1", width: float = 30.0, height: float = 5.0) -> ParamTes
         id=id_, name=f"Test {id_}",
         x_param="speed", x_min=500, x_max=2000, x_steps=10,
         rows=1, width_mm=width, height_mm=height, gap_mm=0.0,
-        base_params=_base(),
+        base_params=_base(), material_id="mat-test",
     )
 
 
@@ -149,6 +149,7 @@ def test_beam_width_validation_rejects_sub_beam_elements():
     t = ParamTest(
         id="t1", name="Narrow", x_param="speed", x_min=500, x_max=2000, x_steps=100,
         rows=1, width_mm=2.0, height_mm=5.0, gap_mm=0.0, base_params=_base(),
+        material_id="mat-test",
     )
     project = Project(
         name="Test", grid_gap_mm=1.0,

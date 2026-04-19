@@ -44,7 +44,7 @@ function defaultLayerFromDetected(detected: DetectedLayer, library: LibraryState
   };
 }
 
-function defaultRequest(): SvgLayersRequest {
+function defaultRequest(materialId: string): SvgLayersRequest {
   return {
     name: "svg-layers",
     svg_content: "",
@@ -52,6 +52,7 @@ function defaultRequest(): SvgLayersRequest {
     height_mm: null,
     start_x: 10,
     start_y: 10,
+    material_id: materialId,
     layers: [],
     subtract_overlaps: false,
   };
@@ -62,7 +63,9 @@ interface Props {
 }
 
 export function SvgLayersPage({ library }: Props) {
-  const [request, setRequest] = useState<SvgLayersRequest>(() => defaultRequest());
+  const [request, setRequest] = useState<SvgLayersRequest>(
+    () => defaultRequest(library.active_material_id ?? ""),
+  );
   const [filename, setFilename] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [detectError, setDetectError] = useState<string | undefined>();
@@ -238,6 +241,7 @@ export function SvgLayersPage({ library }: Props) {
   );
   const disabled = !hasLayers
     || !request.layers.some((l) => l.enabled)
+    || !request.material_id
     || generating
     || hatchedHasErrors;
 
@@ -245,6 +249,23 @@ export function SvgLayersPage({ library }: Props) {
     <div style={{ display: "grid", gridTemplateColumns: "260px 1fr minmax(0, 33vw)", height: "100%", minHeight: 0 }}>
       {/* LEFT: layer list */}
       <div style={{ borderRight: "1px solid #ddd", background: "white", overflow: "auto", padding: 12 }}>
+        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 4 }}>
+          Material
+        </div>
+        <select
+          value={request.material_id}
+          onChange={(e) => setRequest((prev) => ({ ...prev, material_id: e.target.value }))}
+          style={{
+            width: "100%", padding: "6px 8px", marginBottom: 12,
+            border: `1px solid ${request.material_id ? "#ccc" : "#a02840"}`,
+            borderRadius: 4, font: "inherit", background: "white",
+          }}
+        >
+          {!request.material_id && <option value="">— pick a material —</option>}
+          {library.materials.map((m) => (
+            <option key={m.id} value={m.id}>{m.name}</option>
+          ))}
+        </select>
         <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 8 }}>
           SVG
         </div>

@@ -39,7 +39,10 @@ export function defaultTest(name = "New test"): ParamTest {
     crosshatch_passes: 2,
     crosshatch_step_deg: 90,
     registration: { mode: "off", qr_mode: "inline" },
-    material_id: null,
+    // Caller should assign the library's active material before use; defaults
+    // to empty so App.tsx can backfill at bootstrap. Generate is blocked while
+    // this is empty.
+    material_id: "",
   };
 }
 

@@ -60,7 +60,7 @@ def test_layers_request_emits_paths_per_layer():
     ]
     req = SvgLayersRequest(
         name="t", svg_content=PIKACHU_SVG.read_text(),
-        width_mm=50, layers=layers,
+        width_mm=50, layers=layers, material_id="mat-test",
     )
     project = svg_layers_to_xcs(req)
     yellow_paths = [p for p in project.paths if p.layer_color == "#ffd73e"]
@@ -79,7 +79,7 @@ def test_disabled_layer_is_skipped():
     ]
     req = SvgLayersRequest(
         name="t", svg_content=PIKACHU_SVG.read_text(),
-        width_mm=50, layers=layers,
+        width_mm=50, layers=layers, material_id="mat-test",
     )
     project = svg_layers_to_xcs(req)
     colors = {p.layer_color for p in project.paths}
@@ -94,7 +94,7 @@ def test_layer_crosshatch_stacks_per_layer():
     ]
     req = SvgLayersRequest(
         name="t", svg_content=PIKACHU_SVG.read_text(),
-        width_mm=50, layers=layers,
+        width_mm=50, layers=layers, material_id="mat-test",
     )
     project = svg_layers_to_xcs(req)
 
@@ -113,7 +113,7 @@ def test_no_enabled_layers_raises():
     layers = [_layer("#ffd73e", enabled=False)]
     req = SvgLayersRequest(
         name="t", svg_content=PIKACHU_SVG.read_text(),
-        width_mm=50, layers=layers,
+        width_mm=50, layers=layers, material_id="mat-test",
     )
     with pytest.raises(ValueError, match="No enabled"):
         svg_layers_to_xcs(req)
@@ -124,7 +124,7 @@ def test_unmatched_colors_produce_error():
     layers = [_layer("#ff00ff")]  # not in Pikachu
     req = SvgLayersRequest(
         name="t", svg_content=PIKACHU_SVG.read_text(),
-        width_mm=50, layers=layers,
+        width_mm=50, layers=layers, material_id="mat-test",
     )
     with pytest.raises(ValueError, match="No SVG shapes matched"):
         svg_layers_to_xcs(req)
@@ -197,6 +197,7 @@ def test_api_layers_endpoint():
         "name": "pika",
         "svg_content": PIKACHU_SVG.read_text(),
         "width_mm": 50,
+        "material_id": "mat-test",
         "layers": [
             {
                 "color": "#ffd73e", "name": "Yellow body", "enabled": True,
@@ -290,6 +291,7 @@ def test_layers_request_emits_rects_for_hatched_layer():
         name="t",
         svg_content=TWO_COLOR_SVG,
         width_mm=50,
+        material_id="mat-test",
         layers=[
             LayerSpec(color="#000000", name="black", processing_type="VECTOR_ENGRAVING",
                       base_params=bp),
@@ -323,6 +325,7 @@ def test_layers_hatched_max_segments_cap():
                     passes=1, pulse_width=200, laser="red")
     req = SvgLayersRequest(
         name="t", svg_content=TWO_COLOR_SVG, width_mm=50,
+        material_id="mat-test",
         layers=[
             LayerSpec(
                 color="#ffd73e", name="yellow", processing_type="HATCHED_LINES",
@@ -345,6 +348,7 @@ def test_api_layers_endpoint_with_hatched_layer():
         "name": "hatched-test",
         "svg_content": TWO_COLOR_SVG,
         "width_mm": 50,
+        "material_id": "mat-test",
         "layers": [
             {"color": "#000000", "name": "black",
              "processing_type": "VECTOR_ENGRAVING",
@@ -374,6 +378,7 @@ def test_api_layers_endpoint_rejects_hatched_with_empty_passes():
     client = TestClient(create_app())
     payload = {
         "name": "bad", "svg_content": TWO_COLOR_SVG, "width_mm": 50,
+        "material_id": "mat-test",
         "layers": [
             {"color": "#ffd73e", "name": "yellow",
              "processing_type": "HATCHED_LINES",

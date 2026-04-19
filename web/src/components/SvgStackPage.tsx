@@ -31,7 +31,7 @@ function defaultRequest(library: LibraryState): SvgStackRequest {
     scan_angle: 90,
     stack_passes: 2,
     stack_step_deg: 90,
-    material_id: library.active_material_id ?? null,
+    material_id: library.active_material_id ?? "",
     subtract_overlaps: false,
   };
 }
@@ -90,7 +90,7 @@ export function SvgStackPage({ library }: Props) {
     }
   }
 
-  const disabled = !request.svg_content || generating;
+  const disabled = !request.svg_content || !request.material_id || generating;
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", height: "100%", minHeight: 0 }}>

@@ -38,6 +38,7 @@ def _valid_test() -> dict:
         "height_mm": 5.0,
         "gap_mm": 0.0,
         "base_params": _valid_base_params(),
+        "material_id": "mat-test",
     }
 
 
@@ -120,9 +121,13 @@ def test_paramtest_material_id_round_trips_string():
     assert project.tests[0].test.material_id == "mat-abc123"
 
 
-def test_paramtest_material_id_defaults_to_none():
-    project = Project(**_project_payload())
-    assert project.tests[0].test.material_id is None
+def test_paramtest_material_id_required():
+    """Empty/missing material_id must be rejected — palette queries are scoped by material."""
+    data = _valid_test()
+    data["material_id"] = ""
+    with pytest.raises(ValidationError):
+        Project(**{"name": "T", "grid_gap_mm": 1.0,
+                   "tests": [{"test": data, "row": 0, "col": 0, "col_span": 1}]})
 
 
 def test_paramtest_material_id_rejects_non_string():
@@ -136,6 +141,7 @@ def _svg_stack_payload(**overrides) -> dict:
         "svg_content": "<svg/>",
         "width_mm": 50.0,
         "base_params": _valid_base_params(),
+        "material_id": "mat-test",
     }
     base.update(overrides)
     return base
@@ -146,12 +152,19 @@ def test_svg_stack_material_id_round_trips_string():
     assert req.material_id == "mat-abc"
 
 
+def test_svg_stack_material_id_required():
+    body = _svg_stack_payload()
+    del body["material_id"]
+    with pytest.raises(ValidationError):
+        SvgStackRequest(**body)
+
+
 def test_svg_stack_material_id_rejects_non_string():
     with pytest.raises(ValidationError):
         SvgStackRequest(**_svg_stack_payload(material_id=123))
 
 
-def _svg_layers_payload(**layer_overrides) -> dict:
+def _svg_layers_payload(**request_overrides) -> dict:
     layer = {
         "color": "#ff0000",
         "name": "red",
@@ -160,18 +173,27 @@ def _svg_layers_payload(**layer_overrides) -> dict:
         "scan_angle": 90.0,
         "base_params": _valid_base_params(),
     }
-    layer.update(layer_overrides)
-    return {
+    body = {
         "name": "layers",
         "svg_content": "<svg/>",
         "width_mm": 50.0,
+        "material_id": "mat-test",
         "layers": [layer],
     }
+    body.update(request_overrides)
+    return body
 
 
 def test_svg_layers_material_id_round_trips_string():
     req = SvgLayersRequest(**_svg_layers_payload(material_id="mat-xyz"))
-    assert req.layers[0].material_id == "mat-xyz"
+    assert req.material_id == "mat-xyz"
+
+
+def test_svg_layers_material_id_required():
+    body = _svg_layers_payload()
+    del body["material_id"]
+    with pytest.raises(ValidationError):
+        SvgLayersRequest(**body)
 
 
 def test_svg_layers_material_id_rejects_non_string():

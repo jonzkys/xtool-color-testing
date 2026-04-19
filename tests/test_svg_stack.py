@@ -34,6 +34,7 @@ def _request(**overrides) -> SvgStackRequest:
         scan_angle=90.0,
         stack_passes=1,
         stack_step_deg=90.0,
+        material_id="mat-test",
     )
     defaults.update(overrides)
     return SvgStackRequest(**defaults)
@@ -107,6 +108,7 @@ def test_api_svg_stack_endpoint():
         "scan_angle": 90.0,
         "stack_passes": 2,
         "stack_step_deg": 90.0,
+        "material_id": "mat-test",
     }
     resp = client.post("/api/svg-stack", json=payload)
     assert resp.status_code == 200
