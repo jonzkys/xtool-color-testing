@@ -747,15 +747,28 @@ function SvgPreview({
     };
 
     elements.forEach((el) => {
-      // Reset
+      // Reset per-pass state
       el.style.opacity = "";
       el.style.display = "";
-      el.removeAttribute("data-xcs-recolor");
       // Skip structural elements (svg, g, defs, etc.) that don't have their own color
       if (el.tagName === "svg" || el.tagName === "g" || el.tagName === "defs") return;
 
-      const color = colorOf(el);
-      if (!color) return;  // leave uncolored elements visible
+      // First time we see this element, stash the ORIGINAL layer colour. The
+      // colorMap path mutates fill/stroke attributes, so on subsequent passes
+      // colorOf() would read the REMAPPED hex and think the element is from a
+      // different (disabled) layer — hiding it. We always consult the stashed
+      // original instead.
+      let color = el.getAttribute("data-xcs-orig-color");
+      if (color === null) {
+        const detected = colorOf(el);
+        if (!detected) {
+          el.setAttribute("data-xcs-orig-color", "");
+          return;
+        }
+        color = detected;
+        el.setAttribute("data-xcs-orig-color", detected);
+      }
+      if (color === "") return;  // uncoloured — leave alone
 
       // Hide entirely if this element's layer is disabled
       if (!enabledColors.has(color)) {
@@ -768,20 +781,21 @@ function SvgPreview({
         el.style.opacity = "0.15";
       }
 
-      // Recolor for the "expected burn" preview. Override both fill and stroke
-      // (whichever the element was using). Track the override on the element
-      // so the next effect-pass can reset cleanly.
-      if (colorMap) {
-        const remap = colorMap[color];
-        if (remap) {
-          if (el.getAttribute("fill") && el.getAttribute("fill") !== "none") {
-            el.setAttribute("fill", remap);
-          }
-          if (el.getAttribute("stroke") && el.getAttribute("stroke") !== "none") {
-            el.setAttribute("stroke", remap);
-          }
-          el.setAttribute("data-xcs-recolor", "1");
-        }
+      // Paint the expected burn colour if we have a prediction; otherwise
+      // restore the original colour in case a previous colorMap mutated it.
+      const desired = (colorMap && colorMap[color]) ? colorMap[color] : color;
+      if (el.getAttribute("fill") && el.getAttribute("fill") !== "none") {
+        el.setAttribute("fill", desired);
+      }
+      if (el.getAttribute("stroke") && el.getAttribute("stroke") !== "none") {
+        el.setAttribute("stroke", desired);
+      }
+      const styleAttr = el.getAttribute("style");
+      if (styleAttr && /(fill|stroke):/.test(styleAttr)) {
+        const replaced = styleAttr
+          .replace(/fill:\s*[^;]+/, (m) => m.includes("none") ? m : `fill: ${desired}`)
+          .replace(/stroke:\s*[^;]+/, (m) => m.includes("none") ? m : `stroke: ${desired}`);
+        el.setAttribute("style", replaced);
       }
     });
   }, [svg, highlightColor, enabledColors, colorMap]);
