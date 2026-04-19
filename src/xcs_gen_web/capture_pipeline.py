@@ -19,11 +19,13 @@ to set DYLD_LIBRARY_PATH.
 from __future__ import annotations
 
 import ctypes.util
+import io
 import os
 import sys
 
 import cv2
 import numpy as np
+from PIL import Image, ImageCms
 
 
 def _register_homebrew_zbar() -> None:
@@ -50,6 +52,30 @@ from pyzbar.pyzbar import ZBarSymbol, decode as _pyzbar_decode  # noqa: E402
 
 class DetectionError(Exception):
     """Raised when the QR code cannot be located in the image."""
+
+
+def decode_image_bytes(raw: bytes) -> np.ndarray:
+    """Decode uploaded image bytes to a BGR uint8 array, applying any
+    embedded ICC profile so the pixel values are in sRGB.
+
+    iPhone JPEGs ship a Display P3 ICC profile. cv2.imdecode ignores ICC
+    entirely and reads raw pixels as if they were already sRGB, which
+    leaves colours ~10-15% less saturated than they actually are. Going
+    through PIL lets us apply the profile and hand OpenCV true sRGB.
+    """
+    pil_img = Image.open(io.BytesIO(raw))
+    icc = pil_img.info.get("icc_profile")
+    if icc:
+        src_profile = ImageCms.ImageCmsProfile(io.BytesIO(icc))
+        dst_profile = ImageCms.createProfile("sRGB")
+        transform = ImageCms.buildTransformFromOpenProfiles(
+            src_profile, dst_profile, "RGB", "RGB"
+        )
+        pil_img = ImageCms.applyTransform(pil_img.convert("RGB"), transform)
+    else:
+        pil_img = pil_img.convert("RGB")
+    rgb = np.array(pil_img)
+    return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
 
 def detect_qr(image: np.ndarray) -> tuple[str, np.ndarray]:

@@ -45,7 +45,18 @@ def _sample_rect(
     cx_px: float, cy_px: float,
     w_px: float, h_px: float,
 ) -> tuple[str, float]:
-    """Sample the central 60% region of a rect; return (hex, sigma_lab)."""
+    """Sample the central 60% of a rect; return (hex, sigma_lab).
+
+    The hex is the median of the most-saturated half of pixels in the sample
+    region (HSV S channel). This biases the result toward vivid "peak" bands
+    within a cell — e.g. a MOPA gradient strip where the characteristic
+    colour sits in a thin horizontal band and the rest of the cell is muted
+    background. A plain median would wash that peak out; filtering to the
+    top-50% saturated pixels keeps it.
+
+    Sigma is still computed across ALL pixels in the region (Lab stdev) so
+    it remains a useful "how uniform is this cell" warning signal.
+    """
     half_w = w_px * _CENTRAL_REGION_FRACTION / 2
     half_h = h_px * _CENTRAL_REGION_FRACTION / 2
     x0 = max(0, int(round(cx_px - half_w)))
@@ -57,10 +68,23 @@ def _sample_rect(
         return "#000000", 0.0
 
     pixels = region.reshape(-1, 3)
-    median_bgr = np.median(pixels, axis=0).astype(np.uint8)
+
+    # Saturation-biased median: drop the bottom half (least-saturated)
+    # pixels, then median-aggregate only the vivid remainder.
+    hsv = cv2.cvtColor(pixels.reshape(-1, 1, 3).astype(np.uint8), cv2.COLOR_BGR2HSV)
+    sats = hsv.reshape(-1, 3)[:, 1]
+    if sats.size >= 4:
+        threshold = float(np.median(sats))
+        mask = sats >= threshold
+        vivid = pixels[mask] if mask.any() else pixels
+    else:
+        vivid = pixels
+
+    median_bgr = np.median(vivid, axis=0).astype(np.uint8)
     b, g, r = int(median_bgr[0]), int(median_bgr[1]), int(median_bgr[2])
     hex_ = f"#{r:02x}{g:02x}{b:02x}"
 
+    # Sigma is full-cell Lab stdev — unchanged semantics.
     lab = _bgr_to_lab(pixels)
     sigma = float(np.sqrt(np.sum(np.var(lab, axis=0))))
     return hex_, sigma

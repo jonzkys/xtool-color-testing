@@ -20,7 +20,9 @@ from xcs_gen.capture.layout import (
 )
 from xcs_gen.capture.qr_payload import PayloadError, decode_payload
 
-from .capture_pipeline import DetectionError, detect_qr, warp_to_burn_space
+from .capture_pipeline import (
+    DetectionError, decode_image_bytes, detect_qr, warp_to_burn_space,
+)
 from .capture_sampling import sample_grid
 from .converter import project_to_xcs_bytes
 from .palette import (
@@ -160,10 +162,10 @@ def create_app() -> FastAPI:
     @app.post("/api/capture/ingest", response_model=CaptureIngestResponse)
     async def capture_ingest(image: UploadFile = File(...)) -> CaptureIngestResponse:
         raw = await image.read()
-        arr = np.frombuffer(raw, dtype=np.uint8)
-        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-        if img is None:
-            raise HTTPException(status_code=400, detail="could not decode image")
+        try:
+            img = decode_image_bytes(raw)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"could not decode image: {e}")
 
         try:
             qr_text, qr_corners = detect_qr(img)
