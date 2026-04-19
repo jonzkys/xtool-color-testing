@@ -1,14 +1,51 @@
 """Photo → canonical burn-space pipeline.
 
-Given an uploaded image, locate the QR code, compute a homography from the
-QR's 4 image-space corners to known burn-space coordinates, and warp the
-image so every bed-mm maps to a fixed pixel offset.
+Given an uploaded image, locate the QR code (via pyzbar), compute a
+homography from the QR's 4 image-space corners to known burn-space
+coordinates, and warp the image so every bed-mm maps to a fixed pixel
+offset.
+
+pyzbar wraps the ZBar C library, which is substantially more robust on
+real-world burned-substrate photos than cv2.QRCodeDetector. zbar is
+installed as a system dep (``brew install zbar`` or ``apt install
+libzbar0``); pyzbar is a Python dep of this package.
+
+macOS quirk: Homebrew installs libzbar into /opt/homebrew/lib which is
+not on ctypes.util.find_library's default search path. We shim the
+lookup at import time so pyzbar can locate it without requiring the user
+to set DYLD_LIBRARY_PATH.
 """
 
 from __future__ import annotations
 
+import ctypes.util
+import os
+import sys
+
 import cv2
 import numpy as np
+
+
+def _register_homebrew_zbar() -> None:
+    """On macOS, ensure pyzbar can find libzbar installed via Homebrew."""
+    if sys.platform != "darwin":
+        return
+    for candidate in ("/opt/homebrew/lib/libzbar.dylib", "/usr/local/lib/libzbar.dylib"):
+        if os.path.exists(candidate):
+            _orig = ctypes.util.find_library
+
+            def _patched(name: str, _orig=_orig, _path=candidate):
+                if name == "zbar":
+                    return _path
+                return _orig(name)
+
+            ctypes.util.find_library = _patched
+            return
+
+
+_register_homebrew_zbar()
+
+from pyzbar.pyzbar import ZBarSymbol, decode as _pyzbar_decode  # noqa: E402
 
 
 class DetectionError(Exception):
@@ -18,17 +55,37 @@ class DetectionError(Exception):
 def detect_qr(image: np.ndarray) -> tuple[str, np.ndarray]:
     """Find the QR code and return (decoded_text, corners).
 
-    `corners` is a (4, 2) array of pixel coordinates in the order OpenCV
-    returns: top-left, top-right, bottom-right, bottom-left.
+    Corners are a (4, 2) array in TL, TR, BR, BL order (matching what
+    warp_to_burn_space expects). If multiple QRs are present, returns
+    the first decoded.
 
     Raises DetectionError if no QR is found or decoding fails.
     """
-    detector = cv2.QRCodeDetector()
-    data, points, _ = detector.detectAndDecode(image)
-    if not data or points is None:
+    results = _pyzbar_decode(image, symbols=[ZBarSymbol.QRCODE])
+    if not results:
         raise DetectionError("no QR code detected")
-    # points shape: (1, 4, 2). Normalize to (4, 2).
-    corners = points.reshape(4, 2).astype(np.float32)
+
+    r = results[0]
+    try:
+        data = r.data.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise DetectionError(f"QR payload is not valid UTF-8: {e}")
+
+    pts = np.array([(p.x, p.y) for p in r.polygon], dtype=np.float32)
+    if pts.shape != (4, 2):
+        raise DetectionError(
+            f"expected 4 polygon corners from pyzbar, got {pts.shape[0]}"
+        )
+
+    # Reorder arbitrary polygon corners to canonical TL, TR, BR, BL:
+    #   TL = smallest x+y, BR = largest x+y
+    #   TR = smallest (y-x), BL = largest (y-x)
+    s = pts.sum(axis=1)
+    d = pts[:, 1] - pts[:, 0]
+    corners = np.array(
+        [pts[np.argmin(s)], pts[np.argmin(d)], pts[np.argmax(s)], pts[np.argmax(d)]],
+        dtype=np.float32,
+    )
     return data, corners
 
 
