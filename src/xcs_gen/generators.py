@@ -21,13 +21,17 @@ from .model import (
 )
 from .text import make_text_display, text_height, text_width
 
-# Default annotation processing: blue diode, moderate settings for readable text
+# Default annotation processing: MOPA IR for metal labels + QR. Blue-diode
+# can't engrave stainless meaningfully; these are the Silver Stainless Steel
+# one-click settings from XCS Studio, which burn labels/QRs fast and crisp.
 _DEFAULT_ANNOTATION_PARAMS = ProcessingParams(
-    speed=230,
-    power=80,
+    speed=2200,
+    power=70,
     density=200,
     repeat=1,
-    processing_light_source="blue",
+    pulse_width=200,
+    mopa_frequency=65,
+    processing_light_source="red",
 )
 
 _PARAM_MAP = {
