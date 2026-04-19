@@ -267,3 +267,54 @@ class CaptureIngestResponse(BaseModel):
     y_param: str | None
     base_params: BaseParams
     swatches: list[CaptureSwatch]
+
+
+class PaletteSwatchInput(BaseModel):
+    """One swatch being added to the palette via /api/palette/ingest."""
+
+    row: int
+    col: int
+    x_value: float
+    y_value: float | None
+    hex: str
+    sigma: float
+
+
+class PaletteIngestRequest(BaseModel):
+    """Request body for POST /api/palette/ingest.
+
+    `base_params` are the fixed parameters; for each swatch, the varied
+    `x_param` (and optional `y_param`) are overwritten with that swatch's
+    x_value / y_value to produce its full per-swatch param record.
+    """
+
+    test_id: str
+    x_param: str
+    y_param: str | None = None
+    base_params: BaseParams
+    swatches: list[PaletteSwatchInput]
+
+
+class PaletteIngestResponse(BaseModel):
+    added_ids: list[str]
+
+
+class PaletteEntryResponse(BaseModel):
+    id: str
+    test_id: str
+    source: str
+    timestamp: str
+    hex: str
+    lab: list[float]
+    params: dict
+    sigma: float
+    notes: str
+
+
+class PaletteQueryResult(BaseModel):
+    entry: PaletteEntryResponse
+    delta_e: float
+
+
+class PaletteEntryPatch(BaseModel):
+    notes: str

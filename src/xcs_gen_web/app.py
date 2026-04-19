@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import cv2
@@ -20,12 +23,26 @@ from xcs_gen.capture.qr_payload import PayloadError, decode_payload
 from .capture_pipeline import DetectionError, detect_qr, warp_to_burn_space
 from .capture_sampling import sample_grid
 from .converter import project_to_xcs_bytes
+from .palette import (
+    PaletteEntry,
+    append_entries,
+    default_palette_path,
+    hex_to_lab,
+    load_palette,
+    query_by_hex,
+    save_palette,
+)
 from .raster_to_svg import RasterTraceOptions, decode_base64_image, png_to_svg
 from .schemas import (
     BaseParams,
     CaptureIngestResponse,
     CaptureSwatch,
     DetectedLayer,
+    PaletteEntryPatch,
+    PaletteEntryResponse,
+    PaletteIngestRequest,
+    PaletteIngestResponse,
+    PaletteQueryResult,
     Project,
     RasterToSvgRequest,
     RasterToSvgResponse,
@@ -41,6 +58,12 @@ from .svg_layers_converter import (
     svg_layers_to_xcs_bytes,
     svg_preview,
 )
+
+
+def _palette_path() -> Path:
+    """Resolve the active palette file path, honouring XCS_GEN_PALETTE_PATH for tests."""
+    override = os.environ.get("XCS_GEN_PALETTE_PATH")
+    return Path(override) if override else default_palette_path()
 
 
 def create_app() -> FastAPI:
@@ -221,6 +244,74 @@ def create_app() -> FastAPI:
             ),
             swatches=[CaptureSwatch(**s.__dict__) for s in swatches],
         )
+
+    @app.get("/api/palette", response_model=list[PaletteEntryResponse])
+    def palette_list() -> list[PaletteEntryResponse]:
+        return [PaletteEntryResponse(**e.__dict__) for e in load_palette(_palette_path())]
+
+    @app.post("/api/palette/ingest", response_model=PaletteIngestResponse)
+    def palette_ingest(req: PaletteIngestRequest) -> PaletteIngestResponse:
+        now = datetime.now(timezone.utc).isoformat()
+        base = req.base_params.model_dump()
+        entries: list[PaletteEntry] = []
+        for sw in req.swatches:
+            params = dict(base)
+            params[req.x_param] = sw.x_value
+            if req.y_param and sw.y_value is not None:
+                params[req.y_param] = sw.y_value
+            entries.append(PaletteEntry(
+                id=uuid.uuid4().hex,
+                test_id=req.test_id,
+                source="upload",
+                timestamp=now,
+                hex=sw.hex,
+                lab=list(hex_to_lab(sw.hex)),
+                params=params,
+                sigma=sw.sigma,
+                notes="",
+            ))
+        append_entries(_palette_path(), entries)
+        return PaletteIngestResponse(added_ids=[e.id for e in entries])
+
+    @app.get("/api/palette/query", response_model=list[PaletteQueryResult])
+    def palette_query(hex: str, limit: int = 5) -> list[PaletteQueryResult]:
+        results = query_by_hex(_palette_path(), hex, limit=limit)
+        return [
+            PaletteQueryResult(
+                entry=PaletteEntryResponse(**r.entry.__dict__),
+                delta_e=r.delta_e,
+            )
+            for r in results
+        ]
+
+    @app.delete("/api/palette/by-test/{test_id}", status_code=204)
+    def palette_delete_by_test(test_id: str) -> Response:
+        path = _palette_path()
+        entries = load_palette(path)
+        remaining = [e for e in entries if e.test_id != test_id]
+        save_palette(path, remaining)
+        return Response(status_code=204)
+
+    @app.delete("/api/palette/{entry_id}", status_code=204)
+    def palette_delete(entry_id: str) -> Response:
+        path = _palette_path()
+        entries = load_palette(path)
+        remaining = [e for e in entries if e.id != entry_id]
+        if len(remaining) == len(entries):
+            raise HTTPException(status_code=404, detail="entry not found")
+        save_palette(path, remaining)
+        return Response(status_code=204)
+
+    @app.patch("/api/palette/{entry_id}", response_model=PaletteEntryResponse)
+    def palette_patch(entry_id: str, patch: PaletteEntryPatch) -> PaletteEntryResponse:
+        path = _palette_path()
+        entries = load_palette(path)
+        for e in entries:
+            if e.id == entry_id:
+                e.notes = patch.notes
+                save_palette(path, entries)
+                return PaletteEntryResponse(**e.__dict__)
+        raise HTTPException(status_code=404, detail="entry not found")
 
     # Mount built frontend at / if present (optional in dev / tests)
     web_dist = Path(__file__).parent.parent.parent / "web" / "dist"
