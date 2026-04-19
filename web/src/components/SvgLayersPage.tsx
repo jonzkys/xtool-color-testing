@@ -85,6 +85,12 @@ export function SvgLayersPage({ library }: Props) {
   const [tracing, setTracing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // layer.color → predicted burn hex from the last palette match applied to it.
+  // Used to render the "expected burn" preview and doesn't get persisted.
+  const [predictedByColor, setPredictedByColor] = useState<Record<string, string>>({});
+  const [autoApplying, setAutoApplying] = useState(false);
+  const [autoApplyMessage, setAutoApplyMessage] = useState<string | undefined>();
+
   const selected = useMemo(
     () => request.layers.find((l) => l.color === selectedColor) ?? null,
     [request.layers, selectedColor],
@@ -131,6 +137,56 @@ export function SvgLayersPage({ library }: Props) {
         l.color === color ? { ...l, base_params: { ...l.base_params, ...patch } } : l,
       ),
     }));
+  }
+
+  function applyPaletteMatch(
+    color: string,
+    params: Partial<LayerSpec["base_params"]>,
+    predictedHex: string,
+  ) {
+    updateBase(color, params);
+    setPredictedByColor((prev) => ({ ...prev, [color]: predictedHex }));
+  }
+
+  async function autoMatchAllLayers() {
+    if (!request.material_id || request.layers.length === 0) return;
+    setAutoApplying(true);
+    setAutoApplyMessage(undefined);
+    try {
+      // Query each hex-coloured layer in parallel. Layers with "none" or
+      // materials lacking matches fall through to "skipped".
+      const results = await Promise.all(request.layers.map(async (l) => {
+        if (!/^#[0-9a-fA-F]{6}$/.test(l.color)) return { layer: l, best: null };
+        const res = await paletteQuery(l.color, 1, request.material_id);
+        return { layer: l, best: res[0] ?? null };
+      }));
+
+      let applied = 0;
+      const nextPredicted: Record<string, string> = { ...predictedByColor };
+      setRequest((prev) => ({
+        ...prev,
+        layers: prev.layers.map((l) => {
+          const match = results.find((r) => r.layer.color === l.color);
+          if (!match?.best) return l;
+          const newParams = paletteParamsToBaseParams(match.best.entry.params);
+          nextPredicted[l.color] = match.best.entry.hex;
+          applied += 1;
+          return { ...l, base_params: { ...l.base_params, ...newParams } };
+        }),
+      }));
+      setPredictedByColor(nextPredicted);
+
+      const skipped = results.length - applied;
+      setAutoApplyMessage(
+        skipped === 0
+          ? `Applied matches to all ${applied} layer${applied === 1 ? "" : "s"}.`
+          : `Applied to ${applied}/${results.length} layers (${skipped} skipped — no palette match).`,
+      );
+    } catch (err) {
+      setAutoApplyMessage(`Failed: ${(err as Error).message}`);
+    } finally {
+      setAutoApplying(false);
+    }
   }
 
   async function applyDetectedSvg(svgText: string, suggestedName: string) {
@@ -345,6 +401,31 @@ export function SvgLayersPage({ library }: Props) {
             Top of list = drawn on top. Subtraction removes lower layers where upper ones cover them.
           </div>
         )}
+        {hasLayers && (
+          <div style={{ marginBottom: 8 }}>
+            <button
+              onClick={autoMatchAllLayers}
+              disabled={!request.material_id || autoApplying}
+              title={!request.material_id
+                ? "Pick a material above first"
+                : "Query the palette for each layer's colour and apply the closest match"}
+              style={{
+                width: "100%", padding: "6px 8px", fontSize: 12,
+                background: !request.material_id || autoApplying ? "#ccc" : "#e8ecf3",
+                color: !request.material_id || autoApplying ? "#888" : "#336",
+                border: `1px solid ${!request.material_id || autoApplying ? "#bbb" : "#336"}`,
+                borderRadius: 4,
+                cursor: !request.material_id || autoApplying ? "default" : "pointer",
+                fontWeight: 600,
+              }}
+            >
+              {autoApplying ? "Matching…" : "Auto-match all layers to palette"}
+            </button>
+            {autoApplyMessage && (
+              <div style={{ fontSize: 10, color: "#555", marginTop: 4 }}>{autoApplyMessage}</div>
+            )}
+          </div>
+        )}
         {!hasLayers && (
           <div style={{ fontSize: 12, color: "#999" }}>Upload an SVG to detect layers.</div>
         )}
@@ -453,29 +534,49 @@ export function SvgLayersPage({ library }: Props) {
             projectMaterialId={request.material_id}
             onPatch={(p) => updateLayer(selected.color, p)}
             onBasePatch={(p) => updateBase(selected.color, p)}
+            onPaletteApply={(params, hex) => applyPaletteMatch(selected.color, params, hex)}
           />
         ) : (
           <div style={{ padding: 32, color: "#999" }}>Select a layer to edit its params.</div>
         )}
       </div>
 
-      {/* RIGHT: preview — flex-column so the SVG pane fills the remaining height */}
-      <div style={{ padding: 16, background: "#f6f7f9", display: "flex", flexDirection: "column", minHeight: 0 }}>
-        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 8 }}>
-          Preview {selectedColor && `— highlighted: ${selectedColor}`}
+      {/* RIGHT: two stacked previews — design colours vs expected burn */}
+      <div style={{ padding: 16, background: "#f6f7f9", display: "flex", flexDirection: "column", minHeight: 0, gap: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 6 }}>
+            Design {selectedColor && `— highlighted: ${selectedColor}`}
+          </div>
+          <SvgPreview
+            svg={subtractedSvg ?? request.svg_content}
+            highlightColor={selectedColor}
+            enabledColors={enabledColors}
+          />
         </div>
-        <SvgPreview
-          svg={subtractedSvg ?? request.svg_content}
-          highlightColor={selectedColor}
-          enabledColors={enabledColors}
-        />
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 6 }}>
+            Expected burn
+            {Object.keys(predictedByColor).length === 0 && (
+              <span style={{ textTransform: "none", color: "#a05000", marginLeft: 6 }}>
+                — apply palette matches to populate
+              </span>
+            )}
+          </div>
+          <SvgPreview
+            svg={subtractedSvg ?? request.svg_content}
+            highlightColor={null}
+            enabledColors={enabledColors}
+            colorMap={predictedByColor}
+          />
+        </div>
       </div>
     </div>
   );
 }
 
 function LayerEditor({
-  layer, layerIdx, library, projectMaterialId, onPatch, onBasePatch,
+  layer, layerIdx, library, projectMaterialId,
+  onPatch, onBasePatch, onPaletteApply,
 }: {
   layer: LayerSpec;
   layerIdx: number;
@@ -483,6 +584,7 @@ function LayerEditor({
   projectMaterialId: string;
   onPatch: (p: Partial<LayerSpec>) => void;
   onBasePatch: (p: Partial<LayerSpec["base_params"]>) => void;
+  onPaletteApply: (params: Partial<LayerSpec["base_params"]>, predictedHex: string) => void;
 }) {
   const hatchIssues = validateLayerSpec(layer, layerIdx);
 
@@ -507,7 +609,7 @@ function LayerEditor({
         <PaletteMatchSection
           layerColor={layer.color}
           materialId={projectMaterialId}
-          onApply={(params) => onBasePatch(params)}
+          onApply={onPaletteApply}
         />
       )}
 
@@ -584,11 +686,16 @@ function LayerEditor({
 }
 
 function SvgPreview({
-  svg, highlightColor, enabledColors,
+  svg, highlightColor, enabledColors, colorMap,
 }: {
   svg: string;
   highlightColor: string | null;
   enabledColors: Set<string>;
+  /**
+   * Optional: repaint the SVG with each layer colour remapped to its predicted
+   * burn hex. Used for the "expected burn" side-by-side view.
+   */
+  colorMap?: Record<string, string>;
 }) {
   // Walks the rendered SVG DOM and for each leaf element:
   // - hides it entirely if its color isn't in enabledColors (layer disabled)
@@ -641,6 +748,7 @@ function SvgPreview({
       // Reset
       el.style.opacity = "";
       el.style.display = "";
+      el.removeAttribute("data-xcs-recolor");
       // Skip structural elements (svg, g, defs, etc.) that don't have their own color
       if (el.tagName === "svg" || el.tagName === "g" || el.tagName === "defs") return;
 
@@ -657,8 +765,24 @@ function SvgPreview({
       if (highlightColor && color !== highlightColor) {
         el.style.opacity = "0.15";
       }
+
+      // Recolor for the "expected burn" preview. Override both fill and stroke
+      // (whichever the element was using). Track the override on the element
+      // so the next effect-pass can reset cleanly.
+      if (colorMap) {
+        const remap = colorMap[color];
+        if (remap) {
+          if (el.getAttribute("fill") && el.getAttribute("fill") !== "none") {
+            el.setAttribute("fill", remap);
+          }
+          if (el.getAttribute("stroke") && el.getAttribute("stroke") !== "none") {
+            el.setAttribute("stroke", remap);
+          }
+          el.setAttribute("data-xcs-recolor", "1");
+        }
+      }
     });
-  }, [svg, highlightColor, enabledColors]);
+  }, [svg, highlightColor, enabledColors, colorMap]);
 
   if (!svg) {
     return (
@@ -716,7 +840,7 @@ function PaletteMatchSection({
 }: {
   layerColor: string;
   materialId: string;
-  onApply: (params: Partial<BaseParams>) => void;
+  onApply: (params: Partial<BaseParams>, predictedHex: string) => void;
 }) {
   const [results, setResults] = useState<PaletteQueryResult[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
@@ -773,7 +897,7 @@ function PaletteMatchSection({
             </div>
             <div style={{ flex: 1 }} />
             <button
-              onClick={() => onApply(paletteParamsToBaseParams(selected.entry.params))}
+              onClick={() => onApply(paletteParamsToBaseParams(selected.entry.params), selected.entry.hex)}
               style={{
                 padding: "6px 12px", background: "#336", color: "white",
                 border: "none", borderRadius: 4, fontWeight: 600, cursor: "pointer",
