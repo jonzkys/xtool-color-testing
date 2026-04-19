@@ -9,6 +9,8 @@ import { HatchPassesEditor } from "./HatchPassesEditor";
 import { validateLayerSpec } from "../validation";
 import type { LibraryState } from "../library";
 import { MaterialPresetPicker } from "./MaterialPresetPicker";
+import { paletteQuery } from "../palette-api";
+import type { BaseParams, PaletteQueryResult } from "../types";
 
 const PROCESSING_TYPES: { value: SvgProcessingType; label: string }[] = [
   { value: "COLOR_FILL_ENGRAVE", label: "Color fill engrave" },
@@ -448,6 +450,7 @@ export function SvgLayersPage({ library }: Props) {
             layer={selected}
             layerIdx={request.layers.findIndex((l) => l.color === selected.color)}
             library={library}
+            projectMaterialId={request.material_id}
             onPatch={(p) => updateLayer(selected.color, p)}
             onBasePatch={(p) => updateBase(selected.color, p)}
           />
@@ -472,11 +475,12 @@ export function SvgLayersPage({ library }: Props) {
 }
 
 function LayerEditor({
-  layer, layerIdx, library, onPatch, onBasePatch,
+  layer, layerIdx, library, projectMaterialId, onPatch, onBasePatch,
 }: {
   layer: LayerSpec;
   layerIdx: number;
   library: LibraryState;
+  projectMaterialId: string;
   onPatch: (p: Partial<LayerSpec>) => void;
   onBasePatch: (p: Partial<LayerSpec["base_params"]>) => void;
 }) {
@@ -498,6 +502,14 @@ function LayerEditor({
           style={{ flex: 1, fontSize: 18, padding: "6px 8px", border: "1px solid transparent", borderRadius: 4 }}
         />
       </div>
+
+      {layer.color !== "none" && (
+        <PaletteMatchSection
+          layerColor={layer.color}
+          materialId={projectMaterialId}
+          onApply={(params) => onBasePatch(params)}
+        />
+      )}
 
       <Section title="Processing">
         <SelectField
@@ -670,6 +682,148 @@ function SvgPreview({
         style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
         dangerouslySetInnerHTML={{ __html: svg }}
       />
+    </div>
+  );
+}
+
+// ΔE interpretation:
+//   <  2   imperceptible to the eye
+//   2-10  visible but close
+//  10-30  different but related
+//   >30   clearly distinct
+// We render as a percentage match clamped to [0, 100] with 100 = ΔE 0.
+function deltaEToPercent(dE: number): number {
+  return Math.max(0, Math.min(100, Math.round(100 - dE * 2)));
+}
+
+function paletteParamsToBaseParams(
+  params: { [k: string]: string | number },
+): Partial<BaseParams> {
+  const laser = params["laser"];
+  return {
+    power: typeof params["power"] === "number" ? params["power"] : Number(params["power"]),
+    speed: typeof params["speed"] === "number" ? Math.round(params["speed"]) : Math.round(Number(params["speed"])),
+    frequency: typeof params["frequency"] === "number" ? Math.round(params["frequency"]) : Math.round(Number(params["frequency"])),
+    density: typeof params["density"] === "number" ? Math.round(params["density"]) : Math.round(Number(params["density"])),
+    passes: typeof params["passes"] === "number" ? Math.round(params["passes"]) : Math.round(Number(params["passes"])),
+    pulse_width: typeof params["pulse_width"] === "number" ? Math.round(params["pulse_width"]) : Math.round(Number(params["pulse_width"])),
+    laser: (laser === "blue" ? "blue" : "red"),
+  };
+}
+
+function PaletteMatchSection({
+  layerColor, materialId, onApply,
+}: {
+  layerColor: string;
+  materialId: string;
+  onApply: (params: Partial<BaseParams>) => void;
+}) {
+  const [results, setResults] = useState<PaletteQueryResult[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+
+  useEffect(() => {
+    let cancelled = false;
+    setResults([]);
+    setSelectedId("");
+    setError(undefined);
+    if (!materialId || !/^#[0-9a-fA-F]{6}$/.test(layerColor)) return;
+    setLoading(true);
+    paletteQuery(layerColor, 10, materialId)
+      .then((r) => { if (!cancelled) { setResults(r); setSelectedId(r[0]?.entry.id ?? ""); } })
+      .catch((e) => { if (!cancelled) setError((e as Error).message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [layerColor, materialId]);
+
+  const selected = results.find((r) => r.entry.id === selectedId) ?? results[0];
+
+  if (!materialId) {
+    return (
+      <div style={{ marginBottom: 16, padding: 10, background: "#fff8e1", border: "1px solid #f2c97e", borderRadius: 4, fontSize: 12, color: "#785400" }}>
+        Pick a project material above to see palette matches for this layer.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: 16, padding: 10, background: "#fafafa", border: "1px solid #ddd", borderRadius: 4 }}>
+      <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 8 }}>
+        Palette match
+      </div>
+
+      {loading && <div style={{ fontSize: 12, color: "#888" }}>Searching palette…</div>}
+      {error && <div style={{ fontSize: 12, color: "#a02840" }}>{error}</div>}
+      {!loading && !error && results.length === 0 && (
+        <div style={{ fontSize: 12, color: "#888" }}>
+          No palette entries for this material yet. Burn a test and upload it on the Palette tab.
+        </div>
+      )}
+
+      {selected && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <SwatchBox color={layerColor} label="layer" />
+            <div style={{ color: "#666", fontSize: 18 }}>→</div>
+            <SwatchBox color={selected.entry.hex} label="palette" />
+            <div style={{ marginLeft: 8, fontSize: 13 }}>
+              <div><strong>{deltaEToPercent(selected.delta_e)}%</strong> match</div>
+              <div style={{ color: "#888", fontSize: 11 }}>ΔE = {selected.delta_e.toFixed(2)}</div>
+            </div>
+            <div style={{ flex: 1 }} />
+            <button
+              onClick={() => onApply(paletteParamsToBaseParams(selected.entry.params))}
+              style={{
+                padding: "6px 12px", background: "#336", color: "white",
+                border: "none", borderRadius: 4, fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              Apply
+            </button>
+          </div>
+
+          {results.length > 1 && (
+            <label style={{ display: "block", fontSize: 12, color: "#555" }}>
+              <span style={{ marginRight: 6 }}>Choose match:</span>
+              <select
+                value={selectedId}
+                onChange={(e) => setSelectedId(e.target.value)}
+                style={{ padding: "4px 6px", border: "1px solid #ccc", borderRadius: 4, font: "inherit", background: "white" }}
+              >
+                {results.map((r) => {
+                  const p = r.entry.params;
+                  return (
+                    <option key={r.entry.id} value={r.entry.id}>
+                      {r.entry.hex}  ΔE={r.delta_e.toFixed(1)}  ·  P={p.power}% S={p.speed} {p.laser}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+          )}
+
+          {selected && (
+            <div style={{ marginTop: 6, fontSize: 11, color: "#888", fontFamily: "monospace" }}>
+              {Object.entries(paletteParamsToBaseParams(selected.entry.params))
+                .map(([k, v]) => `${k}=${v}`).join("  ")}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function SwatchBox({ color, label }: { color: string; label: string }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{
+        width: 42, height: 42, borderRadius: 4, border: "1px solid #ccc",
+        background: color,
+      }} />
+      <div style={{ fontSize: 9, color: "#888", marginTop: 2 }}>{label}</div>
+      <div style={{ fontSize: 9, fontFamily: "monospace" }}>{color}</div>
     </div>
   );
 }
