@@ -21,6 +21,7 @@ def test_qr_payload_for_test_includes_required_fields():
         x_param="speed", x_min=100, x_max=5000, x_steps=50,
         y_param="power", y_min=10, y_max=100, y_steps=10,
         grid_w=22.0, grid_h=44.0, rows=1, gap=0.0,
+        grid_offset_x_mm=13.5, grid_offset_y_mm=13.5,
         base_params=ProcessingParams(),
         kind="grid",
     )
@@ -29,6 +30,8 @@ def test_qr_payload_for_test_includes_required_fields():
     assert decoded["t"] == "grid"
     assert decoded["x"] == {"p": "speed", "min": 100, "max": 5000, "n": 50}
     assert decoded["y"] == {"p": "power", "min": 10, "max": 100, "n": 10}
+    assert decoded["grid"]["ox"] == 13.5
+    assert decoded["grid"]["oy"] == 13.5
 
 
 def test_qr_payload_without_y():
@@ -37,6 +40,7 @@ def test_qr_payload_without_y():
         x_param="speed", x_min=100, x_max=5000, x_steps=50,
         y_param=None, y_min=0, y_max=0, y_steps=1,
         grid_w=22.0, grid_h=5.0, rows=1, gap=0.0,
+        grid_offset_x_mm=13.5, grid_offset_y_mm=14.75,
         base_params=ProcessingParams(),
         kind="grid",
     )

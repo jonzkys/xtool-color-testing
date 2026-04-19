@@ -41,6 +41,8 @@ def qr_payload_for_test(
     x_param: str, x_min: float, x_max: float, x_steps: int,
     y_param: str | None, y_min: float, y_max: float, y_steps: int,
     grid_w: float, grid_h: float, rows: int, gap: float,
+    grid_offset_x_mm: float,
+    grid_offset_y_mm: float,
     base_params: ProcessingParams,
     kind: str = "grid",
     mode: str = "inline",
@@ -48,6 +50,12 @@ def qr_payload_for_test(
     """Build a QR payload string for one param test.
 
     mode = "inline" -> full spec, "id_only" -> just {"v":1,"id":...}.
+
+    ``grid_offset_x_mm`` / ``grid_offset_y_mm`` record where the test grid
+    sits relative to the QR's top-left corner. These are necessary for
+    the ingest endpoint to sample cells correctly — the Y offset in
+    particular depends on summary-text height, which the endpoint can't
+    recompute without them.
     """
     if mode == "id_only":
         return encode_id_only(test_id)
@@ -56,7 +64,10 @@ def qr_payload_for_test(
         "id": test_id,
         "t": kind,
         "x": {"p": x_param, "min": x_min, "max": x_max, "n": x_steps},
-        "grid": {"w": grid_w, "h": grid_h, "rows": rows, "gap": gap},
+        "grid": {
+            "w": grid_w, "h": grid_h, "rows": rows, "gap": gap,
+            "ox": grid_offset_x_mm, "oy": grid_offset_y_mm,
+        },
         "b": {
             "p": base_params.power,
             "s": base_params.speed,

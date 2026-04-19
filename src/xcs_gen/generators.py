@@ -180,6 +180,13 @@ def generate_gradient(
             mode=registration_mode,  # type: ignore[arg-type]
             qr_mode=registration_qr_mode,  # type: ignore[arg-type]
         )
+        # Grid offset relative to QR top-left. compute_layout placed the QR
+        # at (grid_x - qr_size - margin, grid_y - qr_size - margin), so the
+        # offset is always (qr_size + margin, qr_size + margin) in burn-space.
+        # The ingest endpoint needs these to sample cells accurately.
+        assert layout.qr is not None  # registration_mode != "off" guarantees this
+        grid_offset_x_mm = start_x - layout.qr.x
+        grid_offset_y_mm = gradient_start_y - layout.qr.y
         qr_text = qr_payload_for_test(
             test_id=test_id or _default_test_id(),
             x_param=x_param, x_min=x_min, x_max=x_max, x_steps=x_steps,
@@ -188,6 +195,8 @@ def generate_gradient(
             grid_h=(total_height * rows) if not is_dual else total_height,
             rows=rows,
             gap=gap,
+            grid_offset_x_mm=grid_offset_x_mm,
+            grid_offset_y_mm=grid_offset_y_mm,
             base_params=base_params,
             kind="grid",
             mode=registration_qr_mode,

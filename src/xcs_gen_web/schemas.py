@@ -245,3 +245,25 @@ class RasterToSvgRequest(BaseModel):
 
 class RasterToSvgResponse(BaseModel):
     svg: str
+
+
+class CaptureSwatch(BaseModel):
+    """One sampled swatch from a captured registration sheet."""
+
+    row: int
+    col: int
+    x_value: float
+    y_value: float | None
+    hex: str
+    sigma: float
+
+
+class CaptureIngestResponse(BaseModel):
+    """Response from POST /api/capture/ingest — decoded QR + sampled swatches."""
+
+    test_id: str
+    kind: str
+    x_param: str
+    y_param: str | None
+    base_params: BaseParams
+    swatches: list[CaptureSwatch]
