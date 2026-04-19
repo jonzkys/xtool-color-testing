@@ -21,16 +21,16 @@ from .model import (
 )
 from .text import make_text_display, text_height, text_width
 
-# Default annotation processing: MOPA IR for metal labels + QR. Blue-diode
-# can't engrave stainless meaningfully; these are the Silver Stainless Steel
-# one-click settings from XCS Studio, which burn labels/QRs fast and crisp.
+# Default annotation processing: MOPA IR Color-Engrave for fine text + QR on
+# stainless. Low power + slow speed + very high line density produces sharp,
+# high-contrast marks suitable for 2 mm text and small QR modules.
 _DEFAULT_ANNOTATION_PARAMS = ProcessingParams(
-    speed=2200,
-    power=70,
-    density=200,
+    speed=400,
+    power=14,
+    density=2566,
     repeat=1,
-    pulse_width=200,
-    mopa_frequency=65,
+    pulse_width=80,
+    mopa_frequency=90,
     processing_light_source="red",
 )
 
@@ -261,7 +261,7 @@ def _add_summary_text(
     project.extra_displays.append(text_disp)
     project.extra_device_entries.append(
         build_device_entry(
-            text_disp["id"], "TEXT", "FILL_VECTOR_ENGRAVING", annotation_params
+            text_disp["id"], "TEXT", "COLOR_FILL_ENGRAVE", annotation_params
         )
     )
 
@@ -509,7 +509,7 @@ def _add_tick_and_label(
     project.extra_displays.append(text_disp)
     project.extra_device_entries.append(
         build_device_entry(
-            text_disp["id"], "TEXT", "FILL_VECTOR_ENGRAVING", annotation_params
+            text_disp["id"], "TEXT", "COLOR_FILL_ENGRAVE", annotation_params
         )
     )
 
@@ -615,7 +615,7 @@ def _add_y_axis(
         project.extra_displays.append(text_disp)
         project.extra_device_entries.append(
             build_device_entry(
-                text_disp["id"], "TEXT", "FILL_VECTOR_ENGRAVING", annotation_params
+                text_disp["id"], "TEXT", "COLOR_FILL_ENGRAVE", annotation_params
             )
         )
 

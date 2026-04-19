@@ -119,7 +119,7 @@ def _emit_bit_matrix(
                 width=cell,
                 height=cell,
                 params=annotation_params,
-                processing_type="FILL_VECTOR_ENGRAVING",
+                processing_type="COLOR_FILL_ENGRAVE",
                 is_fill=True,
                 layer_color=ANNOTATION_LAYER_COLOR,
             )
