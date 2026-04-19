@@ -56,7 +56,9 @@ function defaultRequest(materialId: string): SvgLayersRequest {
     start_y: 10,
     material_id: materialId,
     layers: [],
-    subtract_overlaps: false,
+    // On by default — adjacent layers shouldn't re-engrave the same pixel and
+    // the subtracted preview is almost always what users want to see first.
+    subtract_overlaps: true,
   };
 }
 
