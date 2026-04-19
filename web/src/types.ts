@@ -145,3 +145,38 @@ export interface DetectedLayer {
   shape_count: number;
   is_fill: boolean;
 }
+
+export interface CaptureSwatch {
+  row: number;
+  col: number;
+  x_value: number;
+  y_value: number | null;
+  hex: string;
+  sigma: number;
+}
+
+export interface CaptureIngestResponse {
+  test_id: string;
+  kind: "grid" | "gradient";
+  swatches: CaptureSwatch[];
+  base_params: BaseParams;
+  x_param: string;
+  y_param: string | null;
+}
+
+export interface PaletteEntry {
+  id: string;
+  test_id: string;
+  source: string;
+  timestamp: string;
+  hex: string;
+  lab: number[];
+  params: { [k: string]: string | number };
+  sigma: number;
+  notes: string;
+}
+
+export interface PaletteQueryResult {
+  entry: PaletteEntry;
+  delta_e: number;
+}

@@ -7,6 +7,7 @@ import { WarningBanner } from "./components/fields/WarningBanner";
 import { SvgStackPage } from "./components/SvgStackPage";
 import { SvgLayersPage } from "./components/SvgLayersPage";
 import { LibraryPage } from "./components/LibraryPage";
+import { PalettePage } from "./components/PalettePage";
 import { defaultProject, defaultPlacement, newId } from "./defaults";
 import { loadProject, saveProject, loadLibrary, saveLibrary } from "./storage";
 import { bootstrapLibrary, type LibraryState } from "./library";
@@ -14,7 +15,7 @@ import { generateAndDownload } from "./generate";
 import { hasErrors, validateProject } from "./validation";
 import type { Project, TestPlacement } from "./types";
 
-type Tab = "tests" | "svg" | "layers" | "library";
+type Tab = "tests" | "svg" | "layers" | "library" | "palette";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("tests");
@@ -126,7 +127,8 @@ export default function App() {
           tab === "tests" ? project.name
           : tab === "svg" ? "SVG stack"
           : tab === "layers" ? "SVG layers"
-          : "Library"
+          : tab === "library" ? "Library"
+          : "Palette"
         }
         generateDisabled={disableGenerate}
         generating={generating}
@@ -180,9 +182,13 @@ export default function App() {
         <div style={{ flex: 1, minHeight: 0 }}>
           <SvgLayersPage library={library} />
         </div>
-      ) : (
+      ) : tab === "library" ? (
         <div style={{ flex: 1, minHeight: 0 }}>
           <LibraryPage library={library} onChange={setLibrary} />
+        </div>
+      ) : (
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <PalettePage />
         </div>
       )}
     </div>
