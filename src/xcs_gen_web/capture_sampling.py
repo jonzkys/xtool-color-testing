@@ -14,6 +14,17 @@ import numpy as np
 
 _CENTRAL_REGION_FRACTION = 0.6
 
+# Parameters whose values are integer-valued laser settings. Any other swept
+# param (currently only "power") is rounded to 1 decimal place instead — the
+# laser accepts fractional power, so 14.6% is meaningful while 14.62069% is not.
+_INT_PARAMS = frozenset({"speed", "frequency", "density", "passes", "pulse_width"})
+
+
+def _round_param(name: str, value: float) -> float:
+    if name in _INT_PARAMS:
+        return float(round(value))
+    return round(value, 1)
+
 
 @dataclass
 class Swatch:
@@ -116,8 +127,11 @@ def sample_grid(
     cell_w_px = cell_w_mm * px_per_mm
     cell_h_px = cell_h_mm * px_per_mm
 
-    x_values = _linspace(x_min, x_max, x_steps)
-    y_values = _linspace(y_min, y_max, n_y) if y_param is not None else [None] * n_y
+    x_values = [_round_param(x_param, v) for v in _linspace(x_min, x_max, x_steps)]
+    if y_param is not None:
+        y_values: list[float | None] = [_round_param(y_param, v) for v in _linspace(y_min, y_max, n_y)]
+    else:
+        y_values = [None] * n_y
 
     swatches: list[Swatch] = []
     for yi in range(n_y):
@@ -150,7 +164,7 @@ def sample_gradient(
     cell_w_px = cell_w_mm * px_per_mm
     cell_h_px = gh * px_per_mm
 
-    x_values = _linspace(x_min, x_max, n_samples)
+    x_values = [_round_param(x_param, v) for v in _linspace(x_min, x_max, n_samples)]
     cy_px = (oy + gh / 2) * px_per_mm
 
     swatches: list[Swatch] = []
