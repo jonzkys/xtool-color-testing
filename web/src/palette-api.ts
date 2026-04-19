@@ -24,6 +24,7 @@ export async function captureIngest(file: File): Promise<CaptureIngestResponse> 
 
 export interface PaletteIngestBody {
   test_id: string;
+  material_id: string;
   x_param: string;
   y_param: string | null;
   base_params: BaseParams;
@@ -47,14 +48,19 @@ export async function paletteIngest(body: PaletteIngestBody): Promise<{ added_id
   return r.json();
 }
 
-export async function paletteList(): Promise<PaletteEntry[]> {
-  const r = await fetch("/api/palette");
+export async function paletteList(materialId?: string): Promise<PaletteEntry[]> {
+  const q = materialId ? `?material_id=${encodeURIComponent(materialId)}` : "";
+  const r = await fetch(`/api/palette${q}`);
   if (!r.ok) throw new Error("failed to list palette");
   return r.json();
 }
 
-export async function paletteQuery(hex: string, limit = 5): Promise<PaletteQueryResult[]> {
-  const r = await fetch(`/api/palette/query?hex=${encodeURIComponent(hex)}&limit=${limit}`);
+export async function paletteQuery(
+  hex: string, limit = 5, materialId?: string,
+): Promise<PaletteQueryResult[]> {
+  const parts = [`hex=${encodeURIComponent(hex)}`, `limit=${limit}`];
+  if (materialId) parts.push(`material_id=${encodeURIComponent(materialId)}`);
+  const r = await fetch(`/api/palette/query?${parts.join("&")}`);
   if (!r.ok) throw new Error("query failed");
   return r.json();
 }

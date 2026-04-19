@@ -158,6 +158,7 @@ export interface CaptureSwatch {
 export interface CaptureIngestResponse {
   test_id: string;
   kind: "grid" | "gradient";
+  material_id: string | null;
   swatches: CaptureSwatch[];
   base_params: BaseParams;
   x_param: string;
@@ -167,6 +168,7 @@ export interface CaptureIngestResponse {
 export interface PaletteEntry {
   id: string;
   test_id: string;
+  material_id: string;
   source: string;
   timestamp: string;
   hex: string;

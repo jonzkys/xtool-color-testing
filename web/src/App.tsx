@@ -188,7 +188,7 @@ export default function App() {
         </div>
       ) : (
         <div style={{ flex: 1, minHeight: 0 }}>
-          <PalettePage />
+          <PalettePage library={library} />
         </div>
       )}
     </div>
