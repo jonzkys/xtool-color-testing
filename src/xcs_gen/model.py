@@ -98,6 +98,29 @@ class Circle:
     layer_color: str = ""
 
 
+@dataclass
+class Bitmap:
+    """A raster BITMAP display element.
+
+    Carries a PNG payload (raw bytes) that gets base64-encoded into the
+    XCS file. Used for QR / ArUco markers where emitting one RECT per
+    module bloats the file and risks hitting XCS's per-project display
+    limit (~750 elements).
+    """
+
+    x: float
+    y: float
+    width: float  # physical size in mm
+    height: float
+    png_bytes: bytes  # raw PNG bytes (not base64)
+    origin_width: int  # source PNG pixel width
+    origin_height: int  # source PNG pixel height
+    params: ProcessingParams = field(default_factory=ProcessingParams)
+    processing_type: str = "COLOR_ENGRAVE"  # NB: bitmap variant, not COLOR_FILL_ENGRAVE
+    id: str = field(default_factory=_uuid)
+    layer_color: str = ""
+
+
 # Default layer colors for gradient and annotation layers.
 GRADIENT_LAYER_COLOR = "#00befe"
 ANNOTATION_LAYER_COLOR = "#aaaaaa"
@@ -122,4 +145,5 @@ class XCSProject:
     circles: list[Circle] = field(default_factory=list)
     extra_displays: list[dict[str, Any]] = field(default_factory=list)
     extra_device_entries: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    bitmaps: list[Bitmap] = field(default_factory=list)
     canvas_id: str = field(default_factory=_uuid)

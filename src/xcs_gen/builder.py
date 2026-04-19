@@ -9,6 +9,7 @@ from typing import Any
 from .model import (
     ANNOTATION_LAYER_COLOR,
     GRADIENT_LAYER_COLOR,
+    Bitmap,
     Circle,
     Line,
     Path,
@@ -88,6 +89,88 @@ def _build_rect_display(elem: Rect) -> dict[str, Any]:
 def build_rect_display(elem: Rect) -> dict[str, Any]:
     """Public wrapper around the internal rect display builder."""
     return _build_rect_display(elem)
+
+
+def build_bitmap_display(bmp: Bitmap) -> dict[str, Any]:
+    """Build a display entry for a BITMAP element (PNG embedded as data URL)."""
+    import base64
+
+    b64 = base64.b64encode(bmp.png_bytes).decode("ascii")
+    data_url = f"data:image/png;base64,{b64}"
+
+    scale_x = bmp.width / bmp.origin_width if bmp.origin_width else 1.0
+    scale_y = bmp.height / bmp.origin_height if bmp.origin_height else 1.0
+    dpi_x = (bmp.origin_width * 25.4 / bmp.width) if bmp.width else 0
+    dpi_y = (bmp.origin_height * 25.4 / bmp.height) if bmp.height else 0
+
+    return {
+        "base64": data_url,
+        "id": bmp.id,
+        "name": None,
+        "type": "BITMAP",
+        "x": bmp.x,
+        "y": bmp.y,
+        "angle": 0,
+        "scale": {"x": scale_x, "y": scale_y},
+        "skew": {"x": 0, "y": 0},
+        "pivot": {"x": 0, "y": 0},
+        "localSkew": {"x": 0, "y": 0},
+        "offsetX": bmp.x,
+        "offsetY": bmp.y,
+        "lockRatio": True,
+        "isClosePath": False,
+        "zOrder": 1,
+        "groupTags": [],
+        "groupTag": _uuid(),
+        "layerTag": bmp.layer_color,
+        "layerColor": bmp.layer_color,
+        "visible": True,
+        "originColor": "#000000",
+        "enableTransform": True,
+        "visibleState": True,
+        "lockState": False,
+        "resourceOrigin": "",
+        "customData": {},
+        "rootComponentId": "",
+        "minCanvasVersion": "0.0.0",
+        "alpha": 1,
+        "fill": {"paintType": "color", "visible": False, "color": 0, "alpha": 1},
+        "stroke": {
+            "paintType": "color", "visible": False, "color": 0, "alpha": 1,
+            "width": 1, "cap": "butt", "join": "miter", "miterLimit": 4, "alignment": 0.5,
+        },
+        "effects": [],
+        "width": bmp.width,
+        "height": bmp.height,
+        "isFill": True,
+        "filterList": [],
+        "grayValue": [0, 255],
+        "sharpness": 50,
+        "brightness": 0,
+        "contrast": 0,
+        "saturation": 0,
+        "temperature": 0,
+        "tone": 0,
+        "colorInverted": False,
+        "filterAttrsMap": {
+            "emboss": {"strength": 5},
+            "halftone": {"radius": 4, "angle": 45},
+            "binary": {"threshold": 128},
+            "sketch": {"strength": 2},
+            "dot": {"angle": 45, "scale": 14},
+        },
+        "mask": None,
+        "originWidth": bmp.origin_width,
+        "originHeight": bmp.origin_height,
+        "modifyData": {},
+        "currentUrl": "",
+        "dpi": {"dpiX": dpi_x, "dpiY": dpi_y},
+        "isGray": False,
+        "originAutoAdjust": None,
+        "autoStrength": 0,
+        "opacity": 1,
+        "filterList_V2": [],
+    }
 
 
 def build_line_display(line: Line) -> dict[str, Any]:
@@ -381,6 +464,32 @@ def _build_processing_data(p: ProcessingParams) -> dict[str, Any]:
                 }
             },
         },
+        # COLOR_ENGRAVE is the BITMAP-element variant of COLOR_FILL_ENGRAVE
+        # (same customize schema; XCS uses a different processingType string
+        # for bitmap-backed elements vs rect-backed elements).
+        "COLOR_ENGRAVE": {
+            "materialType": "customize",
+            "planType": "blue",
+            "parameter": {
+                "customize": {
+                    "bitmapEngraveMode": "normal",
+                    "speed": p.speed,
+                    "density": p.density,
+                    "dotDuration": p.dot_duration,
+                    "dpi": p.dpi,
+                    "processingLightSource": p.processing_light_source,
+                    "power": p.power,
+                    "repeat": p.repeat,
+                    "bitmapScanMode": "zMode",
+                    "pulseWidth": p.pulse_width,
+                    "mopaFrequency": p.mopa_frequency,
+                    "notResize": True,
+                    "scanAngle": p.scan_angle,
+                    "angleType": p.angle_type,
+                    "crossAngle": p.cross_angle,
+                }
+            },
+        },
         "VECTOR_CUTTING": {
             "materialType": "customize",
             "planType": "blue",
@@ -459,10 +568,12 @@ def build_xcs(project: XCSProject) -> dict[str, Any]:
         _add_layer(p.layer_color)
     for c in project.circles:
         _add_layer(c.layer_color)
+    for b in project.bitmaps:
+        _add_layer(b.layer_color)
     for disp in project.extra_displays:
         _add_layer(disp.get("layerColor", ""))
 
-    # Build displays: rects + paths + circles + extras
+    # Build displays: rects + paths + circles + bitmaps + extras
     displays: list[dict[str, Any]] = []
     for elem in project.elements:
         displays.append(_build_rect_display(elem))
@@ -470,6 +581,8 @@ def build_xcs(project: XCSProject) -> dict[str, Any]:
         displays.append(_build_path_display(p))
     for c in project.circles:
         displays.append(_build_circle_display(c))
+    for b in project.bitmaps:
+        displays.append(build_bitmap_display(b))
     displays.extend(project.extra_displays)
 
     # Build device display processing map: rects + paths + circles + extras
@@ -506,6 +619,18 @@ def build_xcs(project: XCSProject) -> dict[str, Any]:
                 "type": "CIRCLE",
                 "processingType": c.processing_type,
                 "data": _build_processing_data(c.params),
+                "processIgnore": False,
+                "isWhiteModel": True,
+            },
+        ])
+    for b in project.bitmaps:
+        display_entries.append([
+            b.id,
+            {
+                "isFill": True,
+                "type": "BITMAP",
+                "processingType": b.processing_type,
+                "data": _build_processing_data(b.params),
                 "processIgnore": False,
                 "isWhiteModel": True,
             },

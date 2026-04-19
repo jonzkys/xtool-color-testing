@@ -224,6 +224,7 @@ def project_to_xcs(project: Project) -> XCSProject:
         merged.elements.extend(generated.elements)
         merged.extra_displays.extend(generated.extra_displays)
         merged.extra_device_entries.extend(generated.extra_device_entries)
+        merged.bitmaps.extend(generated.bitmaps)
 
         # Crosshatch: stack additional passes with rotated scanAngles over the
         # same gradient rects. Annotations are only emitted for the first pass.

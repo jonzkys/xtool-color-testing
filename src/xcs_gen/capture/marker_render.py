@@ -1,27 +1,38 @@
 """Render QR and ArUco registration markers into an XCSProject.
 
-QR is generated via segno, rasterized to a bit grid, and emitted as a set
-of filled rects on the annotation layer. ArUco markers are generated via
-cv2.aruco at render time (IDs 1, 2, 3 from DICT_4X4_50; QR occupies ID 0
-slot logically).
+QR is generated via segno, rasterized to a bit grid, and emitted as a
+single BITMAP display on the annotation layer. ArUco markers are
+generated via cv2.aruco at render time (IDs 1, 2, 3 from DICT_4X4_50;
+QR occupies ID 0 slot logically) and emitted the same way — one BITMAP
+per marker.
+
+Using BITMAP instead of N rects per module keeps the .xcs file small
+and stays well below XCS's per-project display-element limit (which
+appears to cap around 750 rects before processing fails).
 """
 
 from __future__ import annotations
 
+import io
 from typing import Any
 
 import numpy as np
 import segno
+from PIL import Image
 
-from ..builder import build_device_entry, build_rect_display
 from ..model import (
     ANNOTATION_LAYER_COLOR,
+    Bitmap,
     ProcessingParams,
-    Rect,
     XCSProject,
 )
 from .layout import RegistrationLayout
 from .qr_payload import encode_id_only, encode_inline
+
+# Oversample factor: each logical marker module (QR/ArUco bit) is rendered
+# at this many source-PNG pixels. Higher = crisper module edges but larger
+# base64 payload. 10 px/module is plenty for any downstream decoding.
+_PIXELS_PER_MODULE = 10
 
 
 def qr_payload_for_test(
@@ -97,7 +108,26 @@ def _aruco_bits(marker_id: int) -> np.ndarray:
     return out
 
 
-def _emit_bit_matrix(
+def _bits_to_png_bytes(bits: np.ndarray) -> tuple[bytes, int, int]:
+    """Render a bit matrix as a black-on-white PNG.
+
+    Each module becomes an N×N block of pure black (0) or white (255)
+    pixels, where N = _PIXELS_PER_MODULE. Returns (png_bytes, width, height).
+    """
+    rows, cols = bits.shape
+    w = cols * _PIXELS_PER_MODULE
+    h = rows * _PIXELS_PER_MODULE
+    # 255 where bit is False (background), 0 where bit is True (dark module)
+    pixels = np.where(bits, 0, 255).astype(np.uint8)
+    # Upsample via nearest-neighbor repetition (no interpolation → sharp edges)
+    pixels = pixels.repeat(_PIXELS_PER_MODULE, axis=0).repeat(_PIXELS_PER_MODULE, axis=1)
+    img = Image.fromarray(pixels, mode="L")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue(), w, h
+
+
+def _emit_bitmap(
     project: XCSProject,
     *,
     bits: np.ndarray,
@@ -106,34 +136,21 @@ def _emit_bit_matrix(
     total_size: float,
     annotation_params: ProcessingParams,
 ) -> None:
-    """Add one filled annotation-layer Rect per dark bit in `bits`."""
-    rows, cols = bits.shape
-    cell = total_size / cols  # assume square
-    for r in range(rows):
-        for c in range(cols):
-            if not bits[r, c]:
-                continue
-            elem = Rect(
-                x=origin_x + c * cell,
-                y=origin_y + r * cell,
-                width=cell,
-                height=cell,
-                params=annotation_params,
-                processing_type="COLOR_FILL_ENGRAVE",
-                is_fill=True,
-                layer_color=ANNOTATION_LAYER_COLOR,
-            )
-            # Add as an extra_display so it joins the annotation stream
-            # (rather than as project.elements which would mix with the
-            # gradient layer). Build the display + device entry directly.
-            disp = build_rect_display(elem)
-            project.extra_displays.append(disp)
-            project.extra_device_entries.append(
-                build_device_entry(
-                    elem.id, "RECT", elem.processing_type,
-                    annotation_params, is_fill=True,
-                )
-            )
+    """Emit a single BITMAP display representing the bit matrix."""
+    png_bytes, w_px, h_px = _bits_to_png_bytes(bits)
+    bmp = Bitmap(
+        x=origin_x,
+        y=origin_y,
+        width=total_size,
+        height=total_size,
+        png_bytes=png_bytes,
+        origin_width=w_px,
+        origin_height=h_px,
+        params=annotation_params,
+        processing_type="COLOR_ENGRAVE",
+        layer_color=ANNOTATION_LAYER_COLOR,
+    )
+    project.bitmaps.append(bmp)
 
 
 def emit_registration_markers(
@@ -145,30 +162,26 @@ def emit_registration_markers(
 ) -> None:
     """Add QR + ArUco markers to `project` on the annotation layer.
 
-    All marker modules are emitted as filled rects using `annotation_params`
-    (typically blue-diode settings). Caller is responsible for constructing
+    Each marker is emitted as a single BITMAP display carrying its bit
+    matrix as an embedded PNG. Caller is responsible for constructing
     `layout` and `qr_text` via compute_layout() and qr_payload_for_test().
     """
     if layout.qr is None:
         return
 
-    # QR
-    qr_bits = _qr_bits(qr_text)
-    _emit_bit_matrix(
+    _emit_bitmap(
         project,
-        bits=qr_bits,
+        bits=_qr_bits(qr_text),
         origin_x=layout.qr.x,
         origin_y=layout.qr.y,
         total_size=layout.qr.size,
         annotation_params=annotation_params,
     )
 
-    # ArUco (if any)
     for marker in layout.aruco_markers:
-        bits = _aruco_bits(marker.marker_id)
-        _emit_bit_matrix(
+        _emit_bitmap(
             project,
-            bits=bits,
+            bits=_aruco_bits(marker.marker_id),
             origin_x=marker.x,
             origin_y=marker.y,
             total_size=marker.size,

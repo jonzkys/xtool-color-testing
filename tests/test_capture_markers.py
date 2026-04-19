@@ -44,7 +44,7 @@ def test_qr_payload_without_y():
     assert "y" not in decoded
 
 
-def test_emit_adds_annotation_layer_rects_for_qr():
+def test_emit_adds_annotation_layer_bitmap_for_qr():
     project = XCSProject()
     layout = compute_layout(
         grid_x=20.0, grid_y=20.0, grid_w=22.0, grid_h=5.0,
@@ -56,13 +56,13 @@ def test_emit_adds_annotation_layer_rects_for_qr():
         qr_text='{"v":1,"id":"abcdefgh"}',
         annotation_params=ProcessingParams(),
     )
-    # Every extra_display added for markers should be on the annotation layer.
-    assert len(project.extra_displays) > 0
-    for disp in project.extra_displays:
-        assert disp.get("layerColor") == ANNOTATION_LAYER_COLOR
+    # Compact = exactly one BITMAP (the QR) on the annotation layer.
+    assert len(project.bitmaps) == 1
+    assert project.bitmaps[0].layer_color == ANNOTATION_LAYER_COLOR
+    assert project.bitmaps[0].png_bytes.startswith(b"\x89PNG")
 
 
-def test_emit_full_mode_produces_more_displays_than_compact():
+def test_emit_full_mode_produces_more_bitmaps_than_compact():
     qr_text = '{"v":1,"id":"abcdefgh"}'
     compact = XCSProject()
     emit_registration_markers(
@@ -84,7 +84,9 @@ def test_emit_full_mode_produces_more_displays_than_compact():
         qr_text=qr_text,
         annotation_params=ProcessingParams(),
     )
-    assert len(full.extra_displays) > len(compact.extra_displays)
+    # Compact = QR only (1 bitmap); full = QR + 3 ArUco (4 bitmaps).
+    assert len(compact.bitmaps) == 1
+    assert len(full.bitmaps) == 4
 
 
 def test_emit_off_layout_adds_nothing():
@@ -99,6 +101,7 @@ def test_emit_off_layout_adds_nothing():
         qr_text="unused",
         annotation_params=ProcessingParams(),
     )
+    assert project.bitmaps == []
     assert project.extra_displays == []
 
 
@@ -116,7 +119,8 @@ def test_generate_gradient_with_registration_adds_markers():
         registration_qr_mode="inline",
         test_id="testid01",
     )
-    assert len(with_reg.extra_displays) > len(without.extra_displays)
+    assert len(without.bitmaps) == 0
+    assert len(with_reg.bitmaps) >= 1
 
 
 def test_registration_markers_stay_within_canvas_compact():
@@ -134,6 +138,9 @@ def test_registration_markers_stay_within_canvas_compact():
     for disp in proj.extra_displays:
         assert disp["x"] >= 0, f"display at negative x: {disp['x']}"
         assert disp["y"] >= 0, f"display at negative y: {disp['y']}"
+    for b in proj.bitmaps:
+        assert b.x >= 0, f"bitmap at negative x: {b.x}"
+        assert b.y >= 0, f"bitmap at negative y: {b.y}"
     for elem in proj.elements:
         assert elem.x >= 0
         assert elem.y >= 0
@@ -154,6 +161,9 @@ def test_registration_markers_stay_within_canvas_full():
     for disp in proj.extra_displays:
         assert disp["x"] >= 0, f"display at negative x: {disp['x']}"
         assert disp["y"] >= 0, f"display at negative y: {disp['y']}"
+    for b in proj.bitmaps:
+        assert b.x >= 0, f"bitmap at negative x: {b.x}"
+        assert b.y >= 0, f"bitmap at negative y: {b.y}"
     for elem in proj.elements:
         assert elem.x >= 0
         assert elem.y >= 0
@@ -174,6 +184,9 @@ def test_registration_markers_stay_within_canvas_id_only():
     for disp in proj.extra_displays:
         assert disp["x"] >= 0, f"display at negative x: {disp['x']}"
         assert disp["y"] >= 0, f"display at negative y: {disp['y']}"
+    for b in proj.bitmaps:
+        assert b.x >= 0, f"bitmap at negative x: {b.x}"
+        assert b.y >= 0, f"bitmap at negative y: {b.y}"
     for elem in proj.elements:
         assert elem.x >= 0
         assert elem.y >= 0
