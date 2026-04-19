@@ -44,6 +44,7 @@ def qr_payload_for_test(
     grid_offset_x_mm: float,
     grid_offset_y_mm: float,
     base_params: ProcessingParams,
+    material_id: str | None = None,
     kind: str = "grid",
     mode: str = "inline",
 ) -> str:
@@ -56,6 +57,12 @@ def qr_payload_for_test(
     the ingest endpoint to sample cells correctly — the Y offset in
     particular depends on summary-text height, which the endpoint can't
     recompute without them.
+
+    ``material_id`` tags the burn with the material it was printed on.
+    Without this, captured palette entries can't be scoped correctly —
+    the same (power, speed) produces different colours on stainless vs
+    brass vs anodized aluminium, so the palette would be meaningless if
+    all materials were mixed together.
     """
     if mode == "id_only":
         return encode_id_only(test_id)
@@ -78,6 +85,8 @@ def qr_payload_for_test(
             "l": base_params.processing_light_source,
         },
     }
+    if material_id:
+        spec["m"] = material_id
     if y_param is not None:
         spec["y"] = {"p": y_param, "min": y_min, "max": y_max, "n": y_steps}
 

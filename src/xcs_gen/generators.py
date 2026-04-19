@@ -81,6 +81,7 @@ def generate_gradient(
     registration_mode: str = "off",  # "auto" | "compact" | "full" | "off"
     registration_qr_mode: str = "inline",  # "inline" | "id_only"
     test_id: str | None = None,
+    material_id: str | None = None,
 ) -> XCSProject:
     """Generate a gradient test pattern with axis annotations.
 
@@ -198,6 +199,7 @@ def generate_gradient(
             grid_offset_x_mm=grid_offset_x_mm,
             grid_offset_y_mm=grid_offset_y_mm,
             base_params=base_params,
+            material_id=material_id,
             kind="grid",
             mode=registration_qr_mode,
         )

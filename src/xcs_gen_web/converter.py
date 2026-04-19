@@ -217,6 +217,7 @@ def project_to_xcs(project: Project) -> XCSProject:
             registration_mode=t.registration.mode,
             registration_qr_mode=t.registration.qr_mode,
             test_id=t.id,
+            material_id=t.material_id,
         )
 
         if i == 0:

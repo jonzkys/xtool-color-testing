@@ -235,6 +235,7 @@ def create_app() -> FastAPI:
             kind=spec.get("t", "grid"),
             x_param=x_axis["p"],
             y_param=(y_axis["p"] if y_axis else None),
+            material_id=spec.get("m"),
             base_params=BaseParams(
                 power=b["p"],
                 speed=b["s"],
@@ -248,8 +249,11 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/api/palette", response_model=list[PaletteEntryResponse])
-    def palette_list() -> list[PaletteEntryResponse]:
-        return [PaletteEntryResponse(**e.__dict__) for e in load_palette(_palette_path())]
+    def palette_list(material_id: str | None = None) -> list[PaletteEntryResponse]:
+        entries = load_palette(_palette_path())
+        if material_id is not None:
+            entries = [e for e in entries if e.material_id == material_id]
+        return [PaletteEntryResponse(**e.__dict__) for e in entries]
 
     @app.post("/api/palette/ingest", response_model=PaletteIngestResponse)
     def palette_ingest(req: PaletteIngestRequest) -> PaletteIngestResponse:
@@ -264,6 +268,7 @@ def create_app() -> FastAPI:
             entries.append(PaletteEntry(
                 id=uuid.uuid4().hex,
                 test_id=req.test_id,
+                material_id=req.material_id,
                 source="upload",
                 timestamp=now,
                 hex=sw.hex,
@@ -276,8 +281,12 @@ def create_app() -> FastAPI:
         return PaletteIngestResponse(added_ids=[e.id for e in entries])
 
     @app.get("/api/palette/query", response_model=list[PaletteQueryResult])
-    def palette_query(hex: str, limit: int = 5) -> list[PaletteQueryResult]:
-        results = query_by_hex(_palette_path(), hex, limit=limit)
+    def palette_query(
+        hex: str, limit: int = 5, material_id: str | None = None,
+    ) -> list[PaletteQueryResult]:
+        results = query_by_hex(
+            _palette_path(), hex, limit=limit, material_id=material_id,
+        )
         return [
             PaletteQueryResult(
                 entry=PaletteEntryResponse(**r.entry.__dict__),

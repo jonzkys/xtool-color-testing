@@ -259,12 +259,18 @@ class CaptureSwatch(BaseModel):
 
 
 class CaptureIngestResponse(BaseModel):
-    """Response from POST /api/capture/ingest — decoded QR + sampled swatches."""
+    """Response from POST /api/capture/ingest — decoded QR + sampled swatches.
+
+    ``material_id`` is populated from the QR's "m" field if the burn was
+    tagged at generate time. Legacy burns without this field will return
+    null — the UI must prompt the user to pick a material before saving.
+    """
 
     test_id: str
     kind: str
     x_param: str
     y_param: str | None
+    material_id: str | None
     base_params: BaseParams
     swatches: list[CaptureSwatch]
 
@@ -286,9 +292,14 @@ class PaletteIngestRequest(BaseModel):
     `base_params` are the fixed parameters; for each swatch, the varied
     `x_param` (and optional `y_param`) are overwritten with that swatch's
     x_value / y_value to produce its full per-swatch param record.
+
+    `material_id` is required — palette queries are material-scoped since
+    the same burn params produce very different colours on stainless vs
+    brass vs anodized aluminium.
     """
 
     test_id: str
+    material_id: str = Field(min_length=1)
     x_param: str
     y_param: str | None = None
     base_params: BaseParams
@@ -302,6 +313,7 @@ class PaletteIngestResponse(BaseModel):
 class PaletteEntryResponse(BaseModel):
     id: str
     test_id: str
+    material_id: str
     source: str
     timestamp: str
     hex: str

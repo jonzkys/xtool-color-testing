@@ -14,9 +14,10 @@ def client(tmp_path, monkeypatch):
     return TestClient(create_app())
 
 
-def _ingest_payload() -> dict:
+def _ingest_payload(material_id: str = "mat-stainless") -> dict:
     return {
         "test_id": "t1",
+        "material_id": material_id,
         "x_param": "speed",
         "y_param": "power",
         "base_params": {
@@ -107,3 +108,29 @@ def test_patch_notes(client):
 def test_patch_404_when_missing(client):
     resp = client.patch("/api/palette/nonexistent-id", json={"notes": "x"})
     assert resp.status_code == 404
+
+
+def test_ingest_rejects_missing_material_id(client):
+    body = _ingest_payload()
+    del body["material_id"]
+    resp = client.post("/api/palette/ingest", json=body)
+    assert resp.status_code == 422
+
+
+def test_query_filters_by_material_id(client):
+    client.post("/api/palette/ingest", json=_ingest_payload("mat-stainless"))
+    client.post("/api/palette/ingest", json=_ingest_payload("mat-brass"))
+    # No filter: 4 entries
+    all_ = client.get("/api/palette").json()
+    assert len(all_) == 4
+    # With filter: 2 entries from stainless only
+    stainless = client.get("/api/palette", params={"material_id": "mat-stainless"}).json()
+    assert len(stainless) == 2
+    assert {e["material_id"] for e in stainless} == {"mat-stainless"}
+    # Query scoped to brass excludes stainless near-matches
+    results = client.get(
+        "/api/palette/query",
+        params={"hex": "#ff0000", "limit": 5, "material_id": "mat-brass"},
+    ).json()
+    assert len(results) == 2
+    assert all(r["entry"]["material_id"] == "mat-brass" for r in results)
