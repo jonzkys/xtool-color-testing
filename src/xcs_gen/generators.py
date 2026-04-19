@@ -70,7 +70,7 @@ def generate_gradient(
     start_y: float = 10.0,
     base_params: ProcessingParams | None = None,
     processing_type: str = "COLOR_FILL_ENGRAVE",
-    label_font_size: float = 3.0,
+    label_font_size: float = 1.2,
     tick_length: float = 0.5,
     annotation_params: ProcessingParams | None = None,
     summary_suffix: str = "",
@@ -690,7 +690,7 @@ def generate_from_image(
     import os
     filename = os.path.basename(image_path)
     summary = f"{filename} / {param} {_format_value(param, param_min)}-{_format_value(param, param_max)} / {cols}x{rows}"
-    summary_font_size = 3.0
+    summary_font_size = 1.2
     summary_h = text_height(summary_font_size) + 0.05
     _add_summary_text(
         project, summary,

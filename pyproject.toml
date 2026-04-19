@@ -21,6 +21,11 @@ dependencies = [
     "numpy>=1.24",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "fonttools>=4.60",
+]
+
 [project.scripts]
 xcs-gen = "xcs_gen.cli:main"
 
