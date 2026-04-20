@@ -313,52 +313,20 @@ class CaptureIngestResponse(BaseModel):
     swatches: list[CaptureSwatch]
 
 
-class PaletteSwatchInput(BaseModel):
-    """One swatch being added to the palette via /api/palette/ingest."""
-
-    row: int
-    col: int
-    x_value: float
-    y_value: float | None
-    hex: str
-    sigma: float
-
-
-class PaletteIngestRequest(BaseModel):
-    """Request body for POST /api/palette/ingest.
-
-    `base_params` are the fixed parameters; for each swatch, the varied
-    `x_param` (and optional `y_param`) are overwritten with that swatch's
-    x_value / y_value to produce its full per-swatch param record.
-
-    `material_id` is required — palette queries are material-scoped since
-    the same burn params produce very different colours on stainless vs
-    brass vs anodized aluminium.
-    """
-
-    test_id: str
-    material_id: str = Field(min_length=1)
-    x_param: str
-    y_param: str | None = None
-    base_params: BaseParams
-    swatches: list[PaletteSwatchInput]
-
-
-class PaletteIngestResponse(BaseModel):
-    added_ids: list[str]
-
-
 class PaletteEntryResponse(BaseModel):
-    id: str
-    test_id: str
-    material_id: str
+    id: int
+    test_id: int
+    material_id: int
     source: str
-    timestamp: str
     hex: str
     lab: list[float]
     params: dict
     sigma: float
     notes: str
+    created_at: str
+    x_value: float | None = None
+    y_value: float | None = None
+    source_result_id: int | None = None
 
 
 class PaletteQueryResult(BaseModel):
