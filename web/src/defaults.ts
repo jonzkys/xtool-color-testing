@@ -46,6 +46,7 @@ export function defaultTest(name = "New test"): ParamTest {
     // to empty so App.tsx can backfill at bootstrap. Generate is blocked while
     // this is empty.
     material_id: "",
+    unidirectional: false,
   };
 }
 
@@ -62,6 +63,7 @@ export function defaultProject(): Project {
   return {
     name: "untitled",
     grid_gap_mm: 1,
+    focus_mm: 1.5,
     tests: [defaultPlacement()],
   };
 }

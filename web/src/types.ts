@@ -50,6 +50,8 @@ export interface ParamTest {
   crosshatch_step_deg: number;
   registration: RegistrationConfig;
   material_id: string;  // required — palette queries are material-scoped
+  /** true → burn one direction only (oneWay). false (default) → bi-directional (zMode). */
+  unidirectional: boolean;
 }
 
 export interface TestPlacement {
@@ -62,6 +64,8 @@ export interface TestPlacement {
 export interface Project {
   name: string;
   grid_gap_mm: number;
+  /** Material thickness in mm; written to XCS LASER_PLANE.thickness for auto-focus. */
+  focus_mm: number;
   tests: TestPlacement[];
 }
 

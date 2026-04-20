@@ -82,6 +82,7 @@ def generate_gradient(
     registration_qr_mode: str = "inline",  # "inline" | "id_only"
     registration_qr_position: str = "top-left",  # "top-left" | "top-right" | "bottom-right"
     registration_qr_size_mm: float | None = None,
+    unidirectional: bool = False,
     test_id: str | None = None,
     material_id: str | None = None,
 ) -> XCSProject:
@@ -116,6 +117,13 @@ def generate_gradient(
         base_params = ProcessingParams()
     if annotation_params is None:
         annotation_params = _DEFAULT_ANNOTATION_PARAMS
+
+    # Apply the uni/bi scan-mode toggle to both the gradient cells and the
+    # annotation layer so the whole test burns consistently. Copy first to
+    # avoid mutating caller-owned default objects.
+    scan_mode = "oneWay" if unidirectional else "zMode"
+    base_params = replace(base_params, bitmap_scan_mode=scan_mode)
+    annotation_params = replace(annotation_params, bitmap_scan_mode=scan_mode)
 
     is_dual = y_param is not None and y_steps > 1
 
@@ -798,6 +806,7 @@ def _copy_params(p: ProcessingParams) -> ProcessingParams:
         scan_angle=p.scan_angle,
         angle_type=p.angle_type,
         cross_angle=p.cross_angle,
+        bitmap_scan_mode=p.bitmap_scan_mode,
     )
 
 

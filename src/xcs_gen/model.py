@@ -27,6 +27,11 @@ class ProcessingParams:
     scan_angle: float = 90  # 90 = vertical scan (efficient for narrow elements)
     angle_type: int = 2
     cross_angle: bool = False
+    # "zMode" = bi-directional (zigzag, default — laser burns on both
+    # traversals). "oneWay" = uni-directional (burns one way, returns dry).
+    # Uni-directional is slower but avoids backlash artefacts when chasing
+    # fine detail.
+    bitmap_scan_mode: str = "zMode"
 
 
 @dataclass
@@ -147,3 +152,7 @@ class XCSProject:
     extra_device_entries: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     bitmaps: list[Bitmap] = field(default_factory=list)
     canvas_id: str = field(default_factory=_uuid)
+    # Material thickness in mm — emitted as LASER_PLANE.thickness. XCS Studio
+    # uses this to auto-focus the head before burning. None = leave unset
+    # (user has to focus manually in XCS).
+    thickness_mm: float | None = None

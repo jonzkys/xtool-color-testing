@@ -191,6 +191,7 @@ def project_to_xcs(project: Project) -> XCSProject:
     # The builder requires one canvas_id per XCSProject; extra_device_entries
     # reference display UUIDs (not canvas_id), so the merge is safe.
     merged = XCSProject()
+    merged.thickness_mm = project.focus_mm
     for i, placement in enumerate(project.tests):
         t = placement.test
         x_off, y_off = offsets[t.id]
@@ -224,6 +225,7 @@ def project_to_xcs(project: Project) -> XCSProject:
             registration_qr_mode=t.registration.qr_mode,
             registration_qr_position=t.registration.qr_position,
             registration_qr_size_mm=t.registration.qr_size_mm,
+            unidirectional=t.unidirectional,
             test_id=t.id,
             material_id=t.material_id,
         )

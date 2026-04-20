@@ -25,6 +25,12 @@ _BLANK_COVER = (
     "QVQIHWNgAAIABQABNjN9GQAAAABJRUeErkJggg=="
 )
 
+# XCS Studio internal material IDs. We tag every emitted .xcs as stainless
+# steel so the device UI doesn't prompt the user to pick a material after
+# import. Reverse-engineered from samples/direction-focus-material.xcs.
+_STAINLESS_STEEL_XCS_MATERIAL_ID = 1323  # LASER_PLANE.material
+_STAINLESS_STEEL_OFFICIAL_ID = 19543  # per-display customData.from.officialMaterialId
+
 
 def _build_rect_display(elem: Rect) -> dict[str, Any]:
     """Build a display (geometry) entry for a rectangle element."""
@@ -54,7 +60,7 @@ def _build_rect_display(elem: Rect) -> dict[str, Any]:
         "visibleState": True,
         "lockState": False,
         "resourceOrigin": "",
-        "customData": {},
+        "customData": {"from": {"officialMaterialId": _STAINLESS_STEEL_OFFICIAL_ID}},
         "rootComponentId": "",
         "minCanvasVersion": "0.0.0",
         "alpha": 1,
@@ -130,7 +136,7 @@ def build_bitmap_display(bmp: Bitmap) -> dict[str, Any]:
         "visibleState": True,
         "lockState": False,
         "resourceOrigin": "",
-        "customData": {},
+        "customData": {"from": {"officialMaterialId": _STAINLESS_STEEL_OFFICIAL_ID}},
         "rootComponentId": "",
         "minCanvasVersion": "0.0.0",
         "alpha": 1,
@@ -209,7 +215,7 @@ def build_line_display(line: Line) -> dict[str, Any]:
         "visibleState": True,
         "lockState": False,
         "resourceOrigin": "",
-        "customData": {},
+        "customData": {"from": {"officialMaterialId": _STAINLESS_STEEL_OFFICIAL_ID}},
         "rootComponentId": "",
         "minCanvasVersion": "0.0.0",
         "alpha": 1,
@@ -276,7 +282,7 @@ def _build_path_display(path: Path) -> dict[str, Any]:
         "visibleState": True,
         "lockState": False,
         "resourceOrigin": "",
-        "customData": {},
+        "customData": {"from": {"officialMaterialId": _STAINLESS_STEEL_OFFICIAL_ID}},
         "rootComponentId": "",
         "minCanvasVersion": "0.0.0",
         "alpha": 1,
@@ -339,7 +345,7 @@ def _build_circle_display(circle: Circle) -> dict[str, Any]:
         "visibleState": True,
         "lockState": False,
         "resourceOrigin": "",
-        "customData": {},
+        "customData": {"from": {"officialMaterialId": _STAINLESS_STEEL_OFFICIAL_ID}},
         "rootComponentId": "",
         "minCanvasVersion": "0.0.0",
         "alpha": 1,
@@ -391,7 +397,7 @@ def _build_processing_data(p: ProcessingParams) -> dict[str, Any]:
                     "processingLightSource": p.processing_light_source,
                     "power": p.power,
                     "repeat": p.repeat,
-                    "bitmapScanMode": "zMode",
+                    "bitmapScanMode": p.bitmap_scan_mode,
                     "sliceNumber": 100,
                     "processAngle": 15,
                     "zAxisMove": False,
@@ -427,7 +433,7 @@ def _build_processing_data(p: ProcessingParams) -> dict[str, Any]:
                     "processingLightSource": p.processing_light_source,
                     "power": p.power,
                     "repeat": p.repeat,
-                    "bitmapScanMode": "zMode",
+                    "bitmapScanMode": p.bitmap_scan_mode,
                     "pulseWidth": p.pulse_width,
                     "mopaFrequency": p.mopa_frequency,
                     "scanAngle": p.scan_angle,
@@ -454,7 +460,7 @@ def _build_processing_data(p: ProcessingParams) -> dict[str, Any]:
                     "processingLightSource": p.processing_light_source,
                     "power": p.power,
                     "repeat": p.repeat,
-                    "bitmapScanMode": "zMode",
+                    "bitmapScanMode": p.bitmap_scan_mode,
                     "pulseWidth": p.pulse_width,
                     "mopaFrequency": p.mopa_frequency,
                     "notResize": True,
@@ -480,7 +486,7 @@ def _build_processing_data(p: ProcessingParams) -> dict[str, Any]:
                     "processingLightSource": p.processing_light_source,
                     "power": p.power,
                     "repeat": p.repeat,
-                    "bitmapScanMode": "zMode",
+                    "bitmapScanMode": p.bitmap_scan_mode,
                     "pulseWidth": p.pulse_width,
                     "mopaFrequency": p.mopa_frequency,
                     "notResize": True,
@@ -671,9 +677,14 @@ def build_xcs(project: XCSProject) -> dict[str, Any]:
                             "mode": "LASER_PLANE",
                             "data": {
                                 "LASER_PLANE": {
-                                    "material": 0,
+                                    # XCS's internal ID for Stainless Steel —
+                                    # matches what XCS Studio writes when you
+                                    # pick "Stainless Steel" in the material
+                                    # dropdown. Hardcoded because this repo
+                                    # targets metal tag work exclusively.
+                                    "material": _STAINLESS_STEEL_XCS_MATERIAL_ID,
                                     "lightSourceMode": "blue",
-                                    "thickness": None,
+                                    "thickness": project.thickness_mm,
                                     "isProcessByLayer": False,
                                     "pathPlanning": "auto",
                                     "fillPlanning": "separate",

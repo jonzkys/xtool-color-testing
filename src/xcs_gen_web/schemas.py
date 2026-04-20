@@ -71,6 +71,9 @@ class ParamTest(BaseModel):
     crosshatch_step_deg: float = Field(default=90.0, gt=0.0, le=360.0)
     registration: RegistrationConfig = Field(default_factory=RegistrationConfig)
     material_id: str = Field(min_length=1)
+    # True → emit bitmapScanMode="oneWay" on the gradient cells + annotation;
+    # False (default) → "zMode" (bi-directional zigzag, faster).
+    unidirectional: bool = False
 
     @model_validator(mode="after")
     def validate_ranges(self) -> "ParamTest":
@@ -98,6 +101,9 @@ class Project(BaseModel):
 
     name: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._\- ]+$")
     grid_gap_mm: float = Field(default=1.0, ge=0)
+    # Material thickness (mm) written to LASER_PLANE.thickness so XCS
+    # Studio pre-focuses the head. Usually rechecked after import anyway.
+    focus_mm: float = Field(default=1.5, ge=0, le=50)
     tests: list[TestPlacement]
 
 

@@ -34,8 +34,14 @@ export function migrateProject(project: Project): Project {
         ) {
           placement.test.material_id = "";
         }
+        if (placement.test.unidirectional === undefined) {
+          placement.test.unidirectional = false;
+        }
       }
     }
+  }
+  if (project && project.focus_mm === undefined) {
+    project.focus_mm = 1.5;
   }
   return project;
 }

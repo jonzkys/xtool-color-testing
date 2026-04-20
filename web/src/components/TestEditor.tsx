@@ -134,6 +134,19 @@ export function TestEditor({ placement, issues, library, onChange, onDelete, onD
         />
       </Section>
 
+      <Section title="Engraving direction">
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={t.unidirectional}
+            onChange={(e) => updateTest({ unidirectional: e.target.checked })}
+          />
+          <span style={{ fontSize: 12, color: "#555" }}>
+            Uni-directional (burn one way only; slower but avoids backlash artefacts)
+          </span>
+        </label>
+      </Section>
+
       <Section title="Crosshatch (stacked passes)">
         <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <input

@@ -74,6 +74,14 @@ export function TestList({ project, selectedId, onSelect, onAdd, onProjectChange
           value={project.grid_gap_mm}
           onChange={(v) => onProjectChange({ grid_gap_mm: v })}
         />
+        <NumberField
+          label="Focus / thickness (mm)"
+          value={project.focus_mm}
+          onChange={(v) => onProjectChange({ focus_mm: v })}
+          min={0}
+          max={50}
+          help="Material thickness written to XCS's auto-focus. Rechecked in XCS Studio before burning, but nice to seed."
+        />
       </div>
     </div>
   );

@@ -51,6 +51,7 @@ describe("validateProject", () => {
     const project: Project = {
       name: "x",
       grid_gap_mm: 1,
+      focus_mm: 1.5,
       tests: [
         { test: defaultTest(), row: 0, col: 0, col_span: 1 },
         { test: defaultTest(), row: 0, col: 0, col_span: 1 },
