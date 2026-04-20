@@ -25,7 +25,7 @@ function seedLayerBaseParams(library: LibraryState) {
     (p) => p.material_id === library.active_material_id && p.is_default,
   );
   return defaultPreset
-    ? { materialId: library.active_material_id, baseParams: { ...defaultPreset.base_params } }
+    ? { materialId: library.active_material_id !== null ? String(library.active_material_id) : null, baseParams: { ...defaultPreset.base_params } }
     : { materialId: null as string | null, baseParams: defaultBaseParams() };
 }
 
@@ -66,7 +66,7 @@ interface Props {
 
 export function SvgLayersPage({ library }: Props) {
   const [request, setRequest] = useState<SvgLayersRequest>(
-    () => defaultRequest(library.active_material_id ?? ""),
+    () => defaultRequest(library.active_material_id !== null ? String(library.active_material_id) : ""),
   );
   const [filename, setFilename] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);

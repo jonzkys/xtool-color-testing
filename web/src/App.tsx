@@ -9,40 +9,56 @@ import { SvgLayersPage } from "./components/SvgLayersPage";
 import { LibraryPage } from "./components/LibraryPage";
 import { PalettePage } from "./components/PalettePage";
 import { defaultProject, defaultPlacement, newId } from "./defaults";
-import {
-  backfillProjectMaterialIds, loadLibrary, loadProject, saveLibrary, saveProject,
-} from "./storage";
-import { bootstrapLibrary, type LibraryState } from "./library";
+import { loadProject, saveProject } from "./storage";
 import { generateAndDownload } from "./generate";
 import { hasErrors, validateProject } from "./validation";
 import type { Project, TestPlacement } from "./types";
+import type { LibraryState, Material, Preset } from "./library";
+import { listMaterials, listPresets } from "./api/library";
 
 type Tab = "tests" | "svg" | "layers" | "library" | "palette";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("tests");
-  const [library, setLibrary] = useState<LibraryState>(() => loadLibrary() ?? bootstrapLibrary());
-  const [project, setProject] = useState<Project>(() => {
-    const loaded = loadProject() ?? defaultProject();
-    // Fill empty material_ids from the library's active material so freshly
-    // loaded projects don't land with a blocked Generate button.
-    const lib = loadLibrary() ?? bootstrapLibrary();
-    return backfillProjectMaterialIds(loaded, lib);
-  });
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [project, setProject] = useState<Project>(() => loadProject() ?? defaultProject());
   const [selectedId, setSelectedId] = useState<string | null>(
     project.tests[0]?.test.id ?? null,
   );
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | undefined>();
 
-  // Persist on every change
+  // Fetch library on mount (and after library page mutations via onMaterialsChange)
+  useEffect(() => {
+    void refreshLibrary();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function refreshLibrary() {
+    try {
+      const [mats, pres] = await Promise.all([listMaterials(), listPresets()]);
+      setMaterials(mats);
+      setPresets(pres);
+    } catch {
+      // ignore — library will be empty; user can still work
+    }
+  }
+
+  // Compose a LibraryState shape for downstream components that still expect it.
+  // active_material_id: use the first material as a reasonable default.
+  const library: LibraryState = useMemo(
+    () => ({
+      materials,
+      presets,
+      active_material_id: materials[0]?.id ?? null,
+    }),
+    [materials, presets],
+  );
+
+  // Persist project on every change
   useEffect(() => {
     saveProject(project);
   }, [project]);
-
-  useEffect(() => {
-    saveLibrary(library);
-  }, [library]);
 
   const issues = useMemo(() => validateProject(project), [project]);
 
@@ -65,16 +81,17 @@ export default function App() {
     while (usedRows.has(row)) row += 1;
     const placement = defaultPlacement(row, 0);
 
-    // Inherit material_id from the most recent test (or library active material).
+    // Inherit material_id from the most recent test (or first material as string).
     const lastTest = project.tests[project.tests.length - 1]?.test;
     const inheritedMaterialId =
       (lastTest?.material_id && lastTest.material_id !== ""
         ? lastTest.material_id
-        : library.active_material_id) || "";
+        : (materials[0] ? String(materials[0].id) : "")) || "";
     placement.test.material_id = inheritedMaterialId;
-    if (inheritedMaterialId) {
-      const defaultPreset = library.presets.find(
-        (p) => p.material_id === inheritedMaterialId && p.is_default,
+    if (inheritedMaterialId && materials.length > 0) {
+      const matId = Number(inheritedMaterialId);
+      const defaultPreset = presets.find(
+        (p) => p.material_id === matId && p.is_default,
       );
       if (defaultPreset) {
         placement.test.base_params = { ...defaultPreset.base_params };
@@ -201,7 +218,7 @@ export default function App() {
         </div>
       ) : tab === "library" ? (
         <div style={{ flex: 1, minHeight: 0 }}>
-          <LibraryPage library={library} onChange={setLibrary} />
+          <LibraryPage onMaterialsChange={() => void refreshLibrary()} />
         </div>
       ) : (
         <div style={{ flex: 1, minHeight: 0 }}>

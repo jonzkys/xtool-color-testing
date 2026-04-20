@@ -83,7 +83,7 @@ function MaterialSelect({ library, value, onChange, required, label }: {
         {!required && <option value="">— all materials —</option>}
         {required && !value && <option value="">— pick a material —</option>}
         {library.materials.map((m) => (
-          <option key={m.id} value={m.id}>{m.name}</option>
+          <option key={m.id} value={String(m.id)}>{m.name}</option>
         ))}
       </select>
     </label>
@@ -101,7 +101,7 @@ function UploadView({ library }: { library: LibraryState }) {
 
   const qrProvidedMaterial = response?.material_id ?? null;
   const qrMaterialKnown = qrProvidedMaterial
-    ? library.materials.some((m) => m.id === qrProvidedMaterial)
+    ? library.materials.some((m) => String(m.id) === qrProvidedMaterial)
     : false;
   const needsManualMaterial = !!response && !qrMaterialKnown;
 
@@ -117,8 +117,8 @@ function UploadView({ library }: { library: LibraryState }) {
       setResponse(r);
       // Pre-select the material if the QR carried a known one, otherwise
       // fall back to the library's active material as a suggestion.
-      const known = r.material_id && library.materials.some((m) => m.id === r.material_id);
-      setMaterialId(known ? r.material_id! : (library.active_material_id || ""));
+      const known = r.material_id && library.materials.some((m) => String(m.id) === r.material_id);
+      setMaterialId(known ? r.material_id! : (library.active_material_id !== null ? String(library.active_material_id) : ""));
       const initial: Record<number, boolean> = {};
       r.swatches.forEach((s, i) => {
         initial[i] = s.sigma < SIGMA_WARN;
@@ -291,7 +291,7 @@ function SwatchCard({ swatch, selected, onToggle }: {
 
 function QueryView({ library }: { library: LibraryState }) {
   const [hex, setHex] = useState("#c4a87b");
-  const [materialId, setMaterialId] = useState<string>(library.active_material_id || "");
+  const [materialId, setMaterialId] = useState<string>(library.active_material_id !== null ? String(library.active_material_id) : "");
   const [results, setResults] = useState<PaletteQueryResult[]>([]);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -349,7 +349,7 @@ function QueryView({ library }: { library: LibraryState }) {
 
 function ResultRow({ result, library }: { result: PaletteQueryResult; library: LibraryState }) {
   const p = result.entry.params;
-  const materialName = library.materials.find((m) => m.id === result.entry.material_id)?.name
+  const materialName = library.materials.find((m) => String(m.id) === result.entry.material_id)?.name
     ?? "(unknown material)";
   return (
     <div style={{
@@ -423,7 +423,7 @@ function BrowseView({ library }: { library: LibraryState }) {
         </div>
       )}
       {Object.entries(byTest).map(([testId, group]) => {
-        const materialName = library.materials.find((m) => m.id === group[0]?.material_id)?.name
+        const materialName = library.materials.find((m) => String(m.id) === group[0]?.material_id)?.name
           ?? (group[0]?.material_id ? "(unknown material)" : "(no material tag)");
         return (
           <div key={testId} style={{ marginBottom: 24 }}>
@@ -496,7 +496,7 @@ function InfoModal({ entry, library, onClose }: {
   library: LibraryState;
   onClose: () => void;
 }) {
-  const materialName = library.materials.find((m) => m.id === entry.material_id)?.name
+  const materialName = library.materials.find((m) => String(m.id) === entry.material_id)?.name
     ?? (entry.material_id ? "(unknown material)" : "(no material tag)");
   return (
     <div

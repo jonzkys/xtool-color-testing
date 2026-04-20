@@ -1,87 +1,166 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { defaultBaseParams } from "../defaults";
 import { NumberField } from "./fields/NumberField";
 import { SelectField } from "./fields/SelectField";
-import type { LibraryState, Preset } from "../library";
+import type { Material, Preset } from "../library";
 import {
-  addMaterial, addPreset, deleteMaterial, deletePreset,
-  renameMaterial, setActiveMaterial, setDefaultPreset, updatePreset,
-} from "../library";
+  createMaterial,
+  createPreset,
+  deleteMaterial,
+  deletePreset,
+  listMaterials,
+  listPresets,
+  setDefaultPreset,
+  updateMaterial,
+  updatePreset,
+} from "../api/library";
 
 interface Props {
-  library: LibraryState;
-  onChange: (next: LibraryState) => void;
+  onMaterialsChange?: (m: Material[]) => void;
 }
 
-export function LibraryPage({ library, onChange }: Props) {
-  const [selectedMaterialId, setSelectedMaterialId] = useState<string>(
-    library.active_material_id || library.materials[0]?.id || "",
-  );
-  const selectedMaterial = library.materials.find((m) => m.id === selectedMaterialId);
-  const presets = library.presets.filter((p) => p.material_id === selectedMaterialId);
+export function LibraryPage({ onMaterialsChange }: Props) {
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [activeMaterialId, setActiveMaterialId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | undefined>();
 
-  function onAddMaterial() {
-    const name = prompt("Material name?", "Untitled material");
-    if (!name) return;
-    const next = addMaterial(library, name);
-    onChange(next);
-    setSelectedMaterialId(next.materials[next.materials.length - 1].id);
+  const selectedMaterial = activeMaterialId !== null
+    ? materials.find((m) => m.id === activeMaterialId) ?? null
+    : materials[0] ?? null;
+  const selectedMaterialId = selectedMaterial?.id ?? null;
+  const materialPresets = selectedMaterialId !== null
+    ? presets.filter((p) => p.material_id === selectedMaterialId)
+    : [];
+
+  async function refresh() {
+    try {
+      const [mats, pres] = await Promise.all([listMaterials(), listPresets()]);
+      setMaterials(mats);
+      setPresets(pres);
+      onMaterialsChange?.(mats);
+    } catch (err) {
+      setError((err as Error).message);
+    }
   }
 
-  function onDeleteMaterial(id: string) {
-    const m = library.materials.find((mm) => mm.id === id);
+  useEffect(() => {
+    void refresh();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function onAddMaterial() {
+    const name = prompt("Material name?", "Untitled material");
+    if (!name) return;
+    setLoading(true);
+    try {
+      const created = await createMaterial(name);
+      await refresh();
+      setActiveMaterialId(created.id);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onDeleteMaterial(id: number) {
+    const m = materials.find((mm) => mm.id === id);
     if (!m) return;
-    const hasPresets = library.presets.some((p) => p.material_id === id);
+    const hasPresets = presets.some((p) => p.material_id === id);
     if (hasPresets) {
       alert(`Cannot delete "${m.name}" — delete its presets first.`);
       return;
     }
     if (!confirm(`Delete material "${m.name}"?`)) return;
-    const next = deleteMaterial(library, id);
-    onChange(next);
-    if (selectedMaterialId === id) {
-      setSelectedMaterialId(next.materials[0]?.id ?? "");
+    setLoading(true);
+    try {
+      await deleteMaterial(id);
+      await refresh();
+      if (activeMaterialId === id) {
+        setActiveMaterialId(null);
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
     }
   }
 
-  function onRenameMaterial(id: string) {
-    const m = library.materials.find((mm) => mm.id === id);
+  async function onRenameMaterial(id: number) {
+    const m = materials.find((mm) => mm.id === id);
     if (!m) return;
     const name = prompt("New name?", m.name);
     if (!name || name === m.name) return;
-    onChange(renameMaterial(library, id, name));
+    setLoading(true);
+    try {
+      await updateMaterial(id, { name });
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function onSetActive(id: string) {
-    onChange(setActiveMaterial(library, id));
-  }
-
-  function onAddPreset() {
-    if (!selectedMaterial) return;
-    const existingDefault = library.presets.find(
-      (p) => p.material_id === selectedMaterial.id && p.is_default,
+  async function onAddPreset() {
+    if (selectedMaterialId === null) return;
+    const existingDefault = presets.find(
+      (p) => p.material_id === selectedMaterialId && p.is_default,
     );
     const seed = existingDefault ? existingDefault.base_params : defaultBaseParams();
-    const next = addPreset(library, selectedMaterial.id, {
-      name: "Untitled preset",
-      base_params: { ...seed },
-    });
-    onChange(next);
+    setLoading(true);
+    try {
+      await createPreset({
+        material_id: selectedMaterialId,
+        name: "Untitled preset",
+        base_params: { ...seed },
+      });
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function onUpdatePreset(id: string, patch: Partial<Pick<Preset, "name" | "color" | "base_params">>) {
-    onChange(updatePreset(library, id, patch));
+  async function onUpdatePreset(id: number, patch: Partial<Pick<Preset, "name" | "color" | "base_params">>) {
+    setLoading(true);
+    try {
+      await updatePreset(id, patch);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function onDeletePreset(id: string) {
-    const p = library.presets.find((pp) => pp.id === id);
+  async function onDeletePreset(id: number) {
+    const p = presets.find((pp) => pp.id === id);
     if (!p) return;
     if (!confirm(`Delete preset "${p.name}"?`)) return;
-    onChange(deletePreset(library, id));
+    setLoading(true);
+    try {
+      await deletePreset(id);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function onSetDefault(id: string) {
-    onChange(setDefaultPreset(library, id));
+  async function onSetDefault(id: number) {
+    setLoading(true);
+    try {
+      await setDefaultPreset(id);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -90,14 +169,21 @@ export function LibraryPage({ library, onChange }: Props) {
         <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 8 }}>
           Materials
         </div>
-        {library.materials.map((m) => {
-          const presetCount = library.presets.filter((p) => p.material_id === m.id).length;
-          const isActive = m.id === library.active_material_id;
+        {error && (
+          <div style={{ color: "#a02840", fontSize: 12, marginBottom: 8, padding: 6, background: "#fee", borderRadius: 3 }}>
+            {error}
+          </div>
+        )}
+        {loading && (
+          <div style={{ fontSize: 12, color: "#888", marginBottom: 8 }}>Loading…</div>
+        )}
+        {materials.map((m) => {
+          const presetCount = presets.filter((p) => p.material_id === m.id).length;
           const isSelected = m.id === selectedMaterialId;
           return (
             <div
               key={m.id}
-              onClick={() => setSelectedMaterialId(m.id)}
+              onClick={() => setActiveMaterialId(m.id)}
               style={{
                 display: "flex", alignItems: "center", gap: 8,
                 padding: "6px 8px", marginBottom: 4, borderRadius: 4,
@@ -107,24 +193,17 @@ export function LibraryPage({ library, onChange }: Props) {
               }}
             >
               <div style={{ flex: 1, fontSize: 13 }}>
-                {m.name} {isActive && <span style={{ color: "#206030", fontSize: 10 }}>(active)</span>}
+                {m.name}
               </div>
               <div style={{ fontSize: 11, color: "#888" }}>{presetCount}</div>
               <button
-                onClick={(e) => { e.stopPropagation(); onRenameMaterial(m.id); }}
+                onClick={(e) => { e.stopPropagation(); void onRenameMaterial(m.id); }}
                 style={{ fontSize: 10, padding: "2px 4px", border: "1px solid #ddd", background: "white", borderRadius: 3, cursor: "pointer" }}
               >
                 rename
               </button>
               <button
-                onClick={(e) => { e.stopPropagation(); onSetActive(m.id); }}
-                disabled={isActive}
-                style={{ fontSize: 10, padding: "2px 4px", border: "1px solid #ddd", background: "white", borderRadius: 3, cursor: isActive ? "default" : "pointer", opacity: isActive ? 0.5 : 1 }}
-              >
-                set active
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); onDeleteMaterial(m.id); }}
+                onClick={(e) => { e.stopPropagation(); void onDeleteMaterial(m.id); }}
                 style={{ fontSize: 10, padding: "2px 4px", border: "1px solid #ddd", background: "white", borderRadius: 3, cursor: "pointer", color: "#a02840" }}
               >
                 ×
@@ -133,7 +212,7 @@ export function LibraryPage({ library, onChange }: Props) {
           );
         })}
         <button
-          onClick={onAddMaterial}
+          onClick={() => void onAddMaterial()}
           style={{ marginTop: 8, width: "100%", padding: "6px", background: "#e8ecf3", border: "1px dashed #336", borderRadius: 4, color: "#336", cursor: "pointer" }}
         >
           + New material
@@ -146,23 +225,23 @@ export function LibraryPage({ library, onChange }: Props) {
             <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 16 }}>
               <h2 style={{ margin: 0 }}>{selectedMaterial.name}</h2>
               <button
-                onClick={onAddPreset}
+                onClick={() => void onAddPreset()}
                 style={{ padding: "6px 12px", background: "#336", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}
               >
                 + New preset
               </button>
             </div>
-            {presets.length === 0 ? (
+            {materialPresets.length === 0 ? (
               <div style={{ color: "#888" }}>No presets yet. Click "+ New preset" to add one.</div>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
-                {presets.map((p) => (
+                {materialPresets.map((p) => (
                   <PresetCard
                     key={p.id}
                     preset={p}
-                    onPatch={(patch) => onUpdatePreset(p.id, patch)}
-                    onSetDefault={() => onSetDefault(p.id)}
-                    onDelete={() => onDeletePreset(p.id)}
+                    onPatch={(patch) => void onUpdatePreset(p.id, patch)}
+                    onSetDefault={() => void onSetDefault(p.id)}
+                    onDelete={() => void onDeletePreset(p.id)}
                   />
                 ))}
               </div>

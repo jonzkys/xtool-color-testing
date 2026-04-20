@@ -31,7 +31,7 @@ function defaultRequest(library: LibraryState): SvgStackRequest {
     scan_angle: 90,
     stack_passes: 2,
     stack_step_deg: 90,
-    material_id: library.active_material_id ?? "",
+    material_id: library.active_material_id !== null ? String(library.active_material_id) : "",
     subtract_overlaps: false,
   };
 }
