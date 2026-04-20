@@ -209,6 +209,16 @@ def generate_gradient(
         assert layout.qr is not None  # registration_mode != "off" guarantees this
         grid_offset_x_mm = start_x - layout.qr.x
         grid_offset_y_mm = gradient_start_y - layout.qr.y
+        # For wrapped multi-row single-axis tests, record the Y distance
+        # between consecutive row origins. _generate_wrapped places each
+        # row at (row * (row_height + effective_row_gap)) where
+        # effective_row_gap = max(row_gap, ann_space).
+        row_stride_mm: float | None = None
+        if rows > 1 and not is_dual:
+            ann_space = tick_length + 0.05 + text_height(label_font_size) + 0.05
+            effective_row_gap = max(row_gap, ann_space)
+            row_stride_mm = total_height + effective_row_gap
+
         qr_text = qr_payload_for_test(
             test_id=test_id or _default_test_id(),
             x_param=x_param, x_min=x_min, x_max=x_max, x_steps=x_steps,
@@ -220,6 +230,7 @@ def generate_gradient(
             grid_offset_x_mm=grid_offset_x_mm,
             grid_offset_y_mm=grid_offset_y_mm,
             base_params=base_params,
+            row_stride_mm=row_stride_mm,
             # Only record the size when it differs from the mode's default.
             qr_size_mm=registration_qr_size_mm,
             material_id=material_id,

@@ -231,6 +231,10 @@ def create_app() -> FastAPI:
             y_min=(y_axis["min"] if y_axis else 0.0),
             y_max=(y_axis["max"] if y_axis else 0.0),
             y_steps=(y_axis["n"] if y_axis else 1),
+            # Wrapped single-axis tests need the row count + Y stride so the
+            # sampler hits each physical row rather than averaging across them.
+            rows=grid_dict.get("rows", 1),
+            row_stride_mm=grid_dict.get("rs"),
         )
 
         b = spec["b"]

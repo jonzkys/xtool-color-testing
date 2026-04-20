@@ -117,10 +117,55 @@ def sample_grid(
     x_param: str, x_min: float, x_max: float, x_steps: int,
     y_param: str | None,
     y_min: float = 0.0, y_max: float = 0.0, y_steps: int = 1,
+    rows: int = 1,
+    row_stride_mm: float | None = None,
 ) -> list[Swatch]:
-    """Sample every cell of a rectangular grid test."""
+    """Sample every cell of a rectangular grid test.
+
+    Handles three geometries:
+      - 1D flat (rows=1, y_param=None): one horizontal strip.
+      - 1D wrapped (rows>1, y_param=None): x_steps cells distributed across
+        ``rows`` physical rows (like a typewriter). Per-row cell count is
+        ceil(x_steps / rows); the last row may be shorter. ``row_stride_mm``
+        is the distance between consecutive row origins (cell height + the
+        inter-row gap reserved for axis labels). If not supplied, falls back
+        to grid_h / rows (sufficient only when there's no inter-row gap).
+      - 2D grid (y_param set): y_steps rows × x_steps cols.
+    """
+    import math
+
     ox, oy = grid_origin_mm
     gw, gh = grid_size_mm
+
+    # 1D wrapped gets its own path — the Y coordinate of each cell depends
+    # on (i // per_row) with the explicit stride, which the generic 1D / 2D
+    # logic below can't express.
+    if y_param is None and rows > 1:
+        per_row = math.ceil(x_steps / rows)
+        cell_w_mm = gw / per_row
+        row_h_mm = gh / rows
+        stride_mm = row_stride_mm if row_stride_mm is not None else row_h_mm
+        cell_w_px = cell_w_mm * px_per_mm
+        cell_h_px = row_h_mm * px_per_mm
+        x_values = [_round_param(x_param, v) for v in _linspace(x_min, x_max, x_steps)]
+
+        swatches: list[Swatch] = []
+        for i in range(x_steps):
+            r = i // per_row
+            c = i % per_row
+            cx_px = (ox + (c + 0.5) * cell_w_mm) * px_per_mm
+            cy_px = (oy + r * stride_mm + row_h_mm / 2) * px_per_mm
+            hex_, sigma = _sample_rect(warped, cx_px, cy_px, cell_w_px, cell_h_px)
+            swatches.append(Swatch(
+                row=r, col=c,
+                x_value=x_values[i],
+                y_value=None,
+                hex=hex_,
+                sigma=sigma,
+            ))
+        return swatches
+
+    # 1D flat or 2D grid.
     cell_w_mm = gw / x_steps
     n_y = y_steps if y_param is not None else 1
     cell_h_mm = gh / n_y
@@ -133,7 +178,7 @@ def sample_grid(
     else:
         y_values = [None] * n_y
 
-    swatches: list[Swatch] = []
+    swatches = []
     for yi in range(n_y):
         for xi in range(x_steps):
             cx_px = (ox + (xi + 0.5) * cell_w_mm) * px_per_mm

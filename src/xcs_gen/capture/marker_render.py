@@ -46,6 +46,7 @@ def qr_payload_for_test(
     grid_offset_x_mm: float,
     grid_offset_y_mm: float,
     base_params: ProcessingParams,
+    row_stride_mm: float | None = None,
     qr_size_mm: float | None = None,
     material_id: str | None = None,
     kind: str = "grid",
@@ -90,6 +91,11 @@ def qr_payload_for_test(
     }
     if material_id:
         spec["m"] = material_id
+    if rows > 1 and row_stride_mm is not None:
+        # Distance between consecutive row origins in mm (cell height + the
+        # inter-row gap that holds the axis labels). Required for the ingest
+        # sampler to hit the right Y on each wrapped row.
+        spec["grid"]["rs"] = row_stride_mm
     if qr_size_mm is not None:
         # "qs" records the physical QR edge length so the ingest endpoint can
         # use the correct scale in the warp — otherwise a user-tweaked size
