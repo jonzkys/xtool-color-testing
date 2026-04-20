@@ -396,7 +396,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/presets", response_model=list[PresetResponse])
     def presets_list(material_id: int | None = None) -> list[PresetResponse]:
-        rows = p_repo.list_by_material(material_id) if material_id else p_repo.list_all()
+        rows = p_repo.list_by_material(material_id) if material_id is not None else p_repo.list_all()
         return [PresetResponse(**p) for p in rows]
 
     @app.get("/api/presets/{pid}", response_model=PresetResponse)
