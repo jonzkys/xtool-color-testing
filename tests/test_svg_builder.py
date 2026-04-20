@@ -39,8 +39,11 @@ def test_build_circle_display_core_fields():
     assert disp["type"] == "CIRCLE"
     assert disp["x"] == 5.0
     assert disp["y"] == 5.0
-    assert disp["width"] == 20.0
-    assert disp["height"] == 20.0
+    # XCS CIRCLE uses a canonical 40-unit bbox with `scale` encoding the
+    # real bed-mm diameter. 20 mm → scale 20/40 = 0.5.
+    assert disp["width"] == 40.0
+    assert disp["height"] == 40.0
+    assert disp["scale"] == {"x": 0.5, "y": 0.5}
     assert disp["layerColor"] == "#00ff00"
 
 

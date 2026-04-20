@@ -317,8 +317,21 @@ def _build_path_display(path: Path) -> dict[str, Any]:
     }
 
 
+_CIRCLE_INTERNAL_UNIT = 40.0
+"""XCS Studio's canonical bbox dimension for CIRCLE elements.
+
+Natively-created circles in XCS always have width=height=40 (bbox in
+internal units) with ``scale`` set so that bbox * scale == the bed-mm
+diameter. Emitting width directly in mm with scale=1 makes XCS render
+the shape as a stroke-only line instead of a filled disc — verified
+against samples/eng-angle.xcs.
+"""
+
+
 def _build_circle_display(circle: Circle) -> dict[str, Any]:
     """Build a display entry for a circle element."""
+    scale_x = circle.width / _CIRCLE_INTERNAL_UNIT
+    scale_y = circle.height / _CIRCLE_INTERNAL_UNIT
     return {
         "id": circle.id,
         "name": None,
@@ -326,13 +339,13 @@ def _build_circle_display(circle: Circle) -> dict[str, Any]:
         "x": circle.x,
         "y": circle.y,
         "angle": 0,
-        "scale": {"x": 1, "y": 1},
+        "scale": {"x": scale_x, "y": scale_y},
         "skew": {"x": 0, "y": 0},
         "pivot": {"x": 0, "y": 0},
         "localSkew": {"x": 0, "y": 0},
         "offsetX": circle.x,
         "offsetY": circle.y,
-        "lockRatio": False,
+        "lockRatio": True,
         "isClosePath": True,
         "zOrder": 1,
         "groupTags": [],
@@ -358,7 +371,7 @@ def _build_circle_display(circle: Circle) -> dict[str, Any]:
         "stroke": {
             "paintType": "color",
             "visible": True,
-            "color": 0,
+            "color": 5526616,
             "alpha": 1,
             "width": 1,
             "cap": "butt",
@@ -367,11 +380,11 @@ def _build_circle_display(circle: Circle) -> dict[str, Any]:
             "alignment": 0.5,
         },
         "effects": [],
-        "width": circle.width,
-        "height": circle.height,
+        "width": _CIRCLE_INTERNAL_UNIT,
+        "height": _CIRCLE_INTERNAL_UNIT,
         "isFill": circle.is_fill,
-        "lineColor": 0,
-        "fillColor": "#000000",
+        "lineColor": 16421416,
+        "fillColor": "#f9932b",
     }
 
 
