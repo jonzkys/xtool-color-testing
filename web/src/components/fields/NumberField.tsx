@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from "react";
+
 interface Props {
   label: string;
   value: number;
@@ -10,7 +12,59 @@ interface Props {
   help?: string;
 }
 
+function formatNum(v: number): string {
+  return Number.isFinite(v) ? String(v) : "";
+}
+
+/**
+ * Controlled-but-friendly number input.
+ *
+ * The input's displayed text is tracked as *local* state so the user can
+ * freely delete, type, and paste without React snapping the value back to
+ * the parent's committed number. The parent is updated on every valid
+ * keystroke (so live previews stay in sync), but min/max clamping only
+ * happens on blur — typing "500" starting from "100" doesn't get clamped
+ * to "min" during intermediate keystrokes.
+ */
 export function NumberField({ label, value, onChange, step, min, max, integer, issue, help }: Props) {
+  const [text, setText] = useState<string>(() => formatNum(value));
+  const focusedRef = useRef(false);
+
+  // Sync the displayed text when the parent value changes externally
+  // (e.g. after applying a palette match or a library preset) — but only
+  // while the user isn't actively editing, so we don't stomp their input.
+  useEffect(() => {
+    if (!focusedRef.current) setText(formatNum(value));
+  }, [value]);
+
+  function handleChange(raw: string) {
+    setText(raw);
+    if (raw === "") return;  // user mid-edit; don't commit until there's a value
+    const parsed = integer ? parseInt(raw, 10) : parseFloat(raw);
+    if (!Number.isFinite(parsed)) return;  // partial input like "-" or "1e"
+    // Commit without clamping so the user can freely overshoot/undershoot
+    // while typing. Clamping happens on blur.
+    if (parsed !== value) onChange(parsed);
+  }
+
+  function handleBlur() {
+    focusedRef.current = false;
+    if (text === "") {
+      setText(formatNum(value));
+      return;
+    }
+    const parsed = integer ? parseInt(text, 10) : parseFloat(text);
+    if (!Number.isFinite(parsed)) {
+      setText(formatNum(value));
+      return;
+    }
+    let clamped = parsed;
+    if (min !== undefined && clamped < min) clamped = min;
+    if (max !== undefined && clamped > max) clamped = max;
+    setText(formatNum(clamped));
+    if (clamped !== value) onChange(clamped);
+  }
+
   return (
     <label style={{ display: "block", marginBottom: 8 }}>
       <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#555", marginBottom: 2 }}>
@@ -19,16 +73,15 @@ export function NumberField({ label, value, onChange, step, min, max, integer, i
       </span>
       <input
         type="number"
-        value={Number.isFinite(value) ? value : ""}
+        value={text}
         step={step ?? (integer ? 1 : "any")}
         min={min}
         max={max}
-        onChange={(e) => {
-          const raw = e.target.value;
-          if (raw === "") return;
-          const parsed = integer ? parseInt(raw, 10) : parseFloat(raw);
-          if (!Number.isFinite(parsed)) return;
-          onChange(parsed);
+        onFocus={() => { focusedRef.current = true; }}
+        onChange={(e) => handleChange(e.target.value)}
+        onBlur={handleBlur}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
         }}
         style={{
           width: "100%",
@@ -42,8 +95,6 @@ export function NumberField({ label, value, onChange, step, min, max, integer, i
     </label>
   );
 }
-
-import { useRef, useState } from "react";
 
 // Inline ? icon that reveals a tooltip on hover/focus.
 // Tooltip uses position:fixed with computed coords so it isn't clipped by
