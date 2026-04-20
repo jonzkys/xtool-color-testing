@@ -45,9 +45,12 @@ export interface ParamTest {
   gap_mm: number;
   base_params: BaseParams;
 
-  crosshatch_enabled: boolean;
-  crosshatch_passes: number;
-  crosshatch_step_deg: number;
+  /** Multi-pass angle behaviour; only meaningful when base_params.passes > 1.
+   *  - "fixed": every pass at the same scan angle.
+   *  - "crosshatch": alternates scan_angle and scan_angle + 90°.
+   *  - "incremental": XCS rotates the angle between passes.
+   *  Maps to XCS angleType + crossAngle; no rect duplication client-side. */
+  angle_mode: "fixed" | "crosshatch" | "incremental";
   registration: RegistrationConfig;
   material_id: string;  // required — palette queries are material-scoped
   /** true → burn one direction only (oneWay). false (default) → bi-directional (zMode). */
@@ -130,9 +133,8 @@ export interface LayerSpec {
   processing_type: SvgProcessingType;
   scan_angle: number;
   base_params: BaseParams;
-  crosshatch_enabled: boolean;
-  crosshatch_passes: number;
-  crosshatch_step_deg: number;
+  /** Same semantics as ParamTest.angle_mode. Ignored for HATCHED_LINES. */
+  angle_mode: "fixed" | "crosshatch" | "incremental";
   material_id: string | null;   // layer's library-preset origin (optional)
   hatch_passes: HatchPassSpec[];   // non-empty iff processing_type === "HATCHED_LINES"
 }

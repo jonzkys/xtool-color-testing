@@ -63,12 +63,17 @@ class ParamTest(BaseModel):
     gap_mm: float = Field(default=0.0, ge=0)
     base_params: BaseParams
 
-    # Crosshatch: stacks N passes with different scanAngles on each element.
-    # First pass uses the base scan angle (currently 90° for vertical scan);
-    # each subsequent pass adds crosshatch_step_deg.
-    crosshatch_enabled: bool = False
-    crosshatch_passes: int = Field(default=2, ge=2, le=10)
-    crosshatch_step_deg: float = Field(default=90.0, gt=0.0, le=360.0)
+    # Multi-pass angle behaviour. ``base_params.passes`` is the pass count
+    # (emitted as XCS's native ``repeat``, so XCS handles the stacking —
+    # we don't duplicate rects client-side). angle_mode picks how the scan
+    # angle varies per pass:
+    #
+    #   "fixed"       — every pass at the same scan angle.
+    #   "crosshatch"  — alternates scan_angle and scan_angle + 90°.
+    #   "incremental" — XCS rotates the angle between passes (e.g. 360°/n).
+    #
+    # Only meaningful when passes > 1.
+    angle_mode: Literal["fixed", "crosshatch", "incremental"] = "fixed"
     registration: RegistrationConfig = Field(default_factory=RegistrationConfig)
     material_id: str = Field(min_length=1)
     # True → emit bitmapScanMode="oneWay" on the gradient cells + annotation;
@@ -179,11 +184,10 @@ class LayerSpec(BaseModel):
     scan_angle: float = Field(default=90.0, ge=0.0, le=360.0)
     base_params: BaseParams
 
-    # Per-layer crosshatch (same semantics as ParamTest crosshatch). Ignored
-    # when processing_type == "HATCHED_LINES" (which carries its own multi-pass).
-    crosshatch_enabled: bool = False
-    crosshatch_passes: int = Field(default=2, ge=2, le=10)
-    crosshatch_step_deg: float = Field(default=90.0, gt=0.0, le=360.0)
+    # Multi-pass angle behaviour (same semantics as ParamTest.angle_mode).
+    # Ignored when processing_type == "HATCHED_LINES" which has its own
+    # per-pass model.
+    angle_mode: Literal["fixed", "crosshatch", "incremental"] = "fixed"
 
     # v2 hatched render mode: required non-empty when processing_type ==
     # "HATCHED_LINES", ignored otherwise.

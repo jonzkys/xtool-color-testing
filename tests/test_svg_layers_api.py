@@ -35,7 +35,7 @@ def _layer(color: str, **overrides) -> LayerSpec:
         color=color, name=color, enabled=True,
         processing_type="COLOR_FILL_ENGRAVE",
         scan_angle=90.0, base_params=_base(),
-        crosshatch_enabled=False, crosshatch_passes=2, crosshatch_step_deg=90.0,
+        angle_mode="fixed",
     )
     defaults.update(overrides)
     return LayerSpec(**defaults)
@@ -87,10 +87,12 @@ def test_disabled_layer_is_skipped():
     assert "#000000" not in colors
 
 
-def test_layer_crosshatch_stacks_per_layer():
+def test_layer_crosshatch_sets_cross_angle_flag_per_layer():
+    """angle_mode='crosshatch' maps to XCS-native cross_angle; no path duplication."""
+    yellow_base = _base().model_copy(update={"passes": 3})
     layers = [
-        _layer("#ffd73e", crosshatch_enabled=True, crosshatch_passes=3, crosshatch_step_deg=60),
-        _layer("#000000"),  # no crosshatch
+        _layer("#ffd73e", angle_mode="crosshatch", base_params=yellow_base),
+        _layer("#000000"),  # default angle_mode="fixed"
     ]
     req = SvgLayersRequest(
         name="t", svg_content=PIKACHU_SVG.read_text(),
@@ -101,12 +103,13 @@ def test_layer_crosshatch_stacks_per_layer():
     yellow_paths = [p for p in project.paths if p.layer_color == "#ffd73e"]
     black_paths = [p for p in project.paths if p.layer_color == "#000000"]
 
-    # Yellow has 3 passes -> 3 distinct scan angles (90, 150, 210)
-    yellow_angles = sorted({p.params.scan_angle for p in yellow_paths})
-    assert yellow_angles == [90, 150, 210]
-
-    # Black has no crosshatch -> single scan angle
-    assert len({p.params.scan_angle for p in black_paths}) == 1
+    # No per-pass path duplication: yellow layer emits once per SVG shape,
+    # and XCS stacks the 3 passes natively.
+    assert all(p.params.cross_angle for p in yellow_paths)
+    assert all(p.params.repeat == 3 for p in yellow_paths)
+    # Fixed black layer: angle_type=1, no cross.
+    assert all(p.params.angle_type == 1 for p in black_paths)
+    assert all(not p.params.cross_angle for p in black_paths)
 
 
 def test_no_enabled_layers_raises():
@@ -203,13 +206,13 @@ def test_api_layers_endpoint():
                 "color": "#ffd73e", "name": "Yellow body", "enabled": True,
                 "processing_type": "COLOR_FILL_ENGRAVE", "scan_angle": 0,
                 "base_params": _base().model_dump(),
-                "crosshatch_enabled": False, "crosshatch_passes": 2, "crosshatch_step_deg": 90,
+                "angle_mode": "fixed",
             },
             {
                 "color": "#000000", "name": "Outlines", "enabled": True,
                 "processing_type": "VECTOR_ENGRAVING", "scan_angle": 0,
                 "base_params": _base().model_dump(),
-                "crosshatch_enabled": False, "crosshatch_passes": 2, "crosshatch_step_deg": 90,
+                "angle_mode": "fixed",
             },
         ],
         "subtract_overlaps": False,

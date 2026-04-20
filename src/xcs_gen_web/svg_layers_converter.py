@@ -15,7 +15,7 @@ from collections import Counter
 from dataclasses import replace
 
 from xcs_gen.builder import build_xcs
-from xcs_gen.model import GRADIENT_LAYER_COLOR, Path, Rect, XCSProject, _uuid
+from xcs_gen.model import GRADIENT_LAYER_COLOR, Path, Rect, XCSProject
 from xcs_gen.svg_source import ParsedShape, parse_svg
 
 from .converter import _to_processing_params
@@ -165,10 +165,8 @@ def build_svg_layers_project(
     segment_count = 0
     per_color_counts: dict[str, int] = {}
 
-    # Primary pass: one Path per shape using its layer's params.
-    # HATCHED_LINES shapes are handled separately (no Path emitted for them).
-    # Track (shape_color, original_Path) pairs so we can restack per-layer crosshatch.
-    primary: list[tuple[str, Path]] = []
+    # One Path per shape using its layer's params. HATCHED_LINES shapes are
+    # handled separately below (no Path emitted for them).
     for shape in shapes:
         color = _shape_primary_color(shape)
         if color is None or color not in layer_by_color:
@@ -240,7 +238,7 @@ def build_svg_layers_project(
             continue  # skip Path emission below for hatched layers
 
         params = replace(
-            _to_processing_params(layer.base_params),
+            _to_processing_params(layer.base_params, angle_mode=layer.angle_mode),
             scan_angle=layer.scan_angle,
         )
 
@@ -258,37 +256,11 @@ def build_svg_layers_project(
             layer_color=color,
         )
         project.paths.append(p)
-        primary.append((color, p))
 
-    # Crosshatch: for each layer, if enabled, stack additional rotated passes
-    # over just that layer's primary paths.
-    for color, layer in layer_by_color.items():
-        if not layer.crosshatch_enabled or layer.crosshatch_passes <= 1:
-            continue
-        layer_primary = [p for c, p in primary if c == color]
-        for pass_i in range(1, layer.crosshatch_passes):
-            angle_offset = (pass_i * layer.crosshatch_step_deg) % 360
-            for pp in layer_primary:
-                new_params = replace(
-                    pp.params,
-                    scan_angle=(pp.params.scan_angle + angle_offset) % 360,
-                )
-                project.paths.append(
-                    Path(
-                        d=pp.d,
-                        x=pp.x,
-                        y=pp.y,
-                        width=pp.width,
-                        height=pp.height,
-                        is_close_path=pp.is_close_path,
-                        fill_rule=pp.fill_rule,
-                        params=new_params,
-                        processing_type=pp.processing_type,
-                        is_fill=pp.is_fill,
-                        id=_uuid(),
-                        layer_color=pp.layer_color,
-                    )
-                )
+    # Multi-pass behaviour is now handled by XCS natively via
+    # ProcessingParams.repeat + angle_type + cross_angle on each layer's
+    # params (piped through _to_processing_params via layer.angle_mode).
+    # No per-pass path duplication here.
 
     if not project.paths and not project.extra_displays:
         raise ValueError("No paths emitted - check that the SVG has supported shapes.")

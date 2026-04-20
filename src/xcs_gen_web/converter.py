@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import replace
-
 from xcs_gen.builder import build_xcs
 from xcs_gen.capture.layout import registration_reservation_mm
 from xcs_gen.generators import generate_gradient
-from xcs_gen.model import ProcessingParams, Rect, XCSProject, _uuid
+from xcs_gen.model import ProcessingParams, XCSProject
 from xcs_gen.text import text_height
 
 from .schemas import BaseParams, ParamTest, Project
@@ -121,7 +119,15 @@ def validate_beam_widths(project: Project) -> None:
             )
 
 
-def _to_processing_params(bp: BaseParams) -> ProcessingParams:
+_ANGLE_MODE_MAP: dict[str, tuple[int, bool]] = {
+    "fixed":       (1, False),
+    "crosshatch":  (1, True),
+    "incremental": (2, False),
+}
+
+
+def _to_processing_params(bp: BaseParams, *, angle_mode: str = "fixed") -> ProcessingParams:
+    angle_type, cross_angle = _ANGLE_MODE_MAP.get(angle_mode, _ANGLE_MODE_MAP["fixed"])
     return ProcessingParams(
         power=bp.power,
         speed=bp.speed,
@@ -130,6 +136,8 @@ def _to_processing_params(bp: BaseParams) -> ProcessingParams:
         repeat=bp.passes,
         pulse_width=bp.pulse_width,
         processing_light_source=bp.laser,
+        angle_type=angle_type,
+        cross_angle=cross_angle,
     )
 
 
@@ -196,12 +204,13 @@ def project_to_xcs(project: Project) -> XCSProject:
         t = placement.test
         x_off, y_off = offsets[t.id]
 
-        # Crosshatch suffix shown in the per-test summary line (e.g. "x3@60°").
+        # Suffix shown in the per-test summary line (e.g. "x3 crosshatch")
+        # when >1 passes are configured.
         summary_suffix = ""
-        if t.crosshatch_enabled and t.crosshatch_passes > 1:
-            step = t.crosshatch_step_deg
-            step_str = str(int(step)) if step == int(step) else f"{step:g}"
-            summary_suffix = f"x{t.crosshatch_passes} at {step_str}deg"
+        if t.base_params.passes > 1 and t.angle_mode != "fixed":
+            summary_suffix = f"x{t.base_params.passes} {t.angle_mode}"
+        elif t.base_params.passes > 1:
+            summary_suffix = f"x{t.base_params.passes}"
 
         generated = generate_gradient(
             x_param=t.x_param,
@@ -219,7 +228,7 @@ def project_to_xcs(project: Project) -> XCSProject:
             gap=t.gap_mm,
             start_x=CANVAS_ORIGIN_X + x_off,
             start_y=CANVAS_ORIGIN_Y + y_off,
-            base_params=_to_processing_params(t.base_params),
+            base_params=_to_processing_params(t.base_params, angle_mode=t.angle_mode),
             summary_suffix=summary_suffix,
             registration_mode=t.registration.mode,
             registration_qr_mode=t.registration.qr_mode,
@@ -236,30 +245,6 @@ def project_to_xcs(project: Project) -> XCSProject:
         merged.extra_displays.extend(generated.extra_displays)
         merged.extra_device_entries.extend(generated.extra_device_entries)
         merged.bitmaps.extend(generated.bitmaps)
-
-        # Crosshatch: stack additional passes with rotated scanAngles over the
-        # same gradient rects. Annotations are only emitted for the first pass.
-        if t.crosshatch_enabled and t.crosshatch_passes > 1:
-            for pass_i in range(1, t.crosshatch_passes):
-                angle_offset = (pass_i * t.crosshatch_step_deg) % 360
-                for elem in generated.elements:
-                    new_params = replace(
-                        elem.params,
-                        scan_angle=(elem.params.scan_angle + angle_offset) % 360,
-                    )
-                    merged.elements.append(
-                        Rect(
-                            x=elem.x,
-                            y=elem.y,
-                            width=elem.width,
-                            height=elem.height,
-                            params=new_params,
-                            processing_type=elem.processing_type,
-                            is_fill=elem.is_fill,
-                            id=_uuid(),
-                            layer_color=elem.layer_color,
-                        )
-                    )
 
     return merged
 

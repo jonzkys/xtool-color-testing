@@ -25,7 +25,12 @@ class ProcessingParams:
     dot_duration: int = 100
     processing_light_source: str = "red"  # "red" = MOPA fiber, "blue" = diode
     scan_angle: float = 90  # 90 = vertical scan (efficient for narrow elements)
-    angle_type: int = 2
+    # XCS's multi-pass angle model:
+    #   angle_type = 1  → fixed (every pass at scan_angle)
+    #   angle_type = 2  → incremental (XCS rotates between passes)
+    #   cross_angle     → alternates scan_angle and scan_angle + 90° per pass
+    # Only meaningful when repeat > 1 (single pass = no angle variation).
+    angle_type: int = 1
     cross_angle: bool = False
     # "zMode" = bi-directional (zigzag, default — laser burns on both
     # traversals). "oneWay" = uni-directional (burns one way, returns dry).

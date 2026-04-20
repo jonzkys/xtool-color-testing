@@ -38,9 +38,7 @@ function defaultLayerFromDetected(detected: DetectedLayer, library: LibraryState
     processing_type: detected.is_fill ? "COLOR_FILL_ENGRAVE" : "VECTOR_ENGRAVING",
     scan_angle: 90,
     base_params: seed.baseParams,
-    crosshatch_enabled: false,
-    crosshatch_passes: 2,
-    crosshatch_step_deg: 90,
+    angle_mode: "fixed",
     material_id: seed.materialId,
     hatch_passes: [],
   };
@@ -634,21 +632,21 @@ function LayerEditor({
       </Section>
 
       {layer.processing_type !== "HATCHED_LINES" && (
-        <Section title="Crosshatch (per-layer stacking)">
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <input
-              type="checkbox"
-              checked={layer.crosshatch_enabled}
-              onChange={(e) => onPatch({ crosshatch_enabled: e.target.checked })}
-            />
-            <span style={{ fontSize: 12, color: "#555" }}>Enable crosshatch</span>
-          </label>
-          {layer.crosshatch_enabled && (
-            <>
-              <NumberField label="Passes" value={layer.crosshatch_passes} integer min={2} max={10} onChange={(v) => onPatch({ crosshatch_passes: v })} />
-              <NumberField label="Rotation step (°)" value={layer.crosshatch_step_deg} onChange={(v) => onPatch({ crosshatch_step_deg: v })} />
-            </>
-          )}
+        <Section title="Passes (multi-pass angle)">
+          <SelectField
+            label="Angle mode"
+            value={layer.angle_mode}
+            options={[
+              { value: "fixed", label: "Fixed — all passes at scan angle" },
+              { value: "crosshatch", label: "Crosshatch — alternate ±90°" },
+              { value: "incremental", label: "Incremental — XCS rotates per pass" },
+            ]}
+            onChange={(v) => onPatch({ angle_mode: v as LayerSpec["angle_mode"] })}
+          />
+          <div style={{ fontSize: 11, color: "#777", marginTop: 4 }}>
+            Pass count comes from <strong>Base parameters → Passes</strong>.
+            XCS handles the stacking natively; no rect duplication.
+          </div>
         </Section>
       )}
 

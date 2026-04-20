@@ -147,32 +147,21 @@ export function TestEditor({ placement, issues, library, onChange, onDelete, onD
         </label>
       </Section>
 
-      <Section title="Crosshatch (stacked passes)">
-        <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <input
-            type="checkbox"
-            checked={t.crosshatch_enabled}
-            onChange={(e) => updateTest({ crosshatch_enabled: e.target.checked })}
-          />
-          <span style={{ fontSize: 12, color: "#555" }}>Enable crosshatch</span>
-        </label>
-        {t.crosshatch_enabled && (
-          <>
-            <NumberField
-              label="Passes"
-              value={t.crosshatch_passes}
-              integer
-              min={2}
-              max={10}
-              onChange={(v) => updateTest({ crosshatch_passes: v })}
-            />
-            <NumberField
-              label="Rotation step (°)"
-              value={t.crosshatch_step_deg}
-              onChange={(v) => updateTest({ crosshatch_step_deg: v })}
-            />
-          </>
-        )}
+      <Section title="Passes (multi-pass angle)">
+        <SelectField
+          label="Angle mode"
+          value={t.angle_mode}
+          options={[
+            { value: "fixed", label: "Fixed — all passes at scan angle" },
+            { value: "crosshatch", label: "Crosshatch — alternate ±90°" },
+            { value: "incremental", label: "Incremental — XCS rotates per pass" },
+          ]}
+          onChange={(v) => updateTest({ angle_mode: v as ParamTest["angle_mode"] })}
+        />
+        <div style={{ fontSize: 11, color: "#777", marginTop: 4 }}>
+          Pass count comes from <strong>Base parameters → Passes</strong>.
+          XCS handles the stacking natively; no rect duplication.
+        </div>
       </Section>
 
       <Section title="Registration marker">

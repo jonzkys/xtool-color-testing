@@ -159,49 +159,41 @@ def test_beam_width_validation_rejects_sub_beam_elements():
         project_to_xcs(project)
 
 
-def test_crosshatch_stacks_passes():
-    """crosshatch_enabled + passes=3 produces 3x the gradient rects at different scanAngles."""
-    t = _test()
-    t = t.model_copy(update={
-        "crosshatch_enabled": True,
-        "crosshatch_passes": 3,
-        "crosshatch_step_deg": 60.0,
-    })
+def test_crosshatch_mode_sets_cross_angle_flag():
+    """angle_mode='crosshatch' → XCS-native cross_angle on every element; no rect duplication."""
+    t = _test().model_copy(update={"angle_mode": "crosshatch"})
+    t = t.model_copy(update={"base_params": t.base_params.model_copy(update={"passes": 3})})
     project = Project(
         name="Test", grid_gap_mm=1.0,
         tests=[TestPlacement(test=t, row=0, col=0, col_span=1)],
     )
     xcs = project_to_xcs(project)
 
-    # 10 steps × 3 passes = 30 total rects
-    assert len(xcs.elements) == 30
-
-    # 3 distinct scan angles across the elements
-    angles = sorted({e.params.scan_angle for e in xcs.elements})
-    assert len(angles) == 3
-
-    # Base angle is 90 (default), so expect 90, 150, 210
-    assert 90 in angles
-    assert 150 in angles
-    assert 210 in angles
+    # 10 steps, ZERO duplication — XCS handles the passes.
+    assert len(xcs.elements) == 10
+    assert all(e.params.cross_angle for e in xcs.elements)
+    # Passes flow through to XCS's `repeat` field.
+    assert all(e.params.repeat == 3 for e in xcs.elements)
 
 
-def test_crosshatch_disabled_does_not_stack():
-    """Without crosshatch, only the primary pass is emitted."""
+def test_incremental_mode_sets_angle_type_2():
+    t = _test().model_copy(update={"angle_mode": "incremental"})
+    project = Project(
+        name="Test", grid_gap_mm=1.0,
+        tests=[TestPlacement(test=t, row=0, col=0, col_span=1)],
+    )
+    xcs = project_to_xcs(project)
+    assert all(e.params.angle_type == 2 for e in xcs.elements)
+    assert all(not e.params.cross_angle for e in xcs.elements)
+
+
+def test_fixed_mode_is_default_and_emits_angle_type_1():
+    """Default angle_mode='fixed' → angleType=1, crossAngle=false, no duplication."""
     project = Project(
         name="Test", grid_gap_mm=1.0,
         tests=[TestPlacement(test=_test(), row=0, col=0, col_span=1)],
     )
     xcs = project_to_xcs(project)
     assert len(xcs.elements) == 10
-
-
-def test_crosshatch_single_scan_angle_when_disabled():
-    """All elements share one scan angle when crosshatch is off."""
-    project = Project(
-        name="Test", grid_gap_mm=1.0,
-        tests=[TestPlacement(test=_test(), row=0, col=0, col_span=1)],
-    )
-    xcs = project_to_xcs(project)
-    angles = {e.params.scan_angle for e in xcs.elements}
-    assert len(angles) == 1
+    assert all(e.params.angle_type == 1 for e in xcs.elements)
+    assert all(not e.params.cross_angle for e in xcs.elements)

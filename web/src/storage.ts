@@ -37,6 +37,25 @@ export function migrateProject(project: Project): Project {
         if (placement.test.unidirectional === undefined) {
           placement.test.unidirectional = false;
         }
+        // crosshatch_enabled/passes/step_deg → angle_mode.
+        // If the old fields are present, translate them and delete.
+        const legacy = placement.test as Partial<{
+          crosshatch_enabled: boolean;
+          crosshatch_passes: number;
+          crosshatch_step_deg: number;
+        }>;
+        if (placement.test.angle_mode === undefined) {
+          if (legacy.crosshatch_enabled && legacy.crosshatch_step_deg === 90) {
+            placement.test.angle_mode = "crosshatch";
+          } else if (legacy.crosshatch_enabled) {
+            placement.test.angle_mode = "incremental";
+          } else {
+            placement.test.angle_mode = "fixed";
+          }
+        }
+        delete legacy.crosshatch_enabled;
+        delete legacy.crosshatch_passes;
+        delete legacy.crosshatch_step_deg;
       }
     }
   }

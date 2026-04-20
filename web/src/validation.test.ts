@@ -87,7 +87,7 @@ describe("validateLayerSpec — hatched", () => {
       color: "#ffd73e", name: "yellow", enabled: true,
       processing_type: "HATCHED_LINES" as const,
       scan_angle: 90, base_params: bp(),
-      crosshatch_enabled: false, crosshatch_passes: 2, crosshatch_step_deg: 90,
+      angle_mode: "fixed" as const,
       material_id: null,
       hatch_passes: [],
     };
@@ -102,7 +102,7 @@ describe("validateLayerSpec — hatched", () => {
       color: "#ffd73e", name: "yellow", enabled: true,
       processing_type: "HATCHED_LINES" as const,
       scan_angle: 90, base_params: bp(),
-      crosshatch_enabled: false, crosshatch_passes: 2, crosshatch_step_deg: 90,
+      angle_mode: "fixed" as const,
       material_id: null,
       hatch_passes: [{ angle: 0, spacing: 0, thickness: 0.1, ramps: [] }],
     };
@@ -117,7 +117,7 @@ describe("validateLayerSpec — hatched", () => {
       color: "#ffd73e", name: "yellow", enabled: true,
       processing_type: "HATCHED_LINES" as const,
       scan_angle: 90, base_params: bp(),
-      crosshatch_enabled: false, crosshatch_passes: 2, crosshatch_step_deg: 90,
+      angle_mode: "fixed" as const,
       material_id: null,
       hatch_passes: [{
         angle: 0, spacing: 0.5, thickness: 0.1,
@@ -136,7 +136,7 @@ describe("validateLayerSpec — hatched", () => {
       color: "#000000", name: "black", enabled: true,
       processing_type: "VECTOR_CUTTING" as const,
       scan_angle: 90, base_params: bp(),
-      crosshatch_enabled: false, crosshatch_passes: 2, crosshatch_step_deg: 90,
+      angle_mode: "fixed" as const,
       material_id: null,
       hatch_passes: [],
     };
