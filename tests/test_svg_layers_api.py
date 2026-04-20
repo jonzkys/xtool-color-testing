@@ -87,9 +87,9 @@ def test_disabled_layer_is_skipped():
     assert "#000000" not in colors
 
 
-def test_layer_crosshatch_sets_cross_angle_flag_per_layer():
-    """angle_mode='crosshatch' maps to XCS-native cross_angle; no path duplication."""
-    yellow_base = _base().model_copy(update={"passes": 3})
+def test_layer_crosshatch_sets_cross_angle_flag_and_halves_repeat():
+    """angle_mode='crosshatch' maps to XCS-native cross_angle; passes is halved because XCS doubles each repeat."""
+    yellow_base = _base().model_copy(update={"passes": 4})
     layers = [
         _layer("#ffd73e", angle_mode="crosshatch", base_params=yellow_base),
         _layer("#000000"),  # default angle_mode="fixed"
@@ -104,9 +104,10 @@ def test_layer_crosshatch_sets_cross_angle_flag_per_layer():
     black_paths = [p for p in project.paths if p.layer_color == "#000000"]
 
     # No per-pass path duplication: yellow layer emits once per SVG shape,
-    # and XCS stacks the 3 passes natively.
+    # and XCS stacks the passes natively.
     assert all(p.params.cross_angle for p in yellow_paths)
-    assert all(p.params.repeat == 3 for p in yellow_paths)
+    # Crosshatch: user asked for 4 total burns → XCS repeat=2 (× 2 angles each).
+    assert all(p.params.repeat == 2 for p in yellow_paths)
     # Fixed black layer: angle_type=1, no cross.
     assert all(p.params.angle_type == 1 for p in black_paths)
     assert all(not p.params.cross_angle for p in black_paths)

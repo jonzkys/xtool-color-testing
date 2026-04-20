@@ -159,10 +159,10 @@ def test_beam_width_validation_rejects_sub_beam_elements():
         project_to_xcs(project)
 
 
-def test_crosshatch_mode_sets_cross_angle_flag():
-    """angle_mode='crosshatch' → XCS-native cross_angle on every element; no rect duplication."""
+def test_crosshatch_mode_sets_cross_angle_flag_and_halves_repeat():
+    """angle_mode='crosshatch' → XCS-native cross_angle + repeat=passes/2 (XCS doubles each cycle)."""
     t = _test().model_copy(update={"angle_mode": "crosshatch"})
-    t = t.model_copy(update={"base_params": t.base_params.model_copy(update={"passes": 3})})
+    t = t.model_copy(update={"base_params": t.base_params.model_copy(update={"passes": 4})})
     project = Project(
         name="Test", grid_gap_mm=1.0,
         tests=[TestPlacement(test=t, row=0, col=0, col_span=1)],
@@ -172,8 +172,8 @@ def test_crosshatch_mode_sets_cross_angle_flag():
     # 10 steps, ZERO duplication — XCS handles the passes.
     assert len(xcs.elements) == 10
     assert all(e.params.cross_angle for e in xcs.elements)
-    # Passes flow through to XCS's `repeat` field.
-    assert all(e.params.repeat == 3 for e in xcs.elements)
+    # With crosshatch, "4 passes" means 2 XCS cycles × 2 angles = 4 total burns.
+    assert all(e.params.repeat == 2 for e in xcs.elements)
 
 
 def test_incremental_mode_sets_angle_type_2():

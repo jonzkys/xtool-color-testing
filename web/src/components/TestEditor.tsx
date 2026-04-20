@@ -188,7 +188,17 @@ export function TestEditor({ placement, issues, library, onChange, onDelete, onD
         <NumberField label="Speed (mm/s)" value={t.base_params.speed} integer onChange={(v) => updateBase({ speed: v })} />
         <NumberField label="Frequency (Hz)" value={t.base_params.frequency} integer onChange={(v) => updateBase({ frequency: v })} />
         <NumberField label="Lines/cm" value={t.base_params.density} integer onChange={(v) => updateBase({ density: v })} />
-        <NumberField label="Passes" value={t.base_params.passes} integer min={1} onChange={(v) => updateBase({ passes: v })} />
+        <NumberField
+          label={t.angle_mode === "crosshatch" ? "Passes (use even values)" : "Passes"}
+          value={t.base_params.passes}
+          integer
+          min={t.angle_mode === "crosshatch" ? 2 : 1}
+          step={t.angle_mode === "crosshatch" ? 2 : 1}
+          onChange={(v) => updateBase({ passes: v })}
+          help={t.angle_mode === "crosshatch"
+            ? "In crosshatch mode each 'pass' is one burn at scan angle and one at +90°. Use even numbers so the total burns match what you enter."
+            : undefined}
+        />
         <NumberField label="Pulse width (ns)" value={t.base_params.pulse_width} integer onChange={(v) => updateBase({ pulse_width: v })} />
         <SelectField
           label="Laser"
@@ -225,6 +235,8 @@ export function TestEditor({ placement, issues, library, onChange, onDelete, onD
         <div style={{ fontSize: 11, color: "#777", marginTop: 4 }}>
           Pass count comes from <strong>Base parameters → Passes</strong>.
           XCS handles the stacking natively; no rect duplication.
+          {" "}Crosshatch uses pairs of burns (scan angle + 90°), so every
+          two "passes" counts as one XCS cycle — pick even values.
         </div>
       </Section>
 

@@ -128,12 +128,20 @@ _ANGLE_MODE_MAP: dict[str, tuple[int, bool]] = {
 
 def _to_processing_params(bp: BaseParams, *, angle_mode: str = "fixed") -> ProcessingParams:
     angle_type, cross_angle = _ANGLE_MODE_MAP.get(angle_mode, _ANGLE_MODE_MAP["fixed"])
+    # XCS applies crossAngle as "burn one pass at scanAngle and another at
+    # scanAngle+90° for every `repeat` cycle" — so each repeat = 2 actual
+    # burns. We expose "passes" to the user as total burns, so divide by 2
+    # (clamping to >=1) when crosshatch is active. Users should pick even
+    # passes in crosshatch mode to avoid rounding; the UI enforces this.
+    repeat = bp.passes
+    if angle_mode == "crosshatch":
+        repeat = max(1, bp.passes // 2)
     return ProcessingParams(
         power=bp.power,
         speed=bp.speed,
         mopa_frequency=bp.frequency,
         density=bp.density,
-        repeat=bp.passes,
+        repeat=repeat,
         pulse_width=bp.pulse_width,
         processing_light_source=bp.laser,
         angle_type=angle_type,
