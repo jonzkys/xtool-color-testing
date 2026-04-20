@@ -38,7 +38,9 @@ class RegistrationConfig(BaseModel):
 
     mode: Literal["auto", "compact", "full", "off"] = "off"
     qr_mode: Literal["inline", "id_only"] = "inline"
-    qr_position: Literal["top-left", "top-right", "bottom-right"] = "top-left"
+    qr_position: Literal[
+        "top-left", "top-right", "bottom-right", "left-middle",
+    ] = "top-left"
     qr_size_mm: float | None = Field(default=None, gt=0, le=50)
 
 

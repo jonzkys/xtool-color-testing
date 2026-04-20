@@ -8,7 +8,7 @@ export type ParamName = (typeof PARAM_NAMES)[number];
 
 export type RegistrationMode = "auto" | "compact" | "full" | "off";
 export type QrMode = "inline" | "id_only";
-export type QrPosition = "top-left" | "top-right" | "bottom-right";
+export type QrPosition = "top-left" | "top-right" | "bottom-right" | "left-middle";
 
 export interface RegistrationConfig {
   mode: RegistrationMode;

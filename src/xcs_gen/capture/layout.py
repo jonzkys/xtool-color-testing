@@ -27,7 +27,7 @@ MARKER_MARGIN_MM = 1.5
 
 # Supported QR positions relative to the gradient grid. Bottom-left is
 # intentionally omitted — axis tick labels live in that corner.
-QrPosition = Literal["top-left", "top-right", "bottom-right"]
+QrPosition = Literal["top-left", "top-right", "bottom-right", "left-middle"]
 
 
 def _default_qr_size_mm(qr_mode: str) -> float:
@@ -40,6 +40,7 @@ def registration_reservation_mm(
     *,
     position: QrPosition = "top-left",
     qr_size_mm: float | None = None,
+    grid_h_mm: float = 0.0,
 ) -> tuple[float, float]:
     """How much space the registration QR needs as (x_shift_mm, y_shift_mm).
 
@@ -50,6 +51,11 @@ def registration_reservation_mm(
       - top-left:     shift both X and Y by qr_size + margin
       - top-right:    shift only Y (QR is to the right of the grid already)
       - bottom-right: no shift (QR sits below + right of the grid)
+      - left-middle:  shift X by qr_size + margin, shift Y only by the amount
+                      the QR extends above the grid when grid_h < qr_size
+
+    ``grid_h_mm`` is only used for the left-middle case; callers can omit it
+    for the other positions.
     """
     if mode == "off":
         return 0.0, 0.0
@@ -61,6 +67,11 @@ def registration_reservation_mm(
         return 0.0, reserve
     if position == "bottom-right":
         return 0.0, 0.0
+    if position == "left-middle":
+        # QR centred on grid; half of (qr_size - grid_h) sticks above the grid
+        # when the grid is shorter than the QR. No Y shift needed otherwise.
+        overhang = max(0.0, (qr_size - grid_h_mm) / 2)
+        return reserve, overhang
     raise ValueError(f"unknown qr position: {position!r}")
 
 
@@ -110,6 +121,9 @@ def compute_layout(
     elif position == "bottom-right":
         qr_x = grid_x + grid_w + MARKER_MARGIN_MM
         qr_y = grid_y + grid_h + MARKER_MARGIN_MM
+    elif position == "left-middle":
+        qr_x = grid_x - qr_size - MARKER_MARGIN_MM
+        qr_y = grid_y + (grid_h - qr_size) / 2
     else:
         raise ValueError(f"unknown qr position: {position!r}")
 

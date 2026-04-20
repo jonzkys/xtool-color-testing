@@ -207,6 +207,7 @@ export function TestEditor({ placement, issues, library, onChange, onDelete, onD
               <option value="top-left">Top-left</option>
               <option value="top-right">Top-right</option>
               <option value="bottom-right">Bottom-right</option>
+              <option value="left-middle">Left-middle</option>
             </select>
           </label>
           <label style={{ display: "block" }}>

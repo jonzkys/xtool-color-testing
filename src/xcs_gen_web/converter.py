@@ -66,6 +66,7 @@ def _test_vertical_footprint(t: ParamTest) -> float:
         t.registration.mode, t.registration.qr_mode,
         position=t.registration.qr_position,
         qr_size_mm=t.registration.qr_size_mm,
+        grid_h_mm=gradient_h,
     )
 
     return reg_shift_y + summary + gradient_h + ann_below
@@ -78,6 +79,7 @@ def _test_horizontal_footprint(t: ParamTest) -> float:
     shifts right by the reservation, so the column must allocate that extra
     width.
     """
+    # grid_h_mm is left-middle-specific; passing 0 is fine for the X axis.
     reg_shift_x, _ = registration_reservation_mm(
         t.registration.mode, t.registration.qr_mode,
         position=t.registration.qr_position,

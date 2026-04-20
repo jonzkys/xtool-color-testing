@@ -64,7 +64,7 @@ def test_qr_size_mm_override_wins_over_payload_default():
     assert layout.qr.size == pytest.approx(8.5)
 
 
-@pytest.mark.parametrize("position", ["top-left", "top-right", "bottom-right"])
+@pytest.mark.parametrize("position", ["top-left", "top-right", "bottom-right", "left-middle"])
 def test_qr_never_overlaps_grid_at_any_position(position):
     grid_x, grid_y, w, h = 20.0, 15.0, 30.0, 20.0
     layout = compute_layout(
@@ -103,6 +103,36 @@ def test_bottom_right_position_places_qr_below_right_of_grid():
     qr = layout.qr
     assert qr.x >= 20.0 + 30.0
     assert qr.y >= 15.0 + 20.0
+
+
+def test_left_middle_position_vertically_centres_qr_on_grid():
+    grid_x, grid_y, w, h = 20.0, 15.0, 30.0, 20.0
+    layout = compute_layout(
+        grid_x=grid_x, grid_y=grid_y, grid_w=w, grid_h=h,
+        mode="compact", position="left-middle",
+    )
+    qr = layout.qr
+    # Horizontally: left of the grid
+    assert qr.x + qr.size <= grid_x
+    # Vertically: QR centre matches grid centre
+    qr_centre_y = qr.y + qr.size / 2
+    grid_centre_y = grid_y + h / 2
+    assert qr_centre_y == pytest.approx(grid_centre_y)
+
+
+def test_left_middle_reservation_adds_y_overhang_when_qr_taller_than_grid():
+    # Thin strip (3 mm) vs 12 mm QR ⇒ 4.5 mm overhang above + below.
+    shift_x, shift_y = registration_reservation_mm(
+        "compact", "inline", position="left-middle", grid_h_mm=3.0,
+    )
+    assert shift_x > 0
+    assert shift_y == pytest.approx(4.5)
+
+    # Grid taller than QR ⇒ no Y shift needed.
+    _, no_shift_y = registration_reservation_mm(
+        "compact", "inline", position="left-middle", grid_h_mm=30.0,
+    )
+    assert no_shift_y == 0.0
 
 
 def test_registration_reservation_tuple_depends_on_position():

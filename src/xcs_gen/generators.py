@@ -130,11 +130,13 @@ def generate_gradient(
     # three chosen corners. Shift the grid origin so the QR lands on-canvas
     # regardless of position — top-left needs both X and Y shift, top-right
     # only Y, bottom-right no shift at all.
+    _grid_h_for_reserve = (total_height * rows) if not is_dual else total_height
     _shift_x, _shift_y = registration_reservation_mm(
         registration_mode,
         registration_qr_mode,
         position=registration_qr_position,  # type: ignore[arg-type]
         qr_size_mm=registration_qr_size_mm,
+        grid_h_mm=_grid_h_for_reserve,
     )
     if _shift_x > 0:
         start_x += _shift_x
