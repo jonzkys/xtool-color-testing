@@ -63,6 +63,11 @@ class ParamTest(BaseModel):
     gap_mm: float = Field(default=0.0, ge=0)
     base_params: BaseParams
 
+    # UI-convenience flag: when true, the web UI auto-computes height_mm to
+    # keep cells square. Server ignores the value (it just trusts height_mm
+    # as sent), but persisting it keeps the checkbox sticky across reloads.
+    square_cells: bool = False
+
     # Multi-pass angle behaviour. ``base_params.passes`` is the pass count
     # (emitted as XCS's native ``repeat``, so XCS handles the stacking —
     # we don't duplicate rects client-side). angle_mode picks how the scan

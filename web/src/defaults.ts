@@ -35,6 +35,7 @@ export function defaultTest(name = "New test"): ParamTest {
     height_mm: 5,
     gap_mm: 0,
     base_params: defaultBaseParams(),
+    square_cells: false,
     angle_mode: "fixed",
     registration: {
       mode: "off", qr_mode: "inline",

@@ -37,6 +37,9 @@ export function migrateProject(project: Project): Project {
         if (placement.test.unidirectional === undefined) {
           placement.test.unidirectional = false;
         }
+        if (placement.test.square_cells === undefined) {
+          placement.test.square_cells = false;
+        }
         // crosshatch_enabled/passes/step_deg → angle_mode.
         // If the old fields are present, translate them and delete.
         const legacy = placement.test as Partial<{

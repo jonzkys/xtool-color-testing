@@ -1,9 +1,27 @@
+import { useEffect } from "react";
 import type { ParamTest, QrMode, QrPosition, RegistrationMode, TestPlacement, ValidationIssue } from "../types";
 import { PARAM_NAMES } from "../types";
 import { NumberField } from "./fields/NumberField";
 import { SelectField } from "./fields/SelectField";
 import type { LibraryState } from "../library";
 import { MaterialPresetPicker } from "./MaterialPresetPicker";
+
+/**
+ * Compute the height_mm that would make every cell square, given the rest
+ * of the test geometry. For wrapped 1D tests, cell width is based on the
+ * per-row cell count (ceil(x_steps / rows)). For 2D tests, it's based on
+ * x_steps directly and the returned height is the total grid height.
+ */
+function squareCellHeight(t: ParamTest): number {
+  const ySteps = t.y_steps ?? 1;
+  const is2D = t.y_param !== null && ySteps > 1;
+  if (is2D) {
+    const cellW = (t.width_mm - Math.max(0, t.x_steps - 1) * t.gap_mm) / t.x_steps;
+    return cellW * ySteps + Math.max(0, ySteps - 1) * t.gap_mm;
+  }
+  const perRow = Math.ceil(t.x_steps / Math.max(1, t.rows));
+  return (t.width_mm - Math.max(0, perRow - 1) * t.gap_mm) / perRow;
+}
 
 interface Props {
   placement: TestPlacement;
@@ -28,6 +46,20 @@ export function TestEditor({ placement, issues, library, onChange, onDelete, onD
   function updatePlacement(patch: Partial<TestPlacement>) {
     onChange({ ...placement, ...patch });
   }
+
+  // Keep height_mm in sync with the computed square-cell height whenever
+  // any geometry input that feeds the formula changes.
+  useEffect(() => {
+    if (!t.square_cells) return;
+    const target = squareCellHeight(t);
+    // Avoid state loops — only patch when the delta is meaningful.
+    if (Math.abs(target - t.height_mm) > 0.001) {
+      updateTest({ height_mm: Number(target.toFixed(3)) });
+    }
+  }, [
+    t.square_cells, t.width_mm, t.gap_mm, t.x_steps, t.rows,
+    t.y_param, t.y_steps, t.height_mm,
+  ]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   function findIssue(suffix: string): string | undefined {
     const match = issues.find((i) => i.field.endsWith(suffix));
@@ -102,7 +134,23 @@ export function TestEditor({ placement, issues, library, onChange, onDelete, onD
 
       <Section title="Layout">
         <NumberField label="Width (mm)" value={t.width_mm} onChange={(v) => updateTest({ width_mm: v })} issue={findIssue("width_mm")} />
-        <NumberField label="Height (mm)" value={t.height_mm} onChange={(v) => updateTest({ height_mm: v })} issue={findIssue("height_mm")} />
+        <NumberField
+          label={t.square_cells ? "Height (mm, auto)" : "Height (mm)"}
+          value={t.height_mm}
+          onChange={(v) => updateTest({ height_mm: v })}
+          issue={findIssue("height_mm")}
+          help={t.square_cells
+            ? "Auto-computed from width + steps + rows + gap to keep cells square. Disable 'Square cells' below to edit directly."
+            : undefined}
+        />
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <input
+            type="checkbox"
+            checked={t.square_cells}
+            onChange={(e) => updateTest({ square_cells: e.target.checked })}
+          />
+          <span style={{ fontSize: 12, color: "#555" }}>Square cells (auto height)</span>
+        </label>
         <NumberField label="Gap (mm)" value={t.gap_mm} onChange={(v) => updateTest({ gap_mm: v })} />
         <NumberField label="Rows (wrapping)" value={t.rows} integer min={1} onChange={(v) => updateTest({ rows: v })} />
       </Section>
