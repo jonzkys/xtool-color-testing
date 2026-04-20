@@ -335,6 +335,7 @@ def _build_circle_display(circle: Circle) -> dict[str, Any]:
     return {
         "id": circle.id,
         "name": None,
+        "sourceId": None,
         "type": "CIRCLE",
         "x": circle.x,
         "y": circle.y,
@@ -347,7 +348,7 @@ def _build_circle_display(circle: Circle) -> dict[str, Any]:
         "offsetY": circle.y,
         "lockRatio": True,
         "isClosePath": True,
-        "zOrder": 1,
+        "zOrder": 3,
         "groupTags": [],
         "groupTag": _uuid(),
         "layerTag": circle.layer_color,
@@ -364,8 +365,8 @@ def _build_circle_display(circle: Circle) -> dict[str, Any]:
         "alpha": 1,
         "fill": {
             "paintType": "color",
-            "visible": False,
-            "color": 0,
+            "visible": True,
+            "color": 16421416,
             "alpha": 1,
         },
         "stroke": {
