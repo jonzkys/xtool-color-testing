@@ -28,6 +28,7 @@ export default function App() {
   );
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | undefined>();
+  const [libraryError, setLibraryError] = useState<string | undefined>();
 
   // Fetch library on mount (and after library page mutations via onMaterialsChange)
   useEffect(() => {
@@ -39,8 +40,10 @@ export default function App() {
       const [mats, pres] = await Promise.all([listMaterials(), listPresets()]);
       setMaterials(mats);
       setPresets(pres);
-    } catch {
-      // ignore — library will be empty; user can still work
+      setLibraryError(undefined);
+    } catch (e) {
+      console.error("Failed to load library:", e);
+      setLibraryError((e as Error).message);
     }
   }
 
@@ -172,6 +175,11 @@ export default function App() {
         tab={tab}
         onTabChange={setTab}
       />
+      {libraryError && (
+        <div style={{ padding: "6px 12px", background: "#fee", color: "#a02840", fontSize: 12, borderBottom: "1px solid #f5b8c4" }}>
+          Library unavailable: {libraryError}
+        </div>
+      )}
       {tab === "tests" ? (
         <div style={{ flex: 1, display: "grid", gridTemplateColumns: "260px 1fr minmax(0, 33vw)", minHeight: 0 }}>
           <div style={{ borderRight: "1px solid #ddd", background: "white", overflow: "auto" }}>

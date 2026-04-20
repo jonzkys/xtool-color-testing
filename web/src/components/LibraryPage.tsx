@@ -263,12 +263,40 @@ function PresetCard({
   onSetDefault: () => void;
   onDelete: () => void;
 }) {
+  // Local draft state — changes stay local until blur or Enter commits them.
+  const [draftName, setDraftName] = useState(preset.name);
+  const [draftColor, setDraftColor] = useState(preset.color ?? "#888888");
+  // draftParams mirrors the live params for NumberField display, but the API
+  // is only called on blur/Enter (via onCommit below).
+  const [draftParams, setDraftParams] = useState(preset.base_params);
+
+  // If the parent pushes a fresh preset (e.g. after another save completes),
+  // sync the drafts — but only when the committed value actually differs so we
+  // don't stomp a mid-edit draft.
+  useEffect(() => { setDraftName(preset.name); }, [preset.name]);
+  useEffect(() => { setDraftColor(preset.color ?? "#888888"); }, [preset.color]);
+  useEffect(() => { setDraftParams(preset.base_params); }, [preset.base_params]);
+
+  function commitName() {
+    if (draftName !== preset.name) onPatch({ name: draftName });
+  }
+  function commitColor() {
+    if (draftColor !== (preset.color ?? "#888888")) onPatch({ color: draftColor });
+  }
+  function commitParam<K extends keyof typeof draftParams>(key: K, v: typeof draftParams[K]) {
+    const next = { ...draftParams, [key]: v };
+    setDraftParams(next);
+    onPatch({ base_params: next });
+  }
+
   return (
     <div style={{ border: "1px solid #ddd", borderRadius: 6, padding: 12, background: "white" }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
         <input
-          value={preset.name}
-          onChange={(e) => onPatch({ name: e.target.value })}
+          value={draftName}
+          onChange={(e) => setDraftName(e.target.value)}
+          onBlur={commitName}
+          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
           style={{ flex: 1, minWidth: 0, padding: "4px 6px", fontSize: 14, fontWeight: 600, border: "1px solid transparent", borderRadius: 3 }}
         />
         <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, flexShrink: 0 }}>
@@ -283,8 +311,9 @@ function PresetCard({
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
         <input
           type="color"
-          value={preset.color ?? "#888888"}
-          onChange={(e) => onPatch({ color: e.target.value })}
+          value={draftColor}
+          onChange={(e) => setDraftColor(e.target.value)}
+          onBlur={commitColor}
           style={{ width: 32, height: 28, border: "1px solid #ccc", borderRadius: 3 }}
         />
         <div style={{ fontSize: 11, fontFamily: "monospace", color: "#555" }}>
@@ -299,17 +328,17 @@ function PresetCard({
           </button>
         )}
       </div>
-      <NumberField label="Power %" value={preset.base_params.power} onChange={(v) => onPatch({ base_params: { ...preset.base_params, power: v } })} />
-      <NumberField label="Speed" value={preset.base_params.speed} integer onChange={(v) => onPatch({ base_params: { ...preset.base_params, speed: v } })} />
-      <NumberField label="Frequency" value={preset.base_params.frequency} integer onChange={(v) => onPatch({ base_params: { ...preset.base_params, frequency: v } })} />
-      <NumberField label="Lines/cm" value={preset.base_params.density} integer onChange={(v) => onPatch({ base_params: { ...preset.base_params, density: v } })} />
-      <NumberField label="Passes" value={preset.base_params.passes} integer min={1} onChange={(v) => onPatch({ base_params: { ...preset.base_params, passes: v } })} />
-      <NumberField label="Pulse width" value={preset.base_params.pulse_width} integer onChange={(v) => onPatch({ base_params: { ...preset.base_params, pulse_width: v } })} />
+      <NumberField label="Power %" value={draftParams.power} onChange={(v) => setDraftParams((p) => ({ ...p, power: v }))} onCommit={(v) => commitParam("power", v)} />
+      <NumberField label="Speed" value={draftParams.speed} integer onChange={(v) => setDraftParams((p) => ({ ...p, speed: v }))} onCommit={(v) => commitParam("speed", v)} />
+      <NumberField label="Frequency" value={draftParams.frequency} integer onChange={(v) => setDraftParams((p) => ({ ...p, frequency: v }))} onCommit={(v) => commitParam("frequency", v)} />
+      <NumberField label="Lines/cm" value={draftParams.density} integer onChange={(v) => setDraftParams((p) => ({ ...p, density: v }))} onCommit={(v) => commitParam("density", v)} />
+      <NumberField label="Passes" value={draftParams.passes} integer min={1} onChange={(v) => setDraftParams((p) => ({ ...p, passes: v }))} onCommit={(v) => commitParam("passes", v)} />
+      <NumberField label="Pulse width" value={draftParams.pulse_width} integer onChange={(v) => setDraftParams((p) => ({ ...p, pulse_width: v }))} onCommit={(v) => commitParam("pulse_width", v)} />
       <SelectField
         label="Laser"
-        value={preset.base_params.laser}
+        value={draftParams.laser}
         options={[{ value: "red", label: "Red (MOPA)" }, { value: "blue", label: "Blue (diode)" }]}
-        onChange={(v) => onPatch({ base_params: { ...preset.base_params, laser: v as "red" | "blue" } })}
+        onChange={(v) => onPatch({ base_params: { ...draftParams, laser: v as "red" | "blue" } })}
       />
       <div style={{ marginTop: 8, textAlign: "right" }}>
         <button

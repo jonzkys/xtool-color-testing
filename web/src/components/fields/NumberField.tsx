@@ -4,6 +4,8 @@ interface Props {
   label: string;
   value: number;
   onChange: (v: number) => void;
+  /** Called only on blur / Enter (i.e. when the user finishes editing). */
+  onCommit?: (v: number) => void;
   step?: number;
   min?: number;
   max?: number;
@@ -26,7 +28,7 @@ function formatNum(v: number): string {
  * happens on blur — typing "500" starting from "100" doesn't get clamped
  * to "min" during intermediate keystrokes.
  */
-export function NumberField({ label, value, onChange, step, min, max, integer, issue, help }: Props) {
+export function NumberField({ label, value, onChange, onCommit, step, min, max, integer, issue, help }: Props) {
   const [text, setText] = useState<string>(() => formatNum(value));
   const focusedRef = useRef(false);
 
@@ -51,11 +53,13 @@ export function NumberField({ label, value, onChange, step, min, max, integer, i
     focusedRef.current = false;
     if (text === "") {
       setText(formatNum(value));
+      onCommit?.(value);
       return;
     }
     const parsed = integer ? parseInt(text, 10) : parseFloat(text);
     if (!Number.isFinite(parsed)) {
       setText(formatNum(value));
+      onCommit?.(value);
       return;
     }
     let clamped = parsed;
@@ -63,6 +67,7 @@ export function NumberField({ label, value, onChange, step, min, max, integer, i
     if (max !== undefined && clamped > max) clamped = max;
     setText(formatNum(clamped));
     if (clamped !== value) onChange(clamped);
+    onCommit?.(clamped);
   }
 
   return (
