@@ -61,20 +61,47 @@ describe("storage", () => {
     expect(loaded).not.toBeNull();
     expect(loaded!.tests.length).toBeGreaterThan(0);
     for (const placement of loaded!.tests) {
-      expect(placement.test.registration).toEqual({ mode: "off", qr_mode: "inline" });
+      expect(placement.test.registration).toEqual({
+        mode: "off", qr_mode: "inline",
+        qr_position: "top-left", qr_size_mm: null,
+      });
     }
   });
 
   it("leaves existing registration untouched on load", () => {
     const project = defaultProject();
     for (const placement of project.tests) {
-      placement.test.registration = { mode: "full", qr_mode: "id_only" };
+      placement.test.registration = {
+        mode: "full", qr_mode: "id_only",
+        qr_position: "top-right", qr_size_mm: 10,
+      };
     }
     saveProject(project);
     const loaded = loadProject();
     expect(loaded).not.toBeNull();
     for (const placement of loaded!.tests) {
-      expect(placement.test.registration).toEqual({ mode: "full", qr_mode: "id_only" });
+      expect(placement.test.registration).toEqual({
+        mode: "full", qr_mode: "id_only",
+        qr_position: "top-right", qr_size_mm: 10,
+      });
+    }
+  });
+
+  it("backfills qr_position + qr_size_mm on legacy registration objects", () => {
+    const project = defaultProject();
+    saveProject(project);
+    // Simulate a registration object persisted before these fields existed.
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    for (const placement of raw.tests) {
+      placement.test.registration = { mode: "compact", qr_mode: "inline" };
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(raw));
+
+    const loaded = loadProject();
+    expect(loaded).not.toBeNull();
+    for (const placement of loaded!.tests) {
+      expect(placement.test.registration.qr_position).toBe("top-left");
+      expect(placement.test.registration.qr_size_mm).toBeNull();
     }
   });
 });

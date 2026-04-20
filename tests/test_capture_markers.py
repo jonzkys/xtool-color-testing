@@ -66,7 +66,8 @@ def test_emit_adds_annotation_layer_bitmap_for_qr():
     assert project.bitmaps[0].png_bytes.startswith(b"\x89PNG")
 
 
-def test_emit_full_mode_produces_more_bitmaps_than_compact():
+def test_emit_compact_and_full_modes_both_produce_one_qr():
+    """Post-ArUco-removal, 'compact' and 'full' are identical: one QR bitmap."""
     qr_text = '{"v":1,"id":"abcdefgh"}'
     compact = XCSProject()
     emit_registration_markers(
@@ -88,9 +89,8 @@ def test_emit_full_mode_produces_more_bitmaps_than_compact():
         qr_text=qr_text,
         annotation_params=ProcessingParams(),
     )
-    # Compact = QR only (1 bitmap); full = QR + 3 ArUco (4 bitmaps).
     assert len(compact.bitmaps) == 1
-    assert len(full.bitmaps) == 4
+    assert len(full.bitmaps) == 1
 
 
 def test_emit_off_layout_adds_nothing():
@@ -197,7 +197,7 @@ def test_registration_markers_stay_within_canvas_id_only():
 
 
 def test_registration_reservation_helper():
-    """Helper returns 0 when off, qr_size + margin otherwise."""
+    """Helper returns (0, 0) when off; shift depends on qr_position otherwise."""
     from xcs_gen.capture.layout import (
         MARKER_MARGIN_MM,
         _QR_SIZE_ID_ONLY_MM,
@@ -205,9 +205,13 @@ def test_registration_reservation_helper():
         registration_reservation_mm,
     )
 
-    assert registration_reservation_mm("off", "inline") == 0.0
-    assert registration_reservation_mm("off", "id_only") == 0.0
-    assert registration_reservation_mm("compact", "inline") == _QR_SIZE_INLINE_MM + MARKER_MARGIN_MM
-    assert registration_reservation_mm("compact", "id_only") == _QR_SIZE_ID_ONLY_MM + MARKER_MARGIN_MM
-    assert registration_reservation_mm("full", "inline") == _QR_SIZE_INLINE_MM + MARKER_MARGIN_MM
-    assert registration_reservation_mm("auto", "inline") == _QR_SIZE_INLINE_MM + MARKER_MARGIN_MM
+    reserve_inline = _QR_SIZE_INLINE_MM + MARKER_MARGIN_MM
+    reserve_id_only = _QR_SIZE_ID_ONLY_MM + MARKER_MARGIN_MM
+
+    assert registration_reservation_mm("off", "inline") == (0.0, 0.0)
+    assert registration_reservation_mm("off", "id_only") == (0.0, 0.0)
+    # Default position is top-left: shift both axes
+    assert registration_reservation_mm("compact", "inline") == (reserve_inline, reserve_inline)
+    assert registration_reservation_mm("compact", "id_only") == (reserve_id_only, reserve_id_only)
+    assert registration_reservation_mm("full", "inline") == (reserve_inline, reserve_inline)
+    assert registration_reservation_mm("auto", "inline") == (reserve_inline, reserve_inline)

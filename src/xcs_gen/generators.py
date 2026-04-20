@@ -80,6 +80,8 @@ def generate_gradient(
     summary_suffix: str = "",
     registration_mode: str = "off",  # "auto" | "compact" | "full" | "off"
     registration_qr_mode: str = "inline",  # "inline" | "id_only"
+    registration_qr_position: str = "top-left",  # "top-left" | "top-right" | "bottom-right"
+    registration_qr_size_mm: float | None = None,
     test_id: str | None = None,
     material_id: str | None = None,
 ) -> XCSProject:
@@ -124,14 +126,21 @@ def generate_gradient(
     summary_h = text_height(summary_font_size) + 0.05  # text + minimal padding
     gradient_start_y = start_y + summary_h
 
-    # Registration markers (when enabled) occupy space at the top-left of the
-    # test content. Shift the grid/summary/labels right and down so the QR
-    # sits within the canvas rather than at negative coordinates.
-    _reg_shift = registration_reservation_mm(registration_mode, registration_qr_mode)
-    if _reg_shift > 0:
-        start_x += _reg_shift
-        start_y += _reg_shift
-        gradient_start_y += _reg_shift
+    # Registration markers (when enabled) sit outside the grid on one of
+    # three chosen corners. Shift the grid origin so the QR lands on-canvas
+    # regardless of position — top-left needs both X and Y shift, top-right
+    # only Y, bottom-right no shift at all.
+    _shift_x, _shift_y = registration_reservation_mm(
+        registration_mode,
+        registration_qr_mode,
+        position=registration_qr_position,  # type: ignore[arg-type]
+        qr_size_mm=registration_qr_size_mm,
+    )
+    if _shift_x > 0:
+        start_x += _shift_x
+    if _shift_y > 0:
+        start_y += _shift_y
+        gradient_start_y += _shift_y
 
     # Build summary line
     summary = _build_summary(
@@ -180,6 +189,8 @@ def generate_gradient(
             grid_h=(total_height * rows) if not is_dual else total_height,
             mode=registration_mode,  # type: ignore[arg-type]
             qr_mode=registration_qr_mode,  # type: ignore[arg-type]
+            position=registration_qr_position,  # type: ignore[arg-type]
+            qr_size_mm=registration_qr_size_mm,
         )
         # Grid offset relative to QR top-left. compute_layout placed the QR
         # at (grid_x - qr_size - margin, grid_y - qr_size - margin), so the
@@ -199,6 +210,8 @@ def generate_gradient(
             grid_offset_x_mm=grid_offset_x_mm,
             grid_offset_y_mm=grid_offset_y_mm,
             base_params=base_params,
+            # Only record the size when it differs from the mode's default.
+            qr_size_mm=registration_qr_size_mm,
             material_id=material_id,
             kind="grid",
             mode=registration_qr_mode,

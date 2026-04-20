@@ -1,121 +1,129 @@
-"""Tests for registration marker layout math."""
+"""Tests for registration marker layout math.
+
+ArUco corners were removed (they weren't wired into the capture pipeline
+and were taking ~40% of substrate space). Only the QR is emitted now;
+tests cover each supported qr_position and the optional qr_size_mm override.
+"""
 
 import pytest
 
 from xcs_gen.capture.layout import (
-    RegistrationLayout,
-    MarkerPosition,
+    MARKER_MARGIN_MM,
     compute_layout,
-    AUTO_FULL_THRESHOLD_MM,
+    registration_reservation_mm,
 )
 
 
-def test_compact_mode_returns_qr_only():
+def test_compact_mode_places_qr_outside_top_left():
     layout = compute_layout(
-        grid_x=10.0, grid_y=10.0,
+        grid_x=20.0, grid_y=15.0,
         grid_w=22.0, grid_h=5.0,
         mode="compact",
     )
     assert layout.qr is not None
-    assert layout.aruco_markers == []
-    # QR should sit entirely to the left of the grid
-    assert layout.qr.x + layout.qr.size <= 10.0
+    # QR sits to the upper-left of the grid
+    assert layout.qr.x + layout.qr.size <= 20.0
+    assert layout.qr.y + layout.qr.size <= 15.0
 
 
-def test_full_mode_returns_qr_plus_3_aruco():
-    layout = compute_layout(
-        grid_x=10.0, grid_y=10.0,
-        grid_w=100.0, grid_h=100.0,
-        mode="full",
+def test_full_mode_is_equivalent_to_compact_post_aruco_removal():
+    """'full' used to emit ArUcos too; now it's identical to 'compact'."""
+    compact = compute_layout(
+        grid_x=20.0, grid_y=15.0, grid_w=22.0, grid_h=5.0, mode="compact",
     )
-    assert layout.qr is not None
-    assert len(layout.aruco_markers) == 3
-    # Each marker has an ID in 0..3 (4 corners; QR occupies one, 3 ArUco for the others)
-    ids = {m.marker_id for m in layout.aruco_markers}
-    assert ids.issubset({0, 1, 2, 3})
-    assert len(ids) == 3
-
-
-def test_auto_mode_small_grid_uses_compact():
-    layout = compute_layout(
-        grid_x=10.0, grid_y=10.0,
-        grid_w=22.0, grid_h=5.0,
-        mode="auto",
+    full = compute_layout(
+        grid_x=20.0, grid_y=15.0, grid_w=22.0, grid_h=5.0, mode="full",
     )
-    assert layout.aruco_markers == []
-
-
-def test_auto_mode_large_grid_uses_full():
-    layout = compute_layout(
-        grid_x=10.0, grid_y=10.0,
-        grid_w=AUTO_FULL_THRESHOLD_MM + 10,
-        grid_h=AUTO_FULL_THRESHOLD_MM + 10,
-        mode="auto",
-    )
-    assert len(layout.aruco_markers) == 3
+    assert compact.qr == full.qr
 
 
 def test_off_mode_returns_empty():
     layout = compute_layout(
-        grid_x=10.0, grid_y=10.0,
-        grid_w=100.0, grid_h=100.0,
-        mode="off",
+        grid_x=10.0, grid_y=10.0, grid_w=100.0, grid_h=100.0, mode="off",
     )
     assert layout.qr is None
-    assert layout.aruco_markers == []
 
 
-def test_compact_qr_size_scales_with_payload_mode():
-    compact_inline = compute_layout(
-        grid_x=10.0, grid_y=10.0, grid_w=22.0, grid_h=5.0,
+def test_qr_size_scales_with_payload_mode_by_default():
+    inline = compute_layout(
+        grid_x=20.0, grid_y=15.0, grid_w=22.0, grid_h=5.0,
         mode="compact", qr_mode="inline",
     )
-    compact_id_only = compute_layout(
-        grid_x=10.0, grid_y=10.0, grid_w=22.0, grid_h=5.0,
+    id_only = compute_layout(
+        grid_x=20.0, grid_y=15.0, grid_w=22.0, grid_h=5.0,
         mode="compact", qr_mode="id_only",
     )
-    # id-only QR is smaller
-    assert compact_id_only.qr.size < compact_inline.qr.size
+    assert id_only.qr.size < inline.qr.size
 
 
-def test_marker_positions_do_not_overlap_grid():
+def test_qr_size_mm_override_wins_over_payload_default():
     layout = compute_layout(
-        grid_x=10.0, grid_y=10.0, grid_w=50.0, grid_h=50.0,
-        mode="full",
+        grid_x=20.0, grid_y=15.0, grid_w=22.0, grid_h=5.0,
+        mode="compact", qr_mode="inline", qr_size_mm=8.5,
     )
-    grid_x, grid_y, grid_right, grid_bottom = 10.0, 10.0, 10.0 + 50.0, 10.0 + 50.0
-    for m in layout.aruco_markers:
-        m_right = m.x + m.size
-        m_bottom = m.y + m.size
-        # Either entirely left of grid, right of grid, above, or below
-        outside = (
-            m_right <= grid_x or m.x >= grid_right
-            or m_bottom <= grid_y or m.y >= grid_bottom
-        )
-        assert outside, f"ArUco marker at ({m.x},{m.y}) size {m.size} overlaps grid"
+    assert layout.qr.size == pytest.approx(8.5)
 
-    # Also verify the QR is entirely outside the grid rectangle
-    assert layout.qr is not None
+
+@pytest.mark.parametrize("position", ["top-left", "top-right", "bottom-right"])
+def test_qr_never_overlaps_grid_at_any_position(position):
+    grid_x, grid_y, w, h = 20.0, 15.0, 30.0, 20.0
+    layout = compute_layout(
+        grid_x=grid_x, grid_y=grid_y, grid_w=w, grid_h=h,
+        mode="compact", position=position,
+    )
     qr = layout.qr
+    assert qr is not None
+    grid_right, grid_bottom = grid_x + w, grid_y + h
     qr_right = qr.x + qr.size
     qr_bottom = qr.y + qr.size
-    qr_outside = (
+    outside = (
         qr_right <= grid_x or qr.x >= grid_right
         or qr_bottom <= grid_y or qr.y >= grid_bottom
     )
-    assert qr_outside, f"QR at ({qr.x},{qr.y}) size {qr.size} overlaps grid"
+    assert outside, f"QR at ({qr.x},{qr.y}) size {qr.size} overlaps grid in {position}"
 
 
-def test_auto_mode_at_exact_threshold_uses_compact():
-    # The promotion to full uses strict >, so a grid exactly at the threshold
-    # on both axes must stay in compact (QR-only) mode with zero ArUco markers.
+def test_top_right_position_places_qr_right_of_grid():
     layout = compute_layout(
-        grid_x=10.0, grid_y=10.0,
-        grid_w=AUTO_FULL_THRESHOLD_MM,
-        grid_h=AUTO_FULL_THRESHOLD_MM,
-        mode="auto",
+        grid_x=20.0, grid_y=15.0, grid_w=30.0, grid_h=20.0,
+        mode="compact", position="top-right",
     )
-    assert layout.aruco_markers == [], (
-        "Expected compact mode (no ArUco markers) when grid_w == grid_h == "
-        f"AUTO_FULL_THRESHOLD_MM ({AUTO_FULL_THRESHOLD_MM})"
+    qr = layout.qr
+    # Aligned right: QR's left edge past the grid's right edge
+    assert qr.x >= 20.0 + 30.0
+    # Above the grid (top-right, not bottom-right)
+    assert qr.y + qr.size <= 15.0
+
+
+def test_bottom_right_position_places_qr_below_right_of_grid():
+    layout = compute_layout(
+        grid_x=20.0, grid_y=15.0, grid_w=30.0, grid_h=20.0,
+        mode="compact", position="bottom-right",
     )
+    qr = layout.qr
+    assert qr.x >= 20.0 + 30.0
+    assert qr.y >= 15.0 + 20.0
+
+
+def test_registration_reservation_tuple_depends_on_position():
+    # Off: no shift
+    assert registration_reservation_mm("off", "inline") == (0.0, 0.0)
+    # Top-left: shift both
+    tl = registration_reservation_mm("compact", "inline", position="top-left")
+    assert tl[0] > 0 and tl[1] > 0
+    assert tl[0] == tl[1]
+    # Top-right: only Y shift
+    tr = registration_reservation_mm("compact", "inline", position="top-right")
+    assert tr[0] == 0.0 and tr[1] > 0
+    # Bottom-right: no shift
+    br = registration_reservation_mm("compact", "inline", position="bottom-right")
+    assert br == (0.0, 0.0)
+
+
+def test_registration_reservation_honours_qr_size_override():
+    base = registration_reservation_mm("compact", "inline", position="top-left")
+    bigger = registration_reservation_mm(
+        "compact", "inline", position="top-left", qr_size_mm=20.0,
+    )
+    assert bigger[0] == pytest.approx(20.0 + MARKER_MARGIN_MM)
+    assert bigger[0] > base[0]

@@ -1,14 +1,16 @@
-"""Render QR and ArUco registration markers into an XCSProject.
+"""Render the QR registration marker into an XCSProject.
 
 QR is generated via segno, rasterized to a bit grid, and emitted as a
-single BITMAP display on the annotation layer. ArUco markers are
-generated via cv2.aruco at render time (IDs 1, 2, 3 from DICT_4X4_50;
-QR occupies ID 0 slot logically) and emitted the same way — one BITMAP
-per marker.
+single BITMAP display on the annotation layer.
 
 Using BITMAP instead of N rects per module keeps the .xcs file small
 and stays well below XCS's per-project display-element limit (which
 appears to cap around 750 rects before processing fails).
+
+Historically this module also rendered three ArUco corner markers, but
+the capture pipeline uses only the QR's 4 corners for the homography —
+the ArUcos weren't wired in and were taking ~40% of the substrate for
+no benefit. They've been removed.
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ def qr_payload_for_test(
     grid_offset_x_mm: float,
     grid_offset_y_mm: float,
     base_params: ProcessingParams,
+    qr_size_mm: float | None = None,
     material_id: str | None = None,
     kind: str = "grid",
     mode: str = "inline",
@@ -87,6 +90,11 @@ def qr_payload_for_test(
     }
     if material_id:
         spec["m"] = material_id
+    if qr_size_mm is not None:
+        # "qs" records the physical QR edge length so the ingest endpoint can
+        # use the correct scale in the warp — otherwise a user-tweaked size
+        # would silently decode using the 12 mm default.
+        spec["qs"] = qr_size_mm
     if y_param is not None:
         spec["y"] = {"p": y_param, "min": y_min, "max": y_max, "n": y_steps}
 
@@ -101,31 +109,6 @@ def _qr_bits(text: str) -> np.ndarray:
     qr = segno.make(text, error="m")
     matrix = np.array(qr.matrix, dtype=bool)
     return matrix
-
-
-def _aruco_bits(marker_id: int) -> np.ndarray:
-    """Render an ArUco marker (DICT_4X4_50) as a bool matrix with 1-module border.
-
-    The returned matrix is (marker_size + 2) x (marker_size + 2) including
-    the mandatory black border, where marker_size = 4 for DICT_4X4_50.
-    True = dark (filled) module.
-    """
-    import cv2
-
-    aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-    # generateImageMarker returns a grayscale image at specified pixel size.
-    # Request (side_bits * 10) pixels and then downsample to bits by taking
-    # the min value per block.
-    bits = 6  # 4x4 marker + 1-module border on each side
-    scale = 10
-    img = cv2.aruco.generateImageMarker(aruco_dict, marker_id, bits * scale)
-    # Downsample: each block is `scale` px; dark if all black.
-    out = np.zeros((bits, bits), dtype=bool)
-    for r in range(bits):
-        for c in range(bits):
-            block = img[r * scale:(r + 1) * scale, c * scale:(c + 1) * scale]
-            out[r, c] = bool(block.mean() < 128)
-    return out
 
 
 def _bits_to_png_bytes(bits: np.ndarray) -> tuple[bytes, int, int]:
@@ -180,11 +163,11 @@ def emit_registration_markers(
     qr_text: str,
     annotation_params: ProcessingParams,
 ) -> None:
-    """Add QR + ArUco markers to `project` on the annotation layer.
+    """Add the QR marker to `project` on the annotation layer.
 
-    Each marker is emitted as a single BITMAP display carrying its bit
-    matrix as an embedded PNG. Caller is responsible for constructing
-    `layout` and `qr_text` via compute_layout() and qr_payload_for_test().
+    Emitted as a single BITMAP display carrying the QR bit matrix as an
+    embedded PNG. Caller is responsible for constructing `layout` and
+    `qr_text` via compute_layout() and qr_payload_for_test().
     """
     if layout.qr is None:
         return
@@ -197,13 +180,3 @@ def emit_registration_markers(
         total_size=layout.qr.size,
         annotation_params=annotation_params,
     )
-
-    for marker in layout.aruco_markers:
-        _emit_bitmap(
-            project,
-            bits=_aruco_bits(marker.marker_id),
-            origin_x=marker.x,
-            origin_y=marker.y,
-            total_size=marker.size,
-            annotation_params=annotation_params,
-        )

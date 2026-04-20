@@ -185,29 +185,33 @@ def create_app() -> FastAPI:
                 detail="id_only QR cannot be sampled; re-burn with inline payload",
             )
 
-        # Frame the warp with QR top-left at origin. Newer payloads carry the
-        # exact grid offset from the QR as ox/oy. Older burns (before that
-        # field was added) fall back to (qr_size + MARKER_MARGIN, qr_size +
-        # MARKER_MARGIN) which matches compute_layout()'s placement rule.
-        qr_size_mm = _QR_SIZE_INLINE_MM  # id_only already rejected above
+        # Newer payloads carry the exact grid offset from the QR as ox/oy, and
+        # the actual QR edge length as "qs" (when user overrode the default).
+        # Older burns fall back to defaults.
+        qr_size_mm = float(spec.get("qs", _QR_SIZE_INLINE_MM))
         grid_dict = spec["grid"]
         grid_w = grid_dict["w"]
         grid_h = grid_dict["h"]
         default_offset = qr_size_mm + MARKER_MARGIN_MM
-        grid_origin_mm = (
-            grid_dict.get("ox", default_offset),
-            grid_dict.get("oy", default_offset),
-        )
-        burn_size_mm = (
-            grid_origin_mm[0] + grid_w,
-            grid_origin_mm[1] + grid_h,
-        )
+        ox = grid_dict.get("ox", default_offset)
+        oy = grid_dict.get("oy", default_offset)
+
+        # Compute the minimal bounding box covering both the QR and the grid.
+        # ox/oy may be negative when the QR is on the right or bottom of the
+        # grid, so we can't assume burn-space starts at (0, 0).
+        min_x = min(0.0, ox)
+        max_x = max(qr_size_mm, ox + grid_w)
+        min_y = min(0.0, oy)
+        max_y = max(qr_size_mm, oy + grid_h)
+        burn_size_mm = (max_x - min_x, max_y - min_y)
+        qr_origin_mm = (-min_x, -min_y)
+        grid_origin_mm = (ox - min_x, oy - min_y)
 
         warped = warp_to_burn_space(
             img,
             qr_corners_px=qr_corners,
             qr_size_mm=qr_size_mm,
-            qr_origin_mm=(0.0, 0.0),
+            qr_origin_mm=qr_origin_mm,
             burn_size_mm=burn_size_mm,
             px_per_mm=10.0,
         )

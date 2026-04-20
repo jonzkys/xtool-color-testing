@@ -62,11 +62,13 @@ def _test_vertical_footprint(t: ParamTest) -> float:
     else:
         gradient_h = t.height_mm
 
-    reg_shift = registration_reservation_mm(
-        t.registration.mode, t.registration.qr_mode
+    _, reg_shift_y = registration_reservation_mm(
+        t.registration.mode, t.registration.qr_mode,
+        position=t.registration.qr_position,
+        qr_size_mm=t.registration.qr_size_mm,
     )
 
-    return reg_shift + summary + gradient_h + ann_below
+    return reg_shift_y + summary + gradient_h + ann_below
 
 
 def _test_horizontal_footprint(t: ParamTest) -> float:
@@ -76,10 +78,12 @@ def _test_horizontal_footprint(t: ParamTest) -> float:
     shifts right by the reservation, so the column must allocate that extra
     width.
     """
-    reg_shift = registration_reservation_mm(
-        t.registration.mode, t.registration.qr_mode
+    reg_shift_x, _ = registration_reservation_mm(
+        t.registration.mode, t.registration.qr_mode,
+        position=t.registration.qr_position,
+        qr_size_mm=t.registration.qr_size_mm,
     )
-    return reg_shift + t.width_mm
+    return reg_shift_x + t.width_mm
 
 
 def validate_placements(project: Project) -> None:
@@ -216,6 +220,8 @@ def project_to_xcs(project: Project) -> XCSProject:
             summary_suffix=summary_suffix,
             registration_mode=t.registration.mode,
             registration_qr_mode=t.registration.qr_mode,
+            registration_qr_position=t.registration.qr_position,
+            registration_qr_size_mm=t.registration.qr_size_mm,
             test_id=t.id,
             material_id=t.material_id,
         )

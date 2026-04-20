@@ -3,7 +3,9 @@ import type { LibraryState } from "./library";
 
 export const STORAGE_KEY = "xcs-gen:project:v1";
 
-const DEFAULT_REGISTRATION: RegistrationConfig = { mode: "off", qr_mode: "inline" };
+const DEFAULT_REGISTRATION: RegistrationConfig = {
+  mode: "off", qr_mode: "inline", qr_position: "top-left", qr_size_mm: null,
+};
 
 /**
  * Migrates a parsed project from an older schema version into the current shape.
@@ -20,6 +22,11 @@ export function migrateProject(project: Project): Project {
       if (placement && placement.test) {
         if (placement.test.registration === undefined) {
           placement.test.registration = { ...DEFAULT_REGISTRATION };
+        } else {
+          // Backfill fields added after the original shipped.
+          const reg = placement.test.registration;
+          if (reg.qr_position === undefined) reg.qr_position = "top-left";
+          if (reg.qr_size_mm === undefined) reg.qr_size_mm = null;
         }
         if (
           placement.test.material_id === undefined
