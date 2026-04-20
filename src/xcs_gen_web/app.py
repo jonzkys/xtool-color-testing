@@ -196,13 +196,25 @@ def create_app() -> FastAPI:
         ox = grid_dict.get("ox", default_offset)
         oy = grid_dict.get("oy", default_offset)
 
+        # grid.h encodes rows * row_height (no inter-row gaps). For wrapped
+        # multi-row tests the physical grid extends further than grid.h —
+        # the warp canvas has to cover (rows-1)*rs + row_height or else the
+        # last row's centre falls off and samples return #000000.
+        rows_count = grid_dict.get("rows", 1)
+        rs_mm = grid_dict.get("rs")
+        if rows_count > 1 and rs_mm is not None:
+            row_h_mm = grid_h / rows_count
+            actual_grid_h = (rows_count - 1) * rs_mm + row_h_mm
+        else:
+            actual_grid_h = grid_h
+
         # Compute the minimal bounding box covering both the QR and the grid.
         # ox/oy may be negative when the QR is on the right or bottom of the
         # grid, so we can't assume burn-space starts at (0, 0).
         min_x = min(0.0, ox)
         max_x = max(qr_size_mm, ox + grid_w)
         min_y = min(0.0, oy)
-        max_y = max(qr_size_mm, oy + grid_h)
+        max_y = max(qr_size_mm, oy + actual_grid_h)
         burn_size_mm = (max_x - min_x, max_y - min_y)
         qr_origin_mm = (-min_x, -min_y)
         grid_origin_mm = (ox - min_x, oy - min_y)
