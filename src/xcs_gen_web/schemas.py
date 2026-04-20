@@ -368,3 +368,44 @@ class PaletteQueryResult(BaseModel):
 
 class PaletteEntryPatch(BaseModel):
     notes: str
+
+
+class MaterialCreate(BaseModel):
+    name: str
+    notes: str | None = None
+
+
+class MaterialUpdate(BaseModel):
+    name: str | None = None
+    notes: str | None = None
+
+
+class MaterialResponse(BaseModel):
+    id: int
+    name: str
+    notes: str
+    created_at: str
+
+
+class PresetCreate(BaseModel):
+    material_id: int
+    name: str
+    color: str | None = None
+    base_params: BaseParams
+
+
+class PresetUpdate(BaseModel):
+    name: str | None = None
+    color: str | None = None
+    base_params: BaseParams | None = None
+
+
+class PresetResponse(BaseModel):
+    id: int
+    material_id: int
+    name: str
+    color: str | None
+    is_default: bool
+    base_params: BaseParams
+    created_at: str
+    updated_at: str

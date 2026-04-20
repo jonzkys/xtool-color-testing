@@ -40,11 +40,17 @@ from .schemas import (
     CaptureIngestResponse,
     CaptureSwatch,
     DetectedLayer,
+    MaterialCreate,
+    MaterialResponse,
+    MaterialUpdate,
     PaletteEntryPatch,
     PaletteEntryResponse,
     PaletteIngestRequest,
     PaletteIngestResponse,
     PaletteQueryResult,
+    PresetCreate,
+    PresetResponse,
+    PresetUpdate,
     Project,
     RasterToSvgRequest,
     RasterToSvgResponse,
@@ -343,6 +349,83 @@ def create_app() -> FastAPI:
                 save_palette(path, entries)
                 return PaletteEntryResponse(**e.__dict__)
         raise HTTPException(status_code=404, detail="entry not found")
+
+    from .repositories import materials as m_repo
+    from .repositories import presets as p_repo
+    from .repositories.materials import InUseError
+
+    # Materials
+    @app.post("/api/materials", response_model=MaterialResponse, status_code=201)
+    def materials_create(body: MaterialCreate) -> MaterialResponse:
+        return MaterialResponse(**m_repo.create(name=body.name, notes=body.notes))
+
+    @app.get("/api/materials", response_model=list[MaterialResponse])
+    def materials_list() -> list[MaterialResponse]:
+        return [MaterialResponse(**m) for m in m_repo.list_all()]
+
+    @app.get("/api/materials/{mid}", response_model=MaterialResponse)
+    def materials_get(mid: int) -> MaterialResponse:
+        m = m_repo.get(mid)
+        if m is None:
+            raise HTTPException(status_code=404, detail="material not found")
+        return MaterialResponse(**m)
+
+    @app.patch("/api/materials/{mid}", response_model=MaterialResponse)
+    def materials_patch(mid: int, body: MaterialUpdate) -> MaterialResponse:
+        if m_repo.get(mid) is None:
+            raise HTTPException(status_code=404, detail="material not found")
+        return MaterialResponse(**m_repo.update(mid, name=body.name, notes=body.notes))
+
+    @app.delete("/api/materials/{mid}", status_code=204)
+    def materials_delete(mid: int) -> Response:
+        try:
+            m_repo.delete(mid)
+        except InUseError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        return Response(status_code=204)
+
+    # Presets
+    @app.post("/api/presets", response_model=PresetResponse, status_code=201)
+    def presets_create(body: PresetCreate) -> PresetResponse:
+        if m_repo.get(body.material_id) is None:
+            raise HTTPException(status_code=400, detail="unknown material_id")
+        return PresetResponse(**p_repo.create(
+            material_id=body.material_id, name=body.name, color=body.color,
+            base_params=body.base_params.model_dump(),
+        ))
+
+    @app.get("/api/presets", response_model=list[PresetResponse])
+    def presets_list(material_id: int | None = None) -> list[PresetResponse]:
+        rows = p_repo.list_by_material(material_id) if material_id else p_repo.list_all()
+        return [PresetResponse(**p) for p in rows]
+
+    @app.get("/api/presets/{pid}", response_model=PresetResponse)
+    def presets_get(pid: int) -> PresetResponse:
+        p = p_repo.get(pid)
+        if p is None:
+            raise HTTPException(status_code=404, detail="preset not found")
+        return PresetResponse(**p)
+
+    @app.patch("/api/presets/{pid}", response_model=PresetResponse)
+    def presets_patch(pid: int, body: PresetUpdate) -> PresetResponse:
+        if p_repo.get(pid) is None:
+            raise HTTPException(status_code=404, detail="preset not found")
+        base_params = body.base_params.model_dump() if body.base_params else None
+        return PresetResponse(**p_repo.update(
+            pid, name=body.name, color=body.color, base_params=base_params,
+        ))
+
+    @app.post("/api/presets/{pid}/set-default", status_code=204)
+    def presets_set_default(pid: int) -> Response:
+        if p_repo.get(pid) is None:
+            raise HTTPException(status_code=404, detail="preset not found")
+        p_repo.set_default(pid)
+        return Response(status_code=204)
+
+    @app.delete("/api/presets/{pid}", status_code=204)
+    def presets_delete(pid: int) -> Response:
+        p_repo.delete(pid)
+        return Response(status_code=204)
 
     # Mount built frontend at / if present (optional in dev / tests)
     web_dist = Path(__file__).parent.parent.parent / "web" / "dist"
