@@ -54,7 +54,20 @@ from .svg_layers_converter import (
 )
 
 
+def _run_migrations() -> None:
+    from pathlib import Path
+    from alembic import command
+    from alembic.config import Config
+    from .db import db_url
+    repo_root = Path(__file__).resolve().parents[2]
+    cfg = Config(str(repo_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(repo_root / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", db_url())
+    command.upgrade(cfg, "head")
+
+
 def create_app() -> FastAPI:
+    _run_migrations()
     app = FastAPI(title="xcs-gen", version="0.1.0")
 
     @app.get("/api/health")
