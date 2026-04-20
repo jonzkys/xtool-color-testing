@@ -67,6 +67,10 @@ class ParamTest(BaseModel):
     # keep cells square. Server ignores the value (it just trusts height_mm
     # as sent), but persisting it keeps the checkbox sticky across reloads.
     square_cells: bool = False
+    # "rect" (default) emits Rect elements; "circle" emits Circle elements
+    # of diameter = min(cell_w, cell_h). Circles pair best with
+    # square_cells=True so the inscribed circle fills its bounding box.
+    cell_shape: Literal["rect", "circle"] = "rect"
 
     # Multi-pass angle behaviour. ``base_params.passes`` is the pass count
     # (emitted as XCS's native ``repeat``, so XCS handles the stacking —

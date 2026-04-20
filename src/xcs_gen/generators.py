@@ -50,6 +50,38 @@ _PARAM_MAP = {
 _INT_FIELDS = {"speed", "repeat", "density", "pulse_width", "mopa_frequency", "dpi"}
 
 
+def _append_cell(
+    project: XCSProject,
+    *,
+    cell_shape: str,
+    bbox_x: float, bbox_y: float, bbox_w: float, bbox_h: float,
+    params: ProcessingParams,
+    processing_type: str,
+) -> None:
+    """Append a single gradient cell to the project as a Rect or Circle."""
+    if cell_shape == "circle":
+        # Inscribed circle (diameter = min bbox dim, centred in bbox).
+        diameter = min(bbox_w, bbox_h)
+        project.circles.append(Circle(
+            x=bbox_x + (bbox_w - diameter) / 2,
+            y=bbox_y + (bbox_h - diameter) / 2,
+            width=diameter,
+            height=diameter,
+            params=params,
+            processing_type=processing_type,
+            is_fill=True,
+            layer_color=GRADIENT_LAYER_COLOR,
+        ))
+        return
+    project.elements.append(Rect(
+        x=bbox_x, y=bbox_y,
+        width=bbox_w, height=bbox_h,
+        params=params,
+        processing_type=processing_type,
+        layer_color=GRADIENT_LAYER_COLOR,
+    ))
+
+
 def _default_test_id() -> str:
     """Generate a short random ID for a test when no explicit one is provided."""
     return uuid.uuid4().hex[:8]
@@ -83,6 +115,7 @@ def generate_gradient(
     registration_qr_position: str = "top-left",  # "top-left" | "top-right" | "bottom-right"
     registration_qr_size_mm: float | None = None,
     unidirectional: bool = False,
+    cell_shape: str = "rect",  # "rect" | "circle"
     test_id: str | None = None,
     material_id: str | None = None,
 ) -> XCSProject:
@@ -178,6 +211,7 @@ def generate_gradient(
             base_params=base_params, processing_type=processing_type,
             label_font_size=label_font_size, tick_length=tick_length,
             annotation_params=annotation_params,
+            cell_shape=cell_shape,
         )
     else:
         _generate_wrapped(
@@ -189,6 +223,7 @@ def generate_gradient(
             base_params=base_params, processing_type=processing_type,
             label_font_size=label_font_size, tick_length=tick_length,
             annotation_params=annotation_params,
+            cell_shape=cell_shape,
         )
 
     if registration_mode != "off":
@@ -329,6 +364,7 @@ def _generate_wrapped(
     label_font_size: float,
     tick_length: float,
     annotation_params: ProcessingParams,
+    cell_shape: str = "rect",
 ) -> None:
     """Generate a single-axis gradient, optionally wrapped across rows."""
     per_row = math.ceil(x_steps / rows)
@@ -356,16 +392,14 @@ def _generate_wrapped(
             params = _copy_params(base_params)
             _set_param(params, x_param, x_values[i])
 
-            elem = Rect(
-                x=start_x + col * (elem_w + gap),
-                y=row_y,
-                width=elem_w,
-                height=row_height,
+            _append_cell(
+                project,
+                cell_shape=cell_shape,
+                bbox_x=start_x + col * (elem_w + gap), bbox_y=row_y,
+                bbox_w=elem_w, bbox_h=row_height,
                 params=params,
                 processing_type=processing_type,
-                layer_color=GRADIENT_LAYER_COLOR,
             )
-            project.elements.append(elem)
 
         # Labels below each row
         bottom_y = row_y + row_height
@@ -446,6 +480,7 @@ def _generate_dual_axis(
     label_font_size: float,
     tick_length: float,
     annotation_params: ProcessingParams,
+    cell_shape: str = "rect",
 ) -> None:
     """Generate a dual-axis gradient grid."""
     elem_w = (total_width - max(0, x_steps - 1) * gap) / x_steps
@@ -457,16 +492,15 @@ def _generate_dual_axis(
             _set_param(params, x_param, x_val)
             _set_param(params, y_param, y_val)
 
-            elem = Rect(
-                x=start_x + xi * (elem_w + gap),
-                y=start_y + yi * (elem_h + gap),
-                width=elem_w,
-                height=elem_h,
+            _append_cell(
+                project,
+                cell_shape=cell_shape,
+                bbox_x=start_x + xi * (elem_w + gap),
+                bbox_y=start_y + yi * (elem_h + gap),
+                bbox_w=elem_w, bbox_h=elem_h,
                 params=params,
                 processing_type=processing_type,
-                layer_color=GRADIENT_LAYER_COLOR,
             )
-            project.elements.append(elem)
 
     ann_layer = ANNOTATION_LAYER_COLOR
 

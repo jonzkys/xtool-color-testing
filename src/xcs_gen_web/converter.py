@@ -235,6 +235,7 @@ def project_to_xcs(project: Project) -> XCSProject:
             registration_qr_position=t.registration.qr_position,
             registration_qr_size_mm=t.registration.qr_size_mm,
             unidirectional=t.unidirectional,
+            cell_shape=t.cell_shape,
             test_id=t.id,
             material_id=t.material_id,
         )

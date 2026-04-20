@@ -40,6 +40,9 @@ export function migrateProject(project: Project): Project {
         if (placement.test.square_cells === undefined) {
           placement.test.square_cells = false;
         }
+        if (placement.test.cell_shape === undefined) {
+          placement.test.cell_shape = "rect";
+        }
         // crosshatch_enabled/passes/step_deg → angle_mode.
         // If the old fields are present, translate them and delete.
         const legacy = placement.test as Partial<{

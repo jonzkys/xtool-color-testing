@@ -151,6 +151,22 @@ export function TestEditor({ placement, issues, library, onChange, onDelete, onD
           />
           <span style={{ fontSize: 12, color: "#555" }}>Square cells (auto height)</span>
         </label>
+        <SelectField
+          label="Cell shape"
+          value={t.cell_shape}
+          options={[
+            { value: "rect", label: "Rectangle" },
+            { value: "circle", label: "Circle (inscribed)" },
+          ]}
+          onChange={(v) => updateTest({ cell_shape: v as ParamTest["cell_shape"] })}
+        />
+        {t.cell_shape === "circle" && !t.square_cells && (
+          <div style={{ fontSize: 11, color: "#a05000", marginBottom: 8 }}>
+            ⚠ Circle cells render best with Square cells enabled — otherwise
+            the inscribed circle leaves unburned metal at the top/bottom and
+            the palette sampler may pick up that background.
+          </div>
+        )}
         <NumberField label="Gap (mm)" value={t.gap_mm} onChange={(v) => updateTest({ gap_mm: v })} />
         <NumberField label="Rows (wrapping)" value={t.rows} integer min={1} onChange={(v) => updateTest({ rows: v })} />
       </Section>

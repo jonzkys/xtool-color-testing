@@ -47,6 +47,8 @@ export interface ParamTest {
 
   /** UI-convenience flag: when true, height_mm is auto-computed to keep cells square. */
   square_cells: boolean;
+  /** "rect" (default) or "circle" — the latter emits inscribed-circle elements. */
+  cell_shape: "rect" | "circle";
   /** Multi-pass angle behaviour; only meaningful when base_params.passes > 1.
    *  - "fixed": every pass at the same scan angle.
    *  - "crosshatch": alternates scan_angle and scan_angle + 90°.
