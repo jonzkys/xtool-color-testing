@@ -444,3 +444,10 @@ class AveragedSwatch(BaseModel):
     sigma: float
     sample_count: int
     per_result: list[dict]
+
+
+class IngestToPaletteRequest(BaseModel):
+    swatch_indices: list[int]
+    mode: str                        # "averaged" | "single_result"
+    result_id: int | None = None     # required when mode == "single_result"
+    replace_existing: bool = False

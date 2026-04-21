@@ -14,6 +14,7 @@ from .schemas import (
     AveragedSwatch,
     BaseParams,
     DetectedLayer,
+    IngestToPaletteRequest,
     MaterialCreate,
     MaterialResponse,
     MaterialUpdate,
@@ -417,6 +418,55 @@ def create_app() -> FastAPI:
         if t_repo.get(tid) is None:
             raise HTTPException(status_code=404, detail="test not found")
         return [AveragedSwatch(**s) for s in r_repo.averaged_swatches(tid)]
+
+    @app.post("/api/tests/{tid}/ingest-to-palette")
+    def tests_ingest_to_palette(tid: int, body: IngestToPaletteRequest) -> dict:
+        t = t_repo.get(tid)
+        if t is None:
+            raise HTTPException(status_code=404, detail="test not found")
+
+        if body.mode not in ("averaged", "single_result"):
+            raise HTTPException(status_code=400, detail="mode must be averaged|single_result")
+
+        if body.mode == "averaged":
+            swatches = r_repo.averaged_swatches(tid)
+            source_result_id = None
+        else:
+            if body.result_id is None:
+                raise HTTPException(status_code=400, detail="result_id required for single_result")
+            r = r_repo.get(body.result_id)
+            if r is None or r["test_id"] != tid:
+                raise HTTPException(status_code=400, detail="result_id does not belong to test")
+            swatches = r["swatches"]
+            source_result_id = r["id"]
+
+        if any(i < 0 or i >= len(swatches) for i in body.swatch_indices):
+            raise HTTPException(status_code=400, detail="swatch_indices out of range")
+        picked = [swatches[i] for i in body.swatch_indices]
+
+        if body.replace_existing:
+            pal_repo.delete_by_test(tid)
+
+        base = t["spec"]["base_params"]
+        x_param = t["spec"]["x_param"]
+        y_param = t["spec"].get("y_param")
+
+        payload = []
+        for s in picked:
+            params = dict(base)
+            if s.get("x_value") is not None:
+                params[x_param] = s["x_value"]
+            if y_param and s.get("y_value") is not None:
+                params[y_param] = s["y_value"]
+            payload.append({
+                "test_id": tid, "material_id": t["material_id"],
+                "x_value": s.get("x_value"), "y_value": s.get("y_value"),
+                "hex": s["hex"], "sigma": s["sigma"],
+                "source": body.mode, "source_result_id": source_result_id,
+                "params": params,
+            })
+        ids = pal_repo.insert_bulk(payload)
+        return {"added": len(ids), "ids": ids}
 
     # Mount built frontend at / if present (optional in dev / tests)
     web_dist = Path(__file__).parent.parent.parent / "web" / "dist"
