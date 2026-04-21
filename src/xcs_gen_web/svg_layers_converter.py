@@ -16,7 +16,7 @@ from dataclasses import replace
 
 from xcs_gen.builder import build_xcs
 from xcs_gen.model import GRADIENT_LAYER_COLOR, Path, Rect, XCSProject
-from xcs_gen.svg_source import ParsedShape, parse_svg
+from xcs_gen.svg_source import ParsedShape, is_near_white, parse_svg
 
 from .converter import _to_processing_params
 from .schemas import (
@@ -80,7 +80,12 @@ def detect_svg_layers(request: SvgDetectRequest) -> list[DetectedLayer]:
             counts[color] += 1
 
     result = [
-        DetectedLayer(color=c, shape_count=counts[c], is_fill=is_fill[c])
+        DetectedLayer(
+            color=c,
+            shape_count=counts[c],
+            is_fill=is_fill[c],
+            is_near_white=is_near_white(c),
+        )
         for c in sorted(order, key=order.get)
     ]
     return result
