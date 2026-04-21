@@ -514,35 +514,36 @@ def _generate_dual_axis(
 
     ann_layer = ANNOTATION_LAYER_COLOR
 
-    _add_x_axis(
-        project,
-        x_param=x_param,
-        x_values=x_values,
-        x_steps=x_steps,
-        elem_w=elem_w,
-        gap=gap,
-        start_x=start_x,
-        bottom_y=start_y + total_height,
-        tick_length=tick_length,
-        font_size=label_font_size,
-        layer_color=ann_layer,
-        annotation_params=annotation_params,
-    )
+    if not hide_axis_labels:
+        _add_x_axis(
+            project,
+            x_param=x_param,
+            x_values=x_values,
+            x_steps=x_steps,
+            elem_w=elem_w,
+            gap=gap,
+            start_x=start_x,
+            bottom_y=start_y + total_height,
+            tick_length=tick_length,
+            font_size=label_font_size,
+            layer_color=ann_layer,
+            annotation_params=annotation_params,
+        )
 
-    _add_y_axis(
-        project,
-        y_param=y_param,
-        y_values=y_values,
-        y_steps=y_steps,
-        elem_h=elem_h,
-        gap=gap,
-        start_y=start_y,
-        left_x=start_x,
-        tick_length=tick_length,
-        font_size=label_font_size,
-        layer_color=ann_layer,
-        annotation_params=annotation_params,
-    )
+        _add_y_axis(
+            project,
+            y_param=y_param,
+            y_values=y_values,
+            y_steps=y_steps,
+            elem_h=elem_h,
+            gap=gap,
+            start_y=start_y,
+            left_x=start_x,
+            tick_length=tick_length,
+            font_size=label_font_size,
+            layer_color=ann_layer,
+            annotation_params=annotation_params,
+        )
 
 
 def _add_tick_and_label(

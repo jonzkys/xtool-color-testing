@@ -215,6 +215,21 @@ def test_hide_axis_labels_default_false_keeps_existing_behaviour():
     assert types.count("TEXT") >= 2  # summary + at least one axis label
 
 
+def test_hide_axis_labels_dual_axis_suppresses_all_ticks():
+    """Dual-axis grid with hide_axis_labels=True emits only cells + summary."""
+    project = generate_gradient(
+        x_param="speed", x_min=100, x_max=500, x_steps=5,
+        y_param="power", y_min=10, y_max=50, y_steps=4,
+        total_width=50.0, total_height=40.0,
+        hide_axis_labels=True,
+    )
+    result = build_xcs(project)
+    types = [d["type"] for d in result["canvas"][0]["displays"]]
+    assert types.count("RECT") == 20
+    assert types.count("LINE") == 0
+    assert types.count("TEXT") == 1  # summary only
+
+
 def test_1000_elements():
     """Scaling test: 1000 elements in 100mm."""
     project = generate_gradient(
