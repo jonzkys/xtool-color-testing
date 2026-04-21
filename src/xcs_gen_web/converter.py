@@ -20,9 +20,10 @@ BEAM_WIDTH_MM = 0.03
 CANVAS_ORIGIN_X = 10.0
 CANVAS_ORIGIN_Y = 10.0
 
-# Must match generate_gradient defaults.
-# Kept in sync manually; changing those generator defaults requires updating these.
-_LABEL_FONT_SIZE = 3.0
+# Must match generate_gradient defaults. Kept in sync manually — the
+# drift guard in tests/test_converter.py::test_converter_constants_match_generator_defaults
+# will fail if these stop matching generate_gradient's signature.
+_LABEL_FONT_SIZE = 1.2
 _TICK_LENGTH = 0.5
 
 

@@ -277,3 +277,20 @@ def test_hide_axis_labels_generator_sees_no_labels():
     visible = _displays_for(False)
     assert visible.count("LINE") > 0
     assert visible.count("TEXT") > 1  # summary + axis labels
+
+
+def test_converter_constants_match_generator_defaults():
+    """_LABEL_FONT_SIZE / _TICK_LENGTH must match generate_gradient's defaults.
+
+    project_to_xcs calls generate_gradient without passing these, so if they
+    drift the footprint math in _test_vertical_footprint will over- or
+    under-reserve space on the canvas.
+    """
+    import inspect
+
+    from xcs_gen.generators import generate_gradient
+    from xcs_gen_web.converter import _LABEL_FONT_SIZE, _TICK_LENGTH
+
+    sig = inspect.signature(generate_gradient)
+    assert sig.parameters["label_font_size"].default == _LABEL_FONT_SIZE
+    assert sig.parameters["tick_length"].default == _TICK_LENGTH
