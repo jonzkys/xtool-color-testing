@@ -1,17 +1,50 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { NumberField } from "./fields/NumberField";
-import { SelectField } from "./fields/SelectField";
+import {
+  Download,
+  Eye,
+  EyeOff,
+  FileCode2,
+  Layers as LayersIcon,
+  Upload,
+  Wand2,
+} from "lucide-react";
 import { defaultBaseParams, defaultHatchPass } from "../defaults";
-import { DEFAULT_RASTER_TRACE_OPTIONS, detectSvgLayers, previewSvg, rasterToSvg, svgLayersAndDownload } from "../generate";
+import {
+  DEFAULT_RASTER_TRACE_OPTIONS,
+  detectSvgLayers,
+  previewSvg,
+  rasterToSvg,
+  svgLayersAndDownload,
+} from "../generate";
 import type { RasterTraceOptions } from "../generate";
-import type { DetectedLayer, LayerSpec, SvgLayersRequest, SvgProcessingType } from "../types";
+import type {
+  BaseParams,
+  DetectedLayer,
+  LayerSpec,
+  PaletteQueryResult,
+  SvgLayersRequest,
+  SvgProcessingType,
+} from "../types";
 import { HatchPassesEditor } from "./HatchPassesEditor";
 import { validateLayerSpec } from "../validation";
 import type { LibraryState } from "../library";
 import { listMaterials, listPresets } from "../api/library";
 import { MaterialPresetPicker } from "./MaterialPresetPicker";
 import { queryPalette } from "../api/palette";
-import type { BaseParams, PaletteQueryResult } from "../types";
+import {
+  Badge,
+  Button,
+  Card,
+  cn,
+  EmptyState,
+  Field,
+  IconButton,
+  Input,
+  NumberField,
+  PageContainer,
+  Section,
+  Select,
+} from "../ui";
 
 const PROCESSING_TYPES: { value: SvgProcessingType; label: string }[] = [
   { value: "COLOR_FILL_ENGRAVE", label: "Color fill engrave" },
@@ -26,11 +59,20 @@ function seedLayerBaseParams(library: LibraryState) {
     (p) => p.material_id === library.active_material_id && p.is_default,
   );
   return defaultPreset
-    ? { materialId: library.active_material_id !== null ? String(library.active_material_id) : null, baseParams: { ...defaultPreset.base_params } }
+    ? {
+        materialId:
+          library.active_material_id !== null
+            ? String(library.active_material_id)
+            : null,
+        baseParams: { ...defaultPreset.base_params },
+      }
     : { materialId: null as string | null, baseParams: defaultBaseParams() };
 }
 
-function defaultLayerFromDetected(detected: DetectedLayer, library: LibraryState): LayerSpec {
+function defaultLayerFromDetected(
+  detected: DetectedLayer,
+  library: LibraryState,
+): LayerSpec {
   const seed = seedLayerBaseParams(library);
   return {
     color: detected.color,
@@ -55,55 +97,49 @@ function defaultRequest(materialId: string): SvgLayersRequest {
     start_y: 10,
     material_id: materialId,
     layers: [],
-    // On by default — adjacent layers shouldn't re-engrave the same pixel and
-    // the subtracted preview is almost always what users want to see first.
     subtract_overlaps: true,
   };
 }
 
 export function SvgLayersPage() {
-  const [library, setLibrary] = useState<LibraryState>({ materials: [], presets: [], active_material_id: null });
+  const [library, setLibrary] = useState<LibraryState>({
+    materials: [],
+    presets: [],
+    active_material_id: null,
+  });
 
   useEffect(() => {
     Promise.all([listMaterials(), listPresets()])
       .then(([mats, pres]) => {
-        setLibrary({ materials: mats, presets: pres, active_material_id: mats[0]?.id ?? null });
+        setLibrary({
+          materials: mats,
+          presets: pres,
+          active_material_id: mats[0]?.id ?? null,
+        });
       })
       .catch((e) => console.error("Failed to load library:", e));
   }, []);
 
-  const [request, setRequest] = useState<SvgLayersRequest>(
-    () => defaultRequest(""),
-  );
-  // When false (default), near-white detected layers are hidden from the
-  // layer list. Tick the checkbox above the list to include them.
+  const [request, setRequest] = useState<SvgLayersRequest>(() => defaultRequest(""));
   const [includeNearWhite, setIncludeNearWhite] = useState(false);
-  // Keep the raw detection around so we can re-materialize layers when the
-  // checkbox flips without issuing a second detect request.
   const [rawDetected, setRawDetected] = useState<DetectedLayer[]>([]);
   const [filename, setFilename] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
-  // When true, the Design preview dims non-selected layers to show the chosen
-  // one in isolation. Default false = full image; click the eye icon to isolate.
   const [isolateSelected, setIsolateSelected] = useState(false);
   const [detectError, setDetectError] = useState<string | undefined>();
   const [generating, setGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
-  // When subtract_overlaps is on we display the server-computed subtracted SVG
-  // instead of the raw upload, so the preview matches what will be engraved.
   const [subtractedSvg, setSubtractedSvg] = useState<string | null>(null);
-  // Raster -> SVG support. When the user uploads a PNG/JPG we keep its data URL
-  // so we can re-trace with different options without re-uploading.
   const [rasterDataUrl, setRasterDataUrl] = useState<string | null>(null);
-  const [traceOptions, setTraceOptions] = useState<RasterTraceOptions>(
-    () => ({ ...DEFAULT_RASTER_TRACE_OPTIONS }),
-  );
+  const [traceOptions, setTraceOptions] = useState<RasterTraceOptions>(() => ({
+    ...DEFAULT_RASTER_TRACE_OPTIONS,
+  }));
   const [tracing, setTracing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // layer.color → predicted burn hex from the last palette match applied to it.
-  // Used to render the "expected burn" preview and doesn't get persisted.
-  const [predictedByColor, setPredictedByColor] = useState<Record<string, string>>({});
+  const [predictedByColor, setPredictedByColor] = useState<Record<string, string>>(
+    {},
+  );
   const [autoApplying, setAutoApplying] = useState(false);
   const [autoApplyMessage, setAutoApplyMessage] = useState<string | undefined>();
 
@@ -117,8 +153,6 @@ export function SvgLayersPage() {
     [request.layers],
   );
 
-  // Fetch a server-subtracted SVG whenever subtract_overlaps is on and the
-  // inputs that affect it change. When off, clear so the original is used.
   useEffect(() => {
     if (!request.subtract_overlaps || !request.svg_content) {
       setSubtractedSvg(null);
@@ -130,21 +164,25 @@ export function SvgLayersPage() {
       subtract_overlaps: true,
       width_mm: request.width_mm,
     })
-      .then((svg) => { if (!cancelled) setSubtractedSvg(svg); })
-      .catch(() => { if (!cancelled) setSubtractedSvg(null); });
-    return () => { cancelled = true; };
+      .then((svg) => {
+        if (!cancelled) setSubtractedSvg(svg);
+      })
+      .catch(() => {
+        if (!cancelled) setSubtractedSvg(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [request.subtract_overlaps, request.svg_content, request.width_mm, enabledColors]);
 
-  // When the "Include white" toggle flips, re-derive request.layers from the
-  // last detection so newly-visible whites appear as LayerSpecs (and freshly-
-  // hidden ones disappear). Preserves any per-layer param edits the user has
-  // already made to non-white layers.
   useEffect(() => {
     if (rawDetected.length === 0) return;
     const visible = rawDetected.filter((d) => includeNearWhite || !d.is_near_white);
     setRequest((prev) => {
       const byColor = new Map(prev.layers.map((l) => [l.color, l]));
-      const nextLayers = visible.map((d) => byColor.get(d.color) ?? defaultLayerFromDetected(d, library));
+      const nextLayers = visible.map(
+        (d) => byColor.get(d.color) ?? defaultLayerFromDetected(d, library),
+      );
       return { ...prev, layers: nextLayers };
     });
   }, [includeNearWhite, rawDetected, library]);
@@ -152,23 +190,22 @@ export function SvgLayersPage() {
   function updateReq(patch: Partial<SvgLayersRequest>) {
     setRequest((prev) => ({ ...prev, ...patch }));
   }
-
   function updateLayer(color: string, patch: Partial<LayerSpec>) {
     setRequest((prev) => ({
       ...prev,
       layers: prev.layers.map((l) => (l.color === color ? { ...l, ...patch } : l)),
     }));
   }
-
   function updateBase(color: string, patch: Partial<LayerSpec["base_params"]>) {
     setRequest((prev) => ({
       ...prev,
       layers: prev.layers.map((l) =>
-        l.color === color ? { ...l, base_params: { ...l.base_params, ...patch } } : l,
+        l.color === color
+          ? { ...l, base_params: { ...l.base_params, ...patch } }
+          : l,
       ),
     }));
   }
-
   function applyPaletteMatch(
     color: string,
     params: Partial<LayerSpec["base_params"]>,
@@ -183,14 +220,14 @@ export function SvgLayersPage() {
     setAutoApplying(true);
     setAutoApplyMessage(undefined);
     try {
-      // Query each hex-coloured layer in parallel. Layers with "none" or
-      // materials lacking matches fall through to "skipped".
-      const results = await Promise.all(request.layers.map(async (l) => {
-        if (!/^#[0-9a-fA-F]{6}$/.test(l.color)) return { layer: l, best: null };
-        const matIdNum = request.material_id ? Number(request.material_id) : undefined;
-        const res = await queryPalette(l.color, { limit: 1, material_id: matIdNum });
-        return { layer: l, best: res[0] ?? null };
-      }));
+      const results = await Promise.all(
+        request.layers.map(async (l) => {
+          if (!/^#[0-9a-fA-F]{6}$/.test(l.color)) return { layer: l, best: null };
+          const matIdNum = request.material_id ? Number(request.material_id) : undefined;
+          const res = await queryPalette(l.color, { limit: 1, material_id: matIdNum });
+          return { layer: l, best: res[0] ?? null };
+        }),
+      );
 
       let applied = 0;
       const nextPredicted: Record<string, string> = { ...predictedByColor };
@@ -221,11 +258,18 @@ export function SvgLayersPage() {
   }
 
   async function applyDetectedSvg(svgText: string, suggestedName: string) {
-    setRequest((prev) => ({ ...prev, svg_content: svgText, name: suggestedName, layers: [] }));
+    setRequest((prev) => ({
+      ...prev,
+      svg_content: svgText,
+      name: suggestedName,
+      layers: [],
+    }));
     try {
       const detected = await detectSvgLayers(svgText, 50);
       setRawDetected(detected);
-      const visible = detected.filter((d) => includeNearWhite || !d.is_near_white);
+      const visible = detected.filter(
+        (d) => includeNearWhite || !d.is_near_white,
+      );
       const layers = visible.map((d) => defaultLayerFromDetected(d, library));
       setRequest((prev) => ({ ...prev, layers }));
       setSelectedColor(layers[0]?.color ?? null);
@@ -248,21 +292,22 @@ export function SvgLayersPage() {
     setDetectError(undefined);
     setFilename(file.name);
     const suggested =
-      file.name.replace(/\.(svg|png|jpe?g)$/i, "").replace(/[^A-Za-z0-9._\- ]/g, "_").slice(0, 64) ||
-      "svg-layers";
+      file.name
+        .replace(/\.(svg|png|jpe?g)$/i, "")
+        .replace(/[^A-Za-z0-9._\- ]/g, "_")
+        .slice(0, 64) || "svg-layers";
 
-    const isRaster = /\.(png|jpe?g)$/i.test(file.name) || file.type.startsWith("image/");
+    const isRaster =
+      /\.(png|jpe?g)$/i.test(file.name) || file.type.startsWith("image/");
     const isSvg = /\.svg$/i.test(file.name) || file.type === "image/svg+xml";
 
     if (isSvg || !isRaster) {
-      // SVG path
       setRasterDataUrl(null);
       const text = await file.text();
       await applyDetectedSvg(text, suggested);
       return;
     }
 
-    // Raster path: vectorize via backend, then feed the SVG through detection.
     const dataUrl = await fileToDataUrl(file);
     setRasterDataUrl(dataUrl);
     setTracing(true);
@@ -296,7 +341,6 @@ export function SvgLayersPage() {
     setTraceOptions(next);
     if (rasterDataUrl) void retrace(next);
   }
-
   function resetTraceOptions() {
     const defaults = { ...DEFAULT_RASTER_TRACE_OPTIONS };
     setTraceOptions(defaults);
@@ -307,7 +351,6 @@ export function SvgLayersPage() {
     const f = e.target.files?.[0];
     if (f) void handleFile(f);
   }
-
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     const f = e.dataTransfer.files?.[0];
@@ -328,343 +371,435 @@ export function SvgLayersPage() {
 
   const hasLayers = request.layers.length > 0;
   const hatchedHasErrors = request.layers.some(
-    (l, i) => l.enabled && validateLayerSpec(l, i).some((iss) => iss.severity === "error")
+    (l, i) =>
+      l.enabled &&
+      validateLayerSpec(l, i).some((iss) => iss.severity === "error"),
   );
-  const disabled = !hasLayers
-    || !request.layers.some((l) => l.enabled)
-    || !request.material_id
-    || generating
-    || hatchedHasErrors;
+  const disabled =
+    !hasLayers ||
+    !request.layers.some((l) => l.enabled) ||
+    !request.material_id ||
+    generating ||
+    hatchedHasErrors;
+
+  const hiddenNearWhiteCount = rawDetected.filter((d) => d.is_near_white).length;
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "260px 1fr minmax(0, 33vw)", height: "100%", minHeight: 0 }}>
-      {/* LEFT: layer list */}
-      <div style={{ borderRight: "1px solid #ddd", background: "white", overflow: "auto", padding: 12 }}>
-        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 4 }}>
-          Material
-        </div>
-        <select
-          value={request.material_id}
-          onChange={(e) => setRequest((prev) => ({ ...prev, material_id: e.target.value }))}
-          style={{
-            width: "100%", padding: "6px 8px", marginBottom: 12,
-            border: `1px solid ${request.material_id ? "#ccc" : "#a02840"}`,
-            borderRadius: 4, font: "inherit", background: "white",
-          }}
-        >
-          {!request.material_id && <option value="">— pick a material —</option>}
-          {library.materials.map((m) => (
-            <option key={m.id} value={m.id}>{m.name}</option>
-          ))}
-        </select>
-        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 8 }}>
-          SVG
-        </div>
-        <div
-          onClick={() => fileInputRef.current?.click()}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={onDrop}
-          style={{
-            border: "1px dashed #999", borderRadius: 4,
-            padding: 12, textAlign: "center", cursor: "pointer",
-            background: filename ? "#e8ecf3" : "transparent",
-            color: filename ? "#336" : "#666", fontSize: 12, marginBottom: 12,
-          }}
-        >
-          {filename ? `${filename}` : "Drop SVG / PNG / JPG or click"}
-          {tracing && <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>Tracing...</div>}
-        </div>
-        <input
-          ref={fileInputRef} type="file" accept=".svg,image/svg+xml,.png,image/png,.jpg,.jpeg,image/jpeg"
-          onChange={onFileChange} style={{ display: "none" }}
-        />
-        {detectError && <div style={{ color: "#a02840", fontSize: 12, marginBottom: 8 }}>{detectError}</div>}
-
-        {rasterDataUrl && (
-          <div style={{ marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid #eee" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-              <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666" }}>
-                Trace options (PNG/JPG)
-              </div>
-              <button
-                onClick={resetTraceOptions}
-                style={{
-                  fontSize: 10, padding: "2px 6px", background: "transparent",
-                  border: "1px solid #bbb", borderRadius: 3, color: "#555",
-                }}
-              >
-                Reset
-              </button>
-            </div>
-            <div style={{ fontSize: 10, color: "#999", marginBottom: 6 }}>
-              Re-vectorizes on change. Lower values = fewer layers.
-            </div>
-            <NumberField
-              label="Max colors (0 = off)"
-              value={traceOptions.max_colors} integer min={0} max={256}
-              onChange={(v) => updateTraceOptions({ max_colors: v })}
-              help="Pre-quantizes the image to this many colors using PIL median-cut BEFORE vtracer sees it. The most effective control for photos. Set to 0 to disable. Typical: 3-8 for clean output, 16+ for more detail."
-            />
-            <NumberField
-              label="Color precision (1-8)"
-              value={traceOptions.color_precision} integer min={1} max={8}
-              onChange={(v) => updateTraceOptions({ color_precision: v })}
-              help="Bit depth vtracer uses internally for color quantization. Lower = chunkier color groups; higher = preserves subtle differences. Default 4 is a balance."
-            />
-            <NumberField
-              label="Layer difference (0-255)"
-              value={traceOptions.layer_difference} integer min={0} max={255}
-              onChange={(v) => updateTraceOptions({ layer_difference: v })}
-              help="Minimum visual distance between two output layers. Higher values merge near-identical colors into one layer. Bump this if you see lots of barely-different shades. Default 32; 64-96 for aggressive merging."
-            />
-            <NumberField
-              label="Filter speckle (0-100)"
-              value={traceOptions.filter_speckle} integer min={0} max={100}
-              onChange={(v) => updateTraceOptions({ filter_speckle: v })}
-              help="Drops isolated regions smaller than this many pixels - kills noise from JPEG artifacts and photo grain. Higher = cleaner output but loses fine detail. Default 8."
-            />
+    <PageContainer maxWidth="wide" className="py-6">
+      <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)] mb-1">
+            SVG layers
           </div>
-        )}
-
-        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 4 }}>
-          Layers {hasLayers && `(${request.layers.length})`}
+          <h1 className="text-[22px] font-semibold text-[color:var(--color-ink)]">
+            Multi-layer SVG / raster to laser
+          </h1>
+          <p className="mt-1 text-[13px] text-[color:var(--color-ink-muted)] max-w-[68ch]">
+            Upload an SVG or raster; each detected colour becomes a layer you
+            can assign processing params, crosshatch passes, or palette-matched
+            values to.
+          </p>
         </div>
-        {hasLayers && (
-          <div style={{ fontSize: 10, color: "#999", marginBottom: 6 }}>
-            Top of list = drawn on top. Subtraction removes lower layers where upper ones cover them.
-          </div>
-        )}
-        {hasLayers && (
-          <div style={{ marginBottom: 8 }}>
-            <button
-              onClick={autoMatchAllLayers}
-              disabled={!request.material_id || autoApplying}
-              title={!request.material_id
-                ? "Pick a material above first"
-                : "Query the palette for each layer's colour and apply the closest match"}
-              style={{
-                width: "100%", padding: "6px 8px", fontSize: 12,
-                background: !request.material_id || autoApplying ? "#ccc" : "#e8ecf3",
-                color: !request.material_id || autoApplying ? "#888" : "#336",
-                border: `1px solid ${!request.material_id || autoApplying ? "#bbb" : "#336"}`,
-                borderRadius: 4,
-                cursor: !request.material_id || autoApplying ? "default" : "pointer",
-                fontWeight: 600,
-              }}
-            >
-              {autoApplying ? "Matching…" : "Auto-match all layers to palette"}
-            </button>
-            {autoApplyMessage && (
-              <div style={{ fontSize: 10, color: "#555", marginTop: 4 }}>{autoApplyMessage}</div>
-            )}
-          </div>
-        )}
-        {!hasLayers && (
-          <div style={{ fontSize: 12, color: "#999" }}>Upload an SVG to detect layers.</div>
-        )}
-        {rawDetected.some((d) => d.is_near_white) && (
-          <label
-            style={{
-              display: "flex", alignItems: "center", gap: 8,
-              fontSize: 12, color: "#555", marginBottom: 6,
-            }}
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="primary"
+            onClick={handleGenerate}
+            disabled={disabled}
           >
-            <input
-              type="checkbox"
-              checked={includeNearWhite}
-              onChange={(e) => setIncludeNearWhite(e.target.checked)}
-            />
-            <span>
-              Include white
-              {" "}
-              <span style={{ color: "#999" }}>
-                ({rawDetected.filter((d) => d.is_near_white).length} near-white layer
-                {rawDetected.filter((d) => d.is_near_white).length === 1 ? "" : "s"} hidden)
-              </span>
-            </span>
-          </label>
-        )}
-        <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-          {/* Reverse so topmost (last drawn in SVG) appears at the top of the list,
-              matching Photoshop/Illustrator conventions and making the "subtract
-              overlaps" behaviour visually intuitive. Order doesn't affect the
-              backend request - the converter maps by color. */}
-          {[...request.layers].reverse().map((l) => {
-            const isSel = selectedColor === l.color;
-            return (
-              <li key={l.color}>
-                <button
-                  onClick={() => setSelectedColor(l.color)}
-                  style={{
-                    width: "100%", display: "flex", alignItems: "center", gap: 8,
-                    padding: "6px 8px", textAlign: "left",
-                    border: "1px solid " + (isSel ? "#336" : "#ddd"),
-                    background: isSel ? "#e8ecf3" : "white",
-                    borderRadius: 4,
-                    opacity: l.enabled ? 1 : 0.5,
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 16, height: 16, borderRadius: 3,
-                      background: l.color, border: "1px solid #999",
-                      flexShrink: 0,
-                    }}
-                  />
-                  <span style={{ flex: 1, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {l.name}
+            <Download className="h-4 w-4" />
+            {generating ? "Generating…" : "Generate .xcs"}
+          </Button>
+        </div>
+      </header>
+
+      {errorMessage && (
+        <div className="mb-3 rounded-[6px] border border-[color:var(--color-destructive)]/30 bg-[color:var(--color-destructive-tint)] px-3 py-2 text-[13px] text-[color:var(--color-destructive)]">
+          {errorMessage}
+        </div>
+      )}
+
+      <div className="grid grid-cols-[300px_minmax(0,1fr)_360px] gap-4">
+        {/* LEFT: source + layers + project */}
+        <Card padded={false} className="self-start">
+          <div className="flex flex-col gap-4 p-4">
+            <Field label="Project material">
+              <Select
+                value={request.material_id}
+                onChange={(e) =>
+                  setRequest((prev) => ({ ...prev, material_id: e.target.value }))
+                }
+                invalid={!request.material_id}
+              >
+                {!request.material_id && (
+                  <option value="">— pick a material —</option>
+                )}
+                {library.materials.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+
+            <div>
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={onDrop}
+                className={cn(
+                  "rounded-[10px] border border-dashed px-3 py-4 text-center cursor-pointer transition-colors",
+                  filename
+                    ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary-tint)]/60 text-[color:var(--color-primary)]"
+                    : "border-[color:var(--color-border-strong)] hover:border-[color:var(--color-primary)] text-[color:var(--color-ink-muted)]",
+                )}
+              >
+                <div className="flex items-center justify-center gap-2 text-[12.5px]">
+                  {filename ? (
+                    <FileCode2 className="h-4 w-4" />
+                  ) : (
+                    <Upload className="h-4 w-4" />
+                  )}
+                  <span className="truncate">
+                    {filename ?? "Drop SVG / PNG / JPG, or click"}
                   </span>
+                </div>
+                {tracing && (
+                  <div className="mt-1 text-[10px] text-[color:var(--color-ink-subtle)]">
+                    Tracing…
+                  </div>
+                )}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".svg,image/svg+xml,.png,image/png,.jpg,.jpeg,image/jpeg"
+                onChange={onFileChange}
+                className="hidden"
+              />
+            </div>
+
+            {detectError && (
+              <div className="rounded-[6px] border border-[color:var(--color-destructive)]/30 bg-[color:var(--color-destructive-tint)] px-2.5 py-1.5 text-[12px] text-[color:var(--color-destructive)]">
+                {detectError}
+              </div>
+            )}
+
+            {rasterDataUrl && (
+              <Section
+                title="Trace options"
+                description="Re-vectorises on change."
+                actions={
+                  <Button variant="ghost" size="sm" onClick={resetTraceOptions}>
+                    Reset
+                  </Button>
+                }
+                dense
+              >
+                <div className="grid grid-cols-2 gap-2">
+                  <NumberField
+                    label="Max colours (0 = off)"
+                    value={traceOptions.max_colors}
+                    integer
+                    min={0}
+                    max={256}
+                    onChange={(v) => updateTraceOptions({ max_colors: v })}
+                    help="Pre-quantises the image to this many colours via PIL median-cut BEFORE vtracer. 0 disables. Typical: 3–8 clean / 16+ detail."
+                  />
+                  <NumberField
+                    label="Colour precision"
+                    value={traceOptions.color_precision}
+                    integer
+                    min={1}
+                    max={8}
+                    onChange={(v) => updateTraceOptions({ color_precision: v })}
+                    help="Bit depth vtracer uses internally. Lower = chunkier groups; higher preserves subtle differences. Default 4."
+                  />
+                  <NumberField
+                    label="Layer difference"
+                    value={traceOptions.layer_difference}
+                    integer
+                    min={0}
+                    max={255}
+                    onChange={(v) => updateTraceOptions({ layer_difference: v })}
+                    help="Minimum visual distance between output layers. Higher merges near-identical colours. Default 32; 64–96 for aggressive merging."
+                  />
+                  <NumberField
+                    label="Filter speckle"
+                    value={traceOptions.filter_speckle}
+                    integer
+                    min={0}
+                    max={100}
+                    onChange={(v) => updateTraceOptions({ filter_speckle: v })}
+                    help="Drops isolated regions smaller than N pixels. Kills JPEG / photo-grain noise. Default 8."
+                  />
+                </div>
+              </Section>
+            )}
+
+            <Section
+              title={`Layers${hasLayers ? ` (${request.layers.length})` : ""}`}
+              description={
+                hasLayers
+                  ? "Top = drawn on top. Subtraction removes lower layers where upper ones cover."
+                  : undefined
+              }
+              dense
+            >
+              {hasLayers && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={autoMatchAllLayers}
+                  disabled={!request.material_id || autoApplying}
+                  title={
+                    !request.material_id
+                      ? "Pick a material above first"
+                      : "Query the palette for each layer's colour and apply the closest match"
+                  }
+                  className="w-full"
+                >
+                  <Wand2 className="h-4 w-4" />
+                  {autoApplying
+                    ? "Matching…"
+                    : "Auto-match all layers to palette"}
+                </Button>
+              )}
+              {autoApplyMessage && (
+                <p className="text-[11px] text-[color:var(--color-ink-muted)]">
+                  {autoApplyMessage}
+                </p>
+              )}
+              {!hasLayers && (
+                <p className="text-[12.5px] text-[color:var(--color-ink-subtle)]">
+                  Upload an SVG / image to detect layers.
+                </p>
+              )}
+              {hiddenNearWhiteCount > 0 && (
+                <label className="flex items-center gap-2 text-[12px] text-[color:var(--color-ink-muted)]">
                   <input
                     type="checkbox"
-                    checked={l.enabled}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => updateLayer(l.color, { enabled: e.target.checked })}
-                    title={l.enabled ? "Disable layer" : "Enable layer"}
+                    checked={includeNearWhite}
+                    onChange={(e) => setIncludeNearWhite(e.target.checked)}
                   />
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                  <span>
+                    Include white
+                    <span className="ml-1 text-[color:var(--color-ink-subtle)]">
+                      ({hiddenNearWhiteCount} near-white
+                      {hiddenNearWhiteCount === 1 ? "" : "s"} hidden)
+                    </span>
+                  </span>
+                </label>
+              )}
+              {hasLayers && (
+                <ul className="flex flex-col gap-1.5">
+                  {[...request.layers].reverse().map((l) => {
+                    const isSel = selectedColor === l.color;
+                    return (
+                      <li key={l.color}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedColor(l.color)}
+                          className={cn(
+                            "w-full flex items-center gap-2 px-2 py-1.5 rounded-[6px]",
+                            "border transition-colors text-left",
+                            isSel
+                              ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary-tint)]/60"
+                              : "border-[color:var(--color-border)] bg-[color:var(--color-surface)] hover:border-[color:var(--color-border-strong)]",
+                            !l.enabled && "opacity-50",
+                          )}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="h-4 w-4 rounded-[3px] shrink-0 border border-[color:var(--color-border-strong)]"
+                            style={{ background: l.color }}
+                          />
+                          <span className="flex-1 min-w-0 truncate font-mono text-[11.5px] text-[color:var(--color-ink)]">
+                            {l.name}
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={l.enabled}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) =>
+                              updateLayer(l.color, { enabled: e.target.checked })
+                            }
+                            title={l.enabled ? "Disable layer" : "Enable layer"}
+                          />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </Section>
 
-        <div style={{ marginTop: 16 }}>
-          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 8 }}>
-            Project
-          </div>
-          <label style={{ display: "block", marginBottom: 8 }}>
-            <span style={{ display: "block", fontSize: 12, color: "#555", marginBottom: 2 }}>Output filename</span>
-            <input
-              value={request.name}
-              onChange={(e) => updateReq({ name: e.target.value })}
-              style={{ width: "100%", padding: "6px 8px", border: "1px solid #ccc", borderRadius: 4, font: "inherit" }}
-            />
-          </label>
-          <NumberField label="Width (mm)" value={request.width_mm} onChange={(v) => updateReq({ width_mm: v })} />
-          <label style={{ display: "block", marginBottom: 8 }}>
-            <span style={{ display: "block", fontSize: 12, color: "#555", marginBottom: 2 }}>Height (mm, blank = aspect)</span>
-            <input
-              type="number"
-              value={request.height_mm ?? ""}
-              step="any"
-              onChange={(e) => updateReq({ height_mm: e.target.value === "" ? null : parseFloat(e.target.value) })}
-              style={{ width: "100%", padding: "6px 8px", border: "1px solid #ccc", borderRadius: 4, font: "inherit" }}
-            />
-          </label>
-          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, marginTop: 8 }}>
-            <input
-              type="checkbox"
-              checked={request.subtract_overlaps}
-              onChange={(e) => updateReq({ subtract_overlaps: e.target.checked })}
-              style={{ marginTop: 2 }}
-            />
-            <span style={{ color: "#555" }}>
-              Subtract overlaps
-              <div style={{ color: "#888", fontSize: 11 }}>No double-engrave regions.</div>
-            </span>
-          </label>
-        </div>
-
-        <button
-          onClick={handleGenerate}
-          disabled={disabled}
-          style={{
-            width: "100%", padding: "10px 16px", marginTop: 12,
-            background: disabled ? "#ccc" : "#336",
-            color: "white", border: "none", borderRadius: 4, fontWeight: 600,
-          }}
-        >
-          {generating ? "Generating..." : "Generate .xcs"}
-        </button>
-        {errorMessage && <div style={{ marginTop: 8, color: "#a02840", fontSize: 12 }}>{errorMessage}</div>}
-      </div>
-
-      {/* MIDDLE: selected layer editor */}
-      <div style={{ borderRight: "1px solid #ddd", background: "white", overflow: "auto", padding: 16 }}>
-        {selected ? (
-          <LayerEditor
-            key={selected.color}
-            layer={selected}
-            layerIdx={request.layers.findIndex((l) => l.color === selected.color)}
-            library={library}
-            projectMaterialId={request.material_id}
-            onPatch={(p) => updateLayer(selected.color, p)}
-            onBasePatch={(p) => updateBase(selected.color, p)}
-            onPaletteApply={(params, hex) => applyPaletteMatch(selected.color, params, hex)}
-          />
-        ) : (
-          <div style={{ padding: 32, color: "#999" }}>Select a layer to edit its params.</div>
-        )}
-      </div>
-
-      {/* RIGHT: two stacked previews — design colours vs expected burn */}
-      <div style={{ padding: 16, background: "#f6f7f9", display: "flex", flexDirection: "column", minHeight: 0, gap: 12 }}>
-        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-          <div style={{
-            fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666",
-            marginBottom: 6, display: "flex", alignItems: "center", gap: 8,
-          }}>
-            <span>
-              Design
-              {isolateSelected && selectedColor && ` — highlighted: ${selectedColor}`}
-            </span>
-            <button
-              type="button"
-              onClick={() => setIsolateSelected((v) => !v)}
-              disabled={!selectedColor}
-              title={isolateSelected ? "Show all layers" : "Isolate selected layer"}
-              style={{
-                marginLeft: "auto",
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-                width: 22, height: 22, padding: 0,
-                border: "1px solid " + (isolateSelected ? "#336" : "#ccc"),
-                background: isolateSelected ? "#e8ecf3" : "white",
-                borderRadius: 3,
-                cursor: selectedColor ? "pointer" : "not-allowed",
-                opacity: selectedColor ? 1 : 0.4,
-              }}
-            >
-              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-                <path
-                  d="M8 3.5C4.5 3.5 2 8 2 8s2.5 4.5 6 4.5S14 8 14 8s-2.5-4.5-6-4.5Z"
-                  fill="none" stroke="#333" strokeWidth="1.2"
+            <Section title="Project" dense>
+              <Field label="Output filename">
+                <Input
+                  value={request.name}
+                  onChange={(e) => updateReq({ name: e.target.value })}
                 />
-                <circle cx="8" cy="8" r="2" fill={isolateSelected ? "#333" : "none"} stroke="#333" strokeWidth="1.2" />
-                {!isolateSelected && (
-                  <line x1="3" y1="13" x2="13" y2="3" stroke="#a02840" strokeWidth="1.4" />
-                )}
-              </svg>
-            </button>
+              </Field>
+              <div className="grid grid-cols-2 gap-2">
+                <NumberField
+                  label="Width (mm)"
+                  value={request.width_mm}
+                  onChange={(v) => updateReq({ width_mm: v })}
+                />
+                <Field label="Height (mm)" hint="blank = aspect">
+                  <Input
+                    mono
+                    type="number"
+                    value={request.height_mm ?? ""}
+                    step="any"
+                    onChange={(e) =>
+                      updateReq({
+                        height_mm:
+                          e.target.value === "" ? null : parseFloat(e.target.value),
+                      })
+                    }
+                  />
+                </Field>
+              </div>
+              <label className="flex items-start gap-2 text-[12.5px] text-[color:var(--color-ink-muted)]">
+                <input
+                  type="checkbox"
+                  checked={request.subtract_overlaps}
+                  onChange={(e) => updateReq({ subtract_overlaps: e.target.checked })}
+                  className="mt-0.5"
+                />
+                <span>
+                  Subtract overlaps
+                  <span className="block text-[11px] text-[color:var(--color-ink-subtle)]">
+                    No double-engrave regions.
+                  </span>
+                </span>
+              </label>
+            </Section>
           </div>
-          <SvgPreview
-            svg={subtractedSvg ?? request.svg_content}
-            highlightColor={isolateSelected ? selectedColor : null}
-            enabledColors={enabledColors}
-          />
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 6 }}>
-            Expected burn
-            {Object.keys(predictedByColor).length === 0 && (
-              <span style={{ textTransform: "none", color: "#a05000", marginLeft: 6 }}>
-                — apply palette matches to populate
-              </span>
+        </Card>
+
+        {/* CENTER: selected layer editor */}
+        <Card padded={false} className="self-start">
+          <div className="p-4">
+            {selected ? (
+              <LayerEditor
+                key={selected.color}
+                layer={selected}
+                layerIdx={request.layers.findIndex(
+                  (l) => l.color === selected.color,
+                )}
+                library={library}
+                projectMaterialId={request.material_id}
+                onPatch={(p) => updateLayer(selected.color, p)}
+                onBasePatch={(p) => updateBase(selected.color, p)}
+                onPaletteApply={(params, hex) =>
+                  applyPaletteMatch(selected.color, params, hex)
+                }
+              />
+            ) : (
+              <EmptyState
+                icon={<LayersIcon className="h-6 w-6" />}
+                title="Select a layer"
+                description="Pick one from the Layers list on the left to edit its params, processing, or crosshatch."
+              />
             )}
           </div>
-          <SvgPreview
-            svg={subtractedSvg ?? request.svg_content}
-            highlightColor={null}
-            enabledColors={enabledColors}
-            colorMap={predictedByColor}
-          />
+        </Card>
+
+        {/* RIGHT: previews */}
+        <div className="flex flex-col gap-3 self-start sticky top-4 min-w-0">
+          <PreviewBlock
+            title="Design"
+            trailing={
+              <IconButton
+                aria-label={isolateSelected ? "Show all layers" : "Isolate selected layer"}
+                size="sm"
+                variant={isolateSelected ? "active" : "default"}
+                disabled={!selectedColor}
+                icon={
+                  isolateSelected ? (
+                    <Eye className="h-4 w-4" />
+                  ) : (
+                    <EyeOff className="h-4 w-4" />
+                  )
+                }
+                onClick={() => setIsolateSelected((v) => !v)}
+                title={isolateSelected ? "Show all layers" : "Isolate selected layer"}
+              />
+            }
+            subtext={
+              isolateSelected && selectedColor ? (
+                <span className="font-mono text-[11px] text-[color:var(--color-primary)]">
+                  {selectedColor}
+                </span>
+              ) : undefined
+            }
+          >
+            <SvgPreview
+              svg={subtractedSvg ?? request.svg_content}
+              highlightColor={isolateSelected ? selectedColor : null}
+              enabledColors={enabledColors}
+            />
+          </PreviewBlock>
+          <PreviewBlock
+            title="Expected burn"
+            subtext={
+              Object.keys(predictedByColor).length === 0 ? (
+                <span className="text-[color:var(--color-warning)]">
+                  Apply palette matches to populate
+                </span>
+              ) : undefined
+            }
+          >
+            <SvgPreview
+              svg={subtractedSvg ?? request.svg_content}
+              highlightColor={null}
+              enabledColors={enabledColors}
+              colorMap={predictedByColor}
+            />
+          </PreviewBlock>
         </div>
       </div>
+    </PageContainer>
+  );
+}
+
+function PreviewBlock({
+  title,
+  trailing,
+  subtext,
+  children,
+}: {
+  title: string;
+  trailing?: React.ReactNode;
+  subtext?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-2 min-w-0">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
+          {title}
+        </span>
+        {subtext && <span className="text-[11px]">{subtext}</span>}
+        {trailing && <span className="ml-auto">{trailing}</span>}
+      </div>
+      <Card variant="inset" padded={false} className="min-h-[240px] flex items-center justify-center overflow-hidden">
+        {children}
+      </Card>
     </div>
   );
 }
 
 function LayerEditor({
-  layer, layerIdx, library, projectMaterialId,
-  onPatch, onBasePatch, onPaletteApply,
+  layer,
+  layerIdx,
+  library,
+  projectMaterialId,
+  onPatch,
+  onBasePatch,
+  onPaletteApply,
 }: {
   layer: LayerSpec;
   layerIdx: number;
@@ -672,25 +807,29 @@ function LayerEditor({
   projectMaterialId: string;
   onPatch: (p: Partial<LayerSpec>) => void;
   onBasePatch: (p: Partial<LayerSpec["base_params"]>) => void;
-  onPaletteApply: (params: Partial<LayerSpec["base_params"]>, predictedHex: string) => void;
+  onPaletteApply: (
+    params: Partial<LayerSpec["base_params"]>,
+    predictedHex: string,
+  ) => void;
 }) {
   const hatchIssues = validateLayerSpec(layer, layerIdx);
 
   return (
-    <>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+    <div className="flex flex-col gap-5">
+      <div className="flex items-center gap-3">
         <span
-          style={{
-            width: 28, height: 28, borderRadius: 4,
-            background: layer.color, border: "1px solid #999",
-            flexShrink: 0,
-          }}
+          aria-hidden="true"
+          className="h-8 w-8 rounded-[6px] shrink-0 border border-[color:var(--color-border-strong)]"
+          style={{ background: layer.color }}
         />
         <input
           value={layer.name}
           onChange={(e) => onPatch({ name: e.target.value })}
-          style={{ flex: 1, fontSize: 18, padding: "6px 8px", border: "1px solid transparent", borderRadius: 4 }}
+          className="flex-1 min-w-0 bg-transparent border-0 border-b border-transparent hover:border-[color:var(--color-border)] focus:outline-none focus:border-[color:var(--color-primary)] text-[17px] font-semibold text-[color:var(--color-ink)] px-0 py-1"
         />
+        <Badge variant="neutral" size="sm">
+          <span className="font-mono">{layer.color}</span>
+        </Badge>
       </div>
 
       {layer.color !== "none" && (
@@ -702,39 +841,52 @@ function LayerEditor({
       )}
 
       <Section title="Processing">
-        <SelectField
-          label="Processing type"
-          value={layer.processing_type}
-          options={PROCESSING_TYPES}
-          onChange={(v) => {
-            const patch: Partial<LayerSpec> = { processing_type: v };
-            if (v === "HATCHED_LINES" && layer.hatch_passes.length === 0) {
-              patch.hatch_passes = [defaultHatchPass(0)];
-            }
-            onPatch(patch);
-          }}
-        />
+        <Field label="Processing type">
+          <Select
+            value={layer.processing_type}
+            onChange={(e) => {
+              const v = e.target.value as SvgProcessingType;
+              const patch: Partial<LayerSpec> = { processing_type: v };
+              if (v === "HATCHED_LINES" && layer.hatch_passes.length === 0) {
+                patch.hatch_passes = [defaultHatchPass(0)];
+              }
+              onPatch(patch);
+            }}
+          >
+            {PROCESSING_TYPES.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
         {layer.processing_type !== "HATCHED_LINES" && (
-          <NumberField label="Scan angle (°)" value={layer.scan_angle} onChange={(v) => onPatch({ scan_angle: v })} />
+          <NumberField
+            label="Scan angle (°)"
+            value={layer.scan_angle}
+            onChange={(v) => onPatch({ scan_angle: v })}
+          />
         )}
       </Section>
 
       {layer.processing_type !== "HATCHED_LINES" && (
         <Section title="Passes (multi-pass angle)">
-          <SelectField
-            label="Angle mode"
-            value={layer.angle_mode}
-            options={[
-              { value: "fixed", label: "Fixed — all passes at scan angle" },
-              { value: "crosshatch", label: "Crosshatch — alternate ±90°" },
-              { value: "incremental", label: "Incremental — XCS rotates per pass" },
-            ]}
-            onChange={(v) => onPatch({ angle_mode: v as LayerSpec["angle_mode"] })}
-          />
-          <div style={{ fontSize: 11, color: "#777", marginTop: 4 }}>
-            Pass count comes from <strong>Base parameters → Passes</strong>.
-            XCS handles the stacking natively; no rect duplication.
-          </div>
+          <Field label="Angle mode">
+            <Select
+              value={layer.angle_mode}
+              onChange={(e) =>
+                onPatch({ angle_mode: e.target.value as LayerSpec["angle_mode"] })
+              }
+            >
+              <option value="fixed">Fixed — all passes at scan angle</option>
+              <option value="crosshatch">Crosshatch — alternate ±90°</option>
+              <option value="incremental">Incremental — XCS rotates per pass</option>
+            </Select>
+          </Field>
+          <p className="text-[11.5px] text-[color:var(--color-ink-muted)] leading-relaxed">
+            Pass count comes from <strong>Base parameters → Passes</strong>. XCS
+            handles the stacking natively; no rect duplication.
+          </p>
         </Section>
       )}
 
@@ -756,39 +908,73 @@ function LayerEditor({
             onPatch({ material_id: materialId, base_params: { ...baseParams } });
           }}
         />
-        <NumberField label="Power %" value={layer.base_params.power} onChange={(v) => onBasePatch({ power: v })} />
-        <NumberField label="Speed (mm/s)" value={layer.base_params.speed} integer onChange={(v) => onBasePatch({ speed: v })} />
-        <NumberField label="Frequency (Hz)" value={layer.base_params.frequency} integer onChange={(v) => onBasePatch({ frequency: v })} />
-        <NumberField label="Lines/cm" value={layer.base_params.density} integer onChange={(v) => onBasePatch({ density: v })} />
-        <NumberField label="Passes" value={layer.base_params.passes} integer min={1} onChange={(v) => onBasePatch({ passes: v })} />
-        <NumberField label="Pulse width (ns)" value={layer.base_params.pulse_width} integer onChange={(v) => onBasePatch({ pulse_width: v })} />
-        <SelectField
-          label="Laser"
-          value={layer.base_params.laser}
-          options={[{ value: "red" as const, label: "Red (MOPA)" }, { value: "blue" as const, label: "Blue (diode)" }]}
-          onChange={(v) => onBasePatch({ laser: v })}
-        />
+        <div className="grid grid-cols-2 gap-3">
+          <NumberField
+            label="Power %"
+            value={layer.base_params.power}
+            onChange={(v) => onBasePatch({ power: v })}
+          />
+          <NumberField
+            label="Speed (mm/s)"
+            value={layer.base_params.speed}
+            integer
+            onChange={(v) => onBasePatch({ speed: v })}
+          />
+          <NumberField
+            label="Frequency (Hz)"
+            value={layer.base_params.frequency}
+            integer
+            onChange={(v) => onBasePatch({ frequency: v })}
+          />
+          <NumberField
+            label="Lines/cm"
+            value={layer.base_params.density}
+            integer
+            onChange={(v) => onBasePatch({ density: v })}
+          />
+          <NumberField
+            label="Passes"
+            value={layer.base_params.passes}
+            integer
+            min={1}
+            onChange={(v) => onBasePatch({ passes: v })}
+          />
+          <NumberField
+            label="Pulse width (ns)"
+            value={layer.base_params.pulse_width}
+            integer
+            onChange={(v) => onBasePatch({ pulse_width: v })}
+          />
+          <div className="col-span-2">
+            <Field label="Laser">
+              <Select
+                value={layer.base_params.laser}
+                onChange={(e) =>
+                  onBasePatch({ laser: e.target.value as "red" | "blue" })
+                }
+              >
+                <option value="red">Red (MOPA)</option>
+                <option value="blue">Blue (diode)</option>
+              </Select>
+            </Field>
+          </div>
+        </div>
       </Section>
-    </>
+    </div>
   );
 }
 
 function SvgPreview({
-  svg, highlightColor, enabledColors, colorMap,
+  svg,
+  highlightColor,
+  enabledColors,
+  colorMap,
 }: {
   svg: string;
   highlightColor: string | null;
   enabledColors: Set<string>;
-  /**
-   * Optional: repaint the SVG with each layer colour remapped to its predicted
-   * burn hex. Used for the "expected burn" side-by-side view.
-   */
   colorMap?: Record<string, string>;
 }) {
-  // Walks the rendered SVG DOM and for each leaf element:
-  // - hides it entirely if its color isn't in enabledColors (layer disabled)
-  // - dims to 15% if its color doesn't match highlightColor (other enabled layers)
-  // - shows at full opacity if it matches highlightColor (currently editing)
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -797,13 +983,9 @@ function SvgPreview({
     const svgEl = wrapper.querySelector("svg");
     if (!svgEl) return;
 
-    // Make the uploaded SVG fill its container responsively. Uploaded SVGs
-    // often have fixed width/height attrs that stop them scaling to the
-    // available space.
     const originalW = svgEl.getAttribute("width");
     const originalH = svgEl.getAttribute("height");
     if (!svgEl.getAttribute("viewBox") && originalW && originalH) {
-      // Some SVGs have width/height but no viewBox; synthesize one so scaling works.
       const w = parseFloat(originalW);
       const h = parseFloat(originalH);
       if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
@@ -833,17 +1015,10 @@ function SvgPreview({
     };
 
     elements.forEach((el) => {
-      // Reset per-pass state
       el.style.opacity = "";
       el.style.display = "";
-      // Skip structural elements (svg, g, defs, etc.) that don't have their own color
       if (el.tagName === "svg" || el.tagName === "g" || el.tagName === "defs") return;
 
-      // First time we see this element, stash the ORIGINAL layer colour. The
-      // colorMap path mutates fill/stroke attributes, so on subsequent passes
-      // colorOf() would read the REMAPPED hex and think the element is from a
-      // different (disabled) layer — hiding it. We always consult the stashed
-      // original instead.
       let color = el.getAttribute("data-xcs-orig-color");
       if (color === null) {
         const detected = colorOf(el);
@@ -854,22 +1029,18 @@ function SvgPreview({
         color = detected;
         el.setAttribute("data-xcs-orig-color", detected);
       }
-      if (color === "") return;  // uncoloured — leave alone
+      if (color === "") return;
 
-      // Hide entirely if this element's layer is disabled
       if (!enabledColors.has(color)) {
         el.style.display = "none";
         return;
       }
 
-      // Dim if not the highlighted layer
       if (highlightColor && color !== highlightColor) {
         el.style.opacity = "0.15";
       }
 
-      // Paint the expected burn colour if we have a prediction; otherwise
-      // restore the original colour in case a previous colorMap mutated it.
-      const desired = (colorMap && colorMap[color]) ? colorMap[color] : color;
+      const desired = colorMap && colorMap[color] ? colorMap[color] : color;
       if (el.getAttribute("fill") && el.getAttribute("fill") !== "none") {
         el.setAttribute("fill", desired);
       }
@@ -879,8 +1050,12 @@ function SvgPreview({
       const styleAttr = el.getAttribute("style");
       if (styleAttr && /(fill|stroke):/.test(styleAttr)) {
         const replaced = styleAttr
-          .replace(/fill:\s*[^;]+/, (m) => m.includes("none") ? m : `fill: ${desired}`)
-          .replace(/stroke:\s*[^;]+/, (m) => m.includes("none") ? m : `stroke: ${desired}`);
+          .replace(/fill:\s*[^;]+/, (m) =>
+            m.includes("none") ? m : `fill: ${desired}`,
+          )
+          .replace(/stroke:\s*[^;]+/, (m) =>
+            m.includes("none") ? m : `stroke: ${desired}`,
+          );
         el.setAttribute("style", replaced);
       }
     });
@@ -888,36 +1063,27 @@ function SvgPreview({
 
   if (!svg) {
     return (
-      <div style={{ background: "white", border: "1px solid #ddd", borderRadius: 4, padding: 32, textAlign: "center", color: "#999" }}>
-        Upload an SVG to preview
-      </div>
+      <EmptyState
+        icon={<FileCode2 className="h-6 w-6" />}
+        title="Upload an SVG"
+        description="Drop a file on the left panel to preview it here."
+      />
     );
   }
 
   return (
     <div
       ref={wrapperRef}
-      style={{
-        background: "white", border: "1px solid #ddd", borderRadius: 4,
-        padding: 8, flex: 1, minHeight: 0, display: "flex",
-        alignItems: "center", justifyContent: "center",
-        overflow: "hidden",
-      }}
+      className="w-full h-full min-h-[220px] flex items-center justify-center p-3"
     >
       <div
-        style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
+        className="w-full h-full flex items-center justify-center [&>svg]:max-w-full [&>svg]:max-h-full"
         dangerouslySetInnerHTML={{ __html: svg }}
       />
     </div>
   );
 }
 
-// ΔE interpretation:
-//   <  2   imperceptible to the eye
-//   2-10  visible but close
-//  10-30  different but related
-//   >30   clearly distinct
-// We render as a percentage match clamped to [0, 100] with 100 = ΔE 0.
 function deltaEToPercent(dE: number): number {
   return Math.max(0, Math.min(100, Math.round(100 - dE * 2)));
 }
@@ -926,19 +1092,23 @@ function paletteParamsToBaseParams(
   params: { [k: string]: string | number },
 ): Partial<BaseParams> {
   const laser = params["laser"];
+  const toInt = (v: string | number) =>
+    typeof v === "number" ? Math.round(v) : Math.round(Number(v));
   return {
     power: typeof params["power"] === "number" ? params["power"] : Number(params["power"]),
-    speed: typeof params["speed"] === "number" ? Math.round(params["speed"]) : Math.round(Number(params["speed"])),
-    frequency: typeof params["frequency"] === "number" ? Math.round(params["frequency"]) : Math.round(Number(params["frequency"])),
-    density: typeof params["density"] === "number" ? Math.round(params["density"]) : Math.round(Number(params["density"])),
-    passes: typeof params["passes"] === "number" ? Math.round(params["passes"]) : Math.round(Number(params["passes"])),
-    pulse_width: typeof params["pulse_width"] === "number" ? Math.round(params["pulse_width"]) : Math.round(Number(params["pulse_width"])),
-    laser: (laser === "blue" ? "blue" : "red"),
+    speed: toInt(params["speed"]),
+    frequency: toInt(params["frequency"]),
+    density: toInt(params["density"]),
+    passes: toInt(params["passes"]),
+    pulse_width: toInt(params["pulse_width"]),
+    laser: laser === "blue" ? "blue" : "red",
   };
 }
 
 function PaletteMatchSection({
-  layerColor, materialId, onApply,
+  layerColor,
+  materialId,
+  onApply,
 }: {
   layerColor: string;
   materialId: string;
@@ -958,126 +1128,137 @@ function PaletteMatchSection({
     setLoading(true);
     const matIdNum = materialId ? Number(materialId) : undefined;
     queryPalette(layerColor, { limit: 10, material_id: matIdNum })
-      .then((r) => { if (!cancelled) { setResults(r); setSelectedId(r[0]?.entry.id !== undefined ? String(r[0].entry.id) : ""); } })
-      .catch((e) => { if (!cancelled) setError((e as Error).message); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .then((r) => {
+        if (!cancelled) {
+          setResults(r);
+          setSelectedId(r[0]?.entry.id !== undefined ? String(r[0].entry.id) : "");
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) setError((e as Error).message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [layerColor, materialId]);
 
   const selected = results.find((r) => String(r.entry.id) === selectedId) ?? results[0];
 
   if (!materialId) {
     return (
-      <div style={{ marginBottom: 16, padding: 10, background: "#fff8e1", border: "1px solid #f2c97e", borderRadius: 4, fontSize: 12, color: "#785400" }}>
-        Pick a project material above to see palette matches for this layer.
+      <div className="rounded-[6px] border border-[color:var(--color-warning)]/30 bg-[#FBEFD9]/60 px-3 py-2 text-[12px] text-[color:var(--color-warning)]">
+        Pick a project material in the left column to see palette matches.
       </div>
     );
   }
 
   return (
-    <div style={{ marginBottom: 16, padding: 10, background: "#fafafa", border: "1px solid #ddd", borderRadius: 4 }}>
-      <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 8 }}>
-        Palette match
-      </div>
-
-      {loading && <div style={{ fontSize: 12, color: "#888" }}>Searching palette…</div>}
-      {error && <div style={{ fontSize: 12, color: "#a02840" }}>{error}</div>}
-      {!loading && !error && results.length === 0 && (
-        <div style={{ fontSize: 12, color: "#888" }}>
-          No palette entries for this material yet. Burn a test and upload it on the Palette tab.
+    <Card variant="elevated" padded={false} className="p-3">
+      <div className="flex items-baseline justify-between mb-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
+          Palette match
         </div>
+        {loading && (
+          <div className="text-[11px] text-[color:var(--color-ink-subtle)]">
+            Searching…
+          </div>
+        )}
+      </div>
+      {error && (
+        <p className="text-[12px] text-[color:var(--color-destructive)]">{error}</p>
       )}
-
+      {!loading && !error && results.length === 0 && (
+        <p className="text-[12px] text-[color:var(--color-ink-muted)]">
+          No palette entries for this material yet. Burn a test and upload it
+          on the Palette tab.
+        </p>
+      )}
       {selected && (
-        <>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <div className="flex flex-col gap-2.5">
+          <div className="flex items-center gap-3">
             <SwatchBox color={layerColor} label="layer" />
-            <div style={{ color: "#666", fontSize: 18 }}>→</div>
+            <div className="text-[color:var(--color-ink-subtle)] text-[16px]">→</div>
             <SwatchBox color={selected.entry.hex} label="palette" />
-            <div style={{ marginLeft: 8, fontSize: 13 }}>
-              <div><strong>{deltaEToPercent(selected.delta_e)}%</strong> match</div>
-              <div style={{ color: "#888", fontSize: 11 }}>ΔE = {selected.delta_e.toFixed(2)}</div>
+            <div className="ml-2 leading-tight">
+              <div className="text-[14px] font-semibold text-[color:var(--color-ink)]">
+                {deltaEToPercent(selected.delta_e)}% match
+              </div>
+              <div className="font-mono text-[11px] text-[color:var(--color-ink-subtle)]">
+                ΔE {selected.delta_e.toFixed(2)}
+              </div>
             </div>
-            <div style={{ flex: 1 }} />
-            <button
-              onClick={() => onApply(paletteParamsToBaseParams(selected.entry.params), selected.entry.hex)}
-              style={{
-                padding: "6px 12px", background: "#336", color: "white",
-                border: "none", borderRadius: 4, fontWeight: 600, cursor: "pointer",
-              }}
+            <div className="flex-1" />
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() =>
+                onApply(
+                  paletteParamsToBaseParams(selected.entry.params),
+                  selected.entry.hex,
+                )
+              }
             >
               Apply
-            </button>
+            </Button>
           </div>
-
           {results.length > 1 && (
-            <label style={{ display: "block", fontSize: 12, color: "#555" }}>
-              <span style={{ marginRight: 6 }}>Choose match:</span>
-              <select
+            <Field label="Choose match" inline>
+              <Select
                 value={selectedId}
                 onChange={(e) => setSelectedId(e.target.value)}
-                style={{ padding: "4px 6px", border: "1px solid #ccc", borderRadius: 4, font: "inherit", background: "white" }}
               >
                 {results.map((r) => {
                   const p = r.entry.params;
                   return (
                     <option key={r.entry.id} value={String(r.entry.id)}>
-                      {r.entry.hex}  ΔE={r.delta_e.toFixed(1)}  ·  P={p.power}% S={p.speed} {p.laser}
+                      {r.entry.hex}  ΔE={r.delta_e.toFixed(1)}  ·  P={p.power}%
+                      S={p.speed} {p.laser}
                     </option>
                   );
                 })}
-              </select>
-            </label>
+              </Select>
+            </Field>
           )}
-
-          {selected && (
-            <div style={{ marginTop: 6, fontSize: 11, color: "#888", fontFamily: "monospace" }}>
-              {Object.entries(paletteParamsToBaseParams(selected.entry.params))
-                .map(([k, v]) => `${k}=${v}`).join("  ")}
-            </div>
-          )}
-        </>
+          <div className="font-mono text-[11px] text-[color:var(--color-ink-subtle)]">
+            {Object.entries(paletteParamsToBaseParams(selected.entry.params))
+              .map(([k, v]) => `${k}=${v}`)
+              .join("  ·  ")}
+          </div>
+        </div>
       )}
-    </div>
+    </Card>
   );
 }
 
 function SwatchBox({ color, label }: { color: string; label: string }) {
   return (
-    <div style={{ textAlign: "center" }}>
-      <div style={{
-        width: 42, height: 42, borderRadius: 4, border: "1px solid #ccc",
-        background: color,
-      }} />
-      <div style={{ fontSize: 9, color: "#888", marginTop: 2 }}>{label}</div>
-      <div style={{ fontSize: 9, fontFamily: "monospace" }}>{color}</div>
+    <div className="flex flex-col items-center gap-1">
+      <div
+        className="h-10 w-10 rounded-[6px] border border-[color:var(--color-border-strong)]"
+        style={{ background: color }}
+      />
+      <div className="text-[10px] text-[color:var(--color-ink-subtle)]">{label}</div>
+      <div className="font-mono text-[10px] text-[color:var(--color-ink)]">{color}</div>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: 20 }}>
-      <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 8 }}>
-        {title}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-// Normalize a CSS color value (name, #abc, #aabbcc, rgb(...)) into lowercase #rrggbb.
-// Used for matching the preview's shape colors against the backend's detected colors.
 const NAMED_COLORS: Record<string, string> = {
-  black: "#000000", white: "#ffffff", red: "#ff0000", green: "#008000",
-  blue: "#0000ff", yellow: "#ffff00",
+  black: "#000000",
+  white: "#ffffff",
+  red: "#ff0000",
+  green: "#008000",
+  blue: "#0000ff",
+  yellow: "#ffff00",
 };
 
 function normalizeColor(color: string): string {
   const c = color.trim().toLowerCase();
   if (c.startsWith("#")) {
     if (c.length === 4) {
-      // #abc -> #aabbcc
       return `#${c[1]}${c[1]}${c[2]}${c[2]}${c[3]}${c[3]}`;
     }
     return c;

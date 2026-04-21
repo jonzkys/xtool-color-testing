@@ -1,10 +1,23 @@
-import { NumberField } from "./fields/NumberField";
-import { SelectField } from "./fields/SelectField";
+import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 import { defaultHatchPass } from "../defaults";
 import type {
-  HatchPassSpec, HatchRampSpec, HatchRampAxis, HatchRampParam,
+  HatchPassSpec,
+  HatchRampAxis,
+  HatchRampParam,
+  HatchRampSpec,
   ValidationIssue,
 } from "../types";
+import {
+  Badge,
+  Button,
+  Card,
+  cn,
+  Field,
+  IconButton,
+  NumberField,
+  Section,
+  Select,
+} from "../ui";
 
 const RAMP_PARAMS: { value: HatchRampParam; label: string }[] = [
   { value: "power", label: "Power %" },
@@ -35,9 +48,10 @@ export function HatchPassesEditor(props: HatchPassesEditorProps) {
 
   function addPass() {
     const lastAngle = passes.length > 0 ? passes[passes.length - 1].angle : 0;
-    const next = passes.length > 0
-      ? defaultHatchPass((lastAngle + 90) % 360)
-      : defaultHatchPass(0);
+    const next =
+      passes.length > 0
+        ? defaultHatchPass((lastAngle + 90) % 360)
+        : defaultHatchPass(0);
     onChange([...passes, next]);
   }
 
@@ -59,15 +73,22 @@ export function HatchPassesEditor(props: HatchPassesEditorProps) {
 
   function addRamp(passIdx: number) {
     const newRamp: HatchRampSpec = {
-      param: "power", axis: "perp", min: 0, max: 0,
+      param: "power",
+      axis: "perp",
+      min: 0,
+      max: 0,
     };
     updatePass(passIdx, { ramps: [...passes[passIdx].ramps, newRamp] });
   }
 
-  function updateRamp(passIdx: number, rampIdx: number, patch: Partial<HatchRampSpec>) {
+  function updateRamp(
+    passIdx: number,
+    rampIdx: number,
+    patch: Partial<HatchRampSpec>,
+  ) {
     updatePass(passIdx, {
-      ramps: passes[passIdx].ramps.map(
-        (r, i) => (i === rampIdx ? { ...r, ...patch } : r),
+      ramps: passes[passIdx].ramps.map((r, i) =>
+        i === rampIdx ? { ...r, ...patch } : r,
       ),
     });
   }
@@ -83,32 +104,62 @@ export function HatchPassesEditor(props: HatchPassesEditorProps) {
   }
 
   return (
-    <div style={{ marginTop: 12, padding: 12, border: "1px solid #ddd", borderRadius: 6 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <strong>Hatch passes</strong>
-        <button type="button" onClick={addPass}>+ Add pass</button>
-      </div>
-
+    <Section
+      title="Hatch passes"
+      actions={
+        <Button variant="secondary" size="sm" onClick={addPass}>
+          <Plus className="h-3.5 w-3.5" />
+          Add pass
+        </Button>
+      }
+    >
       {passes.length === 0 && (
-        <div style={{ color: "#a00", fontSize: 13 }}>
-          Hatched layer requires at least one pass. Click "+ Add pass" to start.
+        <div className="rounded-[6px] border border-[color:var(--color-destructive)]/30 bg-[color:var(--color-destructive-tint)] px-3 py-2 text-[12.5px] text-[color:var(--color-destructive)]">
+          Hatched layer requires at least one pass. Click "Add pass" to start.
         </div>
       )}
-
       {passes.map((hp, p) => {
-        const spacingIssue = issueFor(`layers[${layerIdx}].hatch_passes[${p}].spacing`);
+        const spacingIssue = issueFor(
+          `layers[${layerIdx}].hatch_passes[${p}].spacing`,
+        );
         return (
-          <div key={p} style={{ marginBottom: 12, padding: 10, border: "1px solid #eee", borderRadius: 4, background: "#fafafa" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <strong>Pass {p + 1}</strong>
-              <div style={{ display: "flex", gap: 4 }}>
-                <button type="button" disabled={p === 0} onClick={() => movePass(p, -1)} title="Move up">▲</button>
-                <button type="button" disabled={p === passes.length - 1} onClick={() => movePass(p, 1)} title="Move down">▼</button>
-                <button type="button" onClick={() => removePass(p)} title="Remove pass">✕</button>
+          <Card key={p} variant="elevated" padded={false} className="p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Badge variant="accent" size="sm">Pass {p + 1}</Badge>
+                <span className="font-mono text-[11px] text-[color:var(--color-ink-subtle)]">
+                  {hp.angle}° · {hp.spacing}mm · t{hp.thickness}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <IconButton
+                  aria-label="Move up"
+                  size="sm"
+                  variant="ghost"
+                  disabled={p === 0}
+                  icon={<ArrowUp className="h-3.5 w-3.5" />}
+                  onClick={() => movePass(p, -1)}
+                />
+                <IconButton
+                  aria-label="Move down"
+                  size="sm"
+                  variant="ghost"
+                  disabled={p === passes.length - 1}
+                  icon={<ArrowDown className="h-3.5 w-3.5" />}
+                  onClick={() => movePass(p, 1)}
+                />
+                <IconButton
+                  aria-label="Remove pass"
+                  size="sm"
+                  variant="ghost"
+                  icon={<X className="h-3.5 w-3.5" />}
+                  onClick={() => removePass(p)}
+                  className="text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
+                />
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+            <div className="grid grid-cols-3 gap-2">
               <NumberField
                 label="Angle (°)"
                 value={hp.angle}
@@ -127,32 +178,73 @@ export function HatchPassesEditor(props: HatchPassesEditorProps) {
               />
             </div>
 
-            <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <em style={{ fontSize: 13 }}>Ramps</em>
-              <button type="button" onClick={() => addRamp(p)}>+ Add ramp</button>
+            <div className="flex items-center justify-between mt-3 mb-1.5">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
+                Ramps
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => addRamp(p)}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add ramp
+              </Button>
             </div>
 
             {hp.ramps.length === 0 && (
-              <div style={{ color: "#999", fontSize: 12, marginTop: 4 }}>(no ramps — uniform params)</div>
+              <p className="text-[11.5px] text-[color:var(--color-ink-subtle)] italic">
+                No ramps — uniform params across the hatch.
+              </p>
             )}
 
             {hp.ramps.map((r, ri) => {
-              const rampIssue = issueFor(`layers[${layerIdx}].hatch_passes[${p}].ramps[${ri}]`);
+              const rampIssue = issueFor(
+                `layers[${layerIdx}].hatch_passes[${p}].ramps[${ri}]`,
+              );
               return (
-                <div key={ri} style={{ marginTop: 6, padding: 6, border: "1px solid #eee", borderRadius: 4, background: "white" }}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-                    <SelectField
-                      label="Param"
-                      value={r.param}
-                      options={RAMP_PARAMS}
-                      onChange={(v) => updateRamp(p, ri, { param: v as HatchRampParam })}
-                    />
-                    <SelectField
-                      label="Axis"
-                      value={r.axis}
-                      options={RAMP_AXES}
-                      onChange={(v) => updateRamp(p, ri, { axis: v as HatchRampAxis })}
-                    />
+                <div
+                  key={ri}
+                  className={cn(
+                    "rounded-[6px] border bg-[color:var(--color-surface)] p-2 mt-1.5",
+                    rampIssue
+                      ? "border-[color:var(--color-warning)]/40"
+                      : "border-[color:var(--color-border)]",
+                  )}
+                >
+                  <div className="grid grid-cols-[1fr_1fr_80px_80px_auto] gap-2 items-end">
+                    <Field label="Param">
+                      <Select
+                        value={r.param}
+                        onChange={(e) =>
+                          updateRamp(p, ri, {
+                            param: e.target.value as HatchRampParam,
+                          })
+                        }
+                      >
+                        {RAMP_PARAMS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label="Axis">
+                      <Select
+                        value={r.axis}
+                        onChange={(e) =>
+                          updateRamp(p, ri, {
+                            axis: e.target.value as HatchRampAxis,
+                          })
+                        }
+                      >
+                        {RAMP_AXES.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
                     <NumberField
                       label="Min"
                       value={r.min}
@@ -163,19 +255,26 @@ export function HatchPassesEditor(props: HatchPassesEditorProps) {
                       value={r.max}
                       onChange={(v) => updateRamp(p, ri, { max: v })}
                     />
-                    <button type="button" onClick={() => removeRamp(p, ri)} title="Remove ramp">✕</button>
+                    <IconButton
+                      aria-label="Remove ramp"
+                      size="sm"
+                      variant="ghost"
+                      icon={<X className="h-3.5 w-3.5" />}
+                      onClick={() => removeRamp(p, ri)}
+                      className="text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
+                    />
                   </div>
                   {rampIssue && (
-                    <div style={{ marginTop: 4, color: "#a60", fontSize: 12 }}>
+                    <p className="mt-1.5 text-[11.5px] text-[color:var(--color-warning)]">
                       {rampIssue.message}
-                    </div>
+                    </p>
                   )}
                 </div>
               );
             })}
-          </div>
+          </Card>
         );
       })}
-    </div>
+    </Section>
   );
 }
