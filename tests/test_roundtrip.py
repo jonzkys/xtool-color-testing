@@ -230,6 +230,47 @@ def test_hide_axis_labels_dual_axis_suppresses_all_ticks():
     assert types.count("TEXT") == 1  # summary only
 
 
+def test_hide_axis_labels_shrinks_row_stride_between_cells():
+    """With hide_axis_labels=True, wrapped row origins are row_height + row_gap
+    apart — no extra annotation allowance. This is the invariant that keeps
+    the capture sampler's row_stride_mm consistent with actual cell spacing."""
+    row_height = 8.0
+    row_gap = 0.5
+
+    project = generate_gradient(
+        x_param="speed", x_min=100, x_max=1000, x_steps=30,
+        rows=3,
+        total_width=60.0, total_height=row_height, row_gap=row_gap,
+        hide_axis_labels=True,
+    )
+
+    rect_ys = sorted({round(e.y, 3) for e in project.elements})
+    assert len(rect_ys) == 3
+    assert abs((rect_ys[1] - rect_ys[0]) - (row_height + row_gap)) < 0.01
+    assert abs((rect_ys[2] - rect_ys[1]) - (row_height + row_gap)) < 0.01
+
+
+def test_default_row_stride_includes_ann_space():
+    """Sanity: the pre-existing behaviour (labels visible) keeps the
+    annotation allowance in the row stride. Without it this test
+    degrades silently — the user would only notice on actual captures."""
+    from xcs_gen.text import text_height
+
+    row_height = 8.0
+    row_gap = 0.5
+    ann_space = 0.5 + 0.05 + text_height(1.2) + 0.05  # matches generator math (defaults: tick_length=0.5, label_font_size=1.2)
+
+    project = generate_gradient(
+        x_param="speed", x_min=100, x_max=1000, x_steps=30,
+        rows=3,
+        total_width=60.0, total_height=row_height, row_gap=row_gap,
+        # hide_axis_labels left at default False
+    )
+    rect_ys = sorted({round(e.y, 3) for e in project.elements})
+    expected_stride = row_height + max(row_gap, ann_space)
+    assert abs((rect_ys[1] - rect_ys[0]) - expected_stride) < 0.01
+
+
 def test_1000_elements():
     """Scaling test: 1000 elements in 100mm."""
     project = generate_gradient(
