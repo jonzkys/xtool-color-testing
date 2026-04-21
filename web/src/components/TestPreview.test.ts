@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { computePreviewGeometry } from "./TestPreview";
 import { DEFAULT_SPEC } from "../defaults";
+import { normalizeSpec } from "../specUtils";
 
 describe("computePreviewGeometry", () => {
   test("1D 10 steps, rows=1 → one row of 10 cells", () => {
@@ -28,5 +29,29 @@ describe("computePreviewGeometry", () => {
     });
     expect(g.qr).toBeNull();
     expect(g.arucos).toHaveLength(0);
+  });
+
+  test("square_cells true with wrapped rows produces square cells", () => {
+    // 14 steps across 5 rows on a 50mm-wide test → 3 cells per row,
+    // each cell width = (50 - 2*0.5)/3 = 16.333.
+    // After normalizeSpec, height_mm = 16.333 (per-row cell height).
+    // Preview must render cells as squares (w ≈ h).
+    const spec = normalizeSpec({
+      ...DEFAULT_SPEC, x_steps: 14, rows: 5, width_mm: 50, gap_mm: 0.5,
+    });
+    const g = computePreviewGeometry(spec);
+    const cell = g.rows[0].cells[0];
+    expect(cell.w).toBeCloseTo(cell.h, 2);
+  });
+
+  test("2D square_cells true produces square cells", () => {
+    const spec = normalizeSpec({
+      ...DEFAULT_SPEC,
+      x_steps: 5, y_param: "power", y_min: 0, y_max: 100, y_steps: 4,
+      width_mm: 50, gap_mm: 0.5,
+    });
+    const g = computePreviewGeometry(spec);
+    const cell = g.rows[0].cells[0];
+    expect(cell.w).toBeCloseTo(cell.h, 2);
   });
 });

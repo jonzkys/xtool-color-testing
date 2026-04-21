@@ -27,15 +27,23 @@ export function computePreviewGeometry(spec: TestSpec): PreviewGeometry {
   const gridX = xShift;
   const gridY = yShift;
   const gridW = spec.width_mm;
-  const gridH = spec.height_mm;
+  // height_mm follows the backend convention:
+  //   2D (y_param + y_steps > 1): height_mm = total grid height across y_steps rows
+  //   1D (single or wrapped):     height_mm = per-row cell height
+  const ySteps = spec.y_steps ?? 1;
+  const is2D = spec.y_param !== null && ySteps > 1;
+  const rowCount = is2D ? ySteps : Math.max(1, spec.rows);
+  const cellsPerRow = is2D ? spec.x_steps : Math.ceil(spec.x_steps / rowCount);
+  const cellW = (gridW - Math.max(0, cellsPerRow - 1) * spec.gap_mm) / cellsPerRow;
+  const rowHeight = is2D
+    ? (spec.height_mm - Math.max(0, ySteps - 1) * spec.gap_mm) / ySteps
+    : spec.height_mm;
+  const gridH = is2D
+    ? spec.height_mm
+    : rowCount * rowHeight + Math.max(0, rowCount - 1) * spec.gap_mm;
 
   const viewW = gridX + gridW + (regOn ? arucoSize + MARGIN : 0);
   const viewH = gridY + gridH + (regOn ? arucoSize + MARGIN : 0);
-
-  const rowCount = Math.max(1, spec.rows);
-  const cellsPerRow = Math.ceil(spec.x_steps / rowCount);
-  const cellW = (gridW - Math.max(0, cellsPerRow - 1) * spec.gap_mm) / cellsPerRow;
-  const rowHeight = (gridH - Math.max(0, rowCount - 1) * spec.gap_mm) / rowCount;
 
   const step = (spec.x_max - spec.x_min) / Math.max(1, spec.x_steps - 1);
   const rows: Row[] = [];
