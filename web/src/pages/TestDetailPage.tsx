@@ -8,6 +8,7 @@ import { TestPreview } from "../components/TestPreview";
 import { ResultsPanel } from "../components/ResultsPanel";
 import { formatRoute } from "../router";
 import { DEFAULT_SPEC } from "../defaults";
+import { normalizeSpec } from "../specUtils";
 
 interface Props {
   testId: number | "new";
@@ -44,11 +45,13 @@ export function TestDetailPage({ testId }: Props) {
     if (materialId === null) { setError("Pick a material"); return; }
     setSaving(true); setError(undefined);
     try {
+      const normalized = normalizeSpec(spec);
+      if (normalized !== spec) setSpec(normalized);
       if (test) {
-        const updated = await updateTest(test.id, test.locked ? { name } : { name, spec });
+        const updated = await updateTest(test.id, test.locked ? { name } : { name, spec: normalized });
         setTest(updated);
       } else {
-        const created = await createTest({ name, material_id: materialId, spec });
+        const created = await createTest({ name, material_id: materialId, spec: normalized });
         window.location.hash = formatRoute({ name: "test-detail", id: created.id });
       }
     } catch (e) { setError((e as Error).message); }
@@ -64,17 +67,26 @@ export function TestDetailPage({ testId }: Props) {
 
   async function onDuplicate() {
     if (materialId === null) return;
-    const copy = await createTest({ name: `${name} (copy)`, material_id: materialId, spec });
+    const copy = await createTest({ name: `${name} (copy)`, material_id: materialId, spec: normalizeSpec(spec) });
     window.location.hash = formatRoute({ name: "test-detail", id: copy.id });
   }
 
   async function onGenerate() {
     if (!test) return;
-    const blob = await generateTestXcs(test.id);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `${test.name || `test-${test.id}`}.xcs`;
-    a.click(); URL.revokeObjectURL(url);
+    setError(undefined);
+    try {
+      if (!test.locked) {
+        const normalized = normalizeSpec(spec);
+        if (normalized !== spec) setSpec(normalized);
+        const updated = await updateTest(test.id, { name, spec: normalized });
+        setTest(updated);
+      }
+      const blob = await generateTestXcs(test.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `${test.name || `test-${test.id}`}.xcs`;
+      a.click(); URL.revokeObjectURL(url);
+    } catch (e) { setError((e as Error).message); }
   }
 
   return (

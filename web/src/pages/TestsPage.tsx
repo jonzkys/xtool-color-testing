@@ -5,6 +5,7 @@ import { listTests, createTest } from "../api/tests";
 import { listMaterials, listPresets } from "../api/library";
 import { formatRoute } from "../router";
 import { DEFAULT_SPEC } from "../defaults";
+import { normalizeSpec } from "../specUtils";
 
 export function TestsPage() {
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -32,7 +33,7 @@ export function TestsPage() {
     }
     const mid = materialId ?? materials[0].id;
     const preset = presets.find(p => p.material_id === mid && p.is_default);
-    const spec = { ...DEFAULT_SPEC, base_params: preset?.base_params ?? DEFAULT_SPEC.base_params };
+    const spec = normalizeSpec({ ...DEFAULT_SPEC, base_params: preset?.base_params ?? DEFAULT_SPEC.base_params });
     const t = await createTest({ name: "New test", material_id: mid, spec });
     window.location.hash = formatRoute({ name: "test-detail", id: t.id });
   }
