@@ -45,6 +45,9 @@ from .schemas import (
     SvgPreviewRequest,
     SvgPreviewResponse,
     SvgStackRequest,
+    TestCreate,
+    TestUpdate,
+    TestResponse,
 )
 from .svg_converter import svg_stack_to_xcs_bytes
 from .svg_layers_converter import (
@@ -379,6 +382,54 @@ def create_app() -> FastAPI:
     @app.delete("/api/presets/{pid}", status_code=204)
     def presets_delete(pid: int) -> Response:
         p_repo.delete(pid)
+        return Response(status_code=204)
+
+    from .repositories import tests as t_repo
+    from .repositories.tests import LockedError
+
+    # Tests
+    @app.post("/api/tests", response_model=TestResponse, status_code=201)
+    def tests_create(body: TestCreate) -> TestResponse:
+        if m_repo.get(body.material_id) is None:
+            raise HTTPException(status_code=400, detail="unknown material_id")
+        t = t_repo.create(
+            name=body.name, material_id=body.material_id,
+            spec=body.spec.model_dump(), notes=body.notes,
+        )
+        return TestResponse(**t)
+
+    @app.get("/api/tests", response_model=list[TestResponse])
+    def tests_list(material_id: int | None = None,
+                   status: str | None = None) -> list[TestResponse]:
+        return [TestResponse(**t) for t in t_repo.list_all(
+            material_id=material_id, status=status,
+        )]
+
+    @app.get("/api/tests/{tid}", response_model=TestResponse)
+    def tests_get(tid: int) -> TestResponse:
+        t = t_repo.get(tid)
+        if t is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        return TestResponse(**t)
+
+    @app.patch("/api/tests/{tid}", response_model=TestResponse)
+    def tests_patch(tid: int, body: TestUpdate) -> TestResponse:
+        if t_repo.get(tid) is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        try:
+            t = t_repo.update(
+                tid, name=body.name, notes=body.notes,
+                spec=body.spec.model_dump() if body.spec else None,
+            )
+        except LockedError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        return TestResponse(**t)
+
+    @app.delete("/api/tests/{tid}", status_code=204)
+    def tests_delete(tid: int) -> Response:
+        if t_repo.get(tid) is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        t_repo.soft_delete(tid)
         return Response(status_code=204)
 
     # Mount built frontend at / if present (optional in dev / tests)

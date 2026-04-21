@@ -36,12 +36,13 @@ class RegistrationConfig(BaseModel):
     for a specific substrate or phone camera resolution.
     """
 
-    mode: Literal["auto", "compact", "full", "off"] = "off"
+    mode: Literal["auto", "compact", "full", "off", "on"] = "off"
     qr_mode: Literal["inline", "id_only"] = "inline"
     qr_position: Literal[
         "top-left", "top-right", "bottom-right", "left-middle",
     ] = "top-left"
     qr_size_mm: float | None = Field(default=None, gt=0, le=50)
+    aruco_size_mm: float | None = Field(default=None, gt=0, le=50)
 
 
 class ParamTest(BaseModel):
@@ -377,3 +378,49 @@ class PresetResponse(BaseModel):
     base_params: BaseParams
     created_at: str
     updated_at: str
+
+
+class TestSpec(BaseModel):
+    x_param: str
+    x_min: float
+    x_max: float
+    x_steps: int
+    y_param: str | None = None
+    y_min: float | None = None
+    y_max: float | None = None
+    y_steps: int | None = None
+    rows: int = 1
+    width_mm: float
+    height_mm: float
+    gap_mm: float = 0.5
+    cell_shape: str = "rect"              # "rect" | "circle"
+    square_cells: bool = False
+    angle_mode: str = "fixed"             # "fixed" | "crosshatch" | "incremental"
+    unidirectional: bool = False
+    base_params: BaseParams
+    registration: RegistrationConfig = Field(default_factory=RegistrationConfig)
+
+
+class TestCreate(BaseModel):
+    name: str
+    material_id: int
+    spec: TestSpec
+    notes: str = ""
+
+
+class TestUpdate(BaseModel):
+    name: str | None = None
+    notes: str | None = None
+    spec: TestSpec | None = None
+
+
+class TestResponse(BaseModel):
+    id: int
+    name: str
+    material_id: int
+    status: str
+    spec: TestSpec
+    notes: str
+    created_at: str
+    updated_at: str
+    locked: bool
