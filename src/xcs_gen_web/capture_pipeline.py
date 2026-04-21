@@ -106,9 +106,12 @@ def _qr_corners_px(img: np.ndarray) -> tuple[int, dict[int, tuple[float, float]]
 
     Each QR contributes four anchor points rather than just one, so a
     homography can be solved even when some ArUco corners are missed.
-    pyzbar's polygon is emitted in counter-clockwise order starting at
-    the QR's own top-left (the finder-pattern corner), i.e. TL, BL, BR,
-    TR regardless of image rotation.
+    pyzbar's polygon order is inconsistent across photos (it depends on
+    which finder-pattern side the decoder landed on), so we canonicalise
+    the four polygon vertices by image-space position — TL=min(x+y),
+    BR=max(x+y), TR=max(x-y), BL=min(x-y). This assumes the QR is
+    roughly upright in the image, which is the normal case for hand-held
+    phone shots of a flat burn.
     """
     from xcs_gen.capture.qr_payload import PayloadError, decode_payload
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -118,16 +121,16 @@ def _qr_corners_px(img: np.ndarray) -> tuple[int, dict[int, tuple[float, float]]
                 payload = decode_payload(sym.data.decode("utf-8"))
             except (PayloadError, UnicodeDecodeError):
                 continue
-            pts = sym.polygon
-            if len(pts) < 4:
+            if len(sym.polygon) < 4:
                 continue
-            pts = pts[:4]
-            return payload["id"], {
-                QR_TL: (float(pts[0].x), float(pts[0].y)),
-                QR_BL: (float(pts[1].x), float(pts[1].y)),
-                QR_BR: (float(pts[2].x), float(pts[2].y)),
-                QR_TR: (float(pts[3].x), float(pts[3].y)),
-            }
+            arr = np.array([[p.x, p.y] for p in sym.polygon[:4]], dtype=np.float32)
+            s = arr[:, 0] + arr[:, 1]
+            d = arr[:, 0] - arr[:, 1]
+            tl = tuple(float(x) for x in arr[int(np.argmin(s))])
+            br = tuple(float(x) for x in arr[int(np.argmax(s))])
+            tr = tuple(float(x) for x in arr[int(np.argmax(d))])
+            bl = tuple(float(x) for x in arr[int(np.argmin(d))])
+            return payload["id"], {QR_TL: tl, QR_BL: bl, QR_BR: br, QR_TR: tr}
     raise DetectionError("no valid id-only QR detected")
 
 
