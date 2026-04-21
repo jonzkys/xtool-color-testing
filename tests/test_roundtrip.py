@@ -183,6 +183,38 @@ def test_annotations_present():
     assert text_count == 6
 
 
+def test_hide_axis_labels_wrapped_suppresses_ticks_and_labels():
+    """With hide_axis_labels=True, only the summary TEXT is emitted; no tick LINEs."""
+    project = generate_gradient(
+        x_param="speed",
+        x_min=100,
+        x_max=1000,
+        x_steps=20,
+        rows=2,
+        total_width=100.0,
+        total_height=10.0,
+        row_gap=0.5,
+        hide_axis_labels=True,
+    )
+    result = build_xcs(project)
+    types = [d["type"] for d in result["canvas"][0]["displays"]]
+    # 20 cells + 1 summary TEXT, no tick LINEs, no axis-label TEXTs.
+    assert types.count("RECT") == 20
+    assert types.count("LINE") == 0
+    assert types.count("TEXT") == 1
+
+
+def test_hide_axis_labels_default_false_keeps_existing_behaviour():
+    """Existing call sites keep rendering ticks + labels."""
+    project = generate_gradient(
+        x_param="speed", x_min=100, x_max=1000, x_steps=10,
+    )
+    result = build_xcs(project)
+    types = [d["type"] for d in result["canvas"][0]["displays"]]
+    assert "LINE" in types
+    assert types.count("TEXT") >= 2  # summary + at least one axis label
+
+
 def test_1000_elements():
     """Scaling test: 1000 elements in 100mm."""
     project = generate_gradient(

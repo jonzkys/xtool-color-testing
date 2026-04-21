@@ -118,6 +118,7 @@ def generate_gradient(
     cell_shape: str = "rect",  # "rect" | "circle"
     test_id: str | None = None,
     material_id: str | None = None,
+    hide_axis_labels: bool = False,
 ) -> XCSProject:
     """Generate a gradient test pattern with axis annotations.
 
@@ -212,6 +213,7 @@ def generate_gradient(
             label_font_size=label_font_size, tick_length=tick_length,
             annotation_params=annotation_params,
             cell_shape=cell_shape,
+            hide_axis_labels=hide_axis_labels,
         )
     else:
         _generate_wrapped(
@@ -224,6 +226,7 @@ def generate_gradient(
             label_font_size=label_font_size, tick_length=tick_length,
             annotation_params=annotation_params,
             cell_shape=cell_shape,
+            hide_axis_labels=hide_axis_labels,
         )
 
     if registration_mode != "off":
@@ -250,7 +253,9 @@ def generate_gradient(
         # effective_row_gap = max(row_gap, ann_space).
         row_stride_mm: float | None = None
         if rows > 1 and not is_dual:
-            ann_space = tick_length + 0.05 + text_height(label_font_size) + 0.05
+            ann_space = 0.0 if hide_axis_labels else (
+                tick_length + 0.05 + text_height(label_font_size) + 0.05
+            )
             effective_row_gap = max(row_gap, ann_space)
             row_stride_mm = total_height + effective_row_gap
 
@@ -365,6 +370,7 @@ def _generate_wrapped(
     tick_length: float,
     annotation_params: ProcessingParams,
     cell_shape: str = "rect",
+    hide_axis_labels: bool = False,
 ) -> None:
     """Generate a single-axis gradient, optionally wrapped across rows."""
     per_row = math.ceil(x_steps / rows)
@@ -374,7 +380,9 @@ def _generate_wrapped(
 
     # For multi-row: compute the space needed for labels below each row
     # and ensure row_gap is large enough (only matters for non-last rows)
-    ann_space = tick_length + 0.05 + text_height(label_font_size) + 0.05
+    ann_space = 0.0 if hide_axis_labels else (
+        tick_length + 0.05 + text_height(label_font_size) + 0.05
+    )
     effective_row_gap = max(row_gap, ann_space) if rows > 1 else 0
 
     for row in range(rows):
@@ -401,64 +409,65 @@ def _generate_wrapped(
                 processing_type=processing_type,
             )
 
-        # Labels below each row
-        bottom_y = row_y + row_height
-        label_y = bottom_y + tick_length + 0.05
+        if not hide_axis_labels:
+            # Labels below each row
+            bottom_y = row_y + row_height
+            label_y = bottom_y + tick_length + 0.05
 
-        # Row spans from start_x to row_right (the actual edges of the gradient)
-        row_right = start_x + (row_count - 1) * (elem_w + gap) + elem_w
+            # Row spans from start_x to row_right (the actual edges of the gradient)
+            row_right = start_x + (row_count - 1) * (elem_w + gap) + elem_w
 
-        # Start tick + label (aligned to left edge of gradient)
-        _add_tick_and_label(
-            project,
-            param=x_param,
-            value=x_values[row_start],
-            cx=start_x,
-            bottom_y=bottom_y,
-            label_y=label_y,
-            tick_length=tick_length,
-            font_size=label_font_size,
-            layer_color=ann_layer,
-            annotation_params=annotation_params,
-            align="start",
-        )
+            # Start tick + label (aligned to left edge of gradient)
+            _add_tick_and_label(
+                project,
+                param=x_param,
+                value=x_values[row_start],
+                cx=start_x,
+                bottom_y=bottom_y,
+                label_y=label_y,
+                tick_length=tick_length,
+                font_size=label_font_size,
+                layer_color=ann_layer,
+                annotation_params=annotation_params,
+                align="start",
+            )
 
-        # End tick + label (aligned to right edge of gradient)
-        _add_tick_and_label(
-            project,
-            param=x_param,
-            value=x_values[row_end - 1],
-            cx=row_right,
-            bottom_y=bottom_y,
-            label_y=label_y,
-            tick_length=tick_length,
-            font_size=label_font_size,
-            layer_color=ann_layer,
-            annotation_params=annotation_params,
-            align="end",
-        )
+            # End tick + label (aligned to right edge of gradient)
+            _add_tick_and_label(
+                project,
+                param=x_param,
+                value=x_values[row_end - 1],
+                cx=row_right,
+                bottom_y=bottom_y,
+                label_y=label_y,
+                tick_length=tick_length,
+                font_size=label_font_size,
+                layer_color=ann_layer,
+                annotation_params=annotation_params,
+                align="end",
+            )
 
-        # Middle labels: evenly spaced along the row width between start and end
-        n_middle = 3  # 3 middle ticks = 5 total labels per row (start + 3 + end)
-        if row_count > 2:
-            for m in range(1, n_middle + 1):
-                frac = m / (n_middle + 1)
-                # Position along row width
-                cx = start_x + frac * (row_right - start_x)
-                # Corresponding element index
-                idx = min(row_count - 1, int(round(frac * (row_count - 1))))
-                _add_tick_and_label(
-                    project,
-                    param=x_param,
-                    value=x_values[row_start + idx],
-                    cx=cx,
-                    bottom_y=bottom_y,
-                    label_y=label_y,
-                    tick_length=tick_length,
-                    font_size=label_font_size,
-                    layer_color=ann_layer,
-                    annotation_params=annotation_params,
-                )
+            # Middle labels: evenly spaced along the row width between start and end
+            n_middle = 3  # 3 middle ticks = 5 total labels per row (start + 3 + end)
+            if row_count > 2:
+                for m in range(1, n_middle + 1):
+                    frac = m / (n_middle + 1)
+                    # Position along row width
+                    cx = start_x + frac * (row_right - start_x)
+                    # Corresponding element index
+                    idx = min(row_count - 1, int(round(frac * (row_count - 1))))
+                    _add_tick_and_label(
+                        project,
+                        param=x_param,
+                        value=x_values[row_start + idx],
+                        cx=cx,
+                        bottom_y=bottom_y,
+                        label_y=label_y,
+                        tick_length=tick_length,
+                        font_size=label_font_size,
+                        layer_color=ann_layer,
+                        annotation_params=annotation_params,
+                    )
 
 
 def _generate_dual_axis(
@@ -481,6 +490,7 @@ def _generate_dual_axis(
     tick_length: float,
     annotation_params: ProcessingParams,
     cell_shape: str = "rect",
+    hide_axis_labels: bool = False,
 ) -> None:
     """Generate a dual-axis gradient grid."""
     elem_w = (total_width - max(0, x_steps - 1) * gap) / x_steps
