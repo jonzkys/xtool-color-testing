@@ -5,6 +5,7 @@ import {
 import type { PaletteEntry, PaletteQueryResult } from "../types";
 import type { Material } from "../library";
 import { listMaterials, listPresets } from "../api/library";
+import { formatRoute } from "../router";
 
 type View = "query" | "browse";
 
@@ -287,6 +288,12 @@ function EntryCard({ entry, onDelete, onInfo }: {
         }}>
           delete
         </button>
+      </div>
+      <div style={{ marginTop: 4 }}>
+        <a href={formatRoute({ name: "test-detail", id: entry.test_id })}
+           style={{ fontSize: 11, color: "#336", textDecoration: "none" }}>
+          View test #{entry.test_id}
+        </a>
       </div>
     </div>
   );
