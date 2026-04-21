@@ -366,6 +366,9 @@ class TestSpec(BaseModel):
     square_cells: bool = False
     angle_mode: str = "fixed"             # "fixed" | "crosshatch" | "incremental"
     unidirectional: bool = False
+    # When true, per-row tick + axis-label elements are suppressed on the
+    # generated test so multi-row layouts pack tighter. Summary header stays.
+    hide_axis_labels: bool = False
     base_params: BaseParams
     registration: RegistrationConfig = Field(default_factory=RegistrationConfig)
 
