@@ -4,6 +4,13 @@ const MARGIN = 1.5;
 const QR_DEFAULT = 5;
 const ARUCO_DEFAULT = 2;
 
+// Axis label font (in mm) and the vertical space the generator reserves between
+// wrapped rows for tick + label. Mirrors the backend's _annotation_space_below
+// so the preview reflects what actually gets burned when gap_mm is tight.
+const LABEL_FONT_MM = 1.4;
+const TICK_MM = 0.5;
+const ROW_ANNOTATION_MM = TICK_MM + 0.1 + LABEL_FONT_MM + 0.1;
+
 interface Cell { x: number; y: number; w: number; h: number; }
 interface Row { yMm: number; heightMm: number; cells: Cell[]; labelMin: string; labelMax: string; }
 
@@ -38,9 +45,15 @@ export function computePreviewGeometry(spec: TestSpec): PreviewGeometry {
   const rowHeight = is2D
     ? (spec.height_mm - Math.max(0, ySteps - 1) * spec.gap_mm) / ySteps
     : spec.height_mm;
+  // Wrapped 1D rows get stretched apart to fit per-row axis labels — same
+  // expansion the generator applies via effective_row_gap. 2D has no
+  // per-row labels.
+  const interRowGap = !is2D && rowCount > 1
+    ? Math.max(spec.gap_mm, ROW_ANNOTATION_MM)
+    : spec.gap_mm;
   const gridH = is2D
     ? spec.height_mm
-    : rowCount * rowHeight + Math.max(0, rowCount - 1) * spec.gap_mm;
+    : rowCount * rowHeight + Math.max(0, rowCount - 1) * interRowGap;
 
   const viewW = gridX + gridW + (regOn ? arucoSize + MARGIN : 0);
   const viewH = gridY + gridH + (regOn ? arucoSize + MARGIN : 0);
@@ -52,17 +65,18 @@ export function computePreviewGeometry(spec: TestSpec): PreviewGeometry {
   for (let r = 0; r < rowCount; r++) {
     const take = Math.min(cellsPerRow, cellsLeft);
     const cells: Cell[] = [];
+    const rowY = gridY + r * (rowHeight + interRowGap);
     for (let c = 0; c < take; c++) {
       cells.push({
         x: gridX + c * (cellW + spec.gap_mm),
-        y: gridY + r * (rowHeight + spec.gap_mm),
+        y: rowY,
         w: cellW, h: rowHeight,
       });
     }
     const minVal = spec.x_min + cellIdx * step;
     const maxVal = spec.x_min + (cellIdx + take - 1) * step;
     rows.push({
-      yMm: gridY + r * (rowHeight + spec.gap_mm),
+      yMm: rowY,
       heightMm: rowHeight,
       cells,
       labelMin: minVal.toFixed(0),
@@ -94,7 +108,7 @@ export function TestPreview({ spec, testId: _testId }: { spec: TestSpec; testId:
            style={{ width: "100%", height: "auto", background: "#f4e9d4",
                     border: "1px solid #bbb", display: "block" }}>
         {g.rows.map((row, ri) => (
-          <g key={ri}>
+          <g key={`cells-${ri}`}>
             {row.cells.map((cell, ci) => (
               g.shape === "circle" ? (
                 <circle key={ci} cx={cell.x + cell.w / 2} cy={cell.y + cell.h / 2}
@@ -105,13 +119,20 @@ export function TestPreview({ spec, testId: _testId }: { spec: TestSpec; testId:
                       fill="#c7a46a" stroke="#8d6d3d" strokeWidth={0.1} />
               )
             ))}
-            <text x={g.gridX} y={row.yMm + row.heightMm + 1.8}
-                  fontSize={1.4} fill="#444" fontFamily="monospace">{row.labelMin}</text>
-            <text x={g.gridX + g.gridW} y={row.yMm + row.heightMm + 1.8}
-                  fontSize={1.4} fill="#444" fontFamily="monospace"
-                  textAnchor="end">{row.labelMax}</text>
           </g>
         ))}
+        {g.rows.map((row, ri) => {
+          const labelY = row.yMm + row.heightMm + LABEL_FONT_MM;
+          return (
+            <g key={`labels-${ri}`}>
+              <text x={g.gridX} y={labelY}
+                    fontSize={LABEL_FONT_MM} fill="#444" fontFamily="monospace">{row.labelMin}</text>
+              <text x={g.gridX + g.gridW} y={labelY}
+                    fontSize={LABEL_FONT_MM} fill="#444" fontFamily="monospace"
+                    textAnchor="end">{row.labelMax}</text>
+            </g>
+          );
+        })}
         {g.qr && (
           <rect x={g.qr.x} y={g.qr.y} width={g.qr.size} height={g.qr.size}
                 fill="#111" />
