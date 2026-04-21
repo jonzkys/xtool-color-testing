@@ -30,48 +30,6 @@ button {
   outline-offset: 2px;
 }
 
-/* Legacy help-icon tooltip — retained for NumberField's fixed-position
- * tooltip behaviour that escapes scroll parents. Radix Tooltip portal will
- * replace the rest of the app's help tooltips.
- */
-.help-icon {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--color-ink-subtle);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 50%;
-  cursor: help;
-  user-select: none;
-  background: var(--color-surface);
-}
-.help-icon:hover,
-.help-icon:focus-visible {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-  outline: none;
-}
-.help-tip {
-  background: #1A1613;
-  color: #F7F5F2;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 1.45;
-  width: 260px;
-  z-index: 1000;
-  pointer-events: none;
-  white-space: normal;
-  text-align: left;
-  box-shadow: var(--shadow-popover);
-}
-
 /* Scrollbar polish — subtle so it doesn't compete with content */
 @media (pointer: fine) {
   ::-webkit-scrollbar { width: 10px; height: 10px; }
