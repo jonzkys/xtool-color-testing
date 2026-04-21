@@ -59,6 +59,9 @@ export interface ParamTest {
   material_id: string;  // required — palette queries are material-scoped
   /** true → burn one direction only (oneWay). false (default) → bi-directional (zMode). */
   unidirectional: boolean;
+  /** When true, per-row tick + numeric axis labels are suppressed on the
+   *  generated test. The summary header line is still drawn. */
+  hide_axis_labels: boolean;
 }
 
 export interface TestPlacement {

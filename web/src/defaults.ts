@@ -47,6 +47,7 @@ export function defaultTest(name = "New test"): ParamTest {
     // this is empty.
     material_id: "",
     unidirectional: false,
+    hide_axis_labels: false,
   };
 }
 
