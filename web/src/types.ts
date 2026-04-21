@@ -162,6 +162,11 @@ export interface DetectedLayer {
   color: string;
   shape_count: number;
   is_fill: boolean;
+  /** True when every RGB channel is >= 245 (pure white + vtracer
+   *  near-white artefacts). The layer-picker hides these by default
+   *  unless the user ticks "Include white". Optional on the wire so
+   *  older backend responses still validate. */
+  is_near_white?: boolean;
 }
 
 export interface CaptureSwatch {
