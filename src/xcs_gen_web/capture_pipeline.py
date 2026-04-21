@@ -81,6 +81,11 @@ def decode_image_bytes(raw: bytes) -> np.ndarray:
 _ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 _ARUCO_PARAMS = cv2.aruco.DetectorParameters()
 
+# Fiducial keys used in corners_px / burn_anchors_mm. ArUco IDs 1/2/3
+# occupy the TR/BL/BR burn-space corners; the QR contributes four
+# polygon corners (TL is key 0 so older call sites keep working).
+QR_TL, QR_BL, QR_BR, QR_TR = 0, 4, 5, 6
+
 
 def _preprocessing_variants(gray: np.ndarray) -> list[np.ndarray]:
     """Return candidate images for fiducial detection.
@@ -96,8 +101,15 @@ def _preprocessing_variants(gray: np.ndarray) -> list[np.ndarray]:
     return [gray, otsu]
 
 
-def _qr_top_left_px(img: np.ndarray) -> tuple[int, tuple[float, float]]:
-    """Return (qr_id, top_left_px). The QR's top-left module anchors the homography."""
+def _qr_corners_px(img: np.ndarray) -> tuple[int, dict[int, tuple[float, float]]]:
+    """Return (qr_id, {QR_TL/BL/BR/TR: (x, y) in pixels}).
+
+    Each QR contributes four anchor points rather than just one, so a
+    homography can be solved even when some ArUco corners are missed.
+    pyzbar's polygon is emitted in counter-clockwise order starting at
+    the QR's own top-left (the finder-pattern corner), i.e. TL, BL, BR,
+    TR regardless of image rotation.
+    """
     from xcs_gen.capture.qr_payload import PayloadError, decode_payload
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     for candidate in _preprocessing_variants(gray):
@@ -109,8 +121,13 @@ def _qr_top_left_px(img: np.ndarray) -> tuple[int, tuple[float, float]]:
             pts = sym.polygon
             if len(pts) < 4:
                 continue
-            tl = min(pts, key=lambda p: p.x + p.y)
-            return payload["id"], (float(tl.x), float(tl.y))
+            pts = pts[:4]
+            return payload["id"], {
+                QR_TL: (float(pts[0].x), float(pts[0].y)),
+                QR_BL: (float(pts[1].x), float(pts[1].y)),
+                QR_BR: (float(pts[2].x), float(pts[2].y)),
+                QR_TR: (float(pts[3].x), float(pts[3].y)),
+            }
     raise DetectionError("no valid id-only QR detected")
 
 
@@ -136,13 +153,17 @@ def _aruco_centres_px(img: np.ndarray) -> dict[int, tuple[float, float]]:
 
 
 def detect_fiducials(img: np.ndarray) -> tuple[int, dict[int, tuple[float, float]]]:
-    """Return (qr_id, {0: QR-top-left, 1/2/3: ArUco centres}) in pixel coords."""
-    qr_id, qr_tl = _qr_top_left_px(img)
+    """Return (qr_id, fiducials) where fiducials maps marker keys to pixel centres.
+
+    Keys: 0/4/5/6 → QR TL/BL/BR/TR, 1/2/3 → ArUco TR/BL/BR centres. The
+    four QR corners alone give a well-determined homography, so a
+    partial ArUco detection (at least one of three) is still usable.
+    """
+    qr_id, qr_corners = _qr_corners_px(img)
     arucos = _aruco_centres_px(img)
-    missing = [i for i in (1, 2, 3) if i not in arucos]
-    if len(missing) > 1:
-        raise DetectionError(f"insufficient ArUco markers; missing {missing}")
-    corners: dict[int, tuple[float, float]] = {0: qr_tl}
+    # Accept any non-empty ArUco detection. Together with the 4 QR corners
+    # that gives us at least 5 matches for the homography.
+    corners: dict[int, tuple[float, float]] = dict(qr_corners)
     corners.update(arucos)
     return qr_id, corners
 

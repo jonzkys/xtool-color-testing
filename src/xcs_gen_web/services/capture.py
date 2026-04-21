@@ -15,6 +15,7 @@ from xcs_gen.capture.layout import (
 )
 
 from ..capture_pipeline import (
+    QR_BL, QR_BR, QR_TL, QR_TR,
     DetectionError,
     decode_image_bytes,
     detect_fiducials,
@@ -73,19 +74,27 @@ def run_capture(*, image_bytes: bytes, test_id: int,
         grid_w=grid_w, grid_h=grid_h,
         mode="on", qr_size_mm=qr_size, aruco_size_mm=aruco_size,
     )
-    # layout.arucos: list of 3 MarkerPositions at top-left corners of each
-    # ArUco; the detector reports centres so convert by offsetting half-size.
-    burn_anchors = {0: qr_tl}
+    # QR anchors (4 corners of the QR square, burn-space mm) plus ArUco
+    # centres (converted from layout's top-left + half-size offsets).
+    burn_anchors = {
+        QR_TL: qr_tl,
+        QR_BL: (qr_tl[0], qr_tl[1] + qr_size),
+        QR_BR: (qr_tl[0] + qr_size, qr_tl[1] + qr_size),
+        QR_TR: (qr_tl[0] + qr_size, qr_tl[1]),
+    }
     for ar in layout.arucos:
         burn_anchors[ar.marker_id] = (ar.x + ar.size / 2, ar.y + ar.size / 2)
 
-    warped = warp_to_burn_space(
-        img,
-        burn_anchors_mm=burn_anchors,
-        corners_px=corners_px,
-        burn_size_mm=(burn_w, burn_h),
-        px_per_mm=10.0,
-    )
+    try:
+        warped = warp_to_burn_space(
+            img,
+            burn_anchors_mm=burn_anchors,
+            corners_px=corners_px,
+            burn_size_mm=(burn_w, burn_h),
+            px_per_mm=10.0,
+        )
+    except DetectionError as e:
+        raise CaptureError(str(e)) from e
 
     swatches_raw = sample_grid(
         warped,

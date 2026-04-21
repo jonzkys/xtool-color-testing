@@ -51,7 +51,8 @@ def test_detect_fiducials_returns_id_and_four_corners():
     img = _render_strip()
     qr_id, corners = detect_fiducials(img)
     assert qr_id == 7
-    assert set(corners.keys()) == {0, 1, 2, 3}
+    # 4 QR polygon corners (0/4/5/6) + 3 ArUco centres (1/2/3).
+    assert set(corners.keys()) == {0, 1, 2, 3, 4, 5, 6}
     for k in corners:
         assert len(corners[k]) == 2
 

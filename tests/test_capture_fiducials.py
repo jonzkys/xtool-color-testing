@@ -49,21 +49,21 @@ def test_detect_finds_qr_and_three_arucos():
     img, _ = _render_strip()
     qr_id, corners = detect_fiducials(img)
     assert qr_id == 42
-    assert set(corners.keys()) == {0, 1, 2, 3}
-    # All returned "corners" are (x, y) px tuples
+    # 4 QR polygon corners (keys 0/4/5/6) + 3 ArUco centres (1/2/3).
+    assert set(corners.keys()) == {0, 1, 2, 3, 4, 5, 6}
     for k in corners:
         assert len(corners[k]) == 2
 
 
-def test_detect_raises_when_arucos_missing(monkeypatch):
-    """If too few ArUcos are found, detect_fiducials raises DetectionError.
+def test_detect_succeeds_with_zero_arucos(monkeypatch):
+    """QR alone gives 4 anchors — homography is still well-determined.
 
     Uses a real strip image but monkey-patches the ArUco detector to simulate
     a scenario where the markers were unreadable (e.g., out of frame, occluded).
     """
-    import pytest
     from xcs_gen_web import capture_pipeline
     img, _ = _render_strip()
     monkeypatch.setattr(capture_pipeline, "_aruco_centres_px", lambda _: {})
-    with pytest.raises(capture_pipeline.DetectionError, match="insufficient ArUco"):
-        capture_pipeline.detect_fiducials(img)
+    qr_id, corners = capture_pipeline.detect_fiducials(img)
+    assert qr_id == 42
+    assert set(corners.keys()) == {0, 4, 5, 6}
