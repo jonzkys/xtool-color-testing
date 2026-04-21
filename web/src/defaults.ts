@@ -9,6 +9,7 @@ export function defaultBaseParams(): BaseParams {
     passes: 1,
     pulse_width: 200,
     laser: "red",
+    scan_angle: 90,
   };
 }
 

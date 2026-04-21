@@ -146,6 +146,15 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [] }: Props) 
           options={[{ value: "red", label: "Red (MOPA)" }, { value: "blue", label: "Blue (diode)" }]}
           onChange={(v) => updateBase({ laser: v })}
         />
+        <NumberField
+          label="Scan angle (°)"
+          value={t.base_params.scan_angle ?? 90}
+          onChange={(v) => updateBase({ scan_angle: v })}
+          min={0}
+          max={360}
+          step={5}
+          help="Starting scan-line angle. 90 = vertical (default), 0 = horizontal. For crosshatch, the second pass runs at this + 90°; for incremental, XCS rotates from this angle across passes."
+        />
       </Section>
 
       <Section title="Engraving direction">

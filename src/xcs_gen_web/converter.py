@@ -142,6 +142,7 @@ def _to_processing_params(bp: BaseParams, *, angle_mode: str = "fixed") -> Proce
         repeat=repeat,
         pulse_width=bp.pulse_width,
         processing_light_source=bp.laser,
+        scan_angle=bp.scan_angle,
         angle_type=angle_type,
         cross_angle=cross_angle,
     )

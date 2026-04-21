@@ -60,10 +60,12 @@ export function computePreviewGeometry(spec: TestSpec): PreviewGeometry {
 
   const step = (spec.x_max - spec.x_min) / Math.max(1, spec.x_steps - 1);
   const rows: Row[] = [];
+  // 2D: every row spans the full x range (no wrapping). 1D: cells come
+  // from a single x_steps pool that we hand out row by row.
   let cellsLeft = spec.x_steps;
   let cellIdx = 0;
   for (let r = 0; r < rowCount; r++) {
-    const take = Math.min(cellsPerRow, cellsLeft);
+    const take = is2D ? cellsPerRow : Math.min(cellsPerRow, cellsLeft);
     const cells: Cell[] = [];
     const rowY = gridY + r * (rowHeight + interRowGap);
     for (let c = 0; c < take; c++) {
@@ -73,16 +75,23 @@ export function computePreviewGeometry(spec: TestSpec): PreviewGeometry {
         w: cellW, h: rowHeight,
       });
     }
-    const minVal = spec.x_min + cellIdx * step;
-    const maxVal = spec.x_min + (cellIdx + take - 1) * step;
-    rows.push({
-      yMm: rowY,
-      heightMm: rowHeight,
-      cells,
-      labelMin: minVal.toFixed(0),
-      labelMax: maxVal.toFixed(0),
-    });
-    cellIdx += take; cellsLeft -= take;
+    // In 2D, every row shares the same x range. Only label the bottom
+    // row so min/max appear once beneath the grid.
+    // In 1D wrapped, each row covers a slice of the x range.
+    const isLastRow = r === rowCount - 1;
+    let labelMin = "";
+    let labelMax = "";
+    if (is2D) {
+      if (isLastRow) {
+        labelMin = spec.x_min.toFixed(0);
+        labelMax = spec.x_max.toFixed(0);
+      }
+    } else {
+      labelMin = (spec.x_min + cellIdx * step).toFixed(0);
+      labelMax = (spec.x_min + (cellIdx + take - 1) * step).toFixed(0);
+    }
+    rows.push({ yMm: rowY, heightMm: rowHeight, cells, labelMin, labelMax });
+    if (!is2D) { cellIdx += take; cellsLeft -= take; }
   }
 
   const qr = regOn ? { x: MARGIN, y: MARGIN, size: qrSize } : null;
@@ -122,14 +131,19 @@ export function TestPreview({ spec, testId: _testId }: { spec: TestSpec; testId:
           </g>
         ))}
         {g.rows.map((row, ri) => {
+          if (!row.labelMin && !row.labelMax) return null;
           const labelY = row.yMm + row.heightMm + LABEL_FONT_MM;
           return (
             <g key={`labels-${ri}`}>
-              <text x={g.gridX} y={labelY}
-                    fontSize={LABEL_FONT_MM} fill="#444" fontFamily="monospace">{row.labelMin}</text>
-              <text x={g.gridX + g.gridW} y={labelY}
-                    fontSize={LABEL_FONT_MM} fill="#444" fontFamily="monospace"
-                    textAnchor="end">{row.labelMax}</text>
+              {row.labelMin && (
+                <text x={g.gridX} y={labelY}
+                      fontSize={LABEL_FONT_MM} fill="#444" fontFamily="monospace">{row.labelMin}</text>
+              )}
+              {row.labelMax && (
+                <text x={g.gridX + g.gridW} y={labelY}
+                      fontSize={LABEL_FONT_MM} fill="#444" fontFamily="monospace"
+                      textAnchor="end">{row.labelMax}</text>
+              )}
             </g>
           );
         })}

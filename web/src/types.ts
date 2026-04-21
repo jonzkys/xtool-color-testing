@@ -24,6 +24,8 @@ export interface BaseParams {
   passes: number;
   pulse_width: number;
   laser: Laser;
+  /** Starting scan angle in degrees. 90 = vertical (default); 0 = horizontal. */
+  scan_angle: number;
 }
 
 export interface ValidationIssue {

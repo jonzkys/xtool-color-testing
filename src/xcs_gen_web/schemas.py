@@ -17,6 +17,11 @@ class BaseParams(BaseModel):
     passes: int = Field(ge=1)
     pulse_width: int = Field(ge=1)
     laser: Literal["red", "blue"]
+    # Starting scan angle in degrees. 90 = vertical scan (default, efficient
+    # for narrow elements); 0 = horizontal. For angle_mode="incremental" XCS
+    # rotates from this angle between passes; for "crosshatch" it alternates
+    # this angle and this+90°.
+    scan_angle: float = Field(default=90, ge=0, le=360)
 
 
 class RegistrationConfig(BaseModel):
