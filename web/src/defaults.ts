@@ -1,4 +1,4 @@
-import type { BaseParams, HatchPassSpec, ParamTest, Project, TestPlacement } from "./types";
+import type { BaseParams, HatchPassSpec, ParamTest, Project, TestPlacement, TestSpec } from "./types";
 
 let idCounter = 0;
 export function newId(): string {
@@ -66,6 +66,16 @@ export function defaultProject(): Project {
     tests: [defaultPlacement()],
   };
 }
+
+export const DEFAULT_SPEC: TestSpec = {
+  x_param: "speed", x_min: 500, x_max: 3000, x_steps: 10,
+  y_param: null, y_min: null, y_max: null, y_steps: null,
+  rows: 1, width_mm: 50, height_mm: 10, gap_mm: 0.5,
+  cell_shape: "rect", square_cells: true, angle_mode: "fixed",
+  unidirectional: false,
+  base_params: defaultBaseParams(),
+  registration: { mode: "on", qr_size_mm: null, aruco_size_mm: null },
+};
 
 export function defaultHatchPass(angle = 0): HatchPassSpec {
   // Default spacing = thickness so the hatched output is a continuous fill
