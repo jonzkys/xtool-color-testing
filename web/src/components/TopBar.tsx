@@ -1,4 +1,5 @@
 import { formatRoute, type Route } from "../router";
+import { cn, MetalBar, PageContainer } from "../ui";
 
 interface Props {
   title: string;
@@ -6,42 +7,88 @@ interface Props {
   onNavigate: (r: Route) => void;
 }
 
+/**
+ * App chrome. Stays full-width so the metallic bar and the border beneath
+ * span edge-to-edge; the inner row uses PageContainer to match page content.
+ */
 export function TopBar({ title, route, onNavigate }: Props) {
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 12,
-      padding: "10px 16px", background: "white", borderBottom: "1px solid #ddd",
-    }}>
-      <div style={{ fontWeight: 600, fontSize: 16 }}>xcs-gen</div>
-      <div style={{ display: "flex", gap: 2, marginLeft: 8 }}>
-        <TabLink route={route} target={{ name: "tests" }} onNavigate={onNavigate}>Tests</TabLink>
-        <TabLink route={route} target={{ name: "svg-stack" }} onNavigate={onNavigate}>SVG stack</TabLink>
-        <TabLink route={route} target={{ name: "svg-layers" }} onNavigate={onNavigate}>SVG layers</TabLink>
-        <TabLink route={route} target={{ name: "library" }} onNavigate={onNavigate}>Library</TabLink>
-        <TabLink route={route} target={{ name: "palette" }} onNavigate={onNavigate}>Palette</TabLink>
-      </div>
-      <div style={{ color: "#888" }}>|</div>
-      <div style={{ color: "#555" }}>{title}</div>
-      <div style={{ flex: 1 }} />
-    </div>
+    <header className="shrink-0 bg-[color:var(--color-surface)] border-b border-[color:var(--color-border)]">
+      <PageContainer bleed={false}>
+        <div className="flex items-center gap-6 h-14">
+          <div className="flex items-baseline gap-2">
+            <span className="font-mono text-[15px] font-semibold tracking-tight text-[color:var(--color-ink)]">
+              xcs-gen
+            </span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[color:var(--color-ink-subtle)]">
+              workbench
+            </span>
+          </div>
+          <nav className="flex items-center gap-1">
+            <TabLink route={route} target={{ name: "tests" }} onNavigate={onNavigate}>
+              Tests
+            </TabLink>
+            <TabLink route={route} target={{ name: "svg-stack" }} onNavigate={onNavigate}>
+              SVG stack
+            </TabLink>
+            <TabLink route={route} target={{ name: "svg-layers" }} onNavigate={onNavigate}>
+              SVG layers
+            </TabLink>
+            <TabLink route={route} target={{ name: "library" }} onNavigate={onNavigate}>
+              Library
+            </TabLink>
+            <TabLink route={route} target={{ name: "palette" }} onNavigate={onNavigate}>
+              Palette
+            </TabLink>
+          </nav>
+          <div className="ml-auto flex items-center gap-3">
+            <span
+              aria-hidden="true"
+              className="h-6 w-px bg-[color:var(--color-border-strong)]"
+            />
+            <span className="text-[12.5px] text-[color:var(--color-ink-muted)]">{title}</span>
+          </div>
+        </div>
+      </PageContainer>
+      <MetalBar />
+    </header>
   );
 }
 
-function TabLink({ route, target, onNavigate, children }: {
-  route: Route; target: Route; onNavigate: (r: Route) => void; children: React.ReactNode;
+function TabLink({
+  route,
+  target,
+  onNavigate,
+  children,
+}: {
+  route: Route;
+  target: Route;
+  onNavigate: (r: Route) => void;
+  children: React.ReactNode;
 }) {
-  const active = route.name === target.name ||
+  const active =
+    route.name === target.name ||
     (target.name === "tests" && (route.name === "test-new" || route.name === "test-detail"));
+
   return (
-    <a href={formatRoute(target)}
-       onClick={e => { e.preventDefault(); onNavigate(target); }}
-       style={{
-         padding: "6px 12px",
-         border: "1px solid " + (active ? "#336" : "#ddd"),
-         background: active ? "#e8ecf3" : "white",
-         color: active ? "#336" : "#555",
-         borderRadius: 4, fontWeight: active ? 600 : 400, fontSize: 13,
-         textDecoration: "none",
-       }}>{children}</a>
+    <a
+      href={formatRoute(target)}
+      onClick={(e) => {
+        e.preventDefault();
+        onNavigate(target);
+      }}
+      className={cn(
+        "relative px-3 h-14 inline-flex items-center text-[13px]",
+        "transition-colors no-underline",
+        active
+          ? "text-[color:var(--color-primary)] font-medium"
+          : "text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
+        // Active: ember underline flush with the header's bottom border.
+        active &&
+          "after:absolute after:left-3 after:right-3 after:bottom-[-1px] after:h-[2px] after:bg-[color:var(--color-primary)] after:rounded-full",
+      )}
+    >
+      {children}
+    </a>
   );
 }
