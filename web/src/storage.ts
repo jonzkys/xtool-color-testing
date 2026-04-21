@@ -3,7 +3,7 @@ import type { Project, RegistrationConfig } from "./types";
 export const STORAGE_KEY = "xcs-gen:project:v1";
 
 const DEFAULT_REGISTRATION: RegistrationConfig = {
-  mode: "off", qr_mode: "inline", qr_position: "top-left", qr_size_mm: null,
+  mode: "off", qr_size_mm: null, aruco_size_mm: null,
 };
 
 /**
@@ -23,9 +23,16 @@ export function migrateProject(project: Project): Project {
           placement.test.registration = { ...DEFAULT_REGISTRATION };
         } else {
           // Backfill fields added after the original shipped.
-          const reg = placement.test.registration;
-          if (reg.qr_position === undefined) reg.qr_position = "top-left";
+          const reg = placement.test.registration as Partial<RegistrationConfig> & Record<string, unknown>;
           if (reg.qr_size_mm === undefined) reg.qr_size_mm = null;
+          if (reg.aruco_size_mm === undefined) reg.aruco_size_mm = null;
+          // Remove legacy fields that no longer exist in RegistrationConfig.
+          delete reg["qr_mode"];
+          delete reg["qr_position"];
+          // Normalize legacy mode values to "on" | "off".
+          if (reg.mode !== "on" && reg.mode !== "off") {
+            reg.mode = "on";
+          }
         }
         if (
           placement.test.material_id === undefined

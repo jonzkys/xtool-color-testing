@@ -102,9 +102,10 @@ def test_generate_rejects_empty_name(client):
 
 def test_generate_with_registration_markers(client):
     payload = _project_payload()
+    # test_id must be a digit string so int(t.id) works in converter
+    payload["tests"][0]["test"]["id"] = "42"
     payload["tests"][0]["test"]["registration"] = {
-        "mode": "compact",
-        "qr_mode": "inline",
+        "mode": "on",
     }
     resp = client.post("/api/generate", json=payload)
     assert resp.status_code == 200

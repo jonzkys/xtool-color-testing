@@ -20,27 +20,9 @@ class BaseParams(BaseModel):
 
 
 class RegistrationConfig(BaseModel):
-    """Config for the photo-ingest registration QR burned into a test.
+    """Photo-ingest registration: QR top-left + 3 ArUcos at other corners."""
 
-    ``mode``: "off" skips registration entirely; any other value emits a QR.
-              (The historical distinction between "compact" and "full" no
-              longer matters — "full" used to emit ArUco corner markers too,
-              which are gone now. The enum values are kept for backwards
-              compatibility with older stored projects.)
-
-    ``qr_position`` picks which corner of the grid the QR sits beside.
-    Bottom-left is intentionally excluded — axis tick labels live there.
-
-    ``qr_size_mm`` optionally overrides the default QR size for the chosen
-    payload mode (12 mm for inline, 7 mm for id_only). Useful when tweaking
-    for a specific substrate or phone camera resolution.
-    """
-
-    mode: Literal["auto", "compact", "full", "off", "on"] = "off"
-    qr_mode: Literal["inline", "id_only"] = "inline"
-    qr_position: Literal[
-        "top-left", "top-right", "bottom-right", "left-middle",
-    ] = "top-left"
+    mode: Literal["on", "off"] = "off"
     qr_size_mm: float | None = Field(default=None, gt=0, le=50)
     aruco_size_mm: float | None = Field(default=None, gt=0, le=50)
 

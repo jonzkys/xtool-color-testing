@@ -4,30 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import cv2
-import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
-from xcs_gen.capture.layout import (
-    MARKER_MARGIN_MM,
-    _QR_SIZE_ID_ONLY_MM,
-    _QR_SIZE_INLINE_MM,
-)
-from xcs_gen.capture.qr_payload import PayloadError, decode_payload
-
-from .capture_pipeline import (
-    DetectionError, decode_image_bytes, detect_qr, warp_to_burn_space,
-)
-from .capture_sampling import sample_grid
 from .converter import project_to_xcs_bytes
 from .raster_to_svg import RasterTraceOptions, decode_base64_image, png_to_svg
 from .schemas import (
     AveragedSwatch,
     BaseParams,
-    CaptureIngestResponse,
-    CaptureSwatch,
     DetectedLayer,
     MaterialCreate,
     MaterialResponse,
@@ -163,115 +148,6 @@ def create_app() -> FastAPI:
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
             },
-        )
-
-    @app.post("/api/capture/ingest", response_model=CaptureIngestResponse)
-    async def capture_ingest(image: UploadFile = File(...)) -> CaptureIngestResponse:
-        raw = await image.read()
-        try:
-            img = decode_image_bytes(raw)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"could not decode image: {e}")
-
-        try:
-            qr_text, qr_corners = detect_qr(img)
-        except DetectionError as e:
-            raise HTTPException(status_code=400, detail=f"QR detection failed: {e}")
-
-        try:
-            spec = decode_payload(qr_text)
-        except PayloadError as e:
-            raise HTTPException(status_code=400, detail=f"QR payload invalid: {e}")
-
-        # Inline QRs carry grid/x/b; id_only QRs only carry the id and need
-        # external lookup. The ingest endpoint needs the full spec to sample.
-        if "grid" not in spec:
-            raise HTTPException(
-                status_code=400,
-                detail="id_only QR cannot be sampled; re-burn with inline payload",
-            )
-
-        # Newer payloads carry the exact grid offset from the QR as ox/oy, and
-        # the actual QR edge length as "qs" (when user overrode the default).
-        # Older burns fall back to defaults.
-        qr_size_mm = float(spec.get("qs", _QR_SIZE_INLINE_MM))
-        grid_dict = spec["grid"]
-        grid_w = grid_dict["w"]
-        grid_h = grid_dict["h"]
-        default_offset = qr_size_mm + MARKER_MARGIN_MM
-        ox = grid_dict.get("ox", default_offset)
-        oy = grid_dict.get("oy", default_offset)
-
-        # grid.h encodes rows * row_height (no inter-row gaps). For wrapped
-        # multi-row tests the physical grid extends further than grid.h —
-        # the warp canvas has to cover (rows-1)*rs + row_height or else the
-        # last row's centre falls off and samples return #000000.
-        rows_count = grid_dict.get("rows", 1)
-        rs_mm = grid_dict.get("rs")
-        if rows_count > 1 and rs_mm is not None:
-            row_h_mm = grid_h / rows_count
-            actual_grid_h = (rows_count - 1) * rs_mm + row_h_mm
-        else:
-            actual_grid_h = grid_h
-
-        # Compute the minimal bounding box covering both the QR and the grid.
-        # ox/oy may be negative when the QR is on the right or bottom of the
-        # grid, so we can't assume burn-space starts at (0, 0).
-        min_x = min(0.0, ox)
-        max_x = max(qr_size_mm, ox + grid_w)
-        min_y = min(0.0, oy)
-        max_y = max(qr_size_mm, oy + actual_grid_h)
-        burn_size_mm = (max_x - min_x, max_y - min_y)
-        qr_origin_mm = (-min_x, -min_y)
-        grid_origin_mm = (ox - min_x, oy - min_y)
-
-        warped = warp_to_burn_space(
-            img,
-            qr_corners_px=qr_corners,
-            qr_size_mm=qr_size_mm,
-            qr_origin_mm=qr_origin_mm,
-            burn_size_mm=burn_size_mm,
-            px_per_mm=10.0,
-        )
-
-        x_axis = spec["x"]
-        y_axis = spec.get("y")
-        swatches = sample_grid(
-            warped,
-            grid_origin_mm=grid_origin_mm,
-            grid_size_mm=(grid_w, grid_h),
-            px_per_mm=10.0,
-            x_param=x_axis["p"],
-            x_min=x_axis["min"],
-            x_max=x_axis["max"],
-            x_steps=x_axis["n"],
-            y_param=(y_axis["p"] if y_axis else None),
-            y_min=(y_axis["min"] if y_axis else 0.0),
-            y_max=(y_axis["max"] if y_axis else 0.0),
-            y_steps=(y_axis["n"] if y_axis else 1),
-            # Wrapped single-axis tests need the row count + Y stride so the
-            # sampler hits each physical row rather than averaging across them.
-            rows=grid_dict.get("rows", 1),
-            row_stride_mm=grid_dict.get("rs"),
-        )
-
-        b = spec["b"]
-        return CaptureIngestResponse(
-            test_id=spec["id"],
-            kind=spec.get("t", "grid"),
-            x_param=x_axis["p"],
-            y_param=(y_axis["p"] if y_axis else None),
-            material_id=spec.get("m"),
-            base_params=BaseParams(
-                power=b["p"],
-                speed=b["s"],
-                frequency=b["f"],
-                density=b["d"],
-                passes=b["r"],
-                pulse_width=b["pw"],
-                laser=b["l"],
-            ),
-            swatches=[CaptureSwatch(**s.__dict__) for s in swatches],
         )
 
     from .repositories import palette as pal_repo

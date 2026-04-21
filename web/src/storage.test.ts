@@ -62,18 +62,16 @@ describe("storage", () => {
     expect(loaded!.tests.length).toBeGreaterThan(0);
     for (const placement of loaded!.tests) {
       expect(placement.test.registration).toEqual({
-        mode: "off", qr_mode: "inline",
-        qr_position: "top-left", qr_size_mm: null,
+        mode: "off", qr_size_mm: null, aruco_size_mm: null,
       });
     }
   });
 
-  it("leaves existing registration untouched on load", () => {
+  it("leaves existing registration untouched on load (normalizes mode)", () => {
     const project = defaultProject();
     for (const placement of project.tests) {
       placement.test.registration = {
-        mode: "full", qr_mode: "id_only",
-        qr_position: "top-right", qr_size_mm: 10,
+        mode: "on", qr_size_mm: 10, aruco_size_mm: null,
       };
     }
     saveProject(project);
@@ -81,27 +79,28 @@ describe("storage", () => {
     expect(loaded).not.toBeNull();
     for (const placement of loaded!.tests) {
       expect(placement.test.registration).toEqual({
-        mode: "full", qr_mode: "id_only",
-        qr_position: "top-right", qr_size_mm: 10,
+        mode: "on", qr_size_mm: 10, aruco_size_mm: null,
       });
     }
   });
 
-  it("backfills qr_position + qr_size_mm on legacy registration objects", () => {
+  it("backfills aruco_size_mm + qr_size_mm on legacy registration objects", () => {
     const project = defaultProject();
     saveProject(project);
-    // Simulate a registration object persisted before these fields existed.
+    // Simulate a registration object persisted before aruco_size_mm existed.
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
     for (const placement of raw.tests) {
-      placement.test.registration = { mode: "compact", qr_mode: "inline" };
+      placement.test.registration = { mode: "on", qr_mode: "inline" };
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(raw));
 
     const loaded = loadProject();
     expect(loaded).not.toBeNull();
     for (const placement of loaded!.tests) {
-      expect(placement.test.registration.qr_position).toBe("top-left");
+      expect(placement.test.registration.aruco_size_mm).toBeNull();
       expect(placement.test.registration.qr_size_mm).toBeNull();
+      // qr_mode should have been removed
+      expect((placement.test.registration as unknown as Record<string, unknown>).qr_mode).toBeUndefined();
     }
   });
 });
@@ -125,7 +124,7 @@ describe("material_id migration", () => {
             passes: 1, pulse_width: 200, laser: "red",
           },
           angle_mode: "fixed",
-          registration: { mode: "off", qr_mode: "inline" },
+          registration: { mode: "off" },
         },
         row: 0, col: 0, col_span: 1,
       }],
@@ -153,7 +152,7 @@ describe("material_id migration", () => {
             passes: 1, pulse_width: 200, laser: "red",
           },
           angle_mode: "fixed",
-          registration: { mode: "off", qr_mode: "inline" },
+          registration: { mode: "off" },
           material_id: null,
         },
         row: 0, col: 0, col_span: 1,

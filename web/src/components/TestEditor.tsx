@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { ParamTest, QrMode, QrPosition, RegistrationMode, TestPlacement, ValidationIssue } from "../types";
+import type { ParamTest, RegistrationMode, TestPlacement, ValidationIssue } from "../types";
 import { PARAM_NAMES } from "../types";
 import { NumberField } from "./fields/NumberField";
 import { SelectField } from "./fields/SelectField";
@@ -245,57 +245,27 @@ export function TestEditor({ placement, issues, library, onChange, onDelete, onD
           <label style={{ display: "block" }}>
             <span style={{ display: "block", fontSize: 12, color: "#555", marginBottom: 2 }}>Registration</span>
             <select
-              value={t.registration.mode === "off" ? "off" : "on"}
+              value={t.registration.mode}
               onChange={(e) => updateTest({
                 registration: {
                   ...t.registration,
-                  mode: (e.target.value === "off" ? "off" : "compact") as RegistrationMode,
+                  mode: e.target.value as RegistrationMode,
                 },
               })}
               style={{ display: "block", marginTop: 2, padding: "4px 6px", border: "1px solid #ccc", borderRadius: 4, font: "inherit", background: "white" }}
             >
               <option value="off">Off</option>
-              <option value="on">On (burn QR)</option>
-            </select>
-          </label>
-          <label style={{ display: "block" }}>
-            <span style={{ display: "block", fontSize: 12, color: "#555", marginBottom: 2 }}>QR payload</span>
-            <select
-              value={t.registration.qr_mode}
-              onChange={(e) => updateTest({
-                registration: { ...t.registration, qr_mode: e.target.value as QrMode },
-              })}
-              disabled={t.registration.mode === "off"}
-              style={{ display: "block", marginTop: 2, padding: "4px 6px", border: "1px solid #ccc", borderRadius: 4, font: "inherit", background: "white" }}
-            >
-              <option value="inline">Inline spec</option>
-              <option value="id_only">ID only</option>
-            </select>
-          </label>
-          <label style={{ display: "block" }}>
-            <span style={{ display: "block", fontSize: 12, color: "#555", marginBottom: 2 }}>QR position</span>
-            <select
-              value={t.registration.qr_position}
-              onChange={(e) => updateTest({
-                registration: { ...t.registration, qr_position: e.target.value as QrPosition },
-              })}
-              disabled={t.registration.mode === "off"}
-              style={{ display: "block", marginTop: 2, padding: "4px 6px", border: "1px solid #ccc", borderRadius: 4, font: "inherit", background: "white" }}
-            >
-              <option value="top-left">Top-left</option>
-              <option value="top-right">Top-right</option>
-              <option value="bottom-right">Bottom-right</option>
-              <option value="left-middle">Left-middle</option>
+              <option value="on">On (QR + ArUcos)</option>
             </select>
           </label>
           <label style={{ display: "block" }}>
             <span style={{ display: "block", fontSize: 12, color: "#555", marginBottom: 2 }}>
-              QR size (mm) — blank = default ({t.registration.qr_mode === "inline" ? "12" : "7"})
+              QR size (mm) — blank = default (5 mm)
             </span>
             <input
               type="number"
-              min={5} max={30} step={0.5}
-              placeholder={t.registration.qr_mode === "inline" ? "12" : "7"}
+              min={2} max={30} step={0.5}
+              placeholder="5"
               value={t.registration.qr_size_mm ?? ""}
               onChange={(e) => updateTest({
                 registration: {
@@ -307,13 +277,30 @@ export function TestEditor({ placement, issues, library, onChange, onDelete, onD
               style={{ display: "block", marginTop: 2, padding: "4px 6px", width: 120, border: "1px solid #ccc", borderRadius: 4, font: "inherit", background: "white" }}
             />
           </label>
+          <label style={{ display: "block" }}>
+            <span style={{ display: "block", fontSize: 12, color: "#555", marginBottom: 2 }}>
+              ArUco size (mm) — blank = default (2 mm)
+            </span>
+            <input
+              type="number"
+              min={1} max={20} step={0.5}
+              placeholder="2"
+              value={t.registration.aruco_size_mm ?? ""}
+              onChange={(e) => updateTest({
+                registration: {
+                  ...t.registration,
+                  aruco_size_mm: e.target.value === "" ? null : Number(e.target.value),
+                },
+              })}
+              disabled={t.registration.mode === "off"}
+              style={{ display: "block", marginTop: 2, padding: "4px 6px", width: 120, border: "1px solid #ccc", borderRadius: 4, font: "inherit", background: "white" }}
+            />
+          </label>
         </div>
         <p style={{ fontSize: 11, color: "#666", margin: 0 }}>
-          Burns a QR code onto the annotation layer so you can photograph the
-          result and auto-extract colours. ID-only QR is smaller but requires
-          the test to still exist in this browser's local storage when you
-          upload the photo. Shrink the QR size to recover substrate space,
-          but verify it still scans on your camera.
+          Burns a QR code (top-left) + 3 ArUco markers at the other corners onto
+          the annotation layer so you can photograph the result and auto-extract
+          colours. Adjust sizes to suit your substrate and camera resolution.
         </p>
       </Section>
 

@@ -39,8 +39,7 @@ export function defaultTest(name = "New test"): ParamTest {
     cell_shape: "rect",
     angle_mode: "fixed",
     registration: {
-      mode: "off", qr_mode: "inline",
-      qr_position: "top-left", qr_size_mm: null,
+      mode: "off", qr_size_mm: null, aruco_size_mm: null,
     },
     // Caller should assign the library's active material before use; defaults
     // to empty so App.tsx can backfill at bootstrap. Generate is blocked while

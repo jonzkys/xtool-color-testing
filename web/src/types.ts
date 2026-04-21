@@ -6,16 +6,14 @@ export const PARAM_NAMES = [
 
 export type ParamName = (typeof PARAM_NAMES)[number];
 
-export type RegistrationMode = "auto" | "compact" | "full" | "off";
-export type QrMode = "inline" | "id_only";
-export type QrPosition = "top-left" | "top-right" | "bottom-right" | "left-middle";
+export type RegistrationMode = "on" | "off";
 
 export interface RegistrationConfig {
   mode: RegistrationMode;
-  qr_mode: QrMode;
-  qr_position: QrPosition;
-  /** Optional override — leave null to use the default for the qr_mode (12mm inline / 7mm id-only). */
+  /** Optional override for QR size in mm. */
   qr_size_mm: number | null;
+  /** Optional override for ArUco marker size in mm. */
+  aruco_size_mm: number | null;
 }
 
 export interface BaseParams {
