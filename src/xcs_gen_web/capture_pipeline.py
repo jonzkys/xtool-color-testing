@@ -1,9 +1,9 @@
 """Photo → canonical burn-space pipeline.
 
-Given an uploaded image, locate the QR code (via pyzbar), compute a
-homography from the QR's 4 image-space corners to known burn-space
-coordinates, and warp the image so every bed-mm maps to a fixed pixel
-offset.
+Given an uploaded image, locate the QR code (via pyzbar) and ArUco markers
+(via opencv-contrib), compute a homography from the detected fiducial points
+to known burn-space coordinates, and warp the image so every bed-mm maps to
+a fixed pixel offset.
 
 pyzbar wraps the ZBar C library, which is substantially more robust on
 real-world burned-substrate photos than cv2.QRCodeDetector. zbar is
@@ -51,7 +51,7 @@ from pyzbar.pyzbar import ZBarSymbol, decode as _pyzbar_decode  # noqa: E402
 
 
 class DetectionError(Exception):
-    """Raised when the QR code cannot be located in the image."""
+    """Raised when fiducials cannot be located in the image."""
 
 
 def decode_image_bytes(raw: bytes) -> np.ndarray:
@@ -78,81 +78,78 @@ def decode_image_bytes(raw: bytes) -> np.ndarray:
     return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
 
-def detect_qr(image: np.ndarray) -> tuple[str, np.ndarray]:
-    """Find the QR code and return (decoded_text, corners).
+_ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+_ARUCO_PARAMS = cv2.aruco.DetectorParameters()
 
-    Corners are a (4, 2) array in TL, TR, BR, BL order (matching what
-    warp_to_burn_space expects). If multiple QRs are present, returns
-    the first decoded.
 
-    Raises DetectionError if no QR is found or decoding fails.
-    """
-    results = _pyzbar_decode(image, symbols=[ZBarSymbol.QRCODE])
-    if not results:
-        raise DetectionError("no QR code detected")
+def _qr_top_left_px(img: np.ndarray) -> tuple[int, tuple[float, float]]:
+    """Return (qr_id, top_left_px). The QR's top-left module anchors the homography."""
+    from xcs_gen.capture.qr_payload import PayloadError, decode_payload
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    for sym in _pyzbar_decode(gray, symbols=[ZBarSymbol.QRCODE]):
+        try:
+            payload = decode_payload(sym.data.decode("utf-8"))
+        except (PayloadError, UnicodeDecodeError):
+            continue
+        pts = sym.polygon
+        if len(pts) < 4:
+            continue
+        tl = min(pts, key=lambda p: p.x + p.y)
+        return payload["id"], (float(tl.x), float(tl.y))
+    raise DetectionError("no valid id-only QR detected")
 
-    r = results[0]
-    try:
-        data = r.data.decode("utf-8")
-    except UnicodeDecodeError as e:
-        raise DetectionError(f"QR payload is not valid UTF-8: {e}")
 
-    pts = np.array([(p.x, p.y) for p in r.polygon], dtype=np.float32)
-    if pts.shape != (4, 2):
-        raise DetectionError(
-            f"expected 4 polygon corners from pyzbar, got {pts.shape[0]}"
-        )
+def _aruco_centres_px(img: np.ndarray) -> dict[int, tuple[float, float]]:
+    """Return {marker_id: centre_px} for every detected ArUco 1/2/3."""
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    detector = cv2.aruco.ArucoDetector(_ARUCO_DICT, _ARUCO_PARAMS)
+    corners, ids, _ = detector.detectMarkers(gray)
+    out: dict[int, tuple[float, float]] = {}
+    if ids is None:
+        return out
+    for c_set, id_ in zip(corners, ids.flatten()):
+        if int(id_) not in (1, 2, 3):
+            continue
+        pts = c_set.reshape(-1, 2)
+        cx, cy = pts[:, 0].mean(), pts[:, 1].mean()
+        out[int(id_)] = (float(cx), float(cy))
+    return out
 
-    # Reorder arbitrary polygon corners to canonical TL, TR, BR, BL:
-    #   TL = smallest x+y, BR = largest x+y
-    #   TR = smallest (y-x), BL = largest (y-x)
-    s = pts.sum(axis=1)
-    d = pts[:, 1] - pts[:, 0]
-    corners = np.array(
-        [pts[np.argmin(s)], pts[np.argmin(d)], pts[np.argmax(s)], pts[np.argmax(d)]],
-        dtype=np.float32,
-    )
-    return data, corners
+
+def detect_fiducials(img: np.ndarray) -> tuple[int, dict[int, tuple[float, float]]]:
+    """Return (qr_id, {0: QR-top-left, 1/2/3: ArUco centres}) in pixel coords."""
+    qr_id, qr_tl = _qr_top_left_px(img)
+    arucos = _aruco_centres_px(img)
+    missing = [i for i in (1, 2, 3) if i not in arucos]
+    if len(missing) > 1:
+        raise DetectionError(f"insufficient ArUco markers; missing {missing}")
+    corners: dict[int, tuple[float, float]] = {0: qr_tl}
+    corners.update(arucos)
+    return qr_id, corners
 
 
 def warp_to_burn_space(
     image: np.ndarray,
     *,
-    qr_corners_px: np.ndarray,
-    qr_size_mm: float,
-    qr_origin_mm: tuple[float, float],
+    burn_anchors_mm: dict[int, tuple[float, float]],
+    corners_px: dict[int, tuple[float, float]],
     burn_size_mm: tuple[float, float],
     px_per_mm: float = 10.0,
 ) -> np.ndarray:
-    """Warp `image` so the burn area maps to a fixed pixel canvas.
-
-    Args:
-        image: source BGR or RGB uint8 image.
-        qr_corners_px: 4x2 array of QR corners in source pixel space
-            (top-left, top-right, bottom-right, bottom-left).
-        qr_size_mm: physical QR edge length in mm.
-        qr_origin_mm: (x, y) in burn-space mm of the QR's top-left corner.
-        burn_size_mm: (width, height) of the whole burn area in mm.
-        px_per_mm: target resolution of the warped image.
-
-    Returns:
-        Warped image with shape (burn_h_mm * px_per_mm, burn_w_mm * px_per_mm, 3).
-    """
-    ox, oy = qr_origin_mm
-    src = qr_corners_px
+    """Compute homography from the shared keys of burn_anchors_mm and corners_px."""
+    keys = sorted(set(burn_anchors_mm.keys()) & set(corners_px.keys()))
+    if len(keys) < 4:
+        raise DetectionError(
+            f"need >=4 matching fiducials for homography; have {len(keys)}",
+        )
+    src = np.array([corners_px[k] for k in keys], dtype=np.float32)
     dst = np.array([
-        [(ox) * px_per_mm, (oy) * px_per_mm],
-        [(ox + qr_size_mm) * px_per_mm, (oy) * px_per_mm],
-        [(ox + qr_size_mm) * px_per_mm, (oy + qr_size_mm) * px_per_mm],
-        [(ox) * px_per_mm, (oy + qr_size_mm) * px_per_mm],
+        (burn_anchors_mm[k][0] * px_per_mm, burn_anchors_mm[k][1] * px_per_mm)
+        for k in keys
     ], dtype=np.float32)
-
-    H, _ = cv2.findHomography(src, dst)
+    H, _ = cv2.findHomography(src, dst, method=cv2.RANSAC)
     if H is None:
-        raise DetectionError("could not compute homography from QR corners")
-
-    w_mm, h_mm = burn_size_mm
-    out_w = int(round(w_mm * px_per_mm))
-    out_h = int(round(h_mm * px_per_mm))
-    warped = cv2.warpPerspective(image, H, (out_w, out_h))
-    return warped
+        raise DetectionError("homography solve failed")
+    w_px = int(burn_size_mm[0] * px_per_mm)
+    h_px = int(burn_size_mm[1] * px_per_mm)
+    return cv2.warpPerspective(image, H, (w_px, h_px))

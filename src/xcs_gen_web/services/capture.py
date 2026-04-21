@@ -1,8 +1,4 @@
-"""Capture service: photo bytes + Test spec → sampled swatches.
-
-Phase C wires through the existing QR-based capture pipeline. Phase D
-replaces the internals with the ArUco + id-only-QR scheme.
-"""
+"""Capture service: photo bytes + Test spec → sampled swatches."""
 
 from __future__ import annotations
 
@@ -11,10 +7,21 @@ from typing import Any
 
 import numpy as np
 
-from xcs_gen.capture.layout import MARKER_MARGIN_MM, _QR_SIZE_INLINE_MM
-from xcs_gen.capture.qr_payload import PayloadError, decode_payload
+from xcs_gen.capture.layout import (
+    ARUCO_ID_BOTTOM_LEFT,
+    ARUCO_ID_BOTTOM_RIGHT,
+    ARUCO_ID_TOP_RIGHT,
+    ARUCO_SIZE_DEFAULT_MM,
+    MARKER_MARGIN_MM,
+    QR_SIZE_DEFAULT_MM,
+)
 
-from ..capture_pipeline import DetectionError, decode_image_bytes, detect_qr, warp_to_burn_space
+from ..capture_pipeline import (
+    DetectionError,
+    decode_image_bytes,
+    detect_fiducials,
+    warp_to_burn_space,
+)
 from ..capture_sampling import sample_grid
 from ..palette import hex_to_lab
 
@@ -37,42 +44,50 @@ def run_capture(*, image_bytes: bytes, test_id: int,
         raise CaptureError(f"could not decode image: {e}") from e
 
     try:
-        qr_text, qr_corners = detect_qr(img)
+        qr_id, corners_px = detect_fiducials(img)
     except DetectionError as e:
-        raise CaptureError(f"QR detection failed: {e}") from e
+        raise CaptureError(str(e)) from e
 
-    try:
-        payload = decode_payload(qr_text)
-    except PayloadError as e:
-        raise CaptureError(f"QR payload invalid: {e}") from e
-
-    if str(payload.get("id")) != str(test_id):
+    if qr_id != test_id:
         raise CaptureError(
-            f"QR is for test {payload.get('id')!r}; upload is for test {test_id}",
+            f"QR on photo is test #{qr_id}; upload is for test #{test_id}",
         )
 
-    qr_size_mm = float(payload.get("qs", _QR_SIZE_INLINE_MM))
-    default_offset = qr_size_mm + MARKER_MARGIN_MM
+    reg = spec.get("registration", {}) if isinstance(spec.get("registration"), dict) else {}
+    qr_size = reg.get("qr_size_mm") or QR_SIZE_DEFAULT_MM
+    aruco_size = reg.get("aruco_size_mm") or ARUCO_SIZE_DEFAULT_MM
     grid_w = spec["width_mm"]
     grid_h = spec["height_mm"]
-    ox = default_offset
-    oy = default_offset
-    actual_grid_h = grid_h
+    margin = MARKER_MARGIN_MM
 
-    min_x = min(0.0, ox)
-    max_x = max(qr_size_mm, ox + grid_w)
-    min_y = min(0.0, oy)
-    max_y = max(qr_size_mm, oy + actual_grid_h)
-    burn_size_mm = (max_x - min_x, max_y - min_y)
-    qr_origin_mm = (-min_x, -min_y)
-    grid_origin_mm = (ox - min_x, oy - min_y)
+    # Burn-space anchors (mm) for each marker's reference point.
+    # QR: top-left corner. ArUcos: centre.
+    qr_tl = (margin, margin)
+    grid_origin_mm = (
+        qr_tl[0] + qr_size + margin,
+        max(qr_tl[1] + qr_size + margin, margin + aruco_size + margin),
+    )
+    burn_w = grid_origin_mm[0] + grid_w + aruco_size + margin
+    burn_h = grid_origin_mm[1] + grid_h + aruco_size + margin
+    tr_c = (grid_origin_mm[0] + grid_w + margin + aruco_size / 2,
+            margin + aruco_size / 2)
+    bl_c = (qr_tl[0] + qr_size / 2,
+            grid_origin_mm[1] + grid_h + margin + aruco_size / 2)
+    br_c = (grid_origin_mm[0] + grid_w + margin + aruco_size / 2,
+            grid_origin_mm[1] + grid_h + margin + aruco_size / 2)
+
+    burn_anchors = {
+        0: qr_tl,
+        ARUCO_ID_TOP_RIGHT: tr_c,
+        ARUCO_ID_BOTTOM_LEFT: bl_c,
+        ARUCO_ID_BOTTOM_RIGHT: br_c,
+    }
 
     warped = warp_to_burn_space(
         img,
-        qr_corners_px=qr_corners,
-        qr_size_mm=qr_size_mm,
-        qr_origin_mm=qr_origin_mm,
-        burn_size_mm=burn_size_mm,
+        burn_anchors_mm=burn_anchors,
+        corners_px=corners_px,
+        burn_size_mm=(burn_w, burn_h),
         px_per_mm=10.0,
     )
 
@@ -90,10 +105,6 @@ def run_capture(*, image_bytes: bytes, test_id: int,
         rows=spec.get("rows", 1),
         row_stride_mm=None,
     )
-
-    # sample_grid returns Swatch dataclass instances (capture_sampling.Swatch).
-    # Swatch has: row, col, x_value, y_value, hex, sigma — no lab field.
-    # Derive lab from hex so results_repo.averaged_swatches() can consume it.
     swatches = [
         {
             "row": s.row,
