@@ -1,11 +1,34 @@
 import { useEffect, useMemo, useState } from "react";
+import { Info, Search, Trash2 } from "lucide-react";
 import {
-  listPaletteEntries, queryPalette, deletePaletteEntry, deletePaletteByTest,
+  listPaletteEntries,
+  queryPalette,
+  deletePaletteEntry,
+  deletePaletteByTest,
 } from "../api/palette";
 import type { PaletteEntry, PaletteQueryResult } from "../types";
 import type { Material } from "../library";
 import { listMaterials, listPresets } from "../api/library";
 import { formatRoute } from "../router";
+import {
+  Badge,
+  Button,
+  Card,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  EmptyState,
+  Field,
+  Input,
+  PageContainer,
+  Section,
+  Select,
+  Tab,
+  TabList,
+  TabPanel,
+  Tabs,
+} from "../ui";
 
 type View = "query" | "browse";
 
@@ -21,82 +44,101 @@ export function PalettePage() {
 
   if (materials.length === 0) {
     return (
-      <div style={{ padding: 24 }}>
-        <div style={{ padding: 12, border: "1px dashed #ccc", borderRadius: 4, color: "#888" }}>
-          No materials defined. Add one on the Library tab first — palette
-          entries must be tagged with a material so queries can be scoped.
-        </div>
-      </div>
+      <PageContainer className="py-8">
+        <Card className="border-dashed">
+          <EmptyState
+            title="No materials yet"
+            description="Palette entries have to be tagged with a material so queries stay scoped. Add a material on the Library tab first, then burn a test and upload the result."
+            action={
+              <Button variant="primary" onClick={() => (window.location.hash = "#/library")}>
+                Open library
+              </Button>
+            }
+          />
+        </Card>
+      </PageContainer>
     );
   }
 
   return (
-    <div style={{ padding: 24, overflow: "auto", height: "100%" }}>
-      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-        <SubTab active={view === "query"} onClick={() => setView("query")}>Query</SubTab>
-        <SubTab active={view === "browse"} onClick={() => setView("browse")}>Browse</SubTab>
-      </div>
-      {view === "query" && <QueryView materials={materials} />}
-      {view === "browse" && <BrowseView materials={materials} />}
-    </div>
+    <PageContainer className="py-8">
+      <header className="mb-6">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)] mb-1">
+          Palette
+        </div>
+        <h1 className="text-[22px] font-semibold text-[color:var(--color-ink)]">
+          Colour swatches per material
+        </h1>
+        <p className="mt-1 text-[13px] text-[color:var(--color-ink-muted)] max-w-[68ch]">
+          Browse every swatch harvested from burn results, or query by hex
+          to find the closest match. All entries are scoped by material so
+          different substrates never mix.
+        </p>
+      </header>
+
+      <Tabs value={view} onValueChange={(v) => setView(v as View)}>
+        <TabList>
+          <Tab value="browse">Browse</Tab>
+          <Tab value="query">Query</Tab>
+        </TabList>
+        <TabPanel value="browse">
+          <BrowseView materials={materials} />
+        </TabPanel>
+        <TabPanel value="query">
+          <QueryView materials={materials} />
+        </TabPanel>
+      </Tabs>
+    </PageContainer>
   );
 }
 
-function SubTab({ active, onClick, children }: {
-  active: boolean; onClick: () => void; children: React.ReactNode;
-}) {
-  return (
-    <button onClick={onClick} style={{
-      padding: "6px 12px",
-      border: "1px solid " + (active ? "#336" : "#ddd"),
-      background: active ? "#e8ecf3" : "white",
-      color: active ? "#336" : "#555",
-      borderRadius: 4, fontWeight: active ? 600 : 400, cursor: "pointer",
-      fontSize: 13,
-    }}>
-      {children}
-    </button>
-  );
-}
-
-function MaterialSelect({ materials, value, onChange, required, label }: {
+function MaterialSelect({
+  materials,
+  value,
+  onChange,
+  required,
+  label,
+  allowAll = true,
+}: {
   materials: Material[];
   value: string;
   onChange: (id: string) => void;
   required?: boolean;
   label?: string;
+  allowAll?: boolean;
 }) {
   return (
-    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-      {label && <span style={{ color: "#555" }}>{label}</span>}
-      <select
+    <Field label={label} inline>
+      <Select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{
-          padding: "6px 8px",
-          border: `1px solid ${required && !value ? "#a02840" : "#ccc"}`,
-          borderRadius: 4, background: "white", font: "inherit",
-        }}
+        invalid={required && !value}
       >
-        {!required && <option value="">— all materials —</option>}
+        {allowAll && !required && <option value="">— all materials —</option>}
         {required && !value && <option value="">— pick a material —</option>}
         {materials.map((m) => (
-          <option key={m.id} value={String(m.id)}>{m.name}</option>
+          <option key={m.id} value={String(m.id)}>
+            {m.name}
+          </option>
         ))}
-      </select>
-    </label>
+      </Select>
+    </Field>
   );
 }
 
 function QueryView({ materials }: { materials: Material[] }) {
   const [hex, setHex] = useState("#c4a87b");
-  const [materialId, setMaterialId] = useState<string>(materials[0] ? String(materials[0].id) : "");
+  const [materialId, setMaterialId] = useState<string>(
+    materials[0] ? String(materials[0].id) : "",
+  );
   const [results, setResults] = useState<PaletteQueryResult[]>([]);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const [loading, setLoading] = useState(false);
 
   async function onQuery() {
     setError(undefined);
+    setLoading(true);
     try {
       const matIdNum = materialId ? Number(materialId) : undefined;
       const r = await queryPalette(hex, { limit: 5, material_id: matIdNum });
@@ -104,68 +146,112 @@ function QueryView({ materials }: { materials: Material[] }) {
       setSearched(true);
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
-    <div>
-      <h2 style={{ marginTop: 0 }}>Find closest-matching params</h2>
-      <p style={{ color: "#555", marginTop: 0 }}>
-        Pick a target colour — we'll return the 5 nearest palette entries by CIEDE2000.
-        Scope by material to avoid mixing burn families.
-      </p>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
-        <input
-          type="color" value={hex} onChange={(e) => setHex(e.target.value)}
-          style={{ width: 48, height: 36, border: "1px solid #ccc", borderRadius: 4 }}
+    <div className="grid gap-6">
+      <Card>
+        <Section
+          title="Find the closest match"
+          description="Pick a target colour; we return the 5 nearest palette entries by CIEDE2000. Scope by material to avoid mixing burn families."
+        >
+          <div className="flex flex-wrap items-end gap-4">
+            <Field label="Target colour">
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={hex}
+                  onChange={(e) => setHex(e.target.value)}
+                  aria-label="Colour picker"
+                  className="h-9 w-12 rounded-[6px] border border-[color:var(--color-border-strong)] bg-[color:var(--color-surface)] cursor-pointer p-1"
+                />
+                <Input
+                  mono
+                  value={hex}
+                  onChange={(e) => setHex(e.target.value)}
+                  className="w-[136px]"
+                />
+              </div>
+            </Field>
+            <MaterialSelect
+              materials={materials}
+              value={materialId}
+              onChange={setMaterialId}
+              label="Material"
+            />
+            <Button variant="primary" onClick={onQuery} disabled={loading}>
+              <Search className="h-4 w-4" />
+              {loading ? "Searching…" : "Find closest"}
+            </Button>
+          </div>
+          {error && (
+            <p className="text-[12px] text-[color:var(--color-destructive)]">{error}</p>
+          )}
+        </Section>
+      </Card>
+
+      {searched && results.length === 0 && !error && (
+        <EmptyState
+          title="No matches"
+          description="Either the palette is empty for this material, or no entries are close enough. Try a wider material scope, or burn more reference tests."
         />
-        <input
-          type="text" value={hex} onChange={(e) => setHex(e.target.value)}
-          style={{ width: 120, padding: "6px 8px", border: "1px solid #ccc", borderRadius: 4, fontFamily: "monospace" }}
-        />
-        <MaterialSelect materials={materials} value={materialId} onChange={setMaterialId} label="Scope:" />
-        <button onClick={onQuery} style={{
-          padding: "8px 16px", background: "#336", color: "white",
-          border: "none", borderRadius: 4, fontWeight: 600, cursor: "pointer",
-        }}>
-          Find closest
-        </button>
-      </div>
-      {error && <div style={{ color: "#a02840", marginBottom: 12 }}>{error}</div>}
-      {searched && results.length === 0 && (
-        <div style={{ color: "#888" }}>
-          No entries match. Either the palette is empty or there are no
-          entries for the selected material.
-        </div>
       )}
-      <div>
-        {results.map((r) => (
-          <ResultRow key={r.entry.id} result={r} materials={materials} />
-        ))}
-      </div>
+
+      {results.length > 0 && (
+        <Card padded={false}>
+          <ul className="divide-y divide-[color:var(--color-border)]">
+            {results.map((r) => (
+              <li key={r.entry.id}>
+                <ResultRow result={r} materials={materials} />
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
     </div>
   );
 }
 
-function ResultRow({ result, materials }: { result: PaletteQueryResult; materials: Material[] }) {
+function ResultRow({
+  result,
+  materials,
+}: {
+  result: PaletteQueryResult;
+  materials: Material[];
+}) {
   const p = result.entry.params;
-  const materialName = materials.find((m) => m.id === result.entry.material_id)?.name
-    ?? "(unknown material)";
+  const materialName =
+    materials.find((m) => m.id === result.entry.material_id)?.name ??
+    "(unknown material)";
   return (
-    <div style={{
-      display: "flex", gap: 12, alignItems: "center", padding: "10px 0",
-      borderBottom: "1px solid #eee",
-    }}>
-      <div style={{
-        width: 48, height: 48, background: result.entry.hex, borderRadius: 4,
-        border: "1px solid #ddd", flexShrink: 0,
-      }} />
-      <div style={{ fontFamily: "monospace", width: 80 }}>{result.entry.hex}</div>
-      <div style={{ width: 90, fontSize: 13 }}>ΔE = {result.delta_e.toFixed(2)}</div>
-      <div style={{ width: 120, fontSize: 12, color: "#555" }}>{materialName}</div>
-      <div style={{ fontSize: 12, color: "#555", fontFamily: "monospace" }}>
-        P={p.power}% S={p.speed} F={p.frequency} D={p.density} ×{p.passes} PW={p.pulse_width} {p.laser}
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
+      <div className="flex items-center gap-3 min-w-[220px]">
+        <div
+          className="h-12 w-12 rounded-[6px] border border-[color:var(--color-border-strong)] shrink-0"
+          style={{ background: result.entry.hex }}
+        />
+        <div className="leading-tight">
+          <div className="font-mono text-[13px] text-[color:var(--color-ink)]">
+            {result.entry.hex}
+          </div>
+          <div className="font-mono text-[11px] text-[color:var(--color-ink-subtle)]">
+            ΔE {result.delta_e.toFixed(2)}
+          </div>
+        </div>
       </div>
+      <Badge variant="info">{materialName}</Badge>
+      <div className="font-mono text-[11px] text-[color:var(--color-ink-muted)] tabular-nums">
+        P={p.power}% · S={p.speed} · F={p.frequency} · D={p.density} · ×{p.passes} · PW={p.pulse_width} · {p.laser}
+      </div>
+      <a
+        href={formatRoute({ name: "test-detail", id: result.entry.test_id })}
+        className="ml-auto text-[12px] text-[color:var(--color-secondary)] hover:underline"
+      >
+        View test #{result.entry.test_id}
+      </a>
     </div>
   );
 }
@@ -185,26 +271,38 @@ function BrowseView({ materials }: { materials: Material[] }) {
       setError((e as Error).message);
     }
   }
-  useEffect(() => { void refresh(); }, [materialId]);  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [materialId]);
 
   async function onDelete(id: number) {
     const entry = entries.find((e) => e.id === id);
     if (!entry) return;
     if (!confirm(`Delete the ${entry.hex} swatch?`)) return;
-    try { await deletePaletteEntry(id); await refresh(); }
-    catch (e) { setError((e as Error).message); }
+    try {
+      await deletePaletteEntry(id);
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
   async function onDeleteTest(testId: number) {
     const count = entries.filter((e) => e.test_id === testId).length;
     if (!confirm(`Delete all ${count} palette entries from test #${testId}?`)) return;
-    try { await deletePaletteByTest(testId); await refresh(); }
-    catch (e) { setError((e as Error).message); }
+    try {
+      await deletePaletteByTest(testId);
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
 
   const byTest: Record<number, PaletteEntry[]> = {};
   entries.forEach((e) => {
     (byTest[e.test_id] = byTest[e.test_id] ?? []).push(e);
   });
+  const testIds = Object.keys(byTest).map(Number).sort((a, b) => b - a);
 
   const infoEntry = useMemo(
     () => (infoId !== null ? entries.find((e) => e.id === infoId) ?? null : null),
@@ -212,149 +310,194 @@ function BrowseView({ materials }: { materials: Material[] }) {
   );
 
   return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>Palette ({entries.length} entries)</h2>
-        <MaterialSelect materials={materials} value={materialId} onChange={setMaterialId} label="Material:" />
-      </div>
-      {error && <div style={{ color: "#a02840", marginBottom: 12 }}>{error}</div>}
-      {entries.length === 0 && !error && (
-        <div style={{ color: "#888" }}>
-          {materialId ? "No entries for this material yet." : "Empty — upload a burned test photo to populate."}
+    <div className="grid gap-6">
+      <div className="flex flex-wrap items-center gap-3">
+        <MaterialSelect
+          materials={materials}
+          value={materialId}
+          onChange={setMaterialId}
+          label="Material"
+        />
+        <div className="text-[12.5px] text-[color:var(--color-ink-muted)]">
+          {entries.length} {entries.length === 1 ? "entry" : "entries"}
+          {materialId && ` · ${materials.find((m) => String(m.id) === materialId)?.name ?? ""}`}
         </div>
+      </div>
+      {error && (
+        <p className="text-[13px] text-[color:var(--color-destructive)]">{error}</p>
       )}
-      {Object.entries(byTest).map(([testIdStr, group]) => {
-        const testId = Number(testIdStr);
-        const materialName = materials.find((m) => m.id === group[0]?.material_id)?.name
-          ?? "(unknown material)";
+      {entries.length === 0 && !error && (
+        <EmptyState
+          title={materialId ? "No entries for this material" : "Palette is empty"}
+          description={
+            materialId
+              ? "Burn a test for this material and upload the result — swatches will appear here once they're ingested."
+              : "Upload a photo of a burned test on its Test Detail page and ingest swatches to populate the palette."
+          }
+        />
+      )}
+      {testIds.map((testId) => {
+        const group = byTest[testId];
+        const materialName =
+          materials.find((m) => m.id === group[0]?.material_id)?.name ??
+          "(unknown material)";
         return (
-          <div key={testId} style={{ marginBottom: 24 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
-              <h3 style={{ margin: 0, fontSize: 14 }}>Test <code>#{testId}</code></h3>
-              <span style={{ fontSize: 11, color: "#666" }}>· {materialName}</span>
-              <button
-                onClick={() => onDeleteTest(testId)}
-                style={{
-                  fontSize: 12, color: "#a02840", background: "none",
-                  border: "1px solid #e0c0c8", borderRadius: 3, padding: "2px 6px", cursor: "pointer",
-                }}
-              >
-                Delete all ({group.length})
-              </button>
-            </div>
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))",
-              gap: 6,
-            }}>
+          <Section
+            key={testId}
+            title={
+              <span className="flex items-baseline gap-2">
+                <span>
+                  Test <span className="font-mono text-[color:var(--color-ink)]">#{testId}</span>
+                </span>
+                <Badge variant="info" size="sm">{materialName}</Badge>
+              </span>
+            }
+            actions={
+              <>
+                <a
+                  href={formatRoute({ name: "test-detail", id: testId })}
+                  className="text-[12px] text-[color:var(--color-secondary)] hover:underline"
+                >
+                  Open
+                </a>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onDeleteTest(testId)}
+                  className="text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete all ({group.length})
+                </Button>
+              </>
+            }
+          >
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2.5">
               {group.map((e) => (
                 <EntryCard
-                  key={e.id} entry={e}
+                  key={e.id}
+                  entry={e}
                   onDelete={() => onDelete(e.id)}
                   onInfo={() => setInfoId(e.id)}
                 />
               ))}
             </div>
-          </div>
+          </Section>
         );
       })}
 
-      {infoEntry && (
-        <InfoModal entry={infoEntry} materials={materials} onClose={() => setInfoId(null)} />
-      )}
+      <Dialog open={infoEntry !== null} onOpenChange={(o) => !o && setInfoId(null)}>
+        {infoEntry && (
+          <InfoModalContent entry={infoEntry} materials={materials} />
+        )}
+      </Dialog>
     </div>
   );
 }
 
-function EntryCard({ entry, onDelete, onInfo }: {
+function EntryCard({
+  entry,
+  onDelete,
+  onInfo,
+}: {
   entry: PaletteEntry;
   onDelete: () => void;
   onInfo: () => void;
 }) {
   return (
-    <div style={{ border: "1px solid #ddd", padding: 4, borderRadius: 4, background: "white" }}>
-      <div style={{ background: entry.hex, height: 40, borderRadius: 2, border: "1px solid #ccc" }} />
-      <div style={{ fontSize: 10, fontFamily: "monospace", marginTop: 2 }}>{entry.hex}</div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
-        <button onClick={onInfo} title="Show full params" style={{
-          fontSize: 10, padding: "1px 5px", background: "none",
-          border: "1px solid #ddd", borderRadius: 2, cursor: "pointer", color: "#336",
-        }}>
-          i
-        </button>
-        <button onClick={onDelete} style={{
-          fontSize: 10, color: "#a02840", padding: 0, background: "none",
-          border: "none", cursor: "pointer",
-        }}>
-          delete
-        </button>
-      </div>
-      <div style={{ marginTop: 4 }}>
-        <a href={formatRoute({ name: "test-detail", id: entry.test_id })}
-           style={{ fontSize: 11, color: "#336", textDecoration: "none" }}>
-          View test #{entry.test_id}
-        </a>
+    <div className="group relative rounded-[10px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-hidden shadow-[var(--shadow-card)]">
+      <div
+        className="aspect-[4/3] w-full border-b border-[color:var(--color-border)]"
+        style={{ background: entry.hex }}
+      />
+      <div className="px-2 py-1.5 flex items-center justify-between gap-2">
+        <div className="font-mono text-[11px] text-[color:var(--color-ink)]">{entry.hex}</div>
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            type="button"
+            onClick={onInfo}
+            title="Show full params"
+            className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-secondary)] hover:bg-[color:var(--color-surface-elevated)]"
+          >
+            <Info className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            title="Delete swatch"
+            className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-function InfoModal({ entry, materials, onClose }: {
+function InfoModalContent({
+  entry,
+  materials,
+}: {
   entry: PaletteEntry;
   materials: Material[];
-  onClose: () => void;
 }) {
-  const materialName = materials.find((m) => m.id === entry.material_id)?.name
-    ?? "(unknown material)";
+  const materialName =
+    materials.find((m) => m.id === entry.material_id)?.name ?? "(unknown material)";
+
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
-        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10,
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "white", borderRadius: 6, padding: 20, minWidth: 360, maxWidth: 520,
-          boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-          <div style={{ width: 56, height: 56, background: entry.hex, borderRadius: 4, border: "1px solid #ccc" }} />
-          <div>
-            <div style={{ fontFamily: "monospace", fontSize: 15 }}>{entry.hex}</div>
-            <div style={{ fontSize: 12, color: "#666" }}>σ = {entry.sigma.toFixed(2)}</div>
+    <DialogContent width="md">
+      <DialogHeader>
+        <DialogTitle>Swatch details</DialogTitle>
+      </DialogHeader>
+      <div className="flex items-center gap-4 mb-5">
+        <div
+          className="h-16 w-16 rounded-[10px] border border-[color:var(--color-border-strong)] shrink-0"
+          style={{ background: entry.hex }}
+        />
+        <div className="leading-tight">
+          <div className="font-mono text-[16px] font-semibold text-[color:var(--color-ink)]">
+            {entry.hex}
           </div>
-          <div style={{ flex: 1 }} />
-          <button onClick={onClose} style={{
-            fontSize: 14, padding: "4px 10px", border: "1px solid #ccc",
-            background: "white", borderRadius: 4, cursor: "pointer",
-          }}>Close</button>
+          <div className="text-[12px] text-[color:var(--color-ink-muted)] mt-0.5">
+            σ {entry.sigma.toFixed(2)} · {entry.source}
+          </div>
         </div>
-        <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
-          <tbody>
-            <Row label="Material" value={materialName} />
-            <Row label="Test" value={String(entry.test_id)} mono />
-            <Row label="Source" value={entry.source} />
-            <Row label="Captured" value={entry.created_at} mono />
-            {Object.entries(entry.params).map(([k, v]) => (
-              <Row key={k} label={k} value={String(v)} mono />
-            ))}
-            {entry.notes && <Row label="Notes" value={entry.notes} />}
-          </tbody>
-        </table>
       </div>
-    </div>
+      <dl className="grid grid-cols-[120px_1fr] gap-y-2 text-[12.5px]">
+        <InfoRow label="Material" value={materialName} />
+        <InfoRow label="Test" value={`#${entry.test_id}`} mono />
+        <InfoRow label="Captured" value={entry.created_at} mono />
+        {Object.entries(entry.params).map(([k, v]) => (
+          <InfoRow key={k} label={k} value={String(v)} mono />
+        ))}
+        {entry.notes && <InfoRow label="Notes" value={entry.notes} />}
+      </dl>
+    </DialogContent>
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function InfoRow({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
   return (
-    <tr style={{ borderBottom: "1px solid #f0f0f0" }}>
-      <td style={{ padding: "4px 8px 4px 0", color: "#666", width: 120 }}>{label}</td>
-      <td style={{ padding: "4px 0", fontFamily: mono ? "monospace" : "inherit" }}>{value}</td>
-    </tr>
+    <>
+      <dt className="text-[color:var(--color-ink-subtle)]">{label}</dt>
+      <dd
+        className={
+          mono
+            ? "font-mono text-[color:var(--color-ink)] tabular-nums"
+            : "text-[color:var(--color-ink)]"
+        }
+      >
+        {value}
+      </dd>
+    </>
   );
 }
