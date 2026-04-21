@@ -17,18 +17,32 @@ export function ResultsPanel({ testId, locked: _locked }: { testId: number; lock
   const [sourceResultId, setSourceResultId] = useState<number | null>(null);
   const [replaceExisting, setReplaceExisting] = useState(false);
 
-  async function refresh() {
+  async function refresh(opts: { autoSelect?: boolean } = {}) {
     try {
       const [r, a] = await Promise.all([listResults(testId), getAveragedSwatches(testId)]);
       setResults(r); setAveragedSwatches(a);
+      if (opts.autoSelect) {
+        const picks: Record<number, boolean> = {};
+        a.forEach((s, i) => { if (s.sample_count > 0) picks[i] = true; });
+        setSelected(picks);
+      }
     } catch (e) { setError((e as Error).message); }
   }
-  useEffect(() => { refresh(); }, [testId]);  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { refresh({ autoSelect: true }); }, [testId]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  function selectAll() {
+    const picks: Record<number, boolean> = {};
+    averaged.forEach((s, i) => { if (s.sample_count > 0) picks[i] = true; });
+    setSelected(picks);
+  }
+  function clearSelection() { setSelected({}); }
+  const availableCount = averaged.filter(s => s.sample_count > 0).length;
+  const allSelected = availableCount > 0 && availableCount === Object.values(selected).filter(Boolean).length;
 
   async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
     setBusy(true); setError(undefined);
-    try { await uploadResult(testId, file); await refresh(); }
+    try { await uploadResult(testId, file); await refresh({ autoSelect: true }); }
     catch (err) { setError((err as Error).message); }
     finally { setBusy(false); e.target.value = ""; }
   }
@@ -95,8 +109,17 @@ export function ResultsPanel({ testId, locked: _locked }: { testId: number; lock
         </div>
       ))}
 
-      <h3 style={{ marginTop: 20, fontSize: 13 }}>Averaged swatches</h3>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(60px, 1fr))", gap: 4 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 20 }}>
+        <h3 style={{ margin: 0, fontSize: 13 }}>Averaged swatches</h3>
+        {availableCount > 0 && (
+          <button onClick={allSelected ? clearSelection : selectAll}
+                  style={{ fontSize: 11, padding: "2px 6px", background: "white",
+                           border: "1px solid #ccc", borderRadius: 3, cursor: "pointer" }}>
+            {allSelected ? "Clear selection" : `Select all (${availableCount})`}
+          </button>
+        )}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(60px, 1fr))", gap: 4, marginTop: 6 }}>
         {averaged.map((s, i) => {
           const unavailable = s.sample_count === 0;
           return (
