@@ -26,11 +26,14 @@ _LABEL_FONT_SIZE = 3.0
 _TICK_LENGTH = 0.5
 
 
-def _annotation_space_below() -> float:
+def _annotation_space_below(hide_axis_labels: bool = False) -> float:
     """Vertical space below a gradient for the X axis tick marks + labels.
 
-    Mirrors the layout in _add_tick_and_label: tick + 0.05 gap + text + 0.05 padding.
+    Returns 0 when labels are hidden so stacked tests pack tighter.
+    Mirrors _add_tick_and_label: tick + 0.05 gap + text + 0.05 padding.
     """
+    if hide_axis_labels:
+        return 0.0
     return _TICK_LENGTH + 0.05 + text_height(_LABEL_FONT_SIZE) + 0.05
 
 
@@ -43,7 +46,8 @@ def _test_vertical_footprint(t: ParamTest) -> float:
     """Total vertical space a test occupies, including summary and axis labels.
 
     For multi-row tests (rows > 1), the generator auto-expands row_gap to fit
-    inter-row annotations, so the full stack is larger than rows * height_mm.
+    inter-row annotations (unless hide_axis_labels is set, in which case the
+    user's row_gap is used verbatim).
 
     When registration markers are enabled, the generator shifts the entire
     test content down by the registration reservation so markers don't end up
@@ -51,11 +55,10 @@ def _test_vertical_footprint(t: ParamTest) -> float:
     don't overlap.
     """
     summary = _summary_space_above()
-    ann_below = _annotation_space_below()
+    ann_below = _annotation_space_below(t.hide_axis_labels)
 
     if t.rows > 1:
-        # generate_gradient uses effective_row_gap = max(row_gap, ann_space)
-        effective_row_gap = max(1.0, ann_below)
+        effective_row_gap = max(t.gap_mm, ann_below)
         gradient_h = t.rows * t.height_mm + (t.rows - 1) * effective_row_gap
     else:
         gradient_h = t.height_mm
@@ -246,6 +249,7 @@ def project_to_xcs(project: Project) -> XCSProject:
             cell_shape=t.cell_shape,
             test_id=t.id,
             material_id=t.material_id,
+            hide_axis_labels=t.hide_axis_labels,
         )
 
         if i == 0:

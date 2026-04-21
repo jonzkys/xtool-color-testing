@@ -217,3 +217,51 @@ def test_param_test_hide_axis_labels_round_trips():
     }
     t = ParamTest.model_validate(payload)
     assert t.hide_axis_labels is True
+
+
+def test_hide_axis_labels_shrinks_vertical_footprint():
+    """Stacked tests with hide_axis_labels=True should pack tighter than the
+    default (the inter-test gap shrinks because the bottom-strip annotation
+    allowance disappears)."""
+    def _stacked(hide: bool):
+        return Project(
+            name="Test", grid_gap_mm=0.0,
+            tests=[
+                TestPlacement(
+                    test=_test("t1").model_copy(update={"hide_axis_labels": hide}),
+                    row=0, col=0, col_span=1,
+                ),
+                TestPlacement(
+                    test=_test("t2").model_copy(update={"hide_axis_labels": hide}),
+                    row=1, col=0, col_span=1,
+                ),
+            ],
+        )
+
+    default_xcs = project_to_xcs(_stacked(hide=False))
+    hidden_xcs = project_to_xcs(_stacked(hide=True))
+
+    def _distinct_y(xcs):
+        return sorted({round(e.y, 3) for e in xcs.elements})
+
+    d_ys = _distinct_y(default_xcs)
+    h_ys = _distinct_y(hidden_xcs)
+    assert len(d_ys) == 2 and len(h_ys) == 2
+    assert (h_ys[1] - h_ys[0]) < (d_ys[1] - d_ys[0])
+
+
+def test_hide_axis_labels_generator_sees_no_labels():
+    """project_to_xcs must forward hide_axis_labels to generate_gradient."""
+    project = Project(
+        name="Test", grid_gap_mm=0.0,
+        tests=[
+            TestPlacement(
+                test=_test("t1").model_copy(update={"hide_axis_labels": True}),
+                row=0, col=0, col_span=1,
+            ),
+        ],
+    )
+    xcs = project_to_xcs(project)
+    display_types = [d.__class__.__name__ for d in xcs.extra_displays]
+    from xcs_gen.model import Line
+    assert not any(isinstance(e, Line) for e in xcs.extra_displays)
