@@ -251,17 +251,29 @@ def test_hide_axis_labels_shrinks_vertical_footprint():
 
 
 def test_hide_axis_labels_generator_sees_no_labels():
-    """project_to_xcs must forward hide_axis_labels to generate_gradient."""
-    project = Project(
-        name="Test", grid_gap_mm=0.0,
-        tests=[
-            TestPlacement(
-                test=_test("t1").model_copy(update={"hide_axis_labels": True}),
-                row=0, col=0, col_span=1,
-            ),
-        ],
-    )
-    xcs = project_to_xcs(project)
-    display_types = [d.__class__.__name__ for d in xcs.extra_displays]
-    from xcs_gen.model import Line
-    assert not any(isinstance(e, Line) for e in xcs.extra_displays)
+    """project_to_xcs must forward hide_axis_labels to generate_gradient.
+
+    extra_displays stores dicts built by build_line_display/make_text_display,
+    so we assert on the "type" field: no LINE (tick) dicts, and exactly one
+    TEXT dict (the summary — axis-label TEXTs are suppressed).
+    """
+    def _displays_for(hide: bool):
+        project = Project(
+            name="Test", grid_gap_mm=0.0,
+            tests=[
+                TestPlacement(
+                    test=_test("t1").model_copy(update={"hide_axis_labels": hide}),
+                    row=0, col=0, col_span=1,
+                ),
+            ],
+        )
+        xcs = project_to_xcs(project)
+        return [d["type"] for d in xcs.extra_displays]
+
+    hidden = _displays_for(True)
+    assert hidden.count("LINE") == 0
+    assert hidden.count("TEXT") == 1  # summary header only
+
+    visible = _displays_for(False)
+    assert visible.count("LINE") > 0
+    assert visible.count("TEXT") > 1  # summary + axis labels
