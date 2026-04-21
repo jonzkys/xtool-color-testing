@@ -98,14 +98,13 @@ subcommands (they don't draw axis labels).
 ### Web UI (`web/src/components/TestEditor.tsx`)
 
 A checkbox in the Layout section (near Gap / Rows / Wrapping) with
-the label "Hide axis labels". Toggling it updates the in-app SVG
-preview immediately.
+the label "Hide axis labels".
 
 ### Preview (`web/src/components/Preview.tsx`)
 
-The preview replicates the real layout. It must:
-- Skip drawing the tick + label SVG elements when hidden.
-- Use the smaller `effective_row_gap` so wrapped rows render flush.
+No changes required. The current preview draws each test as a single
+filled rectangle (not the cell-level layout), so tick marks and axis
+labels aren't modelled — the flag simply doesn't affect the preview.
 
 ## Data flow
 
@@ -155,8 +154,8 @@ construction.
   `_test_vertical_footprint` returns a smaller value when the flag
   is true, and that stacked tests don't overlap.
 - **End-to-end:** generate a 7-row wrapped speed sweep with
-  `hide_axis_labels=True`, confirm the preview / SVG / XCS all show
-  flush rows with no numeric labels and a single header line.
+  `hide_axis_labels=True`, confirm the generated XCS shows flush rows
+  with no numeric labels and a single header line.
 - **Backwards compat:** existing stored tests (without the field) must
   hydrate to `hide_axis_labels=False` and render identically to today.
 
@@ -168,6 +167,6 @@ None.
 
 1. Backend schema + generator + converter changes (Python).
 2. CLI flag + tests.
-3. Web UI: type mirror, checkbox, preview.
+3. Web UI: type mirror, checkbox.
 4. Ship. No migration — default is `False` so existing tests are
    unchanged.
