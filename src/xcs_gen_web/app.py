@@ -425,9 +425,6 @@ def create_app() -> FastAPI:
         if t is None:
             raise HTTPException(status_code=404, detail="test not found")
 
-        if body.mode not in ("averaged", "single_result"):
-            raise HTTPException(status_code=400, detail="mode must be averaged|single_result")
-
         if body.mode == "averaged":
             swatches = r_repo.averaged_swatches(tid)
             source_result_id = None
@@ -443,9 +440,6 @@ def create_app() -> FastAPI:
         if any(i < 0 or i >= len(swatches) for i in body.swatch_indices):
             raise HTTPException(status_code=400, detail="swatch_indices out of range")
         picked = [swatches[i] for i in body.swatch_indices]
-
-        if body.replace_existing:
-            pal_repo.delete_by_test(tid)
 
         base = t["spec"]["base_params"]
         x_param = t["spec"]["x_param"]
@@ -465,7 +459,10 @@ def create_app() -> FastAPI:
                 "source": body.mode, "source_result_id": source_result_id,
                 "params": params,
             })
-        ids = pal_repo.insert_bulk(payload)
+        if body.replace_existing:
+            ids = pal_repo.replace_for_test(tid, payload)
+        else:
+            ids = pal_repo.insert_bulk(payload)
         return {"added": len(ids), "ids": ids}
 
     # Mount built frontend at / if present (optional in dev / tests)

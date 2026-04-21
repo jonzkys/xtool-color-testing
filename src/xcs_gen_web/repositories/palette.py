@@ -35,28 +35,44 @@ def _row_to_entry(r) -> dict[str, Any]:
     }
 
 
+def _build_row(e: dict[str, Any], now: str) -> dict[str, Any]:
+    """Build a DB row dict from an entry dict. Used by insert_bulk and replace_for_test."""
+    L, a, b = hex_to_lab(e["hex"])
+    return {
+        "test_id": e["test_id"],
+        "material_id": e["material_id"],
+        "x_value": e.get("x_value"),
+        "y_value": e.get("y_value"),
+        "hex": e["hex"],
+        "lab_l": L, "lab_a": a, "lab_b": b,
+        "params_json": json.dumps(e.get("params", {}), separators=(",", ":")),
+        "sigma": e["sigma"],
+        "source": e["source"],
+        "source_result_id": e.get("source_result_id"),
+        "notes": e.get("notes", ""),
+        "created_at": now,
+    }
+
+
 def insert_bulk(entries: Iterable[dict[str, Any]]) -> list[int]:
     now = _now()
-    rows = []
-    for e in entries:
-        L, a, b = hex_to_lab(e["hex"])
-        rows.append({
-            "test_id": e["test_id"],
-            "material_id": e["material_id"],
-            "x_value": e.get("x_value"),
-            "y_value": e.get("y_value"),
-            "hex": e["hex"],
-            "lab_l": L, "lab_a": a, "lab_b": b,
-            "params_json": json.dumps(e.get("params", {}), separators=(",", ":")),
-            "sigma": e["sigma"],
-            "source": e["source"],
-            "source_result_id": e.get("source_result_id"),
-            "notes": e.get("notes", ""),
-            "created_at": now,
-        })
+    rows = [_build_row(e, now) for e in entries]
     if not rows:
         return []
     with session_scope() as s:
+        ids: list[int] = []
+        for row in rows:
+            res = s.execute(palette_entries.insert().values(**row))
+            ids.append(res.inserted_primary_key[0])
+        return ids
+
+
+def replace_for_test(test_id: int, entries: Iterable[dict[str, Any]]) -> list[int]:
+    """Delete all palette entries for test_id then insert new ones atomically."""
+    now = _now()
+    rows = [_build_row(e, now) for e in entries]
+    with session_scope() as s:
+        s.execute(palette_entries.delete().where(palette_entries.c.test_id == test_id))
         ids: list[int] = []
         for row in rows:
             res = s.execute(palette_entries.insert().values(**row))

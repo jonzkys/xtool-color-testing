@@ -79,3 +79,62 @@ def test_ingest_replace_existing(fresh_db, monkeypatch, tmp_path):
                json={"swatch_indices": [0], "mode": "averaged", "replace_existing": True})
     assert r.json()["added"] == 1
     assert len(c.get(f"/api/palette?material_id={mid}").json()) == 1
+
+
+def test_ingest_404_on_missing_test(fresh_db, monkeypatch, tmp_path):
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    c = TestClient(create_app())
+    r = c.post("/api/tests/9999/ingest-to-palette",
+               json={"swatch_indices": [0], "mode": "averaged"})
+    assert r.status_code == 404
+
+
+def test_ingest_400_on_single_result_without_id(fresh_db, monkeypatch, tmp_path):
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_cap)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    c.post(f"/api/tests/{tid}/results", files={"image": ("x.png", b"fake", "image/png")})
+    r = c.post(f"/api/tests/{tid}/ingest-to-palette",
+               json={"swatch_indices": [0], "mode": "single_result"})
+    assert r.status_code == 400
+
+
+def test_ingest_400_on_wrong_test_result(fresh_db, monkeypatch, tmp_path):
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_cap)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    t1 = t_repo.create(name="A", material_id=mid, spec=SPEC)["id"]
+    t2 = t_repo.create(name="B", material_id=mid, spec=SPEC)["id"]
+    rid = c.post(f"/api/tests/{t1}/results",
+                 files={"image": ("x.png", b"fake", "image/png")}).json()["id"]
+    r = c.post(f"/api/tests/{t2}/ingest-to-palette", json={
+        "swatch_indices": [0], "mode": "single_result", "result_id": rid,
+    })
+    assert r.status_code == 400
+
+
+def test_ingest_422_on_empty_swatch_indices(fresh_db, monkeypatch, tmp_path):
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_cap)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    c.post(f"/api/tests/{tid}/results", files={"image": ("x.png", b"fake", "image/png")})
+    r = c.post(f"/api/tests/{tid}/ingest-to-palette",
+               json={"swatch_indices": [], "mode": "averaged"})
+    assert r.status_code == 422  # Pydantic validation error
+
+
+def test_ingest_400_on_out_of_range_index(fresh_db, monkeypatch, tmp_path):
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_cap)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    c.post(f"/api/tests/{tid}/results", files={"image": ("x.png", b"fake", "image/png")})
+    r = c.post(f"/api/tests/{tid}/ingest-to-palette",
+               json={"swatch_indices": [999], "mode": "averaged"})
+    assert r.status_code == 400

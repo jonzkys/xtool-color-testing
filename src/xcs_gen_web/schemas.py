@@ -447,7 +447,7 @@ class AveragedSwatch(BaseModel):
 
 
 class IngestToPaletteRequest(BaseModel):
-    swatch_indices: list[int]
-    mode: str                        # "averaged" | "single_result"
+    swatch_indices: list[int] = Field(min_length=1)
+    mode: Literal["averaged", "single_result"]
     result_id: int | None = None     # required when mode == "single_result"
     replace_existing: bool = False
