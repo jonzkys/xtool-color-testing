@@ -82,20 +82,35 @@ _ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 _ARUCO_PARAMS = cv2.aruco.DetectorParameters()
 
 
+def _preprocessing_variants(gray: np.ndarray) -> list[np.ndarray]:
+    """Return candidate images for fiducial detection.
+
+    Phone photos of laser burns on stainless usually aren't pure B&W —
+    burns are mid-tone gray on a bright substrate. Raw gray confuses
+    zbar/ArUco's built-in thresholding. Running the detectors on a
+    blurred-and-Otsu'd version rescues most shots; we keep the raw
+    image too so crisp burns don't get hurt by the blur.
+    """
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    _, otsu = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return [gray, otsu]
+
+
 def _qr_top_left_px(img: np.ndarray) -> tuple[int, tuple[float, float]]:
     """Return (qr_id, top_left_px). The QR's top-left module anchors the homography."""
     from xcs_gen.capture.qr_payload import PayloadError, decode_payload
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    for sym in _pyzbar_decode(gray, symbols=[ZBarSymbol.QRCODE]):
-        try:
-            payload = decode_payload(sym.data.decode("utf-8"))
-        except (PayloadError, UnicodeDecodeError):
-            continue
-        pts = sym.polygon
-        if len(pts) < 4:
-            continue
-        tl = min(pts, key=lambda p: p.x + p.y)
-        return payload["id"], (float(tl.x), float(tl.y))
+    for candidate in _preprocessing_variants(gray):
+        for sym in _pyzbar_decode(candidate, symbols=[ZBarSymbol.QRCODE]):
+            try:
+                payload = decode_payload(sym.data.decode("utf-8"))
+            except (PayloadError, UnicodeDecodeError):
+                continue
+            pts = sym.polygon
+            if len(pts) < 4:
+                continue
+            tl = min(pts, key=lambda p: p.x + p.y)
+            return payload["id"], (float(tl.x), float(tl.y))
     raise DetectionError("no valid id-only QR detected")
 
 
@@ -103,16 +118,20 @@ def _aruco_centres_px(img: np.ndarray) -> dict[int, tuple[float, float]]:
     """Return {marker_id: centre_px} for every detected ArUco 1/2/3."""
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     detector = cv2.aruco.ArucoDetector(_ARUCO_DICT, _ARUCO_PARAMS)
-    corners, ids, _ = detector.detectMarkers(gray)
     out: dict[int, tuple[float, float]] = {}
-    if ids is None:
-        return out
-    for c_set, id_ in zip(corners, ids.flatten()):
-        if int(id_) not in (1, 2, 3):
+    for candidate in _preprocessing_variants(gray):
+        corners, ids, _ = detector.detectMarkers(candidate)
+        if ids is None:
             continue
-        pts = c_set.reshape(-1, 2)
-        cx, cy = pts[:, 0].mean(), pts[:, 1].mean()
-        out[int(id_)] = (float(cx), float(cy))
+        for c_set, id_ in zip(corners, ids.flatten()):
+            key = int(id_)
+            if key not in (1, 2, 3) or key in out:
+                continue
+            pts = c_set.reshape(-1, 2)
+            cx, cy = pts[:, 0].mean(), pts[:, 1].mean()
+            out[key] = (float(cx), float(cy))
+        if len(out) == 3:
+            break
     return out
 
 
