@@ -416,13 +416,14 @@ def test_detected_layer_is_near_white_round_trips_true():
 
 def test_detect_svg_layers_flags_white_and_near_white(tmp_path):
     """detect_svg_layers marks pure-white and vtracer near-white colours
-    with is_near_white=True; anything below the threshold is False."""
+    with is_near_white=True; dim or coloured shades are False."""
     svg = (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
         '<rect x="0" y="0" width="100" height="100" fill="#ffffff"/>'   # pure white
-        '<rect x="10" y="10" width="20" height="20" fill="#fdfdfd"/>'    # vtracer artefact
-        '<circle cx="60" cy="60" r="10" fill="#ff0000"/>'                # red
-        '<circle cx="80" cy="80" r="5" fill="#f4f4f4"/>'                 # 244 — not near-white
+        '<rect x="10" y="10" width="20" height="20" fill="#e4e5e5"/>'    # vtracer near-grey, caught
+        '<circle cx="60" cy="60" r="10" fill="#ff0000"/>'                # red — not near-white
+        '<circle cx="80" cy="80" r="5" fill="#dbdbdb"/>'                 # 219 — below bright threshold
+        '<rect x="40" y="40" width="5" height="5" fill="#fff5e6"/>'     # cream, spread=25, excluded
         '</svg>'
     )
     req = SvgDetectRequest(svg_content=svg, width_mm=50.0)
@@ -430,6 +431,7 @@ def test_detect_svg_layers_flags_white_and_near_white(tmp_path):
 
     flags = {l.color: l.is_near_white for l in layers}
     assert flags["#ffffff"] is True
-    assert flags["#fdfdfd"] is True
+    assert flags["#e4e5e5"] is True
     assert flags["#ff0000"] is False
-    assert flags["#f4f4f4"] is False
+    assert flags["#dbdbdb"] is False
+    assert flags["#fff5e6"] is False

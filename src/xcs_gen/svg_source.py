@@ -221,15 +221,25 @@ def _scale_and_offset(
     return new_path
 
 
-# RGB channel threshold above which a colour counts as "near white". All
-# three channels must be >= this value. 245 catches pure #ffffff and
-# vtracer quantization artefacts like #fdfdfd / #fefefe. Configurable
-# only via source edit; if that stops being enough, make it a parameter.
-NEAR_WHITE_THRESHOLD = 245
+# A colour counts as "near white" when it's both bright AND nearly neutral.
+#
+# - bright: the minimum RGB channel is >= NEAR_WHITE_THRESHOLD (220).
+# - nearly neutral: the spread between max and min channel <= NEAR_WHITE_MAX_SPREAD (20).
+#
+# vtracer's colour quantization on a white-background PNG produces dozens
+# of slightly-off shades like #dbdcdd, #f0f0f1, #faeef0 — all visually
+# white but with different exact hex values. This two-term test catches
+# them while preserving pale-but-coloured designs (cream #fff5e6 has
+# spread 25, pale blue #e0f7fa has spread 26 → neither filtered).
+NEAR_WHITE_THRESHOLD = 220
+NEAR_WHITE_MAX_SPREAD = 20
 
 
 def is_near_white(hex_color: str) -> bool:
-    """Return True if every RGB channel of a #rrggbb hex colour is >= NEAR_WHITE_THRESHOLD.
+    """Return True if a #rrggbb hex colour is bright and nearly neutral.
+
+    "Bright" = every RGB channel >= NEAR_WHITE_THRESHOLD.
+    "Nearly neutral" = spread between max and min channel <= NEAR_WHITE_MAX_SPREAD.
 
     Returns False for any non-7-character hex string (including the 3-digit
     shorthand, "none", "", or anything that's not a #rrggbb literal).
@@ -244,7 +254,8 @@ def is_near_white(hex_color: str) -> bool:
         b = int(hex_color[5:7], 16)
     except ValueError:
         return False
-    return r >= NEAR_WHITE_THRESHOLD and g >= NEAR_WHITE_THRESHOLD and b >= NEAR_WHITE_THRESHOLD
+    lo, hi = min(r, g, b), max(r, g, b)
+    return lo >= NEAR_WHITE_THRESHOLD and (hi - lo) <= NEAR_WHITE_MAX_SPREAD
 
 
 def _normalize_color(color) -> str | None:

@@ -157,15 +157,15 @@ def test_is_near_white_vtracer_artefact():
 
 
 def test_is_near_white_threshold_boundary_inclusive():
-    """#f5f5f5 is (245,245,245) — exactly on the threshold, counts as near-white."""
+    """#dcdcdc is (220,220,220) — exactly on the threshold, spread=0, near-white."""
     from xcs_gen.svg_source import is_near_white
-    assert is_near_white("#f5f5f5") is True
+    assert is_near_white("#dcdcdc") is True
 
 
 def test_is_near_white_threshold_just_below_is_false():
-    """#f4f4f4 is (244,244,244) — one below, not near-white."""
+    """#dbdbdb is (219,219,219) — one below threshold, not near-white."""
     from xcs_gen.svg_source import is_near_white
-    assert is_near_white("#f4f4f4") is False
+    assert is_near_white("#dbdbdb") is False
 
 
 def test_is_near_white_yellow_one_channel_zero():
@@ -174,9 +174,40 @@ def test_is_near_white_yellow_one_channel_zero():
     assert is_near_white("#ffff00") is False  # blue channel = 0
 
 
+def test_is_near_white_vtracer_greys_caught():
+    """Real near-neutral vtracer outputs on a white background — all caught."""
+    from xcs_gen.svg_source import is_near_white
+    # Sampled from vtracer output on a real PNG with white background:
+    assert is_near_white("#dcdddd") is True  # (220,221,221) — min=220, spread=1
+    assert is_near_white("#dfe0e2") is True  # (223,224,226)
+    assert is_near_white("#e4e5e5") is True  # (228,229,229)
+    assert is_near_white("#f0f0f1") is True  # (240,240,241)
+    assert is_near_white("#f6f4f4") is True  # (246,244,244)
+
+
+def test_is_near_white_just_below_bright_threshold():
+    """#dbdcdd (219,220,221) — min=219 < 220 bright threshold, excluded."""
+    from xcs_gen.svg_source import is_near_white
+    assert is_near_white("#dbdcdd") is False
+
+
+def test_is_near_white_spread_too_wide_excludes_pale_colours():
+    """Cream and pale blue have coloured tints — channel spread > 20 excludes them."""
+    from xcs_gen.svg_source import is_near_white
+    assert is_near_white("#fff5e6") is False  # cream: spread=25 (red-yellow tint)
+    assert is_near_white("#e0f7fa") is False  # pale blue: spread=26
+    assert is_near_white("#f2ec93") is False  # pale yellow: min=147 fails bright check
+
+
+def test_is_near_white_slight_tint_within_spread_caught():
+    """A slight pink tint in a near-white (vtracer artefact) should still count."""
+    from xcs_gen.svg_source import is_near_white
+    assert is_near_white("#faeef0") is True  # (250,238,240), spread=12
+
+
 def test_is_near_white_cyan_one_channel_below():
     from xcs_gen.svg_source import is_near_white
-    assert is_near_white("#f5f5f4") is False  # blue channel = 244
+    assert is_near_white("#f5f5f4") is True  # (245,245,244) — bright + spread=1
 
 
 def test_is_near_white_invalid_inputs():
