@@ -312,6 +312,24 @@ def create_app() -> FastAPI:
         t_repo.soft_delete(tid)
         return Response(status_code=204)
 
+    from .services import xcs as xcs_service
+
+    @app.post("/api/tests/{tid}/generate")
+    def tests_generate(tid: int) -> Response:
+        t = t_repo.get(tid)
+        if t is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        body = xcs_service.bytes_for_test(
+            test_id=t["id"], name=t["name"],
+            material_id=t["material_id"], spec=t["spec"],
+        )
+        safe_name = t["name"].replace("/", "_") or f"test-{t['id']}"
+        return Response(
+            content=body,
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}.xcs"'},
+        )
+
     from .services import capture as capture_service
     from .repositories import results as r_repo
     from . import images, models
