@@ -8,12 +8,10 @@ from typing import Any
 import numpy as np
 
 from xcs_gen.capture.layout import (
-    ARUCO_ID_BOTTOM_LEFT,
-    ARUCO_ID_BOTTOM_RIGHT,
-    ARUCO_ID_TOP_RIGHT,
     ARUCO_SIZE_DEFAULT_MM,
     MARKER_MARGIN_MM,
     QR_SIZE_DEFAULT_MM,
+    compute_layout,
 )
 
 from ..capture_pipeline import (
@@ -61,7 +59,7 @@ def run_capture(*, image_bytes: bytes, test_id: int,
     margin = MARKER_MARGIN_MM
 
     # Burn-space anchors (mm) for each marker's reference point.
-    # QR: top-left corner. ArUcos: centre.
+    # QR: top-left corner. ArUcos: centre (top-left + half-size).
     qr_tl = (margin, margin)
     grid_origin_mm = (
         qr_tl[0] + qr_size + margin,
@@ -69,19 +67,17 @@ def run_capture(*, image_bytes: bytes, test_id: int,
     )
     burn_w = grid_origin_mm[0] + grid_w + aruco_size + margin
     burn_h = grid_origin_mm[1] + grid_h + aruco_size + margin
-    tr_c = (grid_origin_mm[0] + grid_w + margin + aruco_size / 2,
-            margin + aruco_size / 2)
-    bl_c = (qr_tl[0] + qr_size / 2,
-            grid_origin_mm[1] + grid_h + margin + aruco_size / 2)
-    br_c = (grid_origin_mm[0] + grid_w + margin + aruco_size / 2,
-            grid_origin_mm[1] + grid_h + margin + aruco_size / 2)
 
-    burn_anchors = {
-        0: qr_tl,
-        ARUCO_ID_TOP_RIGHT: tr_c,
-        ARUCO_ID_BOTTOM_LEFT: bl_c,
-        ARUCO_ID_BOTTOM_RIGHT: br_c,
-    }
+    layout = compute_layout(
+        grid_x=grid_origin_mm[0], grid_y=grid_origin_mm[1],
+        grid_w=grid_w, grid_h=grid_h,
+        mode="on", qr_size_mm=qr_size, aruco_size_mm=aruco_size,
+    )
+    # layout.arucos: list of 3 MarkerPositions at top-left corners of each
+    # ArUco; the detector reports centres so convert by offsetting half-size.
+    burn_anchors = {0: qr_tl}
+    for ar in layout.arucos:
+        burn_anchors[ar.marker_id] = (ar.x + ar.size / 2, ar.y + ar.size / 2)
 
     warped = warp_to_burn_space(
         img,

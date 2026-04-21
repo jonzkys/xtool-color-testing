@@ -53,3 +53,17 @@ def test_detect_finds_qr_and_three_arucos():
     # All returned "corners" are (x, y) px tuples
     for k in corners:
         assert len(corners[k]) == 2
+
+
+def test_detect_raises_when_arucos_missing(monkeypatch):
+    """If too few ArUcos are found, detect_fiducials raises DetectionError.
+
+    Uses a real strip image but monkey-patches the ArUco detector to simulate
+    a scenario where the markers were unreadable (e.g., out of frame, occluded).
+    """
+    import pytest
+    from xcs_gen_web import capture_pipeline
+    img, _ = _render_strip()
+    monkeypatch.setattr(capture_pipeline, "_aruco_centres_px", lambda _: {})
+    with pytest.raises(capture_pipeline.DetectionError, match="insufficient ArUco"):
+        capture_pipeline.detect_fiducials(img)
