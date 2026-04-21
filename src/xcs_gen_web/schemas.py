@@ -250,6 +250,11 @@ class DetectedLayer(BaseModel):
     color: str
     shape_count: int
     is_fill: bool  # True = appears as a fill, False = appears only as stroke
+    # True when every RGB channel is >= 245 (pure white + vtracer near-white
+    # artefacts). The UI hides these by default; users can tick "Include
+    # white" to surface them. Default False keeps the field optional on the
+    # wire for older clients / persisted snapshots.
+    is_near_white: bool = False
 
 
 class SvgPreviewRequest(BaseModel):

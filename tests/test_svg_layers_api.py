@@ -395,3 +395,20 @@ def test_api_layers_endpoint_rejects_hatched_with_empty_passes():
     resp = client.post("/api/svg-layers", json=payload)
     assert resp.status_code == 422  # Pydantic validation error
     assert "HATCHED_LINES" in resp.text
+
+
+def test_detected_layer_is_near_white_defaults_false():
+    from xcs_gen_web.schemas import DetectedLayer
+    layer = DetectedLayer(color="#ff0000", shape_count=3, is_fill=True)
+    assert layer.is_near_white is False
+
+
+def test_detected_layer_is_near_white_round_trips_true():
+    from xcs_gen_web.schemas import DetectedLayer
+    layer = DetectedLayer.model_validate({
+        "color": "#ffffff",
+        "shape_count": 1,
+        "is_fill": True,
+        "is_near_white": True,
+    })
+    assert layer.is_near_white is True
