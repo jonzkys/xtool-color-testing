@@ -197,3 +197,23 @@ def test_fixed_mode_is_default_and_emits_angle_type_1():
     assert len(xcs.elements) == 10
     assert all(e.params.angle_type == 1 for e in xcs.elements)
     assert all(not e.params.cross_angle for e in xcs.elements)
+
+
+def test_param_test_hide_axis_labels_defaults_false():
+    """Omitting hide_axis_labels gives False (backwards compat for stored tests)."""
+    t = _test("t1")
+    assert t.hide_axis_labels is False
+
+
+def test_param_test_hide_axis_labels_round_trips():
+    """Explicitly-set True survives model_validate (JSON → object)."""
+    payload = {
+        "id": "t1", "name": "t", "x_param": "speed",
+        "x_min": 500, "x_max": 2000, "x_steps": 10,
+        "rows": 1, "width_mm": 30, "height_mm": 5, "gap_mm": 0,
+        "base_params": _base().model_dump(),
+        "material_id": "mat-test",
+        "hide_axis_labels": True,
+    }
+    t = ParamTest.model_validate(payload)
+    assert t.hide_axis_labels is True

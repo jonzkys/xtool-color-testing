@@ -88,6 +88,11 @@ class ParamTest(BaseModel):
     # True → emit bitmapScanMode="oneWay" on the gradient cells + annotation;
     # False (default) → "zMode" (bi-directional zigzag, faster).
     unidirectional: bool = False
+    # When true, suppresses per-row tick + axis-label elements on generated
+    # test patterns. Reclaims ~1.75 mm per row gap (at the 3 pt default font).
+    # QR payload's row_stride_mm is recomputed accordingly so capture
+    # sampling still hits the right cells.
+    hide_axis_labels: bool = False
 
     @model_validator(mode="after")
     def validate_ranges(self) -> "ParamTest":
