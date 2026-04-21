@@ -424,3 +424,41 @@ class TestResponse(BaseModel):
     created_at: str
     updated_at: str
     locked: bool
+
+
+class ResultSwatch(BaseModel):
+    row: int
+    col: int
+    x_value: float
+    y_value: float | None = None
+    hex: str
+    lab: list[float]
+    sigma: float
+
+
+class ResultResponse(BaseModel):
+    id: int
+    test_id: int
+    uploaded_at: str
+    image_url: str
+    image_sha256: str
+    excluded: bool
+    notes: str
+    swatches: list[ResultSwatch]
+
+
+class ResultPatch(BaseModel):
+    excluded: bool | None = None
+    notes: str | None = None
+
+
+class AveragedSwatch(BaseModel):
+    row: int
+    col: int
+    x_value: float
+    y_value: float | None = None
+    hex: str
+    lab: list[float]
+    sigma: float
+    sample_count: int
+    per_result: list[dict]

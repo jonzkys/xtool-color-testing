@@ -24,6 +24,7 @@ from .capture_sampling import sample_grid
 from .converter import project_to_xcs_bytes
 from .raster_to_svg import RasterTraceOptions, decode_base64_image, png_to_svg
 from .schemas import (
+    AveragedSwatch,
     BaseParams,
     CaptureIngestResponse,
     CaptureSwatch,
@@ -40,6 +41,9 @@ from .schemas import (
     Project,
     RasterToSvgRequest,
     RasterToSvgResponse,
+    ResultPatch,
+    ResultResponse,
+    ResultSwatch,
     SvgDetectRequest,
     SvgLayersRequest,
     SvgPreviewRequest,
@@ -431,6 +435,94 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="test not found")
         t_repo.soft_delete(tid)
         return Response(status_code=204)
+
+    from .services import capture as capture_service
+    from .repositories import results as r_repo
+    from . import images, models
+    from .db import session_scope
+
+    def _result_to_response(r: dict) -> ResultResponse:
+        return ResultResponse(
+            id=r["id"], test_id=r["test_id"],
+            uploaded_at=r["uploaded_at"],
+            image_url=f"/api/results/{r['id']}/image",
+            image_sha256=r["image_sha256"],
+            excluded=r["excluded"], notes=r["notes"],
+            swatches=[ResultSwatch(**s) for s in r["swatches"]],
+        )
+
+    @app.post("/api/tests/{tid}/results", response_model=ResultResponse, status_code=201)
+    async def results_upload(tid: int, image: UploadFile = File(...)) -> ResultResponse:
+        t = t_repo.get(tid)
+        if t is None:
+            raise HTTPException(status_code=404, detail="test not found")
+
+        data = await image.read()
+        try:
+            cap_result = capture_service.run_capture(
+                image_bytes=data, test_id=tid, spec=t["spec"],
+            )
+        except capture_service.CaptureError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        suffix = Path(image.filename or "upload.png").suffix or ".png"
+        # Two-step: insert with a placeholder image_path → get id → write file → update path.
+        placeholder = r_repo.create(
+            test_id=tid,
+            image_path="pending",
+            image_sha256=images.sha256_hex(data),
+            swatches=cap_result.swatches,
+        )
+        rec = images.save(test_id=tid, result_id=placeholder["id"],
+                          data=data, suffix=suffix)
+        # Write the real path back.
+        with session_scope() as s:
+            s.execute(
+                models.results.update()
+                .where(models.results.c.id == placeholder["id"])
+                .values(image_path=rec["path"])
+            )
+        t_repo.mark_tested_and_lock(tid)
+        refreshed = r_repo.get(placeholder["id"])
+        return _result_to_response(refreshed)
+
+    @app.get("/api/tests/{tid}/results", response_model=list[ResultResponse])
+    def results_list(tid: int) -> list[ResultResponse]:
+        if t_repo.get(tid) is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        return [_result_to_response(r) for r in r_repo.list_by_test(tid)]
+
+    @app.patch("/api/results/{rid}", response_model=ResultResponse)
+    def results_patch(rid: int, body: ResultPatch) -> ResultResponse:
+        if r_repo.get(rid) is None:
+            raise HTTPException(status_code=404, detail="result not found")
+        if body.excluded is not None:
+            r_repo.set_excluded(rid, body.excluded)
+        if body.notes is not None:
+            r_repo.set_notes(rid, body.notes)
+        return _result_to_response(r_repo.get(rid))
+
+    @app.delete("/api/results/{rid}", status_code=204)
+    def results_delete(rid: int) -> Response:
+        path = r_repo.delete(rid)
+        if path is None:
+            raise HTTPException(status_code=404, detail="result not found")
+        images.delete(path)
+        return Response(status_code=204)
+
+    @app.get("/api/results/{rid}/image")
+    def results_image(rid: int) -> Response:
+        r = r_repo.get(rid)
+        if r is None:
+            raise HTTPException(status_code=404, detail="result not found")
+        data = images.read(r["image_path"])
+        return Response(content=data, media_type="image/*")
+
+    @app.get("/api/tests/{tid}/swatches", response_model=list[AveragedSwatch])
+    def test_swatches(tid: int) -> list[AveragedSwatch]:
+        if t_repo.get(tid) is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        return [AveragedSwatch(**s) for s in r_repo.averaged_swatches(tid)]
 
     # Mount built frontend at / if present (optional in dev / tests)
     web_dist = Path(__file__).parent.parent.parent / "web" / "dist"
