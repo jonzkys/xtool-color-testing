@@ -323,7 +323,7 @@ def create_app() -> FastAPI:
             test_id=t["id"], name=t["name"],
             material_id=t["material_id"], spec=t["spec"],
         )
-        safe_name = t["name"].replace("/", "_") or f"test-{t['id']}"
+        safe_name = xcs_service._safe_project_name(t["name"], fallback=f"test-{t['id']}")
         return Response(
             content=body,
             media_type="application/octet-stream",

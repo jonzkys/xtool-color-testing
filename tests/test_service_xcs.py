@@ -25,3 +25,22 @@ def test_generate_returns_xcs_bytes(fresh_db):
     assert r.headers["content-type"] == "application/octet-stream"
     assert r.content.startswith(b"{") or b"canvasId" in r.content
     assert "filename=" in r.headers.get("content-disposition", "")
+
+
+def test_generate_404_for_missing_test(fresh_db):
+    c = TestClient(create_app())
+    r = c.post("/api/tests/99999/generate")
+    assert r.status_code == 404
+
+
+def test_generate_handles_unsafe_test_name(fresh_db):
+    """Name with characters outside the Project.name pattern must not 500."""
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name='"evil\\name"!', material_id=mid, spec=SPEC)["id"]
+    r = c.post(f"/api/tests/{tid}/generate")
+    assert r.status_code == 200
+    cd = r.headers.get("content-disposition", "")
+    # No unescaped quotes or backslashes in the header value
+    assert '"' not in cd.replace('filename="', "").replace('.xcs"', "")
+    assert "\\" not in cd
