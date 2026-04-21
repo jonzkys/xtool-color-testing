@@ -1,23 +1,19 @@
-"""Render the QR registration marker into an XCSProject.
+"""Render QR and ArUco registration markers into an XCSProject.
 
-QR is generated via segno, rasterized to a bit grid, and emitted as a
-single BITMAP display on the annotation layer.
+QR is generated via segno; ArUco markers via opencv-contrib.  Both are
+rasterized to a bit grid and emitted as a single BITMAP display on the
+annotation layer.
 
 Using BITMAP instead of N rects per module keeps the .xcs file small
 and stays well below XCS's per-project display-element limit (which
 appears to cap around 750 rects before processing fails).
-
-Historically this module also rendered three ArUco corner markers, but
-the capture pipeline uses only the QR's 4 corners for the homography —
-the ArUcos weren't wired in and were taking ~40% of the substrate for
-no benefit. They've been removed.
 """
 
 from __future__ import annotations
 
 import io
-from typing import Any
 
+import cv2
 import numpy as np
 import segno
 from PIL import Image
@@ -28,83 +24,28 @@ from ..model import (
     ProcessingParams,
     XCSProject,
 )
-from .layout import RegistrationLayout
-from .qr_payload import encode_id_only, encode_inline
+from .layout import MarkerPosition, RegistrationLayout
+from .qr_payload import encode_id
 
 # Oversample factor: each logical marker module (QR/ArUco bit) is rendered
 # at this many source-PNG pixels. Higher = crisper module edges but larger
 # base64 payload. 10 px/module is plenty for any downstream decoding.
 _PIXELS_PER_MODULE = 10
 
+_ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 
-def qr_payload_for_test(
-    *,
-    test_id: str,
-    x_param: str, x_min: float, x_max: float, x_steps: int,
-    y_param: str | None, y_min: float, y_max: float, y_steps: int,
-    grid_w: float, grid_h: float, rows: int, gap: float,
-    grid_offset_x_mm: float,
-    grid_offset_y_mm: float,
-    base_params: ProcessingParams,
-    row_stride_mm: float | None = None,
-    qr_size_mm: float | None = None,
-    material_id: str | None = None,
-    kind: str = "grid",
-    mode: str = "inline",
-) -> str:
-    """Build a QR payload string for one param test.
 
-    mode = "inline" -> full spec, "id_only" -> just {"v":1,"id":...}.
+def render_aruco_bits(marker_id: int, modules_side: int = 6) -> np.ndarray:
+    """Render ArUco marker as a (side, side) boolean array (True = dark).
 
-    ``grid_offset_x_mm`` / ``grid_offset_y_mm`` record where the test grid
-    sits relative to the QR's top-left corner. These are necessary for
-    the ingest endpoint to sample cells correctly — the Y offset in
-    particular depends on summary-text height, which the endpoint can't
-    recompute without them.
-
-    ``material_id`` tags the burn with the material it was printed on.
-    Without this, captured palette entries can't be scoped correctly —
-    the same (power, speed) produces different colours on stainless vs
-    brass vs anodized aluminium, so the palette would be meaningless if
-    all materials were mixed together.
+    modules_side is the total with border; for DICT_4X4 this is 6 (4x4 +
+    1-module black border on each side).
     """
-    if mode == "id_only":
-        return encode_id_only(test_id)
-
-    spec: dict[str, Any] = {
-        "id": test_id,
-        "t": kind,
-        "x": {"p": x_param, "min": x_min, "max": x_max, "n": x_steps},
-        "grid": {
-            "w": grid_w, "h": grid_h, "rows": rows, "gap": gap,
-            "ox": grid_offset_x_mm, "oy": grid_offset_y_mm,
-        },
-        "b": {
-            "p": base_params.power,
-            "s": base_params.speed,
-            "f": base_params.mopa_frequency,
-            "d": base_params.density,
-            "r": base_params.repeat,
-            "pw": base_params.pulse_width,
-            "l": base_params.processing_light_source,
-        },
-    }
-    if material_id:
-        spec["m"] = material_id
-    if rows > 1 and row_stride_mm is not None:
-        # Distance between consecutive row origins in mm (cell height + the
-        # inter-row gap that holds the axis labels). Required for the ingest
-        # sampler to hit the right Y on each wrapped row.
-        spec["grid"]["rs"] = row_stride_mm
-    if qr_size_mm is not None:
-        # "qs" records the physical QR edge length so the ingest endpoint can
-        # use the correct scale in the warp — otherwise a user-tweaked size
-        # would silently decode using the 12 mm default.
-        spec["qs"] = qr_size_mm
-    if y_param is not None:
-        spec["y"] = {"p": y_param, "min": y_min, "max": y_max, "n": y_steps}
-
-    return encode_inline(spec)
+    # cv2.aruco.generateImageMarker returns an N×N uint8 image; N is
+    # modules_side * pixels_per_module. We want the logical bit grid, so
+    # we render at 1 px per module and threshold.
+    img = cv2.aruco.generateImageMarker(_ARUCO_DICT, marker_id, modules_side, borderBits=1)
+    return img < 128  # True where dark
 
 
 def _qr_bits(text: str) -> np.ndarray:
@@ -162,27 +103,36 @@ def _emit_bitmap(
     project.bitmaps.append(bmp)
 
 
+def emit_aruco(
+    project: XCSProject, *,
+    position: MarkerPosition,
+    annotation_params: ProcessingParams,
+    modules_side: int = 6,
+) -> None:
+    bits = render_aruco_bits(position.marker_id, modules_side=modules_side)
+    _emit_bitmap(
+        project, bits=bits,
+        origin_x=position.x, origin_y=position.y,
+        total_size=position.size,
+        annotation_params=annotation_params,
+    )
+
+
 def emit_registration_markers(
     project: XCSProject,
     *,
     layout: RegistrationLayout,
-    qr_text: str,
+    test_id: int,
     annotation_params: ProcessingParams,
 ) -> None:
-    """Add the QR marker to `project` on the annotation layer.
-
-    Emitted as a single BITMAP display carrying the QR bit matrix as an
-    embedded PNG. Caller is responsible for constructing `layout` and
-    `qr_text` via compute_layout() and qr_payload_for_test().
-    """
+    """Emit the QR (id-only) plus any ArUco corners on the annotation layer."""
     if layout.qr is None:
         return
-
+    qr_text = encode_id(test_id)
     _emit_bitmap(
-        project,
-        bits=_qr_bits(qr_text),
-        origin_x=layout.qr.x,
-        origin_y=layout.qr.y,
-        total_size=layout.qr.size,
-        annotation_params=annotation_params,
+        project, bits=_qr_bits(qr_text),
+        origin_x=layout.qr.x, origin_y=layout.qr.y,
+        total_size=layout.qr.size, annotation_params=annotation_params,
     )
+    for ar in layout.arucos:
+        emit_aruco(project, position=ar, annotation_params=annotation_params)
