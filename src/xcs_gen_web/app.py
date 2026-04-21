@@ -8,7 +8,6 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
-from .converter import project_to_xcs_bytes
 from .raster_to_svg import RasterTraceOptions, decode_base64_image, png_to_svg
 from .schemas import (
     AveragedSwatch,
@@ -24,7 +23,6 @@ from .schemas import (
     PresetCreate,
     PresetResponse,
     PresetUpdate,
-    Project,
     RasterToSvgRequest,
     RasterToSvgResponse,
     ResultPatch,
@@ -66,22 +64,6 @@ def create_app() -> FastAPI:
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
-
-    @app.post("/api/generate")
-    def generate(project: Project) -> Response:
-        try:
-            body = project_to_xcs_bytes(project)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-
-        filename = f"{project.name or 'output'}.xcs"
-        return Response(
-            content=body,
-            media_type="application/octet-stream",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-            },
-        )
 
     @app.post("/api/svg-stack")
     def svg_stack(request: SvgStackRequest) -> Response:

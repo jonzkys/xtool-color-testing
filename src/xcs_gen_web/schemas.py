@@ -268,34 +268,6 @@ class RasterToSvgResponse(BaseModel):
     svg: str
 
 
-class CaptureSwatch(BaseModel):
-    """One sampled swatch from a captured registration sheet."""
-
-    row: int
-    col: int
-    x_value: float
-    y_value: float | None
-    hex: str
-    sigma: float
-
-
-class CaptureIngestResponse(BaseModel):
-    """Response from POST /api/capture/ingest — decoded QR + sampled swatches.
-
-    ``material_id`` is populated from the QR's "m" field if the burn was
-    tagged at generate time. Legacy burns without this field will return
-    null — the UI must prompt the user to pick a material before saving.
-    """
-
-    test_id: str
-    kind: str
-    x_param: str
-    y_param: str | None
-    material_id: str | None
-    base_params: BaseParams
-    swatches: list[CaptureSwatch]
-
-
 class PaletteEntryResponse(BaseModel):
     id: int
     test_id: int
