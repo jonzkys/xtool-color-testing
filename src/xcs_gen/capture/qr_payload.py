@@ -18,7 +18,7 @@ class PayloadError(ValueError):
 
 
 def encode_id(test_id: int) -> str:
-    if not isinstance(test_id, int) or test_id < 1:
+    if not isinstance(test_id, int) or isinstance(test_id, bool) or test_id < 1:
         raise PayloadError("test_id must be a positive int")
     return json.dumps({"v": _SCHEMA_VERSION, "id": test_id}, separators=(",", ":"))
 
@@ -35,8 +35,15 @@ def decode_payload(s: str) -> dict[str, Any]:
     raw_id = data.get("id")
     if raw_id is None:
         raise PayloadError("missing required field: id")
-    try:
-        data["id"] = int(raw_id)
-    except (TypeError, ValueError):
-        raise PayloadError(f"id must be int-coercible, got {raw_id!r}") from None
+    if isinstance(raw_id, bool):
+        raise PayloadError(f"id must be int, got bool: {raw_id!r}")
+    if isinstance(raw_id, int):
+        data["id"] = raw_id
+    elif isinstance(raw_id, str):
+        try:
+            data["id"] = int(raw_id)
+        except ValueError:
+            raise PayloadError(f"id string must parse as int, got {raw_id!r}") from None
+    else:
+        raise PayloadError(f"id must be int or str, got {type(raw_id).__name__}: {raw_id!r}")
     return data

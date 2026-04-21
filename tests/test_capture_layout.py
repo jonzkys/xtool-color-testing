@@ -24,14 +24,22 @@ def test_reservation_off_returns_zero():
 
 def test_reservation_on_uses_defaults():
     x_shift, y_shift = registration_reservation_mm("on")
-    assert x_shift == pytest.approx(QR_SIZE_DEFAULT_MM + MARKER_MARGIN_MM)
-    assert y_shift == pytest.approx(max(QR_SIZE_DEFAULT_MM, ARUCO_SIZE_DEFAULT_MM) + MARKER_MARGIN_MM)
+    expected = max(QR_SIZE_DEFAULT_MM, ARUCO_SIZE_DEFAULT_MM) + MARKER_MARGIN_MM
+    assert x_shift == pytest.approx(expected)
+    assert y_shift == pytest.approx(expected)
 
 
 def test_reservation_on_with_custom_sizes():
     x_shift, y_shift = registration_reservation_mm("on", qr_size_mm=8.0, aruco_size_mm=3.0)
-    assert x_shift == pytest.approx(8.0 + MARKER_MARGIN_MM)
-    assert y_shift == pytest.approx(max(8.0, 3.0) + MARKER_MARGIN_MM)
+    expected = max(8.0, 3.0) + MARKER_MARGIN_MM
+    assert x_shift == pytest.approx(expected)
+    assert y_shift == pytest.approx(expected)
+
+
+def test_reservation_on_aruco_larger_than_qr():
+    x_shift, y_shift = registration_reservation_mm("on", qr_size_mm=3.0, aruco_size_mm=6.0)
+    assert x_shift == pytest.approx(6.0 + 1.5)
+    assert y_shift == pytest.approx(6.0 + 1.5)
 
 
 def test_compute_layout_off_returns_empty():

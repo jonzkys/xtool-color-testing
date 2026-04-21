@@ -43,16 +43,14 @@ def registration_reservation_mm(
 ) -> tuple[float, float]:
     """Returns (x_shift_mm, y_shift_mm) that the grid must inset by.
 
-    With QR at top-left and ArUcos at the other corners, the grid is
-    bounded on the top and left by the QR (bigger of the two), and on
-    top by the top-right ArUco's required clearance. We take the max
-    of QR-bounded and ArUco-bounded clearance for each axis.
+    Both axes use max(qr, aruco) + margin so the reservation is symmetric
+    and covers the bottom-left ArUco even when aruco_size > qr_size.
     """
     if mode == "off":
         return 0.0, 0.0
-    qr_size = qr_size_mm or QR_SIZE_DEFAULT_MM
-    aruco_size = aruco_size_mm or ARUCO_SIZE_DEFAULT_MM
-    x_shift = qr_size + MARKER_MARGIN_MM
+    qr_size = qr_size_mm if qr_size_mm is not None else QR_SIZE_DEFAULT_MM
+    aruco_size = aruco_size_mm if aruco_size_mm is not None else ARUCO_SIZE_DEFAULT_MM
+    x_shift = max(qr_size, aruco_size) + MARKER_MARGIN_MM
     y_shift = max(qr_size, aruco_size) + MARKER_MARGIN_MM
     return x_shift, y_shift
 
@@ -67,8 +65,8 @@ def compute_layout(
 ) -> RegistrationLayout:
     if mode == "off":
         return RegistrationLayout(qr=None, arucos=[])
-    qr_size = qr_size_mm or QR_SIZE_DEFAULT_MM
-    aruco_size = aruco_size_mm or ARUCO_SIZE_DEFAULT_MM
+    qr_size = qr_size_mm if qr_size_mm is not None else QR_SIZE_DEFAULT_MM
+    aruco_size = aruco_size_mm if aruco_size_mm is not None else ARUCO_SIZE_DEFAULT_MM
 
     # QR top-left, inset from grid by the margin
     qr_x = grid_x - qr_size - MARKER_MARGIN_MM

@@ -47,3 +47,20 @@ def test_encode_id_produces_compact_json():
     assert len(s) < 30
     # No spaces
     assert " " not in s
+
+
+def test_encode_id_rejects_bool():
+    with pytest.raises(PayloadError):
+        encode_id(True)  # type: ignore[arg-type]
+    with pytest.raises(PayloadError):
+        encode_id(False)  # type: ignore[arg-type]
+
+
+def test_decode_rejects_float_id():
+    with pytest.raises(PayloadError):
+        decode_payload(json.dumps({"v": 1, "id": 42.7}))
+
+
+def test_decode_rejects_bool_id():
+    with pytest.raises(PayloadError):
+        decode_payload(json.dumps({"v": 1, "id": True}))
