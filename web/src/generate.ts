@@ -1,4 +1,4 @@
-import type { DetectedLayer, Project, SvgLayersRequest, SvgStackRequest } from "./types";
+import type { DetectedLayer, SvgLayersRequest, SvgStackRequest } from "./types";
 
 async function postAndDownload(endpoint: string, body: unknown, filename: string): Promise<void> {
   const resp = await fetch(endpoint, {
@@ -28,10 +28,6 @@ async function postAndDownload(endpoint: string, body: unknown, filename: string
   } finally {
     URL.revokeObjectURL(url);
   }
-}
-
-export async function generateAndDownload(project: Project): Promise<void> {
-  return postAndDownload("/api/generate", project, `${project.name || "output"}.xcs`);
 }
 
 export async function svgStackAndDownload(request: SvgStackRequest): Promise<void> {

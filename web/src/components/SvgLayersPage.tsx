@@ -8,9 +8,10 @@ import type { DetectedLayer, LayerSpec, SvgLayersRequest, SvgProcessingType } fr
 import { HatchPassesEditor } from "./HatchPassesEditor";
 import { validateLayerSpec } from "../validation";
 import type { LibraryState } from "../library";
+import { listMaterials, listPresets } from "../api/library";
 import { MaterialPresetPicker } from "./MaterialPresetPicker";
-import { paletteQuery } from "../palette-api";
-import type { BaseParams, LegacyPaletteQueryResult as PaletteQueryResult } from "../types";
+import { queryPalette } from "../api/palette";
+import type { BaseParams, PaletteQueryResult } from "../types";
 
 const PROCESSING_TYPES: { value: SvgProcessingType; label: string }[] = [
   { value: "COLOR_FILL_ENGRAVE", label: "Color fill engrave" },
@@ -60,13 +61,19 @@ function defaultRequest(materialId: string): SvgLayersRequest {
   };
 }
 
-interface Props {
-  library: LibraryState;
-}
+export function SvgLayersPage() {
+  const [library, setLibrary] = useState<LibraryState>({ materials: [], presets: [], active_material_id: null });
 
-export function SvgLayersPage({ library }: Props) {
+  useEffect(() => {
+    Promise.all([listMaterials(), listPresets()])
+      .then(([mats, pres]) => {
+        setLibrary({ materials: mats, presets: pres, active_material_id: mats[0]?.id ?? null });
+      })
+      .catch((e) => console.error("Failed to load library:", e));
+  }, []);
+
   const [request, setRequest] = useState<SvgLayersRequest>(
-    () => defaultRequest(library.active_material_id !== null ? String(library.active_material_id) : ""),
+    () => defaultRequest(""),
   );
   const [filename, setFilename] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
@@ -157,7 +164,8 @@ export function SvgLayersPage({ library }: Props) {
       // materials lacking matches fall through to "skipped".
       const results = await Promise.all(request.layers.map(async (l) => {
         if (!/^#[0-9a-fA-F]{6}$/.test(l.color)) return { layer: l, best: null };
-        const res = await paletteQuery(l.color, 1, request.material_id);
+        const matIdNum = request.material_id ? Number(request.material_id) : undefined;
+        const res = await queryPalette(l.color, { limit: 1, material_id: matIdNum });
         return { layer: l, best: res[0] ?? null };
       }));
 
@@ -868,14 +876,15 @@ function PaletteMatchSection({
     setError(undefined);
     if (!materialId || !/^#[0-9a-fA-F]{6}$/.test(layerColor)) return;
     setLoading(true);
-    paletteQuery(layerColor, 10, materialId)
-      .then((r) => { if (!cancelled) { setResults(r); setSelectedId(r[0]?.entry.id ?? ""); } })
+    const matIdNum = materialId ? Number(materialId) : undefined;
+    queryPalette(layerColor, { limit: 10, material_id: matIdNum })
+      .then((r) => { if (!cancelled) { setResults(r); setSelectedId(r[0]?.entry.id !== undefined ? String(r[0].entry.id) : ""); } })
       .catch((e) => { if (!cancelled) setError((e as Error).message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [layerColor, materialId]);
 
-  const selected = results.find((r) => r.entry.id === selectedId) ?? results[0];
+  const selected = results.find((r) => String(r.entry.id) === selectedId) ?? results[0];
 
   if (!materialId) {
     return (
@@ -932,7 +941,7 @@ function PaletteMatchSection({
                 {results.map((r) => {
                   const p = r.entry.params;
                   return (
-                    <option key={r.entry.id} value={r.entry.id}>
+                    <option key={r.entry.id} value={String(r.entry.id)}>
                       {r.entry.hex}  ΔE={r.delta_e.toFixed(1)}  ·  P={p.power}% S={p.speed} {p.laser}
                     </option>
                   );
