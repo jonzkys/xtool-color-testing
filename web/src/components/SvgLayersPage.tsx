@@ -68,6 +68,12 @@ export function SvgLayersPage({ library }: Props) {
   const [request, setRequest] = useState<SvgLayersRequest>(
     () => defaultRequest(library.active_material_id ?? ""),
   );
+  // When false (default), near-white detected layers are hidden from the
+  // layer list. Tick the checkbox above the list to include them.
+  const [includeNearWhite, setIncludeNearWhite] = useState(false);
+  // Keep the raw detection around so we can re-materialize layers when the
+  // checkbox flips without issuing a second detect request.
+  const [rawDetected, setRawDetected] = useState<DetectedLayer[]>([]);
   const [filename, setFilename] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [detectError, setDetectError] = useState<string | undefined>();
@@ -118,6 +124,20 @@ export function SvgLayersPage({ library }: Props) {
       .catch(() => { if (!cancelled) setSubtractedSvg(null); });
     return () => { cancelled = true; };
   }, [request.subtract_overlaps, request.svg_content, request.width_mm, enabledColors]);
+
+  // When the "Include white" toggle flips, re-derive request.layers from the
+  // last detection so newly-visible whites appear as LayerSpecs (and freshly-
+  // hidden ones disappear). Preserves any per-layer param edits the user has
+  // already made to non-white layers.
+  useEffect(() => {
+    if (rawDetected.length === 0) return;
+    const visible = rawDetected.filter((d) => includeNearWhite || !d.is_near_white);
+    setRequest((prev) => {
+      const byColor = new Map(prev.layers.map((l) => [l.color, l]));
+      const nextLayers = visible.map((d) => byColor.get(d.color) ?? defaultLayerFromDetected(d, library));
+      return { ...prev, layers: nextLayers };
+    });
+  }, [includeNearWhite, rawDetected, library]);
 
   function updateReq(patch: Partial<SvgLayersRequest>) {
     setRequest((prev) => ({ ...prev, ...patch }));
@@ -193,7 +213,9 @@ export function SvgLayersPage({ library }: Props) {
     setRequest((prev) => ({ ...prev, svg_content: svgText, name: suggestedName, layers: [] }));
     try {
       const detected = await detectSvgLayers(svgText, 50);
-      const layers = detected.map((d) => defaultLayerFromDetected(d, library));
+      setRawDetected(detected);
+      const visible = detected.filter((d) => includeNearWhite || !d.is_near_white);
+      const layers = visible.map((d) => defaultLayerFromDetected(d, library));
       setRequest((prev) => ({ ...prev, layers }));
       setSelectedColor(layers[0]?.color ?? null);
     } catch (err) {
@@ -428,6 +450,28 @@ export function SvgLayersPage({ library }: Props) {
         )}
         {!hasLayers && (
           <div style={{ fontSize: 12, color: "#999" }}>Upload an SVG to detect layers.</div>
+        )}
+        {rawDetected.some((d) => d.is_near_white) && (
+          <label
+            style={{
+              display: "flex", alignItems: "center", gap: 8,
+              fontSize: 12, color: "#555", marginBottom: 6,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={includeNearWhite}
+              onChange={(e) => setIncludeNearWhite(e.target.checked)}
+            />
+            <span>
+              Include white
+              {" "}
+              <span style={{ color: "#999" }}>
+                ({rawDetected.filter((d) => d.is_near_white).length} near-white layer
+                {rawDetected.filter((d) => d.is_near_white).length === 1 ? "" : "s"} hidden)
+              </span>
+            </span>
+          </label>
         )}
         <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
           {/* Reverse so topmost (last drawn in SVG) appears at the top of the list,
