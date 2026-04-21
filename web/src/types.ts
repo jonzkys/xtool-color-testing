@@ -178,7 +178,8 @@ export interface CaptureIngestResponse {
   y_param: string | null;
 }
 
-export interface PaletteEntry {
+/** @deprecated Legacy client-side palette entry — use PaletteEntry (server-authoritative) instead. */
+export interface LegacyPaletteEntry {
   id: string;
   test_id: string;
   material_id: string;
@@ -189,6 +190,76 @@ export interface PaletteEntry {
   params: { [k: string]: string | number };
   sigma: number;
   notes: string;
+}
+
+/** @deprecated Legacy client-side palette query result — use PaletteQueryResult (server-authoritative) instead. */
+export interface LegacyPaletteQueryResult {
+  entry: LegacyPaletteEntry;
+  delta_e: number;
+}
+
+// ── Server-authoritative types (Tasks 23+) ────────────────────────────────────
+
+export interface TestSpec {
+  x_param: ParamName;
+  x_min: number; x_max: number; x_steps: number;
+  y_param: ParamName | null;
+  y_min: number | null; y_max: number | null; y_steps: number | null;
+  rows: number;
+  width_mm: number; height_mm: number; gap_mm: number;
+  cell_shape: "rect" | "circle";
+  square_cells: boolean;
+  angle_mode: "fixed" | "crosshatch" | "incremental";
+  unidirectional: boolean;
+  base_params: BaseParams;
+  registration: RegistrationConfig;
+}
+
+export interface TestRecord {
+  id: number;
+  name: string;
+  material_id: number;
+  status: "created" | "tested" | "deleted";
+  spec: TestSpec;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+  locked: boolean;
+}
+
+export interface ResultSwatch {
+  row: number; col: number;
+  x_value: number; y_value: number | null;
+  hex: string; lab: number[]; sigma: number;
+}
+
+export interface ResultRecord {
+  id: number;
+  test_id: number;
+  uploaded_at: string;
+  image_url: string;
+  image_sha256: string;
+  excluded: boolean;
+  notes: string;
+  swatches: ResultSwatch[];
+}
+
+export interface AveragedSwatch extends ResultSwatch {
+  sample_count: number;
+  per_result: { result_id: number; hex: string; sigma: number }[];
+}
+
+export interface PaletteEntry {
+  id: number;
+  test_id: number; material_id: number;
+  x_value: number | null; y_value: number | null;
+  hex: string; lab: number[];
+  params: Record<string, string | number>;
+  sigma: number;
+  source: "averaged" | "single_result";
+  source_result_id: number | null;
+  notes: string;
+  created_at: string;
 }
 
 export interface PaletteQueryResult {

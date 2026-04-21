@@ -4,7 +4,9 @@ import {
   paletteIngest, paletteList, paletteQuery,
 } from "../palette-api";
 import type {
-  CaptureIngestResponse, CaptureSwatch, PaletteEntry, PaletteQueryResult,
+  CaptureIngestResponse, CaptureSwatch,
+  LegacyPaletteEntry as PaletteEntry,
+  LegacyPaletteQueryResult as PaletteQueryResult,
 } from "../types";
 import type { LibraryState } from "../library";
 

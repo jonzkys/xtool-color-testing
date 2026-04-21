@@ -10,7 +10,7 @@ import { validateLayerSpec } from "../validation";
 import type { LibraryState } from "../library";
 import { MaterialPresetPicker } from "./MaterialPresetPicker";
 import { paletteQuery } from "../palette-api";
-import type { BaseParams, PaletteQueryResult } from "../types";
+import type { BaseParams, LegacyPaletteQueryResult as PaletteQueryResult } from "../types";
 
 const PROCESSING_TYPES: { value: SvgProcessingType; label: string }[] = [
   { value: "COLOR_FILL_ENGRAVE", label: "Color fill engrave" },

@@ -1,8 +1,8 @@
 import type {
   BaseParams,
   CaptureIngestResponse,
-  PaletteEntry,
-  PaletteQueryResult,
+  LegacyPaletteEntry as PaletteEntry,
+  LegacyPaletteQueryResult as PaletteQueryResult,
 } from "./types";
 
 export async function captureIngest(file: File): Promise<CaptureIngestResponse> {
