@@ -57,6 +57,8 @@ def main(argv: list[str] | None = None) -> None:
     gen_p.add_argument("--type", default="COLOR_FILL_ENGRAVE", dest="processing_type",
                        help="Processing type (default: COLOR_FILL_ENGRAVE)")
     gen_p.add_argument("--font-size", type=float, default=3.0, help="Axis label font size in points (default: 3)")
+    gen_p.add_argument("--hide-axis-labels", action="store_true",
+                       help="Suppress per-row tick marks and axis labels (summary header is kept)")
 
     # Output
     gen_p.add_argument("-o", "--output", required=True, help="Output .xcs file path")
@@ -317,6 +319,7 @@ def main(argv: list[str] | None = None) -> None:
             base_params=base_params,
             processing_type=args.processing_type,
             label_font_size=args.font_size,
+            hide_axis_labels=args.hide_axis_labels,
         )
 
         write_xcs(project, args.output)
