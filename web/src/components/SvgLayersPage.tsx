@@ -83,6 +83,9 @@ export function SvgLayersPage() {
   const [rawDetected, setRawDetected] = useState<DetectedLayer[]>([]);
   const [filename, setFilename] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
+  // When true, the Design preview dims non-selected layers to show the chosen
+  // one in isolation. Default false = full image; click the eye icon to isolate.
+  const [isolateSelected, setIsolateSelected] = useState(false);
   const [detectError, setDetectError] = useState<string | undefined>();
   const [generating, setGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
@@ -596,12 +599,45 @@ export function SvgLayersPage() {
       {/* RIGHT: two stacked previews — design colours vs expected burn */}
       <div style={{ padding: 16, background: "#f6f7f9", display: "flex", flexDirection: "column", minHeight: 0, gap: 12 }}>
         <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666", marginBottom: 6 }}>
-            Design {selectedColor && `— highlighted: ${selectedColor}`}
+          <div style={{
+            fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#666",
+            marginBottom: 6, display: "flex", alignItems: "center", gap: 8,
+          }}>
+            <span>
+              Design
+              {isolateSelected && selectedColor && ` — highlighted: ${selectedColor}`}
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsolateSelected((v) => !v)}
+              disabled={!selectedColor}
+              title={isolateSelected ? "Show all layers" : "Isolate selected layer"}
+              style={{
+                marginLeft: "auto",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                width: 22, height: 22, padding: 0,
+                border: "1px solid " + (isolateSelected ? "#336" : "#ccc"),
+                background: isolateSelected ? "#e8ecf3" : "white",
+                borderRadius: 3,
+                cursor: selectedColor ? "pointer" : "not-allowed",
+                opacity: selectedColor ? 1 : 0.4,
+              }}
+            >
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                <path
+                  d="M8 3.5C4.5 3.5 2 8 2 8s2.5 4.5 6 4.5S14 8 14 8s-2.5-4.5-6-4.5Z"
+                  fill="none" stroke="#333" strokeWidth="1.2"
+                />
+                <circle cx="8" cy="8" r="2" fill={isolateSelected ? "#333" : "none"} stroke="#333" strokeWidth="1.2" />
+                {!isolateSelected && (
+                  <line x1="3" y1="13" x2="13" y2="3" stroke="#a02840" strokeWidth="1.4" />
+                )}
+              </svg>
+            </button>
           </div>
           <SvgPreview
             svg={subtractedSvg ?? request.svg_content}
-            highlightColor={selectedColor}
+            highlightColor={isolateSelected ? selectedColor : null}
             enabledColors={enabledColors}
           />
         </div>
