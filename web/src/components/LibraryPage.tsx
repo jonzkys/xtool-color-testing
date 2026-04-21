@@ -14,6 +14,9 @@ import {
   updateMaterial,
   updatePreset,
 } from "../api/library";
+import type { TestRecord } from "../types";
+import { listTests } from "../api/tests";
+import { formatRoute } from "../router";
 
 interface Props {
   onMaterialsChange?: (m: Material[]) => void;
@@ -25,6 +28,8 @@ export function LibraryPage({ onMaterialsChange }: Props) {
   const [activeMaterialId, setActiveMaterialId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [byMaterial, setByMaterial] = useState<Record<number, TestRecord[]>>({});
 
   const selectedMaterial = activeMaterialId !== null
     ? materials.find((m) => m.id === activeMaterialId) ?? null
@@ -163,6 +168,16 @@ export function LibraryPage({ onMaterialsChange }: Props) {
     }
   }
 
+  async function toggleTests(m: Material) {
+    if (!expanded[m.id] && !byMaterial[m.id]) {
+      try {
+        const tests = await listTests({ material_id: m.id });
+        setByMaterial(prev => ({ ...prev, [m.id]: tests }));
+      } catch (e) { setError((e as Error).message); }
+    }
+    setExpanded(prev => ({ ...prev, [m.id]: !prev[m.id] }));
+  }
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", height: "100%", minHeight: 0 }}>
       <div style={{ borderRight: "1px solid #ddd", background: "white", overflow: "auto", padding: 12 }}>
@@ -181,33 +196,53 @@ export function LibraryPage({ onMaterialsChange }: Props) {
           const presetCount = presets.filter((p) => p.material_id === m.id).length;
           const isSelected = m.id === selectedMaterialId;
           return (
-            <div
-              key={m.id}
-              onClick={() => setActiveMaterialId(m.id)}
-              style={{
-                display: "flex", alignItems: "center", gap: 8,
-                padding: "6px 8px", marginBottom: 4, borderRadius: 4,
-                cursor: "pointer",
-                background: isSelected ? "#e8ecf3" : "transparent",
-                border: "1px solid " + (isSelected ? "#336" : "transparent"),
-              }}
-            >
-              <div style={{ flex: 1, fontSize: 13 }}>
-                {m.name}
+            <div key={m.id}>
+              <div
+                onClick={() => setActiveMaterialId(m.id)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "6px 8px", marginBottom: 4, borderRadius: 4,
+                  cursor: "pointer",
+                  background: isSelected ? "#e8ecf3" : "transparent",
+                  border: "1px solid " + (isSelected ? "#336" : "transparent"),
+                }}
+              >
+                <div style={{ flex: 1, fontSize: 13 }}>
+                  {m.name}
+                </div>
+                <div style={{ fontSize: 11, color: "#888" }}>{presetCount}</div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); void toggleTests(m); }}
+                  style={{ fontSize: 11, padding: "2px 4px", border: "none", background: "none", cursor: "pointer", color: "#336" }}
+                >
+                  {expanded[m.id] ? "▾" : "▸"} {byMaterial[m.id]?.length ?? "…"} tests
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); void onRenameMaterial(m.id); }}
+                  style={{ fontSize: 10, padding: "2px 4px", border: "1px solid #ddd", background: "white", borderRadius: 3, cursor: "pointer" }}
+                >
+                  rename
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); void onDeleteMaterial(m.id); }}
+                  style={{ fontSize: 10, padding: "2px 4px", border: "1px solid #ddd", background: "white", borderRadius: 3, cursor: "pointer", color: "#a02840" }}
+                >
+                  ×
+                </button>
               </div>
-              <div style={{ fontSize: 11, color: "#888" }}>{presetCount}</div>
-              <button
-                onClick={(e) => { e.stopPropagation(); void onRenameMaterial(m.id); }}
-                style={{ fontSize: 10, padding: "2px 4px", border: "1px solid #ddd", background: "white", borderRadius: 3, cursor: "pointer" }}
-              >
-                rename
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); void onDeleteMaterial(m.id); }}
-                style={{ fontSize: 10, padding: "2px 4px", border: "1px solid #ddd", background: "white", borderRadius: 3, cursor: "pointer", color: "#a02840" }}
-              >
-                ×
-              </button>
+              {expanded[m.id] && (
+                <div style={{ marginLeft: 16, marginBottom: 8 }}>
+                  {(byMaterial[m.id] ?? []).map(t => (
+                    <a key={t.id} href={formatRoute({ name: "test-detail", id: t.id })}
+                       style={{ display: "block", fontSize: 12, padding: "2px 4px", color: "#336", textDecoration: "none" }}>
+                      #{t.id} {t.name} <span style={{ color: "#999" }}>({t.status})</span>
+                    </a>
+                  ))}
+                  {(byMaterial[m.id] ?? []).length === 0 && (
+                    <div style={{ fontSize: 11, color: "#999", padding: "2px 4px" }}>no tests yet</div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
