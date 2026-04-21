@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
+import { Copy, Download, Lock, Save, Trash2 } from "lucide-react";
 import type { Material, Preset } from "../library";
 import type { TestRecord, TestSpec } from "../types";
-import { getTest, updateTest, deleteTest, generateTestXcs, createTest } from "../api/tests";
+import {
+  getTest,
+  updateTest,
+  deleteTest,
+  generateTestXcs,
+  createTest,
+} from "../api/tests";
 import { listMaterials, listPresets } from "../api/library";
 import { ParamTestEditor } from "../components/ParamTestEditor";
 import { TestPreview } from "../components/TestPreview";
@@ -9,6 +16,16 @@ import { ResultsPanel } from "../components/ResultsPanel";
 import { formatRoute } from "../router";
 import { DEFAULT_SPEC } from "../defaults";
 import { normalizeSpec } from "../specUtils";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  Input,
+  PageContainer,
+  Select,
+} from "../ui";
 
 interface Props {
   testId: number | "new";
@@ -27,35 +44,54 @@ export function TestDetailPage({ testId }: Props) {
   useEffect(() => {
     (async () => {
       const [m, p] = await Promise.all([listMaterials(), listPresets()]);
-      setMaterials(m); setPresets(p);
+      setMaterials(m);
+      setPresets(p);
       if (testId !== "new") {
         const t = await getTest(testId);
         setTest(t);
-        setSpec(t.spec); setName(t.name); setMaterialId(t.material_id);
+        setSpec(t.spec);
+        setName(t.name);
+        setMaterialId(t.material_id);
       } else {
         const firstMid = m[0]?.id ?? null;
         setMaterialId(firstMid);
-        const preset = firstMid ? p.find(q => q.material_id === firstMid && q.is_default) : null;
-        if (preset) setSpec(s => ({ ...s, base_params: preset.base_params }));
+        const preset = firstMid
+          ? p.find((q) => q.material_id === firstMid && q.is_default)
+          : null;
+        if (preset) setSpec((s) => ({ ...s, base_params: preset.base_params }));
       }
-    })().catch(e => setError((e as Error).message));
+    })().catch((e) => setError((e as Error).message));
   }, [testId]);
 
   async function onSave() {
-    if (materialId === null) { setError("Pick a material"); return; }
-    setSaving(true); setError(undefined);
+    if (materialId === null) {
+      setError("Pick a material");
+      return;
+    }
+    setSaving(true);
+    setError(undefined);
     try {
       const normalized = normalizeSpec(spec);
       if (normalized !== spec) setSpec(normalized);
       if (test) {
-        const updated = await updateTest(test.id, test.locked ? { name } : { name, spec: normalized });
+        const updated = await updateTest(
+          test.id,
+          test.locked ? { name } : { name, spec: normalized },
+        );
         setTest(updated);
       } else {
-        const created = await createTest({ name, material_id: materialId, spec: normalized });
+        const created = await createTest({
+          name,
+          material_id: materialId,
+          spec: normalized,
+        });
         window.location.hash = formatRoute({ name: "test-detail", id: created.id });
       }
-    } catch (e) { setError((e as Error).message); }
-    finally { setSaving(false); }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function onDelete() {
@@ -67,7 +103,11 @@ export function TestDetailPage({ testId }: Props) {
 
   async function onDuplicate() {
     if (materialId === null) return;
-    const copy = await createTest({ name: `${name} (copy)`, material_id: materialId, spec: normalizeSpec(spec) });
+    const copy = await createTest({
+      name: `${name} (copy)`,
+      material_id: materialId,
+      spec: normalizeSpec(spec),
+    });
     window.location.hash = formatRoute({ name: "test-detail", id: copy.id });
   }
 
@@ -84,56 +124,128 @@ export function TestDetailPage({ testId }: Props) {
       const blob = await generateTestXcs(test.id);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = `${test.name || `test-${test.id}`}.xcs`;
-      a.click(); URL.revokeObjectURL(url);
-    } catch (e) { setError((e as Error).message); }
+      a.href = url;
+      a.download = `${test.name || `test-${test.id}`}.xcs`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
 
   return (
-    <div style={{
-      display: "grid",
-      gridTemplateColumns: "minmax(320px, 360px) 1fr minmax(320px, 400px)",
-      height: "100%", minHeight: 0,
-    }}>
-      <div style={{ overflow: "auto", borderRight: "1px solid #ddd" }}>
-        <div style={{ padding: 12 }}>
-          <input value={name} onChange={e => setName(e.target.value)}
-                 style={{ width: "100%", fontSize: 18, padding: 6, marginBottom: 8 }} />
+    <PageContainer maxWidth="wide" className="py-6">
+      <header className="mb-5 flex flex-wrap items-start gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)] mb-1">
+            <span>Test</span>
+            {test && (
+              <>
+                <span className="font-mono text-[color:var(--color-ink-muted)]">
+                  #{test.id}
+                </span>
+                <Badge
+                  variant={
+                    test.status === "tested"
+                      ? "success"
+                      : test.status === "deleted"
+                        ? "destructive"
+                        : "info"
+                  }
+                  size="sm"
+                >
+                  {test.status}
+                </Badge>
+                {test.locked && (
+                  <Badge variant="neutral" size="sm">
+                    <Lock className="h-3 w-3" />
+                    locked
+                  </Badge>
+                )}
+              </>
+            )}
+          </div>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="text-[20px] font-semibold h-auto px-2 py-1.5 bg-transparent border-transparent hover:border-[color:var(--color-border)] focus:bg-[color:var(--color-surface)] focus:border-[color:var(--color-primary)]"
+          />
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="secondary" onClick={onSave} disabled={saving}>
+            <Save className="h-4 w-4" />
+            {test ? (test.locked ? "Save name" : "Save") : "Create"}
+          </Button>
           {test && (
-            <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
-              #{test.id} · {test.status}{test.locked ? " · locked" : ""}
-            </div>
+            <Button variant="primary" onClick={onGenerate}>
+              <Download className="h-4 w-4" />
+              Generate .xcs
+            </Button>
           )}
-          <label style={{ display: "block", marginBottom: 8, fontSize: 12 }}>
-            Material
-            <select value={materialId ?? ""} disabled={!!test}
-                    onChange={e => setMaterialId(Number(e.target.value))}
-                    style={{ width: "100%", padding: 4 }}>
-              {materials.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
-          </label>
-          {error && <div style={{ color: "#a02840", fontSize: 12, marginBottom: 8 }}>{error}</div>}
+          {test && (
+            <Button variant="ghost" onClick={onDuplicate} size="sm">
+              <Copy className="h-3.5 w-3.5" />
+              Duplicate
+            </Button>
+          )}
+          {test && (
+            <Button
+              variant="ghost"
+              onClick={onDelete}
+              size="sm"
+              className="text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete
+            </Button>
+          )}
         </div>
-        <ParamTestEditor spec={spec} onChange={setSpec} locked={test?.locked ?? false} />
-        <div style={{ padding: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button onClick={onSave} disabled={saving}>
-            {test ? (test.locked ? "Save name/notes" : "Save") : "Create"}
-          </button>
-          {test && <button onClick={onGenerate}>Generate .xcs</button>}
-          {test && <button onClick={onDuplicate}>Duplicate as new</button>}
-          {test && <button onClick={onDelete} style={{ color: "#a02840" }}>Delete</button>}
+      </header>
+
+      {error && (
+        <div className="mb-4 rounded-[6px] border border-[color:var(--color-destructive)]/30 bg-[color:var(--color-destructive-tint)] px-3 py-2 text-[13px] text-[color:var(--color-destructive)]">
+          {error}
         </div>
-      </div>
+      )}
 
-      <div style={{ overflow: "auto", padding: 12, borderRight: "1px solid #ddd" }}>
-        <TestPreview spec={spec} testId={test?.id ?? null} />
-      </div>
+      <div className="grid grid-cols-[360px_minmax(0,1fr)_360px] gap-5">
+        {/* LEFT: form */}
+        <Card padded={false} className="self-start">
+          <div className="p-4 pb-0">
+            <Field label="Material">
+              <Select
+                value={materialId ?? ""}
+                disabled={!!test}
+                onChange={(e) => setMaterialId(Number(e.target.value))}
+              >
+                {materials.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          <ParamTestEditor spec={spec} onChange={setSpec} locked={test?.locked ?? false} />
+        </Card>
 
-      <div style={{ overflow: "auto" }}>
-        {test ? <ResultsPanel testId={test.id} locked={test.locked} /> : (
-          <div style={{ padding: 24, color: "#888" }}>Save the test to upload results.</div>
-        )}
+        {/* CENTER: preview */}
+        <div className="flex flex-col gap-4 min-w-0">
+          <TestPreview spec={spec} testId={test?.id ?? null} />
+        </div>
+
+        {/* RIGHT: results */}
+        <Card padded={false} className="self-start">
+          {test ? (
+            <ResultsPanel testId={test.id} locked={test.locked} />
+          ) : (
+            <EmptyState
+              title="Save first"
+              description="Upload and ingest palette swatches after the test is saved."
+            />
+          )}
+        </Card>
       </div>
-    </div>
+    </PageContainer>
   );
 }

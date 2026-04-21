@@ -107,62 +107,134 @@ export function computePreviewGeometry(spec: TestSpec): PreviewGeometry {
 export function TestPreview({ spec, testId: _testId }: { spec: TestSpec; testId: number | null }) {
   const g = computePreviewGeometry(spec);
 
+  // Darker substrate-tone panel so the copper-ish cells glow a bit.
+  const panelBg = "#22201C";
+  const cellFill = "#C78F3E";
+  const cellStroke = "#7A5322";
+
   return (
-    <div style={{ width: "100%" }}>
-      <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5,
-                    color: "#666", marginBottom: 6 }}>
-        Preview ({g.viewW.toFixed(1)}mm × {g.viewH.toFixed(1)}mm)
+    <div className="w-full flex flex-col gap-2">
+      <div className="flex items-baseline justify-between">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
+          Preview
+        </div>
+        <div className="font-mono text-[11px] text-[color:var(--color-ink-muted)] tabular-nums">
+          {g.viewW.toFixed(1)}mm × {g.viewH.toFixed(1)}mm
+        </div>
       </div>
-      <svg viewBox={`0 0 ${g.viewW} ${g.viewH}`}
-           style={{ width: "100%", height: "auto", background: "#f4e9d4",
-                    border: "1px solid #bbb", display: "block" }}>
-        {g.rows.map((row, ri) => (
-          <g key={`cells-${ri}`}>
-            {row.cells.map((cell, ci) => (
-              g.shape === "circle" ? (
-                <circle key={ci} cx={cell.x + cell.w / 2} cy={cell.y + cell.h / 2}
-                        r={Math.min(cell.w, cell.h) / 2}
-                        fill="#c7a46a" stroke="#8d6d3d" strokeWidth={0.1} />
-              ) : (
-                <rect key={ci} x={cell.x} y={cell.y} width={cell.w} height={cell.h}
-                      fill="#c7a46a" stroke="#8d6d3d" strokeWidth={0.1} />
-              )
-            ))}
-          </g>
-        ))}
-        {g.rows.map((row, ri) => {
-          if (!row.labelMin && !row.labelMax) return null;
-          const labelY = row.yMm + row.heightMm + LABEL_FONT_MM;
-          return (
-            <g key={`labels-${ri}`}>
-              {row.labelMin && (
-                <text x={g.gridX} y={labelY}
-                      fontSize={LABEL_FONT_MM} fill="#444" fontFamily="monospace">{row.labelMin}</text>
-              )}
-              {row.labelMax && (
-                <text x={g.gridX + g.gridW} y={labelY}
-                      fontSize={LABEL_FONT_MM} fill="#444" fontFamily="monospace"
-                      textAnchor="end">{row.labelMax}</text>
+      <div
+        className="rounded-[12px] border border-[color:var(--color-border)] overflow-hidden p-4"
+        style={{ background: panelBg, boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04), var(--shadow-card)" }}
+      >
+        <svg
+          viewBox={`0 0 ${g.viewW} ${g.viewH}`}
+          style={{ width: "100%", height: "auto", display: "block" }}
+        >
+          {g.rows.map((row, ri) => (
+            <g key={`cells-${ri}`}>
+              {row.cells.map((cell, ci) =>
+                g.shape === "circle" ? (
+                  <circle
+                    key={ci}
+                    cx={cell.x + cell.w / 2}
+                    cy={cell.y + cell.h / 2}
+                    r={Math.min(cell.w, cell.h) / 2}
+                    fill={cellFill}
+                    stroke={cellStroke}
+                    strokeWidth={0.1}
+                  />
+                ) : (
+                  <rect
+                    key={ci}
+                    x={cell.x}
+                    y={cell.y}
+                    width={cell.w}
+                    height={cell.h}
+                    fill={cellFill}
+                    stroke={cellStroke}
+                    strokeWidth={0.08}
+                  />
+                ),
               )}
             </g>
-          );
-        })}
-        {g.qr && (
-          <rect x={g.qr.x} y={g.qr.y} width={g.qr.size} height={g.qr.size}
-                fill="#111" />
-        )}
-        {g.qr && (
-          <rect x={g.qr.x + g.qr.size * 0.25} y={g.qr.y + g.qr.size * 0.25}
-                width={g.qr.size * 0.15} height={g.qr.size * 0.15} fill="#f4e9d4" />
-        )}
-        {g.arucos.map(a => (
-          <g key={a.id}>
-            <rect x={a.x} y={a.y} width={a.size} height={a.size} fill="#111" />
-            <rect x={a.x + a.size * 0.35} y={a.y + a.size * 0.35}
-                  width={a.size * 0.3} height={a.size * 0.3} fill="#f4e9d4" />
-          </g>
-        ))}
-      </svg>
+          ))}
+          {g.rows.map((row, ri) => {
+            if (!row.labelMin && !row.labelMax) return null;
+            const labelY = row.yMm + row.heightMm + LABEL_FONT_MM;
+            return (
+              <g key={`labels-${ri}`}>
+                {row.labelMin && (
+                  <text
+                    x={g.gridX}
+                    y={labelY}
+                    fontSize={LABEL_FONT_MM}
+                    fill="#C6BFB4"
+                    fontFamily="monospace"
+                  >
+                    {row.labelMin}
+                  </text>
+                )}
+                {row.labelMax && (
+                  <text
+                    x={g.gridX + g.gridW}
+                    y={labelY}
+                    fontSize={LABEL_FONT_MM}
+                    fill="#C6BFB4"
+                    fontFamily="monospace"
+                    textAnchor="end"
+                  >
+                    {row.labelMax}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+          {g.qr && (
+            <g>
+              <rect
+                x={g.qr.x}
+                y={g.qr.y}
+                width={g.qr.size}
+                height={g.qr.size}
+                fill="#F2EDE5"
+              />
+              <rect
+                x={g.qr.x + g.qr.size * 0.2}
+                y={g.qr.y + g.qr.size * 0.2}
+                width={g.qr.size * 0.2}
+                height={g.qr.size * 0.2}
+                fill={panelBg}
+              />
+              <rect
+                x={g.qr.x + g.qr.size * 0.6}
+                y={g.qr.y + g.qr.size * 0.2}
+                width={g.qr.size * 0.2}
+                height={g.qr.size * 0.2}
+                fill={panelBg}
+              />
+              <rect
+                x={g.qr.x + g.qr.size * 0.2}
+                y={g.qr.y + g.qr.size * 0.6}
+                width={g.qr.size * 0.2}
+                height={g.qr.size * 0.2}
+                fill={panelBg}
+              />
+            </g>
+          )}
+          {g.arucos.map((a) => (
+            <g key={a.id}>
+              <rect x={a.x} y={a.y} width={a.size} height={a.size} fill="#F2EDE5" />
+              <rect
+                x={a.x + a.size * 0.3}
+                y={a.y + a.size * 0.3}
+                width={a.size * 0.4}
+                height={a.size * 0.4}
+                fill={panelBg}
+              />
+            </g>
+          ))}
+        </svg>
+      </div>
     </div>
   );
 }
