@@ -169,6 +169,16 @@ export function TestEditor({ placement, issues, library, onChange, onDelete, onD
         )}
         <NumberField label="Gap (mm)" value={t.gap_mm} onChange={(v) => updateTest({ gap_mm: v })} />
         <NumberField label="Rows (wrapping)" value={t.rows} integer min={1} onChange={(v) => updateTest({ rows: v })} />
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+          <input
+            type="checkbox"
+            checked={t.hide_axis_labels}
+            onChange={(e) => updateTest({ hide_axis_labels: e.target.checked })}
+          />
+          <span style={{ fontSize: 12, color: "#555" }}>
+            Hide axis labels (saves ~1.75 mm per row gap; header is kept)
+          </span>
+        </label>
       </Section>
 
       <MaterialPresetPicker
