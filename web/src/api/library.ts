@@ -1,0 +1,57 @@
+import type { Material, Preset } from "../library";
+
+async function j<T>(r: Response): Promise<T> {
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  return (r.status === 204 ? undefined : r.json()) as Promise<T>;
+}
+
+export async function listMaterials(): Promise<Material[]> {
+  return j(await fetch("/api/materials"));
+}
+export async function createMaterial(name: string, notes?: string): Promise<Material> {
+  return j(await fetch("/api/materials", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, notes }),
+  }));
+}
+export async function updateMaterial(id: number, patch: { name?: string; notes?: string }): Promise<Material> {
+  return j(await fetch(`/api/materials/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  }));
+}
+export async function deleteMaterial(id: number): Promise<void> {
+  await j(await fetch(`/api/materials/${id}`, { method: "DELETE" }));
+}
+
+export async function listPresets(materialId?: number): Promise<Preset[]> {
+  const qs = materialId !== undefined ? `?material_id=${materialId}` : "";
+  return j(await fetch(`/api/presets${qs}`));
+}
+export async function createPreset(body: {
+  material_id: number; name: string; color?: string; base_params: Preset["base_params"];
+}): Promise<Preset> {
+  return j(await fetch("/api/presets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }));
+}
+export async function updatePreset(
+  id: number,
+  patch: Partial<Pick<Preset, "name" | "color" | "base_params">>,
+): Promise<Preset> {
+  return j(await fetch(`/api/presets/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  }));
+}
+export async function setDefaultPreset(id: number): Promise<void> {
+  await j(await fetch(`/api/presets/${id}/set-default`, { method: "POST" }));
+}
+export async function deletePreset(id: number): Promise<void> {
+  await j(await fetch(`/api/presets/${id}`, { method: "DELETE" }));
+}

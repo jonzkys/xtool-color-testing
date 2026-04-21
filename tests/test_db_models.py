@@ -1,0 +1,49 @@
+"""Smoke tests for SQLAlchemy metadata wiring."""
+
+from __future__ import annotations
+
+from sqlalchemy import create_engine
+
+from xcs_gen_web.models import metadata
+
+
+def test_metadata_has_all_tables():
+    names = set(metadata.tables.keys())
+    assert names == {
+        "materials", "presets", "tests",
+        "results", "palette_entries",
+    }
+
+
+def test_metadata_create_all_on_sqlite_memory():
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    with engine.connect() as conn:
+        rows = conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        ).fetchall()
+    assert [r[0] for r in rows] == [
+        "materials", "palette_entries", "presets", "results", "tests",
+    ]
+
+
+def test_server_defaults_on_create_all_insert():
+    """server_default values must render bare SQL literals, not nested-quoted ones."""
+    from sqlalchemy import create_engine, insert, select
+    from xcs_gen_web.models import materials, tests as tests_table, metadata
+
+    engine = create_engine("sqlite://")
+    metadata.create_all(engine)
+    with engine.begin() as conn:
+        mid = conn.execute(insert(materials).values(
+            name="M", created_at="2026-01-01T00:00:00Z",
+        )).inserted_primary_key[0]
+        tid = conn.execute(insert(tests_table).values(
+            name="T", material_id=mid,
+            spec_json="{}",
+            created_at="2026-01-01T00:00:00Z",
+            updated_at="2026-01-01T00:00:00Z",
+        )).inserted_primary_key[0]
+        row = conn.execute(select(tests_table).where(tests_table.c.id == tid)).one()
+    assert row.status == "created"   # NOT "'created'"
+    assert row.notes == ""           # NOT "'"  or "''"

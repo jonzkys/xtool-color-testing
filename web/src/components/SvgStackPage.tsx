@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NumberField } from "./fields/NumberField";
 import { SelectField } from "./fields/SelectField";
 import { defaultBaseParams } from "../defaults";
 import { svgStackAndDownload } from "../generate";
 import type { SvgProcessingType, SvgStackRequest } from "../types";
 import type { LibraryState } from "../library";
+import { listMaterials, listPresets } from "../api/library";
 import { MaterialPresetPicker } from "./MaterialPresetPicker";
 
 const PROCESSING_TYPES: { value: SvgProcessingType; label: string }[] = [
@@ -14,11 +15,7 @@ const PROCESSING_TYPES: { value: SvgProcessingType; label: string }[] = [
   { value: "VECTOR_CUTTING", label: "Vector cut" },
 ];
 
-function defaultRequest(library: LibraryState): SvgStackRequest {
-  const defaultPreset = library.presets.find(
-    (p) => p.material_id === library.active_material_id && p.is_default,
-  );
-  const base = defaultPreset ? { ...defaultPreset.base_params } : defaultBaseParams();
+function defaultRequest(): SvgStackRequest {
   return {
     name: "svg-stack",
     svg_content: "",
@@ -26,22 +23,28 @@ function defaultRequest(library: LibraryState): SvgStackRequest {
     height_mm: null,
     start_x: 10,
     start_y: 10,
-    base_params: base,
+    base_params: defaultBaseParams(),
     processing_type: "COLOR_FILL_ENGRAVE",
     scan_angle: 90,
     stack_passes: 2,
     stack_step_deg: 90,
-    material_id: library.active_material_id ?? "",
+    material_id: "",
     subtract_overlaps: false,
   };
 }
 
-interface Props {
-  library: LibraryState;
-}
+export function SvgStackPage() {
+  const [library, setLibrary] = useState<LibraryState>({ materials: [], presets: [], active_material_id: null });
 
-export function SvgStackPage({ library }: Props) {
-  const [request, setRequest] = useState<SvgStackRequest>(() => defaultRequest(library));
+  useEffect(() => {
+    Promise.all([listMaterials(), listPresets()])
+      .then(([mats, pres]) => {
+        setLibrary({ materials: mats, presets: pres, active_material_id: mats[0]?.id ?? null });
+      })
+      .catch((e) => console.error("Failed to load library:", e));
+  }, []);
+
+  const [request, setRequest] = useState<SvgStackRequest>(() => defaultRequest());
   const [filename, setFilename] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | undefined>();

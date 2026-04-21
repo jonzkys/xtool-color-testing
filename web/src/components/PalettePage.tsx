@@ -1,25 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  captureIngest, paletteDelete, paletteDeleteByTest,
-  paletteIngest, paletteList, paletteQuery,
-} from "../palette-api";
-import type {
-  CaptureIngestResponse, CaptureSwatch, PaletteEntry, PaletteQueryResult,
-} from "../types";
-import type { LibraryState } from "../library";
+  listPaletteEntries, queryPalette, deletePaletteEntry, deletePaletteByTest,
+} from "../api/palette";
+import type { PaletteEntry, PaletteQueryResult } from "../types";
+import type { Material } from "../library";
+import { listMaterials, listPresets } from "../api/library";
+import { formatRoute } from "../router";
 
-const SIGMA_WARN = 10;
+type View = "query" | "browse";
 
-type View = "upload" | "query" | "browse";
+export function PalettePage() {
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [view, setView] = useState<View>("browse");
 
-interface Props {
-  library: LibraryState;
-}
+  useEffect(() => {
+    Promise.all([listMaterials(), listPresets()])
+      .then(([mats]) => setMaterials(mats))
+      .catch((e) => console.error("Failed to load library:", e));
+  }, []);
 
-export function PalettePage({ library }: Props) {
-  const [view, setView] = useState<View>("upload");
-
-  if (library.materials.length === 0) {
+  if (materials.length === 0) {
     return (
       <div style={{ padding: 24 }}>
         <div style={{ padding: 12, border: "1px dashed #ccc", borderRadius: 4, color: "#888" }}>
@@ -33,13 +33,11 @@ export function PalettePage({ library }: Props) {
   return (
     <div style={{ padding: 24, overflow: "auto", height: "100%" }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-        <SubTab active={view === "upload"} onClick={() => setView("upload")}>Upload</SubTab>
         <SubTab active={view === "query"} onClick={() => setView("query")}>Query</SubTab>
         <SubTab active={view === "browse"} onClick={() => setView("browse")}>Browse</SubTab>
       </div>
-      {view === "upload" && <UploadView library={library} />}
-      {view === "query" && <QueryView library={library} />}
-      {view === "browse" && <BrowseView library={library} />}
+      {view === "query" && <QueryView materials={materials} />}
+      {view === "browse" && <BrowseView materials={materials} />}
     </div>
   );
 }
@@ -61,8 +59,8 @@ function SubTab({ active, onClick, children }: {
   );
 }
 
-function MaterialSelect({ library, value, onChange, required, label }: {
-  library: LibraryState;
+function MaterialSelect({ materials, value, onChange, required, label }: {
+  materials: Material[];
   value: string;
   onChange: (id: string) => void;
   required?: boolean;
@@ -82,216 +80,17 @@ function MaterialSelect({ library, value, onChange, required, label }: {
       >
         {!required && <option value="">— all materials —</option>}
         {required && !value && <option value="">— pick a material —</option>}
-        {library.materials.map((m) => (
-          <option key={m.id} value={m.id}>{m.name}</option>
+        {materials.map((m) => (
+          <option key={m.id} value={String(m.id)}>{m.name}</option>
         ))}
       </select>
     </label>
   );
 }
 
-function UploadView({ library }: { library: LibraryState }) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | undefined>();
-  const [response, setResponse] = useState<CaptureIngestResponse | null>(null);
-  const [selected, setSelected] = useState<Record<number, boolean>>({});
-  const [saving, setSaving] = useState(false);
-  const [saveResult, setSaveResult] = useState<string | undefined>();
-  const [materialId, setMaterialId] = useState<string>("");
-
-  const qrProvidedMaterial = response?.material_id ?? null;
-  const qrMaterialKnown = qrProvidedMaterial
-    ? library.materials.some((m) => m.id === qrProvidedMaterial)
-    : false;
-  const needsManualMaterial = !!response && !qrMaterialKnown;
-
-  async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    setError(undefined);
-    setSaveResult(undefined);
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setLoading(true);
-    setResponse(null);
-    try {
-      const r = await captureIngest(file);
-      setResponse(r);
-      // Pre-select the material if the QR carried a known one, otherwise
-      // fall back to the library's active material as a suggestion.
-      const known = r.material_id && library.materials.some((m) => m.id === r.material_id);
-      setMaterialId(known ? r.material_id! : (library.active_material_id || ""));
-      const initial: Record<number, boolean> = {};
-      r.swatches.forEach((s, i) => {
-        initial[i] = s.sigma < SIGMA_WARN;
-      });
-      setSelected(initial);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-      e.target.value = "";
-    }
-  }
-
-  async function onSave() {
-    if (!response || !materialId) return;
-    const toSave = response.swatches.filter((_, i) => selected[i]);
-    if (toSave.length === 0) return;
-    setSaving(true);
-    try {
-      const r = await paletteIngest({
-        test_id: response.test_id,
-        material_id: materialId,
-        x_param: response.x_param,
-        y_param: response.y_param,
-        base_params: response.base_params,
-        swatches: toSave,
-      });
-      setSaveResult(`Saved ${r.added_ids.length} swatches to palette.`);
-      setResponse(null);
-      setSelected({});
-      setMaterialId("");
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const selectedCount = Object.values(selected).filter(Boolean).length;
-  const canSave = !!response && !!materialId && selectedCount > 0 && !saving;
-
-  return (
-    <div>
-      <h2 style={{ marginTop: 0 }}>Upload burned test photo</h2>
-      <p style={{ color: "#555", maxWidth: 620, marginTop: 0 }}>
-        Take a roughly top-down photo of a burned registration sheet. The QR code
-        carries the test's base parameters — each detected cell becomes a swatch
-        you can save to the palette for the material it was burned on.
-      </p>
-
-      <div style={{ marginBottom: 16 }}>
-        <label style={{
-          display: "inline-block", padding: "8px 16px",
-          background: "#336", color: "white", borderRadius: 4,
-          cursor: loading ? "wait" : "pointer", opacity: loading ? 0.7 : 1,
-        }}>
-          {loading ? "Processing..." : "Select photo"}
-          <input
-            type="file" accept="image/*" capture="environment"
-            disabled={loading} onChange={onUpload}
-            style={{ display: "none" }}
-          />
-        </label>
-      </div>
-
-      {error && (
-        <div style={{ color: "#a02840", marginBottom: 12, padding: 8, background: "#fee", border: "1px solid #fbb", borderRadius: 4 }}>
-          {error}
-        </div>
-      )}
-      {saveResult && (
-        <div style={{ color: "#206030", marginBottom: 12, padding: 8, background: "#efe", border: "1px solid #bfb", borderRadius: 4 }}>
-          {saveResult}
-        </div>
-      )}
-
-      {response && (
-        <div>
-          <div style={{ marginBottom: 12, fontSize: 13 }}>
-            <strong>Detected:</strong> test <code>{response.test_id}</code> ({response.kind}),
-            varying <code>{response.x_param}</code>
-            {response.y_param ? <> × <code>{response.y_param}</code></> : null}
-            , {response.swatches.length} cells
-          </div>
-
-          <div style={{ marginBottom: 12, padding: 10, background: "#fafafa", border: "1px solid #ddd", borderRadius: 4 }}>
-            <MaterialSelect
-              library={library}
-              value={materialId}
-              onChange={setMaterialId}
-              required
-              label="Material:"
-            />
-            {needsManualMaterial && (
-              <div style={{ fontSize: 12, color: "#a05000", marginTop: 6 }}>
-                ⚠ The QR didn't carry a known material tag — pick one before saving.
-              </div>
-            )}
-            {qrMaterialKnown && (
-              <div style={{ fontSize: 12, color: "#206030", marginTop: 6 }}>
-                ✓ Material resolved from the QR tag.
-              </div>
-            )}
-          </div>
-
-          <div style={{
-            display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))",
-            gap: 8, marginBottom: 16,
-          }}>
-            {response.swatches.map((s, i) => (
-              <SwatchCard
-                key={i}
-                swatch={s}
-                selected={!!selected[i]}
-                onToggle={() => setSelected(prev => ({ ...prev, [i]: !prev[i] }))}
-              />
-            ))}
-          </div>
-          <button
-            onClick={onSave}
-            disabled={!canSave}
-            style={{
-              padding: "8px 16px",
-              background: !canSave ? "#ccc" : "#336",
-              color: "white", border: "none", borderRadius: 4, fontWeight: 600,
-              cursor: !canSave ? "default" : "pointer",
-            }}
-          >
-            {saving ? "Saving..."
-              : selectedCount === 0 ? "Select at least one swatch"
-              : !materialId ? "Pick a material to save"
-              : `Save ${selectedCount} swatch${selectedCount === 1 ? "" : "es"} to palette`}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SwatchCard({ swatch, selected, onToggle }: {
-  swatch: CaptureSwatch;
-  selected: boolean;
-  onToggle: () => void;
-}) {
-  const noisy = swatch.sigma >= SIGMA_WARN;
-  return (
-    <div
-      onClick={onToggle}
-      title={noisy ? "High sigma — probably noisy/edge" : undefined}
-      style={{
-        border: selected ? "2px solid #336" : "1px solid #ccc",
-        borderRadius: 4, padding: 4, cursor: "pointer",
-        opacity: selected ? 1 : 0.5, background: "white",
-      }}
-    >
-      <div style={{ background: swatch.hex, height: 42, borderRadius: 2 }} />
-      <div style={{ fontSize: 10, marginTop: 4, fontFamily: "monospace" }}>
-        {swatch.hex}
-      </div>
-      <div style={{ fontSize: 10, color: noisy ? "#a05000" : "#666" }}>
-        {noisy && "⚠ "}σ={swatch.sigma.toFixed(1)}
-      </div>
-      <div style={{ fontSize: 9, color: "#888" }}>
-        x={swatch.x_value}
-        {swatch.y_value !== null && <> y={swatch.y_value}</>}
-      </div>
-    </div>
-  );
-}
-
-function QueryView({ library }: { library: LibraryState }) {
+function QueryView({ materials }: { materials: Material[] }) {
   const [hex, setHex] = useState("#c4a87b");
-  const [materialId, setMaterialId] = useState<string>(library.active_material_id || "");
+  const [materialId, setMaterialId] = useState<string>(materials[0] ? String(materials[0].id) : "");
   const [results, setResults] = useState<PaletteQueryResult[]>([]);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -299,7 +98,8 @@ function QueryView({ library }: { library: LibraryState }) {
   async function onQuery() {
     setError(undefined);
     try {
-      const r = await paletteQuery(hex, 5, materialId || undefined);
+      const matIdNum = materialId ? Number(materialId) : undefined;
+      const r = await queryPalette(hex, { limit: 5, material_id: matIdNum });
       setResults(r);
       setSearched(true);
     } catch (e) {
@@ -323,7 +123,7 @@ function QueryView({ library }: { library: LibraryState }) {
           type="text" value={hex} onChange={(e) => setHex(e.target.value)}
           style={{ width: 120, padding: "6px 8px", border: "1px solid #ccc", borderRadius: 4, fontFamily: "monospace" }}
         />
-        <MaterialSelect library={library} value={materialId} onChange={setMaterialId} label="Scope:" />
+        <MaterialSelect materials={materials} value={materialId} onChange={setMaterialId} label="Scope:" />
         <button onClick={onQuery} style={{
           padding: "8px 16px", background: "#336", color: "white",
           border: "none", borderRadius: 4, fontWeight: 600, cursor: "pointer",
@@ -340,16 +140,16 @@ function QueryView({ library }: { library: LibraryState }) {
       )}
       <div>
         {results.map((r) => (
-          <ResultRow key={r.entry.id} result={r} library={library} />
+          <ResultRow key={r.entry.id} result={r} materials={materials} />
         ))}
       </div>
     </div>
   );
 }
 
-function ResultRow({ result, library }: { result: PaletteQueryResult; library: LibraryState }) {
+function ResultRow({ result, materials }: { result: PaletteQueryResult; materials: Material[] }) {
   const p = result.entry.params;
-  const materialName = library.materials.find((m) => m.id === result.entry.material_id)?.name
+  const materialName = materials.find((m) => m.id === result.entry.material_id)?.name
     ?? "(unknown material)";
   return (
     <div style={{
@@ -370,43 +170,44 @@ function ResultRow({ result, library }: { result: PaletteQueryResult; library: L
   );
 }
 
-function BrowseView({ library }: { library: LibraryState }) {
+function BrowseView({ materials }: { materials: Material[] }) {
   const [entries, setEntries] = useState<PaletteEntry[]>([]);
   const [materialId, setMaterialId] = useState<string>("");
   const [error, setError] = useState<string | undefined>();
-  const [infoId, setInfoId] = useState<string | null>(null);
+  const [infoId, setInfoId] = useState<number | null>(null);
 
   async function refresh() {
     setError(undefined);
     try {
-      setEntries(await paletteList(materialId || undefined));
+      const matIdNum = materialId ? Number(materialId) : undefined;
+      setEntries(await listPaletteEntries(matIdNum));
     } catch (e) {
       setError((e as Error).message);
     }
   }
-  useEffect(() => { refresh(); }, [materialId]);  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void refresh(); }, [materialId]);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function onDelete(id: string) {
+  async function onDelete(id: number) {
     const entry = entries.find((e) => e.id === id);
     if (!entry) return;
-    if (!confirm(`Delete the ${entry.hex} swatch from test ${entry.test_id}?`)) return;
-    try { await paletteDelete(id); await refresh(); }
+    if (!confirm(`Delete the ${entry.hex} swatch?`)) return;
+    try { await deletePaletteEntry(id); await refresh(); }
     catch (e) { setError((e as Error).message); }
   }
-  async function onDeleteTest(testId: string) {
+  async function onDeleteTest(testId: number) {
     const count = entries.filter((e) => e.test_id === testId).length;
-    if (!confirm(`Delete all ${count} palette entries from test "${testId}"?`)) return;
-    try { await paletteDeleteByTest(testId); await refresh(); }
+    if (!confirm(`Delete all ${count} palette entries from test #${testId}?`)) return;
+    try { await deletePaletteByTest(testId); await refresh(); }
     catch (e) { setError((e as Error).message); }
   }
 
-  const byTest: Record<string, PaletteEntry[]> = {};
+  const byTest: Record<number, PaletteEntry[]> = {};
   entries.forEach((e) => {
     (byTest[e.test_id] = byTest[e.test_id] ?? []).push(e);
   });
 
   const infoEntry = useMemo(
-    () => (infoId ? entries.find((e) => e.id === infoId) ?? null : null),
+    () => (infoId !== null ? entries.find((e) => e.id === infoId) ?? null : null),
     [infoId, entries],
   );
 
@@ -414,7 +215,7 @@ function BrowseView({ library }: { library: LibraryState }) {
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
         <h2 style={{ margin: 0 }}>Palette ({entries.length} entries)</h2>
-        <MaterialSelect library={library} value={materialId} onChange={setMaterialId} label="Material:" />
+        <MaterialSelect materials={materials} value={materialId} onChange={setMaterialId} label="Material:" />
       </div>
       {error && <div style={{ color: "#a02840", marginBottom: 12 }}>{error}</div>}
       {entries.length === 0 && !error && (
@@ -422,13 +223,14 @@ function BrowseView({ library }: { library: LibraryState }) {
           {materialId ? "No entries for this material yet." : "Empty — upload a burned test photo to populate."}
         </div>
       )}
-      {Object.entries(byTest).map(([testId, group]) => {
-        const materialName = library.materials.find((m) => m.id === group[0]?.material_id)?.name
-          ?? (group[0]?.material_id ? "(unknown material)" : "(no material tag)");
+      {Object.entries(byTest).map(([testIdStr, group]) => {
+        const testId = Number(testIdStr);
+        const materialName = materials.find((m) => m.id === group[0]?.material_id)?.name
+          ?? "(unknown material)";
         return (
           <div key={testId} style={{ marginBottom: 24 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
-              <h3 style={{ margin: 0, fontSize: 14 }}>Test <code>{testId}</code></h3>
+              <h3 style={{ margin: 0, fontSize: 14 }}>Test <code>#{testId}</code></h3>
               <span style={{ fontSize: 11, color: "#666" }}>· {materialName}</span>
               <button
                 onClick={() => onDeleteTest(testId)}
@@ -458,7 +260,7 @@ function BrowseView({ library }: { library: LibraryState }) {
       })}
 
       {infoEntry && (
-        <InfoModal entry={infoEntry} library={library} onClose={() => setInfoId(null)} />
+        <InfoModal entry={infoEntry} materials={materials} onClose={() => setInfoId(null)} />
       )}
     </div>
   );
@@ -487,17 +289,23 @@ function EntryCard({ entry, onDelete, onInfo }: {
           delete
         </button>
       </div>
+      <div style={{ marginTop: 4 }}>
+        <a href={formatRoute({ name: "test-detail", id: entry.test_id })}
+           style={{ fontSize: 11, color: "#336", textDecoration: "none" }}>
+          View test #{entry.test_id}
+        </a>
+      </div>
     </div>
   );
 }
 
-function InfoModal({ entry, library, onClose }: {
+function InfoModal({ entry, materials, onClose }: {
   entry: PaletteEntry;
-  library: LibraryState;
+  materials: Material[];
   onClose: () => void;
 }) {
-  const materialName = library.materials.find((m) => m.id === entry.material_id)?.name
-    ?? (entry.material_id ? "(unknown material)" : "(no material tag)");
+  const materialName = materials.find((m) => m.id === entry.material_id)?.name
+    ?? "(unknown material)";
   return (
     <div
       onClick={onClose}
@@ -528,9 +336,9 @@ function InfoModal({ entry, library, onClose }: {
         <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
           <tbody>
             <Row label="Material" value={materialName} />
-            <Row label="Test" value={entry.test_id} mono />
+            <Row label="Test" value={String(entry.test_id)} mono />
             <Row label="Source" value={entry.source} />
-            <Row label="Captured" value={entry.timestamp} mono />
+            <Row label="Captured" value={entry.created_at} mono />
             {Object.entries(entry.params).map(([k, v]) => (
               <Row key={k} label={k} value={String(v)} mono />
             ))}

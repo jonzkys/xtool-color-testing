@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import math
-import uuid
 from dataclasses import replace
 
 from .builder import build_device_entry, build_line_display
 from .capture.layout import compute_layout, registration_reservation_mm
-from .capture.marker_render import emit_registration_markers, qr_payload_for_test
+from .capture.marker_render import emit_registration_markers
 from .model import (
     ANNOTATION_LAYER_COLOR,
     GRADIENT_LAYER_COLOR,
@@ -82,11 +81,6 @@ def _append_cell(
     ))
 
 
-def _default_test_id() -> str:
-    """Generate a short random ID for a test when no explicit one is provided."""
-    return uuid.uuid4().hex[:8]
-
-
 def generate_gradient(
     *,
     x_param: str,
@@ -110,13 +104,12 @@ def generate_gradient(
     tick_length: float = 0.5,
     annotation_params: ProcessingParams | None = None,
     summary_suffix: str = "",
-    registration_mode: str = "off",  # "auto" | "compact" | "full" | "off"
-    registration_qr_mode: str = "inline",  # "inline" | "id_only"
-    registration_qr_position: str = "top-left",  # "top-left" | "top-right" | "bottom-right"
+    registration_mode: str = "off",  # "on" | "off"
     registration_qr_size_mm: float | None = None,
+    registration_aruco_size_mm: float | None = None,
     unidirectional: bool = False,
     cell_shape: str = "rect",  # "rect" | "circle"
-    test_id: str | None = None,
+    test_id: int | None = None,
     material_id: str | None = None,
     hide_axis_labels: bool = False,
 ) -> XCSProject:
@@ -168,17 +161,13 @@ def generate_gradient(
     summary_h = text_height(summary_font_size) + 0.05  # text + minimal padding
     gradient_start_y = start_y + summary_h
 
-    # Registration markers (when enabled) sit outside the grid on one of
-    # three chosen corners. Shift the grid origin so the QR lands on-canvas
-    # regardless of position — top-left needs both X and Y shift, top-right
-    # only Y, bottom-right no shift at all.
-    _grid_h_for_reserve = (total_height * rows) if not is_dual else total_height
+    # Registration markers (when enabled) sit at the corners of the grid.
+    # QR is at top-left, ArUcos at the other 3 corners. Shift the grid
+    # origin by the reservation so markers don't land at negative coordinates.
     _shift_x, _shift_y = registration_reservation_mm(
         registration_mode,
-        registration_qr_mode,
-        position=registration_qr_position,  # type: ignore[arg-type]
         qr_size_mm=registration_qr_size_mm,
-        grid_h_mm=_grid_h_for_reserve,
+        aruco_size_mm=registration_aruco_size_mm,
     )
     if _shift_x > 0:
         start_x += _shift_x
@@ -229,58 +218,20 @@ def generate_gradient(
             hide_axis_labels=hide_axis_labels,
         )
 
-    if registration_mode != "off":
+    if registration_mode != "off" and test_id is not None:
         layout = compute_layout(
             grid_x=start_x,
             grid_y=gradient_start_y,
             grid_w=total_width,
             grid_h=(total_height * rows) if not is_dual else total_height,
             mode=registration_mode,  # type: ignore[arg-type]
-            qr_mode=registration_qr_mode,  # type: ignore[arg-type]
-            position=registration_qr_position,  # type: ignore[arg-type]
             qr_size_mm=registration_qr_size_mm,
-        )
-        # Grid offset relative to QR top-left. compute_layout placed the QR
-        # at (grid_x - qr_size - margin, grid_y - qr_size - margin), so the
-        # offset is always (qr_size + margin, qr_size + margin) in burn-space.
-        # The ingest endpoint needs these to sample cells accurately.
-        assert layout.qr is not None  # registration_mode != "off" guarantees this
-        grid_offset_x_mm = start_x - layout.qr.x
-        grid_offset_y_mm = gradient_start_y - layout.qr.y
-        # For wrapped multi-row single-axis tests, record the Y distance
-        # between consecutive row origins. _generate_wrapped places each
-        # row at (row * (row_height + effective_row_gap)) where
-        # effective_row_gap = max(row_gap, ann_space).
-        row_stride_mm: float | None = None
-        if rows > 1 and not is_dual:
-            ann_space = 0.0 if hide_axis_labels else (
-                tick_length + 0.05 + text_height(label_font_size) + 0.05
-            )
-            effective_row_gap = max(row_gap, ann_space)
-            row_stride_mm = total_height + effective_row_gap
-
-        qr_text = qr_payload_for_test(
-            test_id=test_id or _default_test_id(),
-            x_param=x_param, x_min=x_min, x_max=x_max, x_steps=x_steps,
-            y_param=y_param, y_min=y_min, y_max=y_max, y_steps=y_steps,
-            grid_w=total_width,
-            grid_h=(total_height * rows) if not is_dual else total_height,
-            rows=rows,
-            gap=gap,
-            grid_offset_x_mm=grid_offset_x_mm,
-            grid_offset_y_mm=grid_offset_y_mm,
-            base_params=base_params,
-            row_stride_mm=row_stride_mm,
-            # Only record the size when it differs from the mode's default.
-            qr_size_mm=registration_qr_size_mm,
-            material_id=material_id,
-            kind="grid",
-            mode=registration_qr_mode,
+            aruco_size_mm=registration_aruco_size_mm,
         )
         emit_registration_markers(
             project,
             layout=layout,
-            qr_text=qr_text,
+            test_id=test_id,
             annotation_params=annotation_params,
         )
 

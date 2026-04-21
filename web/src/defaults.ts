@@ -1,10 +1,4 @@
-import type { BaseParams, HatchPassSpec, ParamTest, Project, TestPlacement } from "./types";
-
-let idCounter = 0;
-export function newId(): string {
-  idCounter += 1;
-  return `test-${Date.now()}-${idCounter}`;
-}
+import type { BaseParams, HatchPassSpec, TestSpec } from "./types";
 
 export function defaultBaseParams(): BaseParams {
   return {
@@ -15,59 +9,20 @@ export function defaultBaseParams(): BaseParams {
     passes: 1,
     pulse_width: 200,
     laser: "red",
+    scan_angle: 90,
   };
 }
 
-export function defaultTest(name = "New test"): ParamTest {
-  return {
-    id: newId(),
-    name,
-    x_param: "speed",
-    x_min: 500,
-    x_max: 2000,
-    x_steps: 100,
-    y_param: null,
-    y_min: null,
-    y_max: null,
-    y_steps: null,
-    rows: 1,
-    width_mm: 30,
-    height_mm: 5,
-    gap_mm: 0,
-    base_params: defaultBaseParams(),
-    square_cells: false,
-    cell_shape: "rect",
-    angle_mode: "fixed",
-    registration: {
-      mode: "off", qr_mode: "inline",
-      qr_position: "top-left", qr_size_mm: null,
-    },
-    // Caller should assign the library's active material before use; defaults
-    // to empty so App.tsx can backfill at bootstrap. Generate is blocked while
-    // this is empty.
-    material_id: "",
-    unidirectional: false,
-    hide_axis_labels: false,
-  };
-}
-
-export function defaultPlacement(row = 0, col = 0): TestPlacement {
-  return {
-    test: defaultTest(),
-    row,
-    col,
-    col_span: 1,
-  };
-}
-
-export function defaultProject(): Project {
-  return {
-    name: "untitled",
-    grid_gap_mm: 1,
-    focus_mm: 1.5,
-    tests: [defaultPlacement()],
-  };
-}
+export const DEFAULT_SPEC: TestSpec = {
+  x_param: "speed", x_min: 500, x_max: 3000, x_steps: 10,
+  y_param: null, y_min: null, y_max: null, y_steps: null,
+  rows: 1, width_mm: 50, height_mm: 10, gap_mm: 0.5,
+  cell_shape: "rect", square_cells: true, angle_mode: "fixed",
+  unidirectional: false,
+  hide_axis_labels: false,
+  base_params: defaultBaseParams(),
+  registration: { mode: "on", qr_size_mm: null, aruco_size_mm: null },
+};
 
 export function defaultHatchPass(angle = 0): HatchPassSpec {
   // Default spacing = thickness so the hatched output is a continuous fill

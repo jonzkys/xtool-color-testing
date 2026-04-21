@@ -17,31 +17,19 @@ class BaseParams(BaseModel):
     passes: int = Field(ge=1)
     pulse_width: int = Field(ge=1)
     laser: Literal["red", "blue"]
+    # Starting scan angle in degrees. 90 = vertical scan (default, efficient
+    # for narrow elements); 0 = horizontal. For angle_mode="incremental" XCS
+    # rotates from this angle between passes; for "crosshatch" it alternates
+    # this angle and this+90°.
+    scan_angle: float = Field(default=90, ge=0, le=360)
 
 
 class RegistrationConfig(BaseModel):
-    """Config for the photo-ingest registration QR burned into a test.
+    """Photo-ingest registration: QR top-left + 3 ArUcos at other corners."""
 
-    ``mode``: "off" skips registration entirely; any other value emits a QR.
-              (The historical distinction between "compact" and "full" no
-              longer matters — "full" used to emit ArUco corner markers too,
-              which are gone now. The enum values are kept for backwards
-              compatibility with older stored projects.)
-
-    ``qr_position`` picks which corner of the grid the QR sits beside.
-    Bottom-left is intentionally excluded — axis tick labels live there.
-
-    ``qr_size_mm`` optionally overrides the default QR size for the chosen
-    payload mode (12 mm for inline, 7 mm for id_only). Useful when tweaking
-    for a specific substrate or phone camera resolution.
-    """
-
-    mode: Literal["auto", "compact", "full", "off"] = "off"
-    qr_mode: Literal["inline", "id_only"] = "inline"
-    qr_position: Literal[
-        "top-left", "top-right", "bottom-right", "left-middle",
-    ] = "top-left"
+    mode: Literal["on", "off"] = "off"
     qr_size_mm: float | None = Field(default=None, gt=0, le=50)
+    aruco_size_mm: float | None = Field(default=None, gt=0, le=50)
 
 
 class ParamTest(BaseModel):
@@ -295,80 +283,20 @@ class RasterToSvgResponse(BaseModel):
     svg: str
 
 
-class CaptureSwatch(BaseModel):
-    """One sampled swatch from a captured registration sheet."""
-
-    row: int
-    col: int
-    x_value: float
-    y_value: float | None
-    hex: str
-    sigma: float
-
-
-class CaptureIngestResponse(BaseModel):
-    """Response from POST /api/capture/ingest — decoded QR + sampled swatches.
-
-    ``material_id`` is populated from the QR's "m" field if the burn was
-    tagged at generate time. Legacy burns without this field will return
-    null — the UI must prompt the user to pick a material before saving.
-    """
-
-    test_id: str
-    kind: str
-    x_param: str
-    y_param: str | None
-    material_id: str | None
-    base_params: BaseParams
-    swatches: list[CaptureSwatch]
-
-
-class PaletteSwatchInput(BaseModel):
-    """One swatch being added to the palette via /api/palette/ingest."""
-
-    row: int
-    col: int
-    x_value: float
-    y_value: float | None
-    hex: str
-    sigma: float
-
-
-class PaletteIngestRequest(BaseModel):
-    """Request body for POST /api/palette/ingest.
-
-    `base_params` are the fixed parameters; for each swatch, the varied
-    `x_param` (and optional `y_param`) are overwritten with that swatch's
-    x_value / y_value to produce its full per-swatch param record.
-
-    `material_id` is required — palette queries are material-scoped since
-    the same burn params produce very different colours on stainless vs
-    brass vs anodized aluminium.
-    """
-
-    test_id: str
-    material_id: str = Field(min_length=1)
-    x_param: str
-    y_param: str | None = None
-    base_params: BaseParams
-    swatches: list[PaletteSwatchInput]
-
-
-class PaletteIngestResponse(BaseModel):
-    added_ids: list[str]
-
-
 class PaletteEntryResponse(BaseModel):
-    id: str
-    test_id: str
-    material_id: str
+    id: int
+    test_id: int
+    material_id: int
     source: str
-    timestamp: str
     hex: str
     lab: list[float]
     params: dict
     sigma: float
     notes: str
+    created_at: str
+    x_value: float | None = None
+    y_value: float | None = None
+    source_result_id: int | None = None
 
 
 class PaletteQueryResult(BaseModel):
@@ -378,3 +306,135 @@ class PaletteQueryResult(BaseModel):
 
 class PaletteEntryPatch(BaseModel):
     notes: str
+
+
+class MaterialCreate(BaseModel):
+    name: str
+    notes: str | None = None
+
+
+class MaterialUpdate(BaseModel):
+    name: str | None = None
+    notes: str | None = None
+
+
+class MaterialResponse(BaseModel):
+    id: int
+    name: str
+    notes: str
+    created_at: str
+
+
+class PresetCreate(BaseModel):
+    material_id: int
+    name: str
+    color: str | None = None
+    base_params: BaseParams
+
+
+class PresetUpdate(BaseModel):
+    name: str | None = None
+    color: str | None = None
+    base_params: BaseParams | None = None
+
+
+class PresetResponse(BaseModel):
+    id: int
+    material_id: int
+    name: str
+    color: str | None
+    is_default: bool
+    base_params: BaseParams
+    created_at: str
+    updated_at: str
+
+
+class TestSpec(BaseModel):
+    x_param: str
+    x_min: float
+    x_max: float
+    x_steps: int
+    y_param: str | None = None
+    y_min: float | None = None
+    y_max: float | None = None
+    y_steps: int | None = None
+    rows: int = 1
+    width_mm: float
+    height_mm: float
+    gap_mm: float = 0.5
+    cell_shape: str = "rect"              # "rect" | "circle"
+    square_cells: bool = False
+    angle_mode: str = "fixed"             # "fixed" | "crosshatch" | "incremental"
+    unidirectional: bool = False
+    base_params: BaseParams
+    registration: RegistrationConfig = Field(default_factory=RegistrationConfig)
+
+
+class TestCreate(BaseModel):
+    name: str
+    material_id: int
+    spec: TestSpec
+    notes: str = ""
+
+
+class TestUpdate(BaseModel):
+    name: str | None = None
+    notes: str | None = None
+    spec: TestSpec | None = None
+
+
+class TestResponse(BaseModel):
+    id: int
+    name: str
+    material_id: int
+    status: str
+    spec: TestSpec
+    notes: str
+    created_at: str
+    updated_at: str
+    locked: bool
+
+
+class ResultSwatch(BaseModel):
+    row: int
+    col: int
+    x_value: float
+    y_value: float | None = None
+    hex: str
+    lab: list[float]
+    sigma: float
+
+
+class ResultResponse(BaseModel):
+    id: int
+    test_id: int
+    uploaded_at: str
+    image_url: str
+    image_sha256: str
+    excluded: bool
+    notes: str
+    swatches: list[ResultSwatch]
+
+
+class ResultPatch(BaseModel):
+    excluded: bool | None = None
+    notes: str | None = None
+
+
+class AveragedSwatch(BaseModel):
+    row: int
+    col: int
+    x_value: float
+    y_value: float | None = None
+    hex: str
+    lab: list[float]
+    sigma: float
+    sample_count: int
+    per_result: list[dict]
+
+
+class IngestToPaletteRequest(BaseModel):
+    swatch_indices: list[int] = Field(min_length=1)
+    mode: Literal["averaged", "single_result"]
+    result_id: int | None = None     # required when mode == "single_result"
+    replace_existing: bool = False

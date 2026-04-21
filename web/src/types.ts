@@ -6,16 +6,14 @@ export const PARAM_NAMES = [
 
 export type ParamName = (typeof PARAM_NAMES)[number];
 
-export type RegistrationMode = "auto" | "compact" | "full" | "off";
-export type QrMode = "inline" | "id_only";
-export type QrPosition = "top-left" | "top-right" | "bottom-right" | "left-middle";
+export type RegistrationMode = "on" | "off";
 
 export interface RegistrationConfig {
   mode: RegistrationMode;
-  qr_mode: QrMode;
-  qr_position: QrPosition;
-  /** Optional override — leave null to use the default for the qr_mode (12mm inline / 7mm id-only). */
+  /** Optional override for QR size in mm. */
   qr_size_mm: number | null;
+  /** Optional override for ArUco marker size in mm. */
+  aruco_size_mm: number | null;
 }
 
 export interface BaseParams {
@@ -26,61 +24,12 @@ export interface BaseParams {
   passes: number;
   pulse_width: number;
   laser: Laser;
-}
-
-export interface ParamTest {
-  id: string;
-  name: string;
-  x_param: ParamName;
-  x_min: number;
-  x_max: number;
-  x_steps: number;
-  y_param?: ParamName | null;
-  y_min?: number | null;
-  y_max?: number | null;
-  y_steps?: number | null;
-  rows: number;
-  width_mm: number;
-  height_mm: number;
-  gap_mm: number;
-  base_params: BaseParams;
-
-  /** UI-convenience flag: when true, height_mm is auto-computed to keep cells square. */
-  square_cells: boolean;
-  /** "rect" (default) or "circle" — the latter emits inscribed-circle elements. */
-  cell_shape: "rect" | "circle";
-  /** Multi-pass angle behaviour; only meaningful when base_params.passes > 1.
-   *  - "fixed": every pass at the same scan angle.
-   *  - "crosshatch": alternates scan_angle and scan_angle + 90°.
-   *  - "incremental": XCS rotates the angle between passes.
-   *  Maps to XCS angleType + crossAngle; no rect duplication client-side. */
-  angle_mode: "fixed" | "crosshatch" | "incremental";
-  registration: RegistrationConfig;
-  material_id: string;  // required — palette queries are material-scoped
-  /** true → burn one direction only (oneWay). false (default) → bi-directional (zMode). */
-  unidirectional: boolean;
-  /** When true, per-row tick + numeric axis labels are suppressed on the
-   *  generated test. The summary header line is still drawn. */
-  hide_axis_labels: boolean;
-}
-
-export interface TestPlacement {
-  test: ParamTest;
-  row: number;
-  col: number;
-  col_span: number;
-}
-
-export interface Project {
-  name: string;
-  grid_gap_mm: number;
-  /** Material thickness in mm; written to XCS LASER_PLANE.thickness for auto-focus. */
-  focus_mm: number;
-  tests: TestPlacement[];
+  /** Starting scan angle in degrees. 90 = vertical (default); 0 = horizontal. */
+  scan_angle: number;
 }
 
 export interface ValidationIssue {
-  field: string;        // dot-path e.g. "tests[0].test.x_min"
+  field: string;        // dot-path e.g. "layers[0].hatch_passes"
   message: string;
   severity: "error" | "warning";
 }
@@ -140,7 +89,7 @@ export interface LayerSpec {
   processing_type: SvgProcessingType;
   scan_angle: number;
   base_params: BaseParams;
-  /** Same semantics as ParamTest.angle_mode. Ignored for HATCHED_LINES. */
+  /** Same semantics as TestSpec.angle_mode. Ignored for HATCHED_LINES. */
   angle_mode: "fixed" | "crosshatch" | "incremental";
   material_id: string | null;   // layer's library-preset origin (optional)
   hatch_passes: HatchPassSpec[];   // non-empty iff processing_type === "HATCHED_LINES"
@@ -162,43 +111,80 @@ export interface DetectedLayer {
   color: string;
   shape_count: number;
   is_fill: boolean;
-  /** True when every RGB channel is >= 245 (pure white + vtracer
-   *  near-white artefacts). The layer-picker hides these by default
-   *  unless the user ticks "Include white". Optional on the wire so
-   *  older backend responses still validate. */
+  /** True when the colour is bright and nearly neutral (min RGB channel
+   *  >= 220 AND max-min spread <= 20). Catches pure white plus vtracer
+   *  quantization artefacts like #dbdcdd / #f0f0f1 / #faeef0. The
+   *  layer-picker hides these by default unless the user ticks "Include
+   *  white". Optional on the wire so older backend responses still
+   *  validate. */
   is_near_white?: boolean;
 }
 
-export interface CaptureSwatch {
-  row: number;
-  col: number;
-  x_value: number;
-  y_value: number | null;
-  hex: string;
-  sigma: number;
+// ── Server-authoritative types (Tasks 23+) ────────────────────────────────────
+
+export interface TestSpec {
+  x_param: ParamName;
+  x_min: number; x_max: number; x_steps: number;
+  y_param: ParamName | null;
+  y_min: number | null; y_max: number | null; y_steps: number | null;
+  rows: number;
+  width_mm: number; height_mm: number; gap_mm: number;
+  cell_shape: "rect" | "circle";
+  square_cells: boolean;
+  angle_mode: "fixed" | "crosshatch" | "incremental";
+  unidirectional: boolean;
+  /** When true, per-row tick + numeric axis labels are suppressed on
+   *  the generated test. The summary header line is still drawn. */
+  hide_axis_labels: boolean;
+  base_params: BaseParams;
+  registration: RegistrationConfig;
 }
 
-export interface CaptureIngestResponse {
-  test_id: string;
-  kind: "grid" | "gradient";
-  material_id: string | null;
-  swatches: CaptureSwatch[];
-  base_params: BaseParams;
-  x_param: string;
-  y_param: string | null;
+export interface TestRecord {
+  id: number;
+  name: string;
+  material_id: number;
+  status: "created" | "tested" | "deleted";
+  spec: TestSpec;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+  locked: boolean;
+}
+
+export interface ResultSwatch {
+  row: number; col: number;
+  x_value: number; y_value: number | null;
+  hex: string; lab: number[]; sigma: number;
+}
+
+export interface ResultRecord {
+  id: number;
+  test_id: number;
+  uploaded_at: string;
+  image_url: string;
+  image_sha256: string;
+  excluded: boolean;
+  notes: string;
+  swatches: ResultSwatch[];
+}
+
+export interface AveragedSwatch extends ResultSwatch {
+  sample_count: number;
+  per_result: { result_id: number; hex: string; sigma: number }[];
 }
 
 export interface PaletteEntry {
-  id: string;
-  test_id: string;
-  material_id: string;
-  source: string;
-  timestamp: string;
-  hex: string;
-  lab: number[];
-  params: { [k: string]: string | number };
+  id: number;
+  test_id: number; material_id: number;
+  x_value: number | null; y_value: number | null;
+  hex: string; lab: number[];
+  params: Record<string, string | number>;
   sigma: number;
+  source: "averaged" | "single_result";
+  source_result_id: number | null;
   notes: string;
+  created_at: string;
 }
 
 export interface PaletteQueryResult {

@@ -17,29 +17,39 @@ interface Props {
  *  - (nothing)  — when no preset has been applied in this session yet
  */
 export function MaterialPresetPicker({ library, materialId, baseParams, onApply }: Props) {
-  const effectiveMaterialId = materialId ?? library.active_material_id ?? library.materials[0]?.id ?? "";
+  // material_id in the project is a string (legacy type); active_material_id is number|null.
+  // Convert everything to string for dropdown values.
+  const activeMaterialStr = library.active_material_id !== null
+    ? String(library.active_material_id)
+    : library.materials[0] ? String(library.materials[0].id) : "";
+  const effectiveMaterialId = materialId ?? activeMaterialStr;
   const [dropdownMaterialId, setDropdownMaterialId] = useState<string>(effectiveMaterialId);
 
-  const presetsForDropdown = library.presets.filter((p) => p.material_id === dropdownMaterialId);
+  const presetsForDropdown = library.presets.filter(
+    (p) => String(p.material_id) === dropdownMaterialId,
+  );
   const defaultPreset = presetsForDropdown.find((p) => p.is_default) ?? presetsForDropdown[0];
 
-  const [dropdownPresetId, setDropdownPresetId] = useState<string>(defaultPreset?.id ?? "");
+  const [dropdownPresetId, setDropdownPresetId] = useState<string>(
+    defaultPreset ? String(defaultPreset.id) : "",
+  );
   const [lastAppliedId, setLastAppliedId] = useState<string | null>(null);
   const [lastAppliedParams, setLastAppliedParams] = useState<Preset["base_params"] | null>(null);
 
   // Reset preset dropdown to the material's default when the material changes.
   useEffect(() => {
-    const dflt = library.presets.find((p) => p.material_id === dropdownMaterialId && p.is_default)
-               ?? library.presets.find((p) => p.material_id === dropdownMaterialId);
-    setDropdownPresetId(dflt?.id ?? "");
+    const dflt = library.presets.find(
+      (p) => String(p.material_id) === dropdownMaterialId && p.is_default,
+    ) ?? library.presets.find((p) => String(p.material_id) === dropdownMaterialId);
+    setDropdownPresetId(dflt ? String(dflt.id) : "");
   }, [dropdownMaterialId, library.presets]);
 
-  const selectedPreset = presetsForDropdown.find((p) => p.id === dropdownPresetId);
+  const selectedPreset = presetsForDropdown.find((p) => String(p.id) === dropdownPresetId);
 
   function doApply() {
     if (!selectedPreset) return;
-    onApply(selectedPreset.material_id, { ...selectedPreset.base_params });
-    setLastAppliedId(selectedPreset.id);
+    onApply(String(selectedPreset.material_id), { ...selectedPreset.base_params });
+    setLastAppliedId(String(selectedPreset.id));
     setLastAppliedParams({ ...selectedPreset.base_params });
   }
 
@@ -70,7 +80,7 @@ export function MaterialPresetPicker({ library, materialId, baseParams, onApply 
             style={{ padding: "4px 6px", border: "1px solid #ccc", borderRadius: 4, font: "inherit", background: "white" }}
           >
             {library.materials.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
+              <option key={m.id} value={String(m.id)}>{m.name}</option>
             ))}
           </select>
         </label>
@@ -94,7 +104,7 @@ export function MaterialPresetPicker({ library, materialId, baseParams, onApply 
               style={{ padding: "4px 6px", border: "1px solid #ccc", borderRadius: 4, font: "inherit", background: "white" }}
             >
               {presetsForDropdown.map((p) => (
-                <option key={p.id} value={p.id}>
+                <option key={p.id} value={String(p.id)}>
                   {p.name}{p.is_default ? " (default)" : ""}
                 </option>
               ))}

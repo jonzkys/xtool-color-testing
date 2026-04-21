@@ -16,10 +16,12 @@ dependencies = [
     "shapely>=2.0",
     "pyyaml>=6.0",
     "vtracer>=0.6",
-    "opencv-python-headless>=4.8",
+    "opencv-contrib-python-headless>=4.8",
     "segno>=1.6",
     "numpy>=1.24",
     "pyzbar>=0.1.9",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
 ]
 
 [project.optional-dependencies]

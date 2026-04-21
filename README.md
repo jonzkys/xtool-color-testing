@@ -73,7 +73,7 @@ xcs-gen --param speed --min 100 --max 5000 --steps 50 --output speed_test.xcs
 
 ## Project Status
 
-**Proof of Concept** - Validating that programmatically generated `.xcs` files load correctly in XCS Studio.
+**Active development.** The core generation pipeline is stable; tests are persisted in SQLite and a photo-ingest loop populates a searchable per-material colour palette.
 
 ## Device Compatibility
 
@@ -81,7 +81,21 @@ Currently tested with **XTool F2 Ultra** (`GS004-CLASS-4`). Device IDs and power
 
 ## Web UI
 
-A browser-based UI for composing multiple param tests into one XCS file.
+A browser-based UI for designing param tests, generating their `.xcs` files, uploading photos of the burned result, and building a colour-to-parameter palette per material.
+
+### Data stores
+
+The server persists everything locally:
+
+- **SQLite database** at `~/.xcs-gen/app.db` (override with `XCS_GEN_DB_URL`). Alembic migrations run on startup — no manual upgrade step.
+- **Result images** at `~/.xcs-gen/images/<test_id>/<result_id>.<ext>` (override with `XCS_GEN_IMAGES_DIR`).
+
+Data flow:
+
+1. **Library**: register materials and preset parameter sets.
+2. **Tests**: create a test bound to a material. Edit until you're happy, then click *Generate .xcs* to download the file and burn it.
+3. **Results**: upload a photo of the burn back to the same test. The server locates the fiducials (id-only QR top-left + 3 ArUco corners), warps the image to burn-space, and samples each cell for a Lab/ΔE swatch.
+4. **Palette**: pick swatches (averaged across results or pulled from one specific upload) and ingest them into the material palette. The Palette tab supports hex → nearest-match queries.
 
 ### First-time setup
 
@@ -104,6 +118,10 @@ Options:
 - `--port N` — change the port (default 4000)
 - `--host HOST` — change the bind host (default 127.0.0.1)
 - `--no-browser` — don't open the browser automatically
+
+Environment overrides (useful for dev and multi-user setups):
+- `XCS_GEN_DB_URL` — SQLAlchemy URL; defaults to `sqlite:///~/.xcs-gen/app.db`
+- `XCS_GEN_IMAGES_DIR` — directory for uploaded result images
 
 ### Development
 

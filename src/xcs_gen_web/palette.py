@@ -1,8 +1,4 @@
-"""JSON-file palette store with CIEDE2000 color-distance query.
-
-Entries are persisted to a single JSON file (default ``~/.xcs-gen/palette.json``).
-At ingest time, each hex is converted to Lab once and cached on the entry so
-queries avoid re-converting every entry on every lookup.
+"""CIE Lab conversion and CIEDE2000 color-distance helpers.
 
 Lab conversion uses D65 sRGB (the webby default); if we ever need device-ICC
 accuracy that's a per-capture concern, not a per-query one.
@@ -10,44 +6,7 @@ accuracy that's a per-capture concern, not a per-query one.
 
 from __future__ import annotations
 
-import json
 import math
-from dataclasses import asdict, dataclass
-from pathlib import Path
-from typing import Any
-
-_SCHEMA_VERSION = 1
-
-
-@dataclass
-class PaletteEntry:
-    """One entry in the palette — a burned colour tagged with the params that produced it.
-
-    ``material_id`` is required for queries to be meaningful: the same
-    (power, speed) produces very different colours on stainless vs brass
-    vs anodized aluminium, so a nearest-colour search across all
-    materials would return nonsense. Legacy entries (pre-material_id)
-    load with material_id="" and are excluded from material-scoped queries.
-    """
-
-    id: str
-    test_id: str
-    source: str  # "upload" | "manual"
-    timestamp: str
-    hex: str
-    lab: list[float]  # [L, a, b]
-    params: dict[str, Any]
-    sigma: float
-    material_id: str = ""
-    notes: str = ""
-
-
-@dataclass
-class QueryResult:
-    """One result of query_by_hex: the entry plus its ΔE2000 distance from the target."""
-
-    entry: PaletteEntry
-    delta_e: float
 
 
 def _hex_to_srgb(hex_: str) -> tuple[float, float, float]:
@@ -143,60 +102,3 @@ def delta_e_2000(
         (dLp / SL) ** 2 + (dCp / SC) ** 2 + (dHp / SH) ** 2
         + RT * (dCp / SC) * (dHp / SH)
     )
-
-
-def default_palette_path() -> Path:
-    return Path.home() / ".xcs-gen" / "palette.json"
-
-
-def load_palette(path: Path | str) -> list[PaletteEntry]:
-    p = Path(path)
-    if not p.exists():
-        return []
-    with p.open() as f:
-        data = json.load(f)
-    entries = []
-    for raw in data.get("entries", []):
-        # Backfill: entries persisted before material_id existed come in
-        # without it; treat as unknown-material so they can still load.
-        raw.setdefault("material_id", "")
-        entries.append(PaletteEntry(**raw))
-    return entries
-
-
-def save_palette(path: Path | str, entries: list[PaletteEntry]) -> None:
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    body = {"version": _SCHEMA_VERSION, "entries": [asdict(e) for e in entries]}
-    with p.open("w") as f:
-        json.dump(body, f, indent=2)
-
-
-def append_entries(path: Path | str, new_entries: list[PaletteEntry]) -> None:
-    existing = load_palette(path)
-    save_palette(path, existing + new_entries)
-
-
-def query_by_hex(
-    path: Path | str,
-    hex_: str,
-    *,
-    limit: int = 5,
-    material_id: str | None = None,
-) -> list[QueryResult]:
-    """Return up to `limit` entries sorted by ascending ΔE2000 from `hex_`.
-
-    If ``material_id`` is given, only entries tagged with that material are
-    considered — critical because the same burn params produce different
-    colours on different materials.
-    """
-    target = hex_to_lab(hex_)
-    entries = load_palette(path)
-    if material_id is not None:
-        entries = [e for e in entries if e.material_id == material_id]
-    scored = [
-        QueryResult(entry=e, delta_e=delta_e_2000(target, tuple(e.lab)))
-        for e in entries
-    ]
-    scored.sort(key=lambda r: r.delta_e)
-    return scored[:limit]

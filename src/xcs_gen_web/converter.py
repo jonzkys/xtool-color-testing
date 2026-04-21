@@ -65,10 +65,9 @@ def _test_vertical_footprint(t: ParamTest) -> float:
         gradient_h = t.height_mm
 
     _, reg_shift_y = registration_reservation_mm(
-        t.registration.mode, t.registration.qr_mode,
-        position=t.registration.qr_position,
+        t.registration.mode,
         qr_size_mm=t.registration.qr_size_mm,
-        grid_h_mm=gradient_h,
+        aruco_size_mm=t.registration.aruco_size_mm,
     )
 
     return reg_shift_y + summary + gradient_h + ann_below
@@ -81,11 +80,10 @@ def _test_horizontal_footprint(t: ParamTest) -> float:
     shifts right by the reservation, so the column must allocate that extra
     width.
     """
-    # grid_h_mm is left-middle-specific; passing 0 is fine for the X axis.
     reg_shift_x, _ = registration_reservation_mm(
-        t.registration.mode, t.registration.qr_mode,
-        position=t.registration.qr_position,
+        t.registration.mode,
         qr_size_mm=t.registration.qr_size_mm,
+        aruco_size_mm=t.registration.aruco_size_mm,
     )
     return reg_shift_x + t.width_mm
 
@@ -148,6 +146,7 @@ def _to_processing_params(bp: BaseParams, *, angle_mode: str = "fixed") -> Proce
         repeat=repeat,
         pulse_width=bp.pulse_width,
         processing_light_source=bp.laser,
+        scan_angle=bp.scan_angle,
         angle_type=angle_type,
         cross_angle=cross_angle,
     )
@@ -243,12 +242,11 @@ def project_to_xcs(project: Project) -> XCSProject:
             base_params=_to_processing_params(t.base_params, angle_mode=t.angle_mode),
             summary_suffix=summary_suffix,
             registration_mode=t.registration.mode,
-            registration_qr_mode=t.registration.qr_mode,
-            registration_qr_position=t.registration.qr_position,
             registration_qr_size_mm=t.registration.qr_size_mm,
+            registration_aruco_size_mm=t.registration.aruco_size_mm,
             unidirectional=t.unidirectional,
             cell_shape=t.cell_shape,
-            test_id=t.id,
+            test_id=int(t.id) if t.id.isdigit() else None,
             material_id=t.material_id,
             hide_axis_labels=t.hide_axis_labels,
         )
