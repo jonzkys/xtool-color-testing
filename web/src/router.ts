@@ -7,7 +7,8 @@ export type Route =
   | { name: "svg-stack" }
   | { name: "svg-layers" }
   | { name: "library" }
-  | { name: "palette" };
+  | { name: "palette" }
+  | { name: "styleguide" };
 
 export function parseRoute(hash: string): Route {
   const h = hash.replace(/^#/, "").replace(/^\/+/, "");
@@ -19,6 +20,7 @@ export function parseRoute(hash: string): Route {
   if (h === "svg-layers") return { name: "svg-layers" };
   if (h === "library") return { name: "library" };
   if (h === "palette") return { name: "palette" };
+  if (h === "styleguide") return { name: "styleguide" };
   return { name: "tests" };
 }
 
@@ -31,6 +33,7 @@ export function formatRoute(r: Route): string {
     case "svg-layers":  return "#/svg-layers";
     case "library":     return "#/library";
     case "palette":     return "#/palette";
+    case "styleguide":  return "#/styleguide";
   }
 }
 

@@ -1,0 +1,61 @@
+/* Workshop Instrument design tokens — light mode.
+ * Exposed to Tailwind v4's CSS-first theme system via @theme.
+ * Dark mode palette will be added later in the polish phase.
+ *
+ * The `--metal-bar` gradient is the one distinctive visual signature —
+ * used under the TopBar, under Section labels, and under active tabs.
+ */
+
+@theme {
+  --color-bg: #F7F5F2;
+  --color-surface: #FFFFFF;
+  --color-surface-elevated: #FDFBF7;
+
+  --color-ink: #1A1613;
+  --color-ink-muted: #6B6560;
+  --color-ink-subtle: #8A847E;
+
+  --color-border: #E8E3DC;
+  --color-border-strong: #D6CFC5;
+
+  --color-primary: #B8410E;
+  --color-primary-hover: #9E370C;
+  --color-primary-tint: #FBE9DF;
+
+  --color-secondary: #1F3A5F;
+  --color-secondary-tint: #E6ECF3;
+
+  --color-success: #2F6F4E;
+  --color-warning: #C98A1E;
+  --color-destructive: #9B2430;
+  --color-destructive-tint: #FBE2E5;
+
+  --font-sans: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --shadow-card: 0 1px 2px rgba(20, 10, 0, 0.04);
+  --shadow-popover: 0 8px 24px rgba(20, 10, 0, 0.08);
+}
+
+/* Reusable gradients not representable as theme colours */
+:root {
+  --metal-bar: linear-gradient(
+    90deg,
+    #8A8A8A 0%,
+    #B5AEA5 20%,
+    #D8D0C6 50%,
+    #B5AEA5 80%,
+    #8A8A8A 100%
+  );
+  --metal-bar-soft: linear-gradient(
+    90deg,
+    #C6BFB4 0%,
+    #E0D9CE 50%,
+    #C6BFB4 100%
+  );
+}

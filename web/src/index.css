@@ -1,13 +1,22 @@
+@import "tailwindcss";
+@import "./ui/theme.css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* Global resets + app shell */
 * { box-sizing: border-box; }
 
 html, body, #root {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
-  color: #222;
-  background: #f6f7f9;
+  line-height: 1.5;
+  color: var(--color-ink);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button {
@@ -15,7 +24,16 @@ button {
   cursor: pointer;
 }
 
-/* Help icon with on-hover/focus tooltip */
+/* Focus-visible rings using the primary accent */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Legacy help-icon tooltip — retained for NumberField's fixed-position
+ * tooltip behaviour that escapes scroll parents. Radix Tooltip portal will
+ * replace the rest of the app's help tooltips.
+ */
 .help-icon {
   position: relative;
   display: inline-flex;
@@ -25,31 +43,43 @@ button {
   height: 14px;
   font-size: 10px;
   font-weight: 700;
-  color: #888;
-  border: 1px solid #bbb;
+  color: var(--color-ink-subtle);
+  border: 1px solid var(--color-border-strong);
   border-radius: 50%;
   cursor: help;
   user-select: none;
+  background: var(--color-surface);
 }
 .help-icon:hover,
 .help-icon:focus-visible {
-  color: #336;
-  border-color: #336;
+  color: var(--color-primary);
+  border-color: var(--color-primary);
   outline: none;
 }
 .help-tip {
-  /* Mounted only when visible; position:fixed with JS-computed left/top. */
-  background: #2b2b2b;
-  color: white;
-  padding: 6px 10px;
-  border-radius: 4px;
-  font-size: 11px;
+  background: #1A1613;
+  color: #F7F5F2;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
   font-weight: 400;
-  line-height: 1.4;
+  line-height: 1.45;
   width: 260px;
   z-index: 1000;
   pointer-events: none;
   white-space: normal;
   text-align: left;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-popover);
+}
+
+/* Scrollbar polish — subtle so it doesn't compete with content */
+@media (pointer: fine) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: 5px;
+    border: 2px solid var(--color-bg);
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-ink-subtle); }
+  ::-webkit-scrollbar-track { background: transparent; }
 }
