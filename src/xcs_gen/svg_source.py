@@ -221,6 +221,32 @@ def _scale_and_offset(
     return new_path
 
 
+# RGB channel threshold above which a colour counts as "near white". All
+# three channels must be >= this value. 245 catches pure #ffffff and
+# vtracer quantization artefacts like #fdfdfd / #fefefe. Configurable
+# only via source edit; if that stops being enough, make it a parameter.
+NEAR_WHITE_THRESHOLD = 245
+
+
+def is_near_white(hex_color: str) -> bool:
+    """Return True if every RGB channel of a #rrggbb hex colour is >= NEAR_WHITE_THRESHOLD.
+
+    Returns False for any non-7-character hex string (including the 3-digit
+    shorthand, "none", "", or anything that's not a #rrggbb literal).
+    """
+    if not hex_color or not isinstance(hex_color, str):
+        return False
+    if len(hex_color) != 7 or not hex_color.startswith("#"):
+        return False
+    try:
+        r = int(hex_color[1:3], 16)
+        g = int(hex_color[3:5], 16)
+        b = int(hex_color[5:7], 16)
+    except ValueError:
+        return False
+    return r >= NEAR_WHITE_THRESHOLD and g >= NEAR_WHITE_THRESHOLD and b >= NEAR_WHITE_THRESHOLD
+
+
 def _normalize_color(color) -> str | None:
     """Normalize a svgelements Color to lowercase '#rrggbb', or None.
 

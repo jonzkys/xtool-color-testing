@@ -143,3 +143,45 @@ def test_detect_colors_both_fill_and_stroke():
     assert colors[0].hex == "#000000"
     assert colors[0].source == "both"
     assert colors[0].shape_count == 1
+
+
+def test_is_near_white_pure_white():
+    from xcs_gen.svg_source import is_near_white
+    assert is_near_white("#ffffff") is True
+
+
+def test_is_near_white_vtracer_artefact():
+    from xcs_gen.svg_source import is_near_white
+    assert is_near_white("#fdfdfd") is True
+    assert is_near_white("#fefefe") is True
+
+
+def test_is_near_white_threshold_boundary_inclusive():
+    """#f5f5f5 is (245,245,245) — exactly on the threshold, counts as near-white."""
+    from xcs_gen.svg_source import is_near_white
+    assert is_near_white("#f5f5f5") is True
+
+
+def test_is_near_white_threshold_just_below_is_false():
+    """#f4f4f4 is (244,244,244) — one below, not near-white."""
+    from xcs_gen.svg_source import is_near_white
+    assert is_near_white("#f4f4f4") is False
+
+
+def test_is_near_white_yellow_one_channel_zero():
+    """One channel below threshold disqualifies the colour."""
+    from xcs_gen.svg_source import is_near_white
+    assert is_near_white("#ffff00") is False  # blue channel = 0
+
+
+def test_is_near_white_cyan_one_channel_below():
+    from xcs_gen.svg_source import is_near_white
+    assert is_near_white("#f5f5f4") is False  # blue channel = 244
+
+
+def test_is_near_white_invalid_inputs():
+    from xcs_gen.svg_source import is_near_white
+    assert is_near_white("") is False
+    assert is_near_white("none") is False
+    assert is_near_white("#fff") is False  # 3-digit hex not supported
+    assert is_near_white("ffffff") is False  # missing leading #
