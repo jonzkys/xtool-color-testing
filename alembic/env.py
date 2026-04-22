@@ -38,7 +38,12 @@ def _is_sqlite(url: str) -> bool:
 
 target_metadata = metadata
 db_url = os.environ.get("XCS_GEN_DB_URL") or _default_db_url()
-config.set_main_option("sqlalchemy.url", db_url)
+# Alembic's Config wraps a ConfigParser, which interprets `%` as the
+# start of a %(name)s interpolation reference. Passwords with a literal
+# `%` (or URL-encoded sequences like %21) raise ValueError at read
+# time. Doubling the sign is the documented escape: on read it
+# collapses back to a single `%`, which is what SQLAlchemy wants.
+config.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
 
 _RENDER_AS_BATCH = _is_sqlite(db_url)
 

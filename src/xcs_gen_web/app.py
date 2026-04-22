@@ -130,7 +130,10 @@ def _run_migrations() -> None:
     url = db_url()
     cfg = Config(str(alembic_root / "alembic.ini"))
     cfg.set_main_option("script_location", str(alembic_root / "alembic"))
-    cfg.set_main_option("sqlalchemy.url", url)
+    # Escape `%` so ConfigParser's interpolation doesn't choke on
+    # passwords containing a literal `%` (or URL-encoded %XX bytes).
+    # Doubled `%%` collapses back to `%` when alembic reads the value.
+    cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
 
     if not url.startswith(("mysql", "mariadb")):
         # SQLite / Postgres / anything else — just run it.
