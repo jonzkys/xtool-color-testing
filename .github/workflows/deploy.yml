@@ -24,6 +24,13 @@ name: Deploy
 #                                 task (must allow egress to RDS)
 #   S3_BUCKET                   — bucket that serves the static frontend
 #   CLOUDFRONT_DISTRIBUTION_ID  — optional; leave unset to skip invalidation
+#   FRONTEND_API_URL            — absolute URL of the API, e.g.
+#                                 https://api.example.com — baked into the
+#                                 frontend bundle at build time. Leave
+#                                 unset only for same-origin deployments
+#                                 (API and frontend served from the same
+#                                 host). For S3+CloudFront + ECS+ALB
+#                                 splits, this is required.
 #
 # The OIDC role trust policy must allow this repo (see the repo's DEPLOY.md
 # or infra/terraform for the policy; minimal inline IAM:
@@ -251,6 +258,11 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Install and build
+        # VITE_API_BASE_URL is baked into the JS bundle at build time.
+        # Unset → relative /api/* URLs (single-origin deployments); set
+        # → frontend fetches absolute https://api.example.com/api/…
+        env:
+          VITE_API_BASE_URL: ${{ secrets.FRONTEND_API_URL }}
         run: |
           npm ci
           npm run build

@@ -1,17 +1,37 @@
 /**
- * Multi-user bridge: if the host stored a user id in localStorage,
- * include it as X-User-Id on every /api/* request.
+ * Request routing + multi-user bridge.
  *
- * Lives as a fetch-interceptor so existing API helpers don't need to
- * know about the header — they just call fetch("/api/...") as before.
- * Single-user / standalone deployments ignore the header server-side,
- * so this is safe to run unconditionally.
+ * Installs a single fetch interceptor that does two things on every
+ * ``/api/*`` call:
  *
- * Auth is deliberately not handled here; a real auth layer would
- * either replace this module or layer a token-reader on top.
+ *   1. Rewrites the URL to absolute if ``VITE_API_BASE_URL`` was set
+ *      at build time. Lets the frontend live on a different origin
+ *      (S3 + CloudFront) from the API (ALB) without changing any
+ *      call site.
+ *   2. Attaches the ``X-User-Id`` header when a user id has been
+ *      stored in localStorage. Standalone deployments ignore the
+ *      header server-side, so this is safe to run unconditionally.
+ *
+ * Single interceptor, two concerns — keeps every downstream api/*
+ * helper calling plain ``fetch("/api/foo")`` as if the two machines
+ * were one. Auth is deliberately not handled here; a real auth layer
+ * would either replace this module or layer a token-reader on top.
  */
 
 const STORAGE_KEY = "xcsgen:userId";
+
+/**
+ * Base URL the interceptor prefixes onto ``/api/*`` calls. Set at
+ * build time via ``VITE_API_BASE_URL`` — unset means relative URLs,
+ * which is what local dev + single-host deployments want.
+ *
+ * Trailing slash is stripped so ``BASE + "/api/foo"`` never produces
+ * ``"…//api/foo"``.
+ */
+const API_BASE_URL: string = (() => {
+  const raw = (import.meta.env.VITE_API_BASE_URL ?? "").trim();
+  return raw.replace(/\/+$/, "");
+})();
 
 export function getCurrentUserId(): string | null {
   try {
@@ -33,27 +53,67 @@ export function setCurrentUserId(id: string | null): void {
   }
 }
 
-/** Install a fetch interceptor that attaches X-User-Id to /api/* calls. */
+/** Install the fetch interceptor. Idempotent. */
 export function installUserHeader(): void {
   if (typeof window === "undefined" || (window as any).__xcsgenFetchPatched) {
     return;
   }
   const original = window.fetch.bind(window);
+
   window.fetch = async (input, init) => {
-    const userId = getCurrentUserId();
-    const url =
+    const originalUrl =
       typeof input === "string"
         ? input
         : input instanceof URL
           ? input.toString()
           : input.url;
-    if (userId && url.startsWith("/api/")) {
-      const headers = new Headers(init?.headers || {});
-      // Don't clobber if an explicit header was supplied.
-      if (!headers.has("X-User-Id")) headers.set("X-User-Id", userId);
-      return original(input, { ...init, headers });
+
+    // Only our own /api/* calls get rewritten + header-decorated.
+    // Third-party fetches (CDN, etc.) pass through untouched.
+    if (!originalUrl.startsWith("/api/")) {
+      return original(input, init);
     }
-    return original(input, init);
+
+    const rewrittenUrl = API_BASE_URL
+      ? `${API_BASE_URL}${originalUrl}`
+      : originalUrl;
+
+    const headers = new Headers(init?.headers || {});
+    const userId = getCurrentUserId();
+    if (userId && !headers.has("X-User-Id")) {
+      headers.set("X-User-Id", userId);
+    }
+
+    // Preserve the input shape (Request vs string) so things like a
+    // pre-built Request with its own body still work. When the URL
+    // needs rewriting we unavoidably rebuild — Request's URL is
+    // immutable, so we pull its properties and reconstruct.
+    if (typeof input === "string" || input instanceof URL) {
+      return original(rewrittenUrl, { ...init, headers });
+    }
+    // Request object: rebuild with the rewritten URL, inherit everything else.
+    const req = input as Request;
+    const rebuilt = new Request(rewrittenUrl, {
+      method: req.method,
+      headers,
+      body:
+        req.method === "GET" || req.method === "HEAD"
+          ? undefined
+          : req.clone().body,
+      mode: req.mode,
+      credentials: req.credentials,
+      cache: req.cache,
+      redirect: req.redirect,
+      referrer: req.referrer,
+      integrity: req.integrity,
+    });
+    return original(rebuilt, init);
   };
+
   (window as any).__xcsgenFetchPatched = true;
+}
+
+/** Exposed for tests / debugging. */
+export function getApiBaseUrl(): string {
+  return API_BASE_URL;
 }

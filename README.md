@@ -151,6 +151,25 @@ The `?charset=utf8mb4` suffix is important — without it non-ASCII material/tes
 
 The DB user only needs: `SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP` on the `xcsgen` schema (the last two are only needed while migrations are running — you can drop them after). No `GRANT` or `SUPER`.
 
+### Frontend on a different origin from the API
+
+When the frontend is served from an S3 bucket (optionally fronted by CloudFront) and the API runs on an ALB at a different hostname, the frontend needs to know the API's absolute URL. All of the `fetch("/api/*")` calls are rewritten at runtime via a fetch interceptor that prefixes `VITE_API_BASE_URL` onto any `/api/*` request.
+
+Set it at build time only — there's no runtime config:
+
+```bash
+# For local dev, leave unset — Vite's proxy in vite.config.ts routes
+# /api/* to http://127.0.0.1:4000 automatically.
+
+# For prod builds (the deploy.yml workflow picks this up from the
+# FRONTEND_API_URL secret):
+VITE_API_BASE_URL=https://api.example.com npm run build
+```
+
+The URL gets baked into the `dist/assets/index-*.js` bundle as a literal string — re-deploying the bundle is required if the API's URL ever changes (CloudFront invalidate + S3 sync; the workflow handles both).
+
+On the backend, set `XCS_GEN_CORS_ORIGINS=https://app.example.com` (the frontend's origin, not the API's) so the API accepts preflighted requests from the S3/CloudFront-served app. `X-User-Id` is a custom header, so browsers will preflight `OPTIONS` calls — which is why CORS is mandatory in the split-origin setup.
+
 ### S3 image storage (optional)
 
 Filesystem storage (the default, `~/.xcs-gen/images/…`) works fine for single-host deployments. For multi-host or autoscaling setups, swap in S3:
