@@ -33,11 +33,15 @@ dev = [
     "fonttools>=4.60",
 ]
 # Install with `pip install -e ".[mysql]"` to use MySQL/MariaDB as the
-# backend. Pure-Python driver (no C toolchain required) — set
-# XCS_GEN_DB_URL="mysql+pymysql://user:pass@host/xcsgen?charset=utf8mb4"
+# backend. The [rsa] extra on pymysql pulls in `cryptography`, which
+# is required for MySQL 8's default auth plugin (caching_sha2_password)
+# — without it pymysql falls over with:
+#   RuntimeError: 'cryptography' package is required for
+#                  sha256_password or caching_sha2_password auth methods
+# set XCS_GEN_DB_URL="mysql+pymysql://user:pass@host/xcsgen?charset=utf8mb4"
 # and run migrations.
 mysql = [
-    "pymysql>=1.1",
+    "pymysql[rsa]>=1.1",
 ]
 # Install with `pip install -e ".[s3]"` to store result photos in S3.
 # boto3 auth comes from the default credential chain (IAM role /
