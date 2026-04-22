@@ -68,12 +68,14 @@ USER xcsgen
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    # Container defaults. Auto-migrate is safe to leave on because
-    # _run_migrations() takes a MySQL advisory lock (GET_LOCK) before
-    # running alembic, so concurrent task starts are serialised.
-    # Override to "false" in the task def if you'd rather run migrations
-    # as a dedicated one-off ECS task — see README.
-    XCS_GEN_AUTO_MIGRATE=true \
+    # Container default is OFF for migrations. Auto-migrate on boot is
+    # convenient for dev but a foot-gun in prod on MySQL — with no
+    # transactional DDL, any interruption (ECS health-check timeout
+    # while uvicorn isn't yet listening, OOM, rolling-deploy cancel)
+    # leaves the schema half-built and unrecoverable without manual
+    # stamping. Run migrations as a separate one-off ECS task instead
+    # (deploy.yml does this automatically). Set to "true" in dev only.
+    XCS_GEN_AUTO_MIGRATE=false \
     XCS_GEN_HOST=0.0.0.0 \
     XCS_GEN_PORT=4000
 

@@ -124,7 +124,7 @@ Environment overrides (useful for dev and multi-user setups):
 - `XCS_GEN_IMAGES_DIR` — directory for uploaded result images
 - `XCS_GEN_MODE` — `standalone` (default) or `multi_user`
 - `XCS_GEN_CORS_ORIGINS` — comma-separated allowed origins when the API is hosted separately from the frontend
-- `XCS_GEN_AUTO_MIGRATE` — `true` (default) runs `alembic upgrade head` at app boot. Safe for multi-task ECS services thanks to a MySQL advisory lock that serialises concurrent starts. Set to `false` if you'd rather run migrations as a dedicated one-off task (tighter blast radius — a failed migration doesn't wedge your service task).
+- `XCS_GEN_AUTO_MIGRATE` — Local/dev setups default to `true` (run `alembic upgrade head` at app boot). The container image defaults to `false`; run migrations as a separate one-off ECS task instead. MySQL has no transactional DDL, so any interruption (ECS health-check timeout while uvicorn isn't yet listening, OOM, rolling-deploy cancel) leaves the schema half-built and alembic unable to recover without manual stamping. The deploy workflow automates the separate-task pattern.
 - `XCS_GEN_MAX_UPLOAD_BYTES` — cap on request body size (default 20 MiB)
 - `XCS_GEN_REGISTER_RATE_PER_HOUR` — per-IP registration rate limit (default 20; set 0 to disable)
 - `XCS_GEN_S3_BUCKET` — activate S3 image storage (see section below)
@@ -140,10 +140,10 @@ SQLite is the default and covers the single-user workflow fine. For a public alp
 pip install -e ".[mysql]"
 export XCS_GEN_MODE=multi_user
 export XCS_GEN_DB_URL="mysql+pymysql://xcsgen_user:PASSWORD@db-host/xcsgen?charset=utf8mb4"
-# Migrations run automatically on app boot (safe — concurrent task
-# starts are serialised via a MySQL advisory lock). If you'd rather
-# run them as a dedicated one-off task, set XCS_GEN_AUTO_MIGRATE=false
-# and invoke `alembic upgrade head` separately.
+# For local dev, auto-migrate is convenient. For ECS/prod it's off by
+# default in the container — migrations run as a separate one-off task
+# (the deploy.yml workflow does this automatically before each
+# service update).
 xcs-gen serve
 ```
 

@@ -17,6 +17,11 @@ name: Deploy
 #   ECS_CLUSTER                 — ECS cluster name
 #   ECS_SERVICE                 — ECS service name
 #   ECS_TASK_DEFINITION         — task-definition FAMILY name
+#   ECS_SUBNETS                 — comma-separated private subnet IDs for
+#                                 the migrate task (same subnets the
+#                                 service uses)
+#   ECS_SECURITY_GROUPS         — comma-separated SG IDs for the migrate
+#                                 task (must allow egress to RDS)
 #   S3_BUCKET                   — bucket that serves the static frontend
 #   CLOUDFRONT_DISTRIBUTION_ID  — optional; leave unset to skip invalidation
 #
@@ -129,6 +134,79 @@ jobs:
             --output text)
 
           echo "task-def-arn=$NEW_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Run DB migrations (one-off task, blocking)
+        # Run `alembic upgrade head` as a standalone ECS task using the
+        # task-def revision we just registered. Wait for it to reach
+        # STOPPED then check its exit code — if alembic fails, this
+        # step fails and `Deploy to ECS` below never runs, so broken
+        # schema + new code never ship together.
+        id: migrate
+        env:
+          ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
+          SUBNETS: ${{ secrets.ECS_SUBNETS }}
+          SECURITY_GROUPS: ${{ secrets.ECS_SECURITY_GROUPS }}
+          TASK_DEF: ${{ steps.task-def.outputs.task-def-arn }}
+        run: |
+          # Convert the comma-separated secret values into JSON arrays
+          # that awsvpcConfiguration expects.
+          SUBNETS_JSON=$(echo -n "$SUBNETS" | jq -Rc 'split(",")')
+          SGS_JSON=$(echo -n "$SECURITY_GROUPS" | jq -Rc 'split(",")')
+
+          OVERRIDES=$(jq -cn \
+            '{
+              "containerOverrides": [{
+                "name": "xcsgen",
+                "command": ["alembic", "upgrade", "head"]
+              }]
+            }')
+
+          NETWORK=$(jq -cn \
+            --argjson subnets "$SUBNETS_JSON" \
+            --argjson sgs "$SGS_JSON" \
+            '{
+              "awsvpcConfiguration": {
+                "subnets": $subnets,
+                "securityGroups": $sgs,
+                "assignPublicIp": "DISABLED"
+              }
+            }')
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --task-definition "$TASK_DEF" \
+            --launch-type FARGATE \
+            --network-configuration "$NETWORK" \
+            --overrides "$OVERRIDES" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          echo "Migration task started: $TASK_ARN"
+
+          # Block until the task reaches STOPPED.
+          aws ecs wait tasks-stopped \
+            --cluster "$ECS_CLUSTER" \
+            --tasks "$TASK_ARN"
+
+          # Check exit code of the xcsgen container. Zero = migrations OK.
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER" \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[?name==`xcsgen`].exitCode | [0]' \
+            --output text)
+          STOP_REASON=$(aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER" \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].stoppedReason' \
+            --output text)
+
+          echo "Migration exit code: $EXIT_CODE"
+          echo "Stop reason: $STOP_REASON"
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::Migrations failed. Inspect CloudWatch logs for the task."
+            exit 1
+          fi
 
       - name: Deploy to ECS
         env:
