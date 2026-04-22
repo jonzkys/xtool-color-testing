@@ -135,6 +135,10 @@ export function SvgLayersPage() {
     ...DEFAULT_RASTER_TRACE_OPTIONS,
   }));
   const [tracing, setTracing] = useState(false);
+  // True whenever the current traceOptions differ from what produced
+  // the displayed SVG. Drives the Re-trace button's "dirty" styling
+  // and lets the user see they have unsaved knob changes.
+  const [tracePending, setTracePending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [predictedByColor, setPredictedByColor] = useState<Record<string, string>>(
@@ -329,6 +333,7 @@ export function SvgLayersPage() {
       const svg = await rasterToSvg(rasterDataUrl, opts);
       const currentName = request.name;
       await applyDetectedSvg(svg, currentName);
+      setTracePending(false);
     } catch (err) {
       setDetectError((err as Error).message);
     } finally {
@@ -336,15 +341,18 @@ export function SvgLayersPage() {
     }
   }
 
+  // Knob changes just update local state + mark the trace as stale —
+  // they no longer fire a backend request per keystroke. A single
+  // invocation of vtracer can take multiple seconds on even modest
+  // images, so the previous "trace on every onChange" was eating the
+  // backend CPU for breakfast whenever a user scrolled a number field.
   function updateTraceOptions(patch: Partial<RasterTraceOptions>) {
-    const next = { ...traceOptions, ...patch };
-    setTraceOptions(next);
-    if (rasterDataUrl) void retrace(next);
+    setTraceOptions({ ...traceOptions, ...patch });
+    setTracePending(true);
   }
   function resetTraceOptions() {
-    const defaults = { ...DEFAULT_RASTER_TRACE_OPTIONS };
-    setTraceOptions(defaults);
-    if (rasterDataUrl) void retrace(defaults);
+    setTraceOptions({ ...DEFAULT_RASTER_TRACE_OPTIONS });
+    setTracePending(true);
   }
 
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -487,11 +495,34 @@ export function SvgLayersPage() {
             {rasterDataUrl && (
               <Section
                 title="Trace options"
-                description="Re-vectorises on change."
+                description={
+                  tracePending
+                    ? "Unsaved changes — click Re-trace to apply."
+                    : "Adjust knobs, then click Re-trace. vtracer is expensive on larger images."
+                }
                 actions={
-                  <Button variant="ghost" size="sm" onClick={resetTraceOptions}>
-                    Reset
-                  </Button>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={resetTraceOptions}
+                      disabled={tracing}
+                    >
+                      Reset
+                    </Button>
+                    <Button
+                      variant={tracePending ? "primary" : "secondary"}
+                      size="sm"
+                      onClick={() => void retrace(traceOptions)}
+                      disabled={tracing || !rasterDataUrl}
+                    >
+                      {tracing
+                        ? "Tracing…"
+                        : tracePending
+                          ? "Re-trace"
+                          : "Re-trace (no changes)"}
+                    </Button>
+                  </div>
                 }
                 dense
               >
@@ -501,9 +532,9 @@ export function SvgLayersPage() {
                     value={traceOptions.max_colors}
                     integer
                     min={0}
-                    max={256}
+                    max={32}
                     onChange={(v) => updateTraceOptions({ max_colors: v })}
-                    help="Pre-quantises the image to this many colours via PIL median-cut BEFORE vtracer. 0 disables. Typical: 3–8 clean / 16+ detail."
+                    help="Pre-quantises the image to this many colours via PIL median-cut BEFORE vtracer. 0 disables. Typical: 3–8 clean / 12–24 detail. Capped at 32 — above that vtracer's layer-per-colour work balloons."
                   />
                   <NumberField
                     label="Colour precision"
@@ -519,18 +550,18 @@ export function SvgLayersPage() {
                     value={traceOptions.layer_difference}
                     integer
                     min={0}
-                    max={255}
+                    max={128}
                     onChange={(v) => updateTraceOptions({ layer_difference: v })}
-                    help="Minimum visual distance between output layers. Higher merges near-identical colours. Default 32; 64–96 for aggressive merging."
+                    help="Minimum visual distance between output layers. Higher merges near-identical colours. Default 32; 64–96 for aggressive merging. Capped at 128 — beyond that everything merges into one layer."
                   />
                   <NumberField
                     label="Filter speckle"
                     value={traceOptions.filter_speckle}
                     integer
                     min={0}
-                    max={100}
+                    max={64}
                     onChange={(v) => updateTraceOptions({ filter_speckle: v })}
-                    help="Drops isolated regions smaller than N pixels. Kills JPEG / photo-grain noise. Default 8."
+                    help="Drops isolated regions smaller than N pixels. Kills JPEG / photo-grain noise. Default 8. Capped at 64 — larger drops legitimate detail too."
                   />
                 </div>
               </Section>

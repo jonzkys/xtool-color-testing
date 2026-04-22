@@ -118,3 +118,27 @@ def test_roundtrip_png_through_svg_layers_detect():
     layers = resp2.json()
     assert len(layers) >= 1
     assert all("color" in l for l in layers)
+
+
+def test_raster_to_svg_rejects_over_cap_values():
+    """Backend caps on trace options are a DoS guard — vtracer's work
+    scales per-layer, so a malicious client asking for 256 colours
+    (pre-cap) could burn a lot of CPU. Pydantic rejects the request
+    at the schema layer before any work is done."""
+    from fastapi.testclient import TestClient
+    from xcs_gen_web.app import create_app
+    client = TestClient(create_app())
+
+    # Any over-cap value should be a 422 (Pydantic validation error)
+    for field, bad in [
+        ("max_colors", 64),          # cap = 32
+        ("layer_difference", 200),   # cap = 128
+        ("filter_speckle", 100),     # cap = 64
+        ("color_precision", 16),     # cap = 8 (unchanged)
+    ]:
+        body = {"image_data": "data:image/png;base64,iVBORw0KGgo="}
+        body[field] = bad
+        resp = client.post("/api/raster-to-svg", json=body)
+        assert resp.status_code == 422, (
+            f"expected 422 for {field}={bad}, got {resp.status_code}: {resp.text}"
+        )
