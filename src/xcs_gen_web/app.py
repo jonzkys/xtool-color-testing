@@ -616,11 +616,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> TestResponse:
         if t_repo.get(tid, owner_id=user_id) is None:
             raise HTTPException(status_code=404, detail="test not found")
+        # Validate a material reassignment target exists + is owned by
+        # the caller before the repo commits it. Keeps a malicious
+        # client from reseating the test onto a stranger's material id.
+        if body.material_id is not None:
+            if m_repo.get(body.material_id, owner_id=user_id) is None:
+                raise HTTPException(status_code=400, detail="unknown material_id")
         try:
             t = t_repo.update(
                 tid, owner_id=user_id,
                 name=body.name, notes=body.notes,
                 spec=body.spec.model_dump() if body.spec else None,
+                material_id=body.material_id,
             )
         except LockedError as e:
             raise HTTPException(status_code=409, detail=str(e))

@@ -91,6 +91,7 @@ def update(
     tid: int, *, owner_id: int = STANDALONE_USER_ID,
     name: str | None = None, notes: str | None = None,
     spec: dict[str, Any] | None = None,
+    material_id: int | None = None,
     visibility: str | None = None,
 ) -> dict[str, Any] | None:
     cur = get(tid, owner_id=owner_id)
@@ -105,6 +106,16 @@ def update(
         if cur["locked"]:
             raise LockedError(f"test {tid} is locked; duplicate it to change spec")
         values["spec_json"] = json.dumps(spec, separators=(",", ":"))
+    if material_id is not None and material_id != cur["material_id"]:
+        # Same guard as spec — changing the substrate on a test that
+        # already has ingested swatches would orphan those palette
+        # entries. The app layer validates the new material belongs
+        # to the caller before reaching here.
+        if cur["locked"]:
+            raise LockedError(
+                f"test {tid} is locked; duplicate it to change material",
+            )
+        values["material_id"] = material_id
     if visibility is not None:
         values["visibility"] = visibility
     with session_scope() as s:

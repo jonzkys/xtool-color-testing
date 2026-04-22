@@ -67,3 +67,43 @@ def test_soft_delete_removes_from_default_list(fresh_db):
     c.delete(f"/api/tests/{tid}")
     assert c.get("/api/tests").json() == []
     assert c.get(f"/api/tests/{tid}").json()["status"] == "deleted"
+
+
+def test_patch_material_allowed_when_unlocked(fresh_db):
+    """Changing substrate is fine before a result is uploaded."""
+    c, mid1 = _client_and_material(fresh_db)
+    mid2 = m_repo.create(name="Brass")["id"]
+    tid = c.post(
+        "/api/tests", json={"name": "T", "material_id": mid1, "spec": SPEC},
+    ).json()["id"]
+
+    r = c.patch(f"/api/tests/{tid}", json={"material_id": mid2})
+    assert r.status_code == 200
+    assert r.json()["material_id"] == mid2
+
+
+def test_patch_material_blocked_when_locked(fresh_db):
+    """Once locked (a result has been ingested) the material is frozen
+    — palette entries are keyed to the old material_id and would be
+    orphaned by a reassignment."""
+    c, mid1 = _client_and_material(fresh_db)
+    mid2 = m_repo.create(name="Brass")["id"]
+    tid = c.post(
+        "/api/tests", json={"name": "T", "material_id": mid1, "spec": SPEC},
+    ).json()["id"]
+    t_repo.mark_tested_and_lock(tid)
+
+    r = c.patch(f"/api/tests/{tid}", json={"material_id": mid2})
+    assert r.status_code == 409
+    # Unchanged after the rejection.
+    assert c.get(f"/api/tests/{tid}").json()["material_id"] == mid1
+
+
+def test_patch_material_rejects_unknown_id(fresh_db):
+    c, mid = _client_and_material(fresh_db)
+    tid = c.post(
+        "/api/tests", json={"name": "T", "material_id": mid, "spec": SPEC},
+    ).json()["id"]
+    r = c.patch(f"/api/tests/{tid}", json={"material_id": 99999})
+    assert r.status_code == 400
+    assert "unknown material_id" in r.json()["detail"]

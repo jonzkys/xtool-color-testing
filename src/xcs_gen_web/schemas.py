@@ -408,6 +408,10 @@ class TestUpdate(BaseModel):
     name: str | None = None
     notes: str | None = None
     spec: TestSpec | None = None
+    # material_id only accepted while the test is unlocked (no results
+    # uploaded yet). Once locked, changing the substrate would orphan
+    # the palette entries harvested against the old material.
+    material_id: int | None = None
 
 
 class TestResponse(BaseModel):

@@ -74,10 +74,15 @@ export function TestDetailPage({ testId }: Props) {
       const normalized = normalizeSpec(spec);
       if (normalized !== spec) setSpec(normalized);
       if (test) {
-        const updated = await updateTest(
-          test.id,
-          test.locked ? { name } : { name, spec: normalized },
-        );
+        // When the test is unlocked (no uploaded results) we persist
+        // everything that could have changed — name, spec, and also
+        // material_id if the user switched substrate. Once locked,
+        // the backend rejects spec + material_id changes anyway, so
+        // we send only the name.
+        const patch = test.locked
+          ? { name }
+          : { name, spec: normalized, material_id: materialId };
+        const updated = await updateTest(test.id, patch);
         setTest(updated);
       } else {
         const created = await createTest({
@@ -215,7 +220,10 @@ export function TestDetailPage({ testId }: Props) {
             <Field label="Material">
               <Select
                 value={materialId ?? ""}
-                disabled={!!test}
+                // Locked only matches the backend's lock (set when a
+                // result is uploaded). Before that, the material is
+                // freely swappable; the saved spec follows the test.
+                disabled={test?.locked ?? false}
                 onChange={(e) => setMaterialId(Number(e.target.value))}
               >
                 {materials.map((m) => (

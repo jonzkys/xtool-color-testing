@@ -26,7 +26,7 @@ export async function createTest(body: {
   }));
 }
 export async function updateTest(id: number, patch: {
-  name?: string; notes?: string; spec?: TestSpec;
+  name?: string; notes?: string; spec?: TestSpec; material_id?: number;
 }): Promise<TestRecord> {
   return j(await fetch(`/api/tests/${id}`, {
     method: "PATCH",
