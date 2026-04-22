@@ -42,6 +42,13 @@ mysql = [
 s3 = [
     "boto3>=1.34",
 ]
+# Everything CI needs to run `pytest tests/`. Kept as an explicit extra
+# (rather than lumped into `dev`) so CI doesn't pull in tooling it
+# doesn't use. httpx is required by fastapi's TestClient.
+test = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+]
 
 [project.scripts]
 xcs-gen = "xcs_gen.cli:main"

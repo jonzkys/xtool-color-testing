@@ -25,8 +25,9 @@ jobs:
 
       # Install with the same extras CI would ship in production so
       # dependency drift shows up in the test matrix rather than in prod.
+      # [test] carries pytest + httpx (required by fastapi.TestClient).
       - name: Install dependencies
-        run: pip install ".[mysql,s3]" pytest
+        run: pip install ".[mysql,s3,test]"
 
       - name: Run tests
         run: pytest tests/ -x -q
