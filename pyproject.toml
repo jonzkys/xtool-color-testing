@@ -11,6 +11,10 @@ license = "MIT"
 dependencies = [
     "Pillow>=10.0",
     "fastapi>=0.110",
+    # python-multipart is required by FastAPI for UploadFile / File()
+    # parsing (the image-upload endpoints). Not auto-installed by
+    # fastapi; listed explicitly so a clean `pip install .` works.
+    "python-multipart>=0.0.9",
     "uvicorn[standard]>=0.27",
     "svgelements>=1.9",
     "shapely>=2.0",

@@ -56,6 +56,44 @@ from .svg_layers_converter import (
 )
 
 
+def _find_alembic_dir() -> Path | None:
+    """Locate the directory containing ``alembic.ini`` + ``alembic/``.
+
+    Checked in order:
+
+    1. ``XCS_GEN_ALEMBIC_DIR`` env override — escape hatch for unusual
+       deployment layouts where the code and the migration scripts
+       don't sit at a predictable relative offset.
+    2. Current working directory — the Dockerfile sets ``WORKDIR=/app``
+       and copies ``alembic/`` + ``alembic.ini`` there; the CI runner
+       runs pytest from the repo root; local dev usually does too.
+    3. Three levels up from this file — works for editable installs
+       (``src/xcs_gen_web/app.py`` → repo root).
+
+    Returns ``None`` when nothing matches. Callers decide whether that's
+    fatal or a skip.
+    """
+    import os
+    override = os.environ.get("XCS_GEN_ALEMBIC_DIR")
+    if override:
+        p = Path(override)
+        if (p / "alembic.ini").exists() and (p / "alembic").is_dir():
+            return p
+
+    cwd = Path.cwd()
+    if (cwd / "alembic.ini").exists() and (cwd / "alembic").is_dir():
+        return cwd
+
+    try:
+        repo_root = Path(__file__).resolve().parents[2]
+    except IndexError:
+        return None
+    if (repo_root / "alembic.ini").exists() and (repo_root / "alembic").is_dir():
+        return repo_root
+
+    return None
+
+
 def _run_migrations() -> None:
     """Run alembic upgrade head.
 
@@ -65,17 +103,33 @@ def _run_migrations() -> None:
     find alembic is already at head and no-op cleanly. SQLite doesn't
     need the guard (single-file DB, not typically multi-process in
     deployment).
+
+    If the alembic scripts can't be located (e.g. the package was
+    installed without its accompanying migration directory), the call
+    is a no-op with a warning — the operator is expected to have
+    migrated the DB out-of-band.
     """
-    from pathlib import Path
+    import logging
+    log = logging.getLogger("xcs_gen")
+
+    alembic_root = _find_alembic_dir()
+    if alembic_root is None:
+        log.warning(
+            "auto-migrate is enabled but alembic.ini + alembic/ could not "
+            "be located; skipping. Set XCS_GEN_ALEMBIC_DIR to the "
+            "directory containing them, or disable with "
+            "XCS_GEN_AUTO_MIGRATE=false and run migrations out-of-band.",
+        )
+        return
+
     from alembic import command
     from alembic.config import Config
     from sqlalchemy import create_engine, text
     from .db import db_url
 
     url = db_url()
-    repo_root = Path(__file__).resolve().parents[2]
-    cfg = Config(str(repo_root / "alembic.ini"))
-    cfg.set_main_option("script_location", str(repo_root / "alembic"))
+    cfg = Config(str(alembic_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(alembic_root / "alembic"))
     cfg.set_main_option("sqlalchemy.url", url)
 
     if not url.startswith(("mysql", "mariadb")):

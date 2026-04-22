@@ -30,6 +30,11 @@ jobs:
         run: pip install ".[mysql,s3,test]"
 
       - name: Run tests
+        env:
+          # Each test's `fresh_db` fixture migrates its own temp SQLite
+          # file — we don't want the module-level `app = create_app()`
+          # kicking off a second migration against ~/.xcs-gen/ on import.
+          XCS_GEN_AUTO_MIGRATE: "false"
         run: pytest tests/ -x -q
 
   frontend-build:
