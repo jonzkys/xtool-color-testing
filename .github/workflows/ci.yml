@@ -60,6 +60,92 @@ jobs:
       - name: Unit tests
         run: npm test -- --run
 
+  mysql-migration-test:
+    # Smoke-test that migrations actually apply against real MySQL —
+    # SQLite silently accepts things MySQL rejects (DEFAULT on TEXT,
+    # TEXT primary keys, CHANGE COLUMN without full redefine, etc.)
+    # so the regular pytest suite can't catch those. This job ran
+    # retroactively would have flagged the 1101 TEXT+DEFAULT bug
+    # before it ever hit ECS.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Start a real MySQL 8 with the same collation prod uses. Can't
+      # use `services:` — MySQL's collation-server is a CMD arg, and
+      # services: only lets you pass env vars. So we spin it up with
+      # `docker run` for full control.
+      - name: Start MySQL 8
+        run: |
+          docker run --rm -d --name mysql-ci \
+            -e MYSQL_ROOT_PASSWORD=rootpass \
+            -e MYSQL_DATABASE=xcsgen \
+            -e MYSQL_USER=xcsgen \
+            -e MYSQL_PASSWORD=xcsgenpass \
+            -p 3306:3306 \
+            mysql:8.0 \
+            --character-set-server=utf8mb4 \
+            --collation-server=utf8mb4_bin
+
+      - name: Wait for MySQL to be ready
+        run: |
+          for i in $(seq 1 60); do
+            if docker exec mysql-ci mysqladmin -uroot -prootpass ping >/dev/null 2>&1; then
+              echo "MySQL ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "MySQL did not come up in 60s" >&2
+          docker logs mysql-ci
+          exit 1
+
+      - name: Grant the same privileges prod uses
+        run: |
+          docker exec mysql-ci mysql -uroot -prootpass -e "
+            GRANT SELECT, INSERT, UPDATE, DELETE,
+                  CREATE, ALTER, INDEX, REFERENCES, DROP
+              ON xcsgen.* TO 'xcsgen'@'%';
+            FLUSH PRIVILEGES;"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install alembic + pymysql
+        # [mysql] extra brings pymysql; alembic is a core runtime dep.
+        run: pip install ".[mysql]"
+
+      - name: Run alembic upgrade head against MySQL (fresh)
+        env:
+          XCS_GEN_DB_URL: "mysql+pymysql://xcsgen:xcsgenpass@127.0.0.1:3306/xcsgen?charset=utf8mb4"
+        run: alembic upgrade head
+
+      - name: Verify final revision is head
+        run: |
+          VER=$(docker exec mysql-ci mysql -N -uxcsgen -pxcsgenpass xcsgen \
+            -e "SELECT version_num FROM alembic_version" 2>/dev/null)
+          echo "alembic_version = $VER"
+          # Update this when a new migration is added.
+          test "$VER" = "0004"
+
+      - name: Run alembic upgrade head AGAIN (idempotence check)
+        # Should be a no-op — alembic sees it's at head and exits. A
+        # non-zero status here means migrations aren't idempotent.
+        env:
+          XCS_GEN_DB_URL: "mysql+pymysql://xcsgen:xcsgenpass@127.0.0.1:3306/xcsgen?charset=utf8mb4"
+        run: alembic upgrade head
+
+      - name: MySQL logs on failure
+        if: failure()
+        run: docker logs mysql-ci
+
+      - name: Stop MySQL
+        if: always()
+        run: docker stop mysql-ci
+
   docker-build:
     # Sanity-check that the production Dockerfile actually builds. Doesn't
     # push anything — that's deploy.yml's job — but failing here on a PR
