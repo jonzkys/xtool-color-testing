@@ -68,10 +68,12 @@ USER xcsgen
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    # Container defaults — migrations run as a separate one-off task in
-    # the deployment, NOT at app boot. The rest of the env (DB URL,
-    # S3 bucket, CORS origins, …) comes from the ECS task definition.
-    XCS_GEN_AUTO_MIGRATE=false \
+    # Container defaults. Auto-migrate is safe to leave on because
+    # _run_migrations() takes a MySQL advisory lock (GET_LOCK) before
+    # running alembic, so concurrent task starts are serialised.
+    # Override to "false" in the task def if you'd rather run migrations
+    # as a dedicated one-off ECS task — see README.
+    XCS_GEN_AUTO_MIGRATE=true \
     XCS_GEN_HOST=0.0.0.0 \
     XCS_GEN_PORT=4000
 

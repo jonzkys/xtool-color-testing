@@ -57,15 +57,67 @@ from .svg_layers_converter import (
 
 
 def _run_migrations() -> None:
+    """Run alembic upgrade head.
+
+    Safe to call from multiple concurrent processes on MySQL — wraps
+    the upgrade in a ``GET_LOCK`` advisory lock so only one process
+    executes the migration at a time; concurrent callers wait, then
+    find alembic is already at head and no-op cleanly. SQLite doesn't
+    need the guard (single-file DB, not typically multi-process in
+    deployment).
+    """
     from pathlib import Path
     from alembic import command
     from alembic.config import Config
+    from sqlalchemy import create_engine, text
     from .db import db_url
+
+    url = db_url()
     repo_root = Path(__file__).resolve().parents[2]
     cfg = Config(str(repo_root / "alembic.ini"))
     cfg.set_main_option("script_location", str(repo_root / "alembic"))
-    cfg.set_main_option("sqlalchemy.url", db_url())
-    command.upgrade(cfg, "head")
+    cfg.set_main_option("sqlalchemy.url", url)
+
+    if not url.startswith(("mysql", "mariadb")):
+        # SQLite / Postgres / anything else — just run it.
+        command.upgrade(cfg, "head")
+        return
+
+    # MySQL advisory lock guards concurrent boots. Session-scoped:
+    # the lock auto-releases if this connection drops (e.g. the task
+    # crashes mid-migration), so a crashed task can't leave the lock
+    # wedged. 300s timeout is longer than any realistic migration for
+    # this schema but short enough that a truly stuck lock fails the
+    # ECS task start rather than hanging forever.
+    import logging
+    log = logging.getLogger("xcs_gen")
+    lock_name = "xcsgen_migrate"
+    lock_timeout = 300
+
+    engine = create_engine(url, pool_pre_ping=True)
+    try:
+        with engine.connect() as conn:
+            got = conn.execute(
+                text("SELECT GET_LOCK(:name, :timeout)"),
+                {"name": lock_name, "timeout": lock_timeout},
+            ).scalar()
+            if got != 1:
+                raise RuntimeError(
+                    f"could not acquire migration advisory lock {lock_name!r} "
+                    f"within {lock_timeout}s — another task is migrating or "
+                    "the lock is stuck; aborting to avoid a racing upgrade"
+                )
+            try:
+                log.info("acquired migration lock; running alembic upgrade head")
+                command.upgrade(cfg, "head")
+                log.info("alembic upgrade head complete")
+            finally:
+                conn.execute(
+                    text("SELECT RELEASE_LOCK(:name)"),
+                    {"name": lock_name},
+                )
+    finally:
+        engine.dispose()
 
 
 def _log_storage_choice(settings: Settings) -> None:
