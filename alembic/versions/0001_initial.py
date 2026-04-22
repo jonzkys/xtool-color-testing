@@ -43,9 +43,12 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('name', sa.Text(), nullable=False),
     sa.Column('material_id', sa.Integer(), nullable=False),
-    sa.Column('status', sa.Text(), server_default='created', nullable=False),
+    # MySQL rejects DEFAULT on TEXT/BLOB columns (error 1101). SQLite
+    # accepts it but treats all string types the same, so switching to
+    # explicit VARCHAR lengths is a no-op there and unblocks MySQL.
+    sa.Column('status', sa.String(length=16), server_default='created', nullable=False),
     sa.Column('spec_json', sa.Text(), nullable=False),
-    sa.Column('notes', sa.Text(), server_default='', nullable=False),
+    sa.Column('notes', sa.String(length=4096), server_default='', nullable=False),
     sa.Column('created_at', sa.Text(), nullable=False),
     sa.Column('updated_at', sa.Text(), nullable=False),
     sa.Column('locked', sa.Integer(), server_default='0', nullable=False),
@@ -64,7 +67,7 @@ def upgrade() -> None:
     sa.Column('image_path', sa.Text(), nullable=False),
     sa.Column('image_sha256', sa.Text(), nullable=False),
     sa.Column('excluded', sa.Integer(), server_default='0', nullable=False),
-    sa.Column('notes', sa.Text(), server_default='', nullable=False),
+    sa.Column('notes', sa.String(length=4096), server_default='', nullable=False),
     sa.Column('swatches_json', sa.Text(), nullable=False),
     sa.ForeignKeyConstraint(['test_id'], ['tests.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -86,7 +89,7 @@ def upgrade() -> None:
     sa.Column('sigma', sa.Float(), nullable=False),
     sa.Column('source', sa.Text(), nullable=False),
     sa.Column('source_result_id', sa.Integer(), nullable=True),
-    sa.Column('notes', sa.Text(), server_default='', nullable=False),
+    sa.Column('notes', sa.String(length=4096), server_default='', nullable=False),
     sa.Column('created_at', sa.Text(), nullable=False),
     sa.CheckConstraint("source IN ('averaged','single_result')", name='palette_entries_source_chk'),
     sa.ForeignKeyConstraint(['material_id'], ['materials.id'], ),

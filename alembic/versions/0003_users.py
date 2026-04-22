@@ -21,12 +21,23 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Use explicit VARCHAR lengths so MySQL can PK api_key (it refuses
+    # TEXT as a primary key) and accept DEFAULT on first_name (error
+    # 1101 on TEXT+DEFAULT). SQLite treats VARCHAR(N) the same as TEXT
+    # so this change is portable. Migration 0004 drops and recreates
+    # this table with a different PK anyway; these sizes just need to
+    # unblock us to get there.
     op.create_table(
         "users",
-        sa.Column("api_key", sa.Text(), nullable=False),
-        sa.Column("first_name", sa.Text(), nullable=False, server_default=""),
-        sa.Column("created_at", sa.Text(), nullable=False),
-        sa.Column("last_seen_at", sa.Text(), nullable=False),
+        sa.Column("api_key", sa.String(length=32), nullable=False),
+        sa.Column(
+            "first_name",
+            sa.String(length=64),
+            nullable=False,
+            server_default="",
+        ),
+        sa.Column("created_at", sa.String(length=40), nullable=False),
+        sa.Column("last_seen_at", sa.String(length=40), nullable=False),
         sa.PrimaryKeyConstraint("api_key"),
     )
 

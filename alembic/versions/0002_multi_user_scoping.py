@@ -30,6 +30,14 @@ _VIS_CHECK = "visibility IN ('private','public')"
 
 
 def upgrade() -> None:
+    # MySQL rejects DEFAULT on TEXT/BLOB columns (error 1101). Using
+    # VARCHAR (sa.String) of sufficient length is the portable fix —
+    # SQLite treats String-with-length identically to Text, so nothing
+    # changes there. The subsequent alter_column + index both need
+    # ``existing_type`` to match the new type for MySQL's ALTER to be
+    # a no-op on type.
+    OWNER_TYPE = sa.String(length=64)
+    VIS_TYPE = sa.String(length=16)
     for table in _TABLES:
         # Step 1: add columns as nullable with server defaults so existing
         # rows pick up a value without us touching them.
@@ -37,7 +45,7 @@ def upgrade() -> None:
             batch.add_column(
                 sa.Column(
                     "owner_id",
-                    sa.Text(),
+                    OWNER_TYPE,
                     nullable=True,
                     server_default=_STANDALONE,
                 ),
@@ -45,7 +53,7 @@ def upgrade() -> None:
             batch.add_column(
                 sa.Column(
                     "visibility",
-                    sa.Text(),
+                    VIS_TYPE,
                     nullable=False,
                     server_default="private",
                 ),
@@ -64,7 +72,7 @@ def upgrade() -> None:
         with op.batch_alter_table(table, schema=None) as batch:
             batch.alter_column(
                 "owner_id",
-                existing_type=sa.Text(),
+                existing_type=OWNER_TYPE,
                 nullable=False,
                 server_default=None,
             )

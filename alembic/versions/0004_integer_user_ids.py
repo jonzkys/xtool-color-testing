@@ -158,8 +158,15 @@ def upgrade() -> None:
         # 4e. Rename owner_id_new -> owner_id (separate batch because
         #     mixing rename with drop in the same batch is flaky on
         #     dialects that use different rewrite strategies).
+        #     existing_type is mandatory on MySQL — CHANGE COLUMN is a
+        #     full redefine, not a delta, so we must re-state the type.
         with op.batch_alter_table(table) as batch:
-            batch.alter_column("owner_id_new", new_column_name="owner_id")
+            batch.alter_column(
+                "owner_id_new",
+                new_column_name="owner_id",
+                existing_type=sa.Integer(),
+                existing_nullable=False,
+            )
 
         # 4f. Recreate the index on the new column.
         op.create_index(
@@ -206,7 +213,12 @@ def downgrade() -> None:
             )
             batch.drop_column("owner_id")
         with op.batch_alter_table(table) as batch:
-            batch.alter_column("owner_id_text", new_column_name="owner_id")
+            batch.alter_column(
+                "owner_id_text",
+                new_column_name="owner_id",
+                existing_type=sa.Text(),
+                existing_nullable=False,
+            )
         op.create_index(f"ix_{table}_owner", table, ["owner_id"])
 
     # Restore the old users schema (api_key as PK).
