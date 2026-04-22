@@ -1,5 +1,9 @@
+import { useEffect, useState } from "react";
+import { UploadCloud } from "lucide-react";
 import { formatRoute, type Route } from "../router";
 import { cn, MetalBar, PageContainer, ThemeToggle } from "../ui";
+import { UploadResultDialog } from "./UploadResultDialog";
+import { AccountMenu } from "./AccountMenu";
 
 interface Props {
   title: string;
@@ -12,6 +16,21 @@ interface Props {
  * span edge-to-edge; the inner row uses PageContainer to match page content.
  */
 export function TopBar({ title, route, onNavigate }: Props) {
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [mode, setMode] = useState<"standalone" | "multi_user" | null>(null);
+
+  // Probe the backend once so we can render a mode badge + user chip
+  // when running in multi-user mode. Intentionally silent on failure
+  // — the chrome stays minimal if the health endpoint is unreachable.
+  useEffect(() => {
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((j: { mode?: "standalone" | "multi_user" }) => {
+        if (j.mode === "standalone" || j.mode === "multi_user") setMode(j.mode);
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <header className="shrink-0 bg-[color:var(--color-surface)] border-b border-[color:var(--color-border)]">
       <PageContainer bleed={false}>
@@ -40,18 +59,42 @@ export function TopBar({ title, route, onNavigate }: Props) {
             <TabLink route={route} target={{ name: "palette" }} onNavigate={onNavigate}>
               Palette
             </TabLink>
+            <TabLink route={route} target={{ name: "spectrum" }} onNavigate={onNavigate}>
+              Spectrum
+            </TabLink>
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <span className="text-[12.5px] text-[color:var(--color-ink-muted)]">{title}</span>
+            {mode === "multi_user" && <AccountMenu />}
             <span
               aria-hidden="true"
               className="h-6 w-px bg-[color:var(--color-border-strong)]"
             />
+            <button
+              type="button"
+              onClick={() => setUploadOpen(true)}
+              title="Upload test photo"
+              aria-label="Upload test photo"
+              className={cn(
+                "inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[6px]",
+                "border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]",
+                "text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-primary)]",
+                "hover:border-[color:var(--color-primary)]/50 hover:bg-[color:var(--color-primary-tint)]/40",
+                "transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
+              )}
+            >
+              <UploadCloud className="h-3.5 w-3.5" strokeWidth={1.75} />
+              <span className="font-mono text-[10.5px] tracking-[0.12em] uppercase font-semibold">
+                Upload
+              </span>
+            </button>
             <ThemeToggle />
           </div>
         </div>
       </PageContainer>
       <MetalBar />
+      <UploadResultDialog open={uploadOpen} onOpenChange={setUploadOpen} />
     </header>
   );
 }

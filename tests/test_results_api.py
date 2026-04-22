@@ -67,6 +67,89 @@ def test_averaged_swatches_endpoint(fresh_db, monkeypatch, tmp_path):
     assert {rr["hex"] for rr in rows} == {"#ff0000", "#00ff00"}
 
 
+def test_auto_upload_routes_photo_to_test_via_qr(fresh_db, monkeypatch, tmp_path):
+    """POST /api/results/upload reads the QR to find the test id, then
+    persists the result against that test — no tid in the URL."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+
+    monkeypatch.setattr(cap, "detect_test_id", lambda _: tid)
+
+    r = c.post(
+        "/api/results/upload",
+        files={"image": ("phone.jpg", b"fake", "image/jpeg")},
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["test_id"] == tid
+    assert len(body["swatches"]) == 2
+    # test should get promoted to tested just like the scoped endpoint
+    t = c.get(f"/api/tests/{tid}").json()
+    assert t["status"] == "tested"
+
+
+def test_auto_upload_404_when_qr_matches_unknown_test(fresh_db, monkeypatch, tmp_path):
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "detect_test_id", lambda _: 9999)
+    c = TestClient(create_app())
+    r = c.post(
+        "/api/results/upload",
+        files={"image": ("phone.jpg", b"fake", "image/jpeg")},
+    )
+    assert r.status_code == 404
+    assert "9999" in r.json()["detail"]
+
+
+def test_preflight_returns_test_info_and_existing_count(fresh_db, monkeypatch, tmp_path):
+    """Preflight decodes the QR only (no persistence) so the modal can
+    warn before re-processing a test that already has uploads."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="Speed sweep", material_id=mid, spec=SPEC)["id"]
+    monkeypatch.setattr(cap, "detect_test_id", lambda _: tid)
+
+    # No uploads yet.
+    r = c.post(
+        "/api/results/preflight",
+        files={"image": ("phone.jpg", b"fake", "image/jpeg")},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        "test_id": tid, "test_name": "Speed sweep",
+        "existing_result_count": 0,
+    }
+
+    # After one upload, preflight reports the prior result count.
+    c.post("/api/results/upload",
+           files={"image": ("phone.jpg", b"fake", "image/jpeg")})
+    r2 = c.post(
+        "/api/results/preflight",
+        files={"image": ("phone.jpg", b"fake", "image/jpeg")},
+    )
+    assert r2.json()["existing_result_count"] == 1
+
+    # Preflight does not persist (still only 1 result after 2 preflights).
+    assert len(c.get(f"/api/tests/{tid}/results").json()) == 1
+
+
+def test_auto_upload_400_when_qr_missing(fresh_db, monkeypatch, tmp_path):
+    def _no_qr(_):
+        raise cap.CaptureError("no valid id-only QR detected")
+    monkeypatch.setattr(cap, "detect_test_id", _no_qr)
+    c = TestClient(create_app())
+    r = c.post(
+        "/api/results/upload",
+        files={"image": ("phone.jpg", b"fake", "image/jpeg")},
+    )
+    assert r.status_code == 400
+    assert "QR" in r.json()["detail"]
+
+
 def test_patch_excluded_flips_average(fresh_db, monkeypatch, tmp_path):
     monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
     monkeypatch.setattr(cap, "run_capture", _fake_capture)

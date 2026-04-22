@@ -11,7 +11,7 @@ def test_metadata_has_all_tables():
     names = set(metadata.tables.keys())
     assert names == {
         "materials", "presets", "tests",
-        "results", "palette_entries",
+        "results", "palette_entries", "users",
     }
 
 
@@ -23,7 +23,7 @@ def test_metadata_create_all_on_sqlite_memory():
             "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
         ).fetchall()
     assert [r[0] for r in rows] == [
-        "materials", "palette_entries", "presets", "results", "tests",
+        "materials", "palette_entries", "presets", "results", "tests", "users",
     ]
 
 
@@ -37,13 +37,17 @@ def test_server_defaults_on_create_all_insert():
     with engine.begin() as conn:
         mid = conn.execute(insert(materials).values(
             name="M", created_at="2026-01-01T00:00:00Z",
+            owner_id=0,
         )).inserted_primary_key[0]
         tid = conn.execute(insert(tests_table).values(
             name="T", material_id=mid,
             spec_json="{}",
             created_at="2026-01-01T00:00:00Z",
             updated_at="2026-01-01T00:00:00Z",
+            owner_id=0,
         )).inserted_primary_key[0]
         row = conn.execute(select(tests_table).where(tests_table.c.id == tid)).one()
-    assert row.status == "created"   # NOT "'created'"
-    assert row.notes == ""           # NOT "'"  or "''"
+    assert row.status == "created"      # NOT "'created'"
+    assert row.notes == ""              # NOT "'"  or "''"
+    assert row.visibility == "private"  # server_default kicked in
+    assert row.owner_id == 0

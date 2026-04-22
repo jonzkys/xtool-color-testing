@@ -122,6 +122,61 @@ Options:
 Environment overrides (useful for dev and multi-user setups):
 - `XCS_GEN_DB_URL` — SQLAlchemy URL; defaults to `sqlite:///~/.xcs-gen/app.db`
 - `XCS_GEN_IMAGES_DIR` — directory for uploaded result images
+- `XCS_GEN_MODE` — `standalone` (default) or `multi_user`
+- `XCS_GEN_CORS_ORIGINS` — comma-separated allowed origins when the API is hosted separately from the frontend
+- `XCS_GEN_AUTO_MIGRATE` — `true`/`false`; in production set to `false` and run `alembic upgrade head` as a deploy step
+- `XCS_GEN_MAX_UPLOAD_BYTES` — cap on request body size (default 20 MiB)
+- `XCS_GEN_REGISTER_RATE_PER_HOUR` — per-IP registration rate limit (default 20; set 0 to disable)
+- `XCS_GEN_S3_BUCKET` — activate S3 image storage (see section below)
+- `XCS_GEN_S3_PREFIX` — key prefix / namespace inside the bucket
+- `XCS_GEN_S3_REGION` — region override (boto3 resolves from env if unset)
+- `XCS_GEN_S3_ENDPOINT_URL` — custom endpoint URL for MinIO / LocalStack
+
+### MySQL / MariaDB
+
+SQLite is the default and covers the single-user workflow fine. For a public alpha you'll want MySQL or MariaDB:
+
+```bash
+pip install -e ".[mysql]"
+export XCS_GEN_MODE=multi_user
+export XCS_GEN_DB_URL="mysql+pymysql://xcsgen_user:PASSWORD@db-host/xcsgen?charset=utf8mb4"
+export XCS_GEN_AUTO_MIGRATE=false
+alembic upgrade head                # run migrations as a deploy step
+xcs-gen serve
+```
+
+The `?charset=utf8mb4` suffix is important — without it non-ASCII material/test names can be silently corrupted on older MySQL configs. The app logs a warning at startup if it's missing.
+
+The DB user only needs: `SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP` on the `xcsgen` schema (the last two are only needed while migrations are running — you can drop them after). No `GRANT` or `SUPER`.
+
+### S3 image storage (optional)
+
+Filesystem storage (the default, `~/.xcs-gen/images/…`) works fine for single-host deployments. For multi-host or autoscaling setups, swap in S3:
+
+```bash
+pip install -e ".[s3]"
+export XCS_GEN_S3_BUCKET=xcsgen-prod-uploads
+export XCS_GEN_S3_PREFIX=images                # optional key namespace
+export XCS_GEN_S3_REGION=us-east-1             # optional; boto3 resolves from env if unset
+xcs-gen serve
+```
+
+Credentials come from boto3's default chain — **IAM role / ECS task role / Lambda exec role / environment / ~/.aws**. The app holds no long-lived keys; never put AWS secrets in these env vars.
+
+The execution role needs only:
+
+| Action | Resource |
+|---|---|
+| `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` | `arn:aws:s3:::BUCKET/PREFIX/*` |
+| `s3:ListBucket` (optional — not used at runtime) | `arn:aws:s3:::BUCKET` |
+
+Nothing bucket-wide, nothing `s3:*`.
+
+Every uploaded object is written with `ServerSideEncryption=AES256` even if the bucket default isn't configured. Reads and deletes enforce bucket-confinement — a row poisoned to reference a different bucket is rejected at the backend before any API call is made.
+
+Images are **served through the app** via `/api/results/{id}/image`, never via presigned URLs, so the ownership check applies. The bucket should stay **private** with no public-read policy.
+
+Mixed-mode is supported: if you migrate from filesystem to S3, old rows with filesystem paths keep reading from disk while new uploads go to S3. No backfill migration needed unless you want to move old files.
 
 ### Development
 

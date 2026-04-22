@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
+from .config import Settings
+from .deps import get_current_user
+from .security import (
+    MaxBodySizeMiddleware,
+    RegistrationRateLimiter,
+    source_ip,
+)
 from .raster_to_svg import RasterTraceOptions, decode_base64_image, png_to_svg
 from .schemas import (
     AveragedSwatch,
@@ -36,6 +44,9 @@ from .schemas import (
     TestCreate,
     TestUpdate,
     TestResponse,
+    UserMePatch,
+    UserRegisterRequest,
+    UserResponse,
 )
 from .svg_converter import svg_stack_to_xcs_bytes
 from .svg_layers_converter import (
@@ -57,13 +68,169 @@ def _run_migrations() -> None:
     command.upgrade(cfg, "head")
 
 
-def create_app() -> FastAPI:
-    _run_migrations()
+def _log_storage_choice(settings: Settings) -> None:
+    """One-line announcement at startup so the operator can confirm
+    where result photos are going. S3 bucket name is safe to log;
+    credentials are never here (boto3's default chain handles auth)."""
+    import logging
+    log = logging.getLogger("xcs_gen")
+    if settings.s3_bucket:
+        prefix = f"/{settings.s3_prefix}" if settings.s3_prefix else ""
+        log.info(
+            "result photos → s3://%s%s (encryption: SSE-S3; "
+            "credentials: boto3 default chain)",
+            settings.s3_bucket, prefix,
+        )
+    else:
+        from .storage import default_fs_root
+        from pathlib import Path
+        root = Path(settings.images_dir) if settings.images_dir else default_fs_root()
+        log.info("result photos → filesystem at %s", root)
+
+
+def _warn_about_mysql_charset(url: str) -> None:
+    """Log a startup warning when a MySQL URL lacks charset=utf8mb4.
+
+    Without the hint, MySQL falls back to latin1 on older installs and
+    quietly truncates non-ASCII material names / notes. The app never
+    crashes, it just corrupts text. Surfaced loudly because the
+    failure mode is silent."""
+    if not url.startswith(("mysql", "mariadb")):
+        return
+    if "charset=utf8mb4" in url.lower():
+        return
+    import logging
+    logging.getLogger("xcs_gen").warning(
+        "XCS_GEN_DB_URL is MySQL/MariaDB but lacks charset=utf8mb4. "
+        "Non-ASCII material/test names can be silently corrupted. "
+        "Append '?charset=utf8mb4' (or '&charset=utf8mb4' if the URL "
+        "already has a querystring)."
+    )
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    """Build the FastAPI app.
+
+    ``settings`` can be injected (typically by tests); when ``None`` the
+    settings are loaded from the environment with single-user defaults.
+    The resolved settings live on ``app.state.settings`` so dependencies
+    (``get_current_user``) and route handlers can read them.
+    """
+    if settings is None:
+        settings = Settings.from_env()
+    if settings.auto_migrate:
+        _run_migrations()
+    # Startup sanity check for common misconfiguration.
+    from .db import db_url as _resolved_db_url
+    _warn_about_mysql_charset(_resolved_db_url())
+    # Pin the image-storage backend so all request handlers see the same
+    # resolved settings rather than re-reading env per-call.
+    from . import images as _images
+    _images.use_storage(settings)
+    _log_storage_choice(settings)
     app = FastAPI(title="xcs-gen", version="0.1.0")
+    app.state.settings = settings
+
+    # Body-size cap applies to every endpoint. Ordered first so nothing
+    # else reads the body before the check.
+    app.add_middleware(MaxBodySizeMiddleware, max_bytes=settings.max_upload_bytes)
+
+    if settings.cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(settings.cors_origins),
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+    # Registration rate limiter — shared state so all /register calls
+    # from the same IP share a bucket.
+    register_limiter = RegistrationRateLimiter(
+        per_hour=settings.register_rate_per_hour,
+    )
+    app.state.register_limiter = register_limiter
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
-        return {"status": "ok"}
+        # Exposes mode so the frontend can adapt its UI (e.g. show a
+        # user-id header prompt) without a separate discovery endpoint.
+        return {"status": "ok", "mode": settings.mode}
+
+    # User onboarding (alpha bearer-token "auth") ------------------------
+    # Registration is the one endpoint that doesn't require a valid key
+    # in the header — the caller is claiming one. Everything else uses
+    # get_current_user, which validates against the users table.
+    from .repositories import users as u_repo
+    from .repositories.users import DuplicateKeyError
+
+    @app.post("/api/users/register", response_model=UserResponse, status_code=201)
+    async def users_register(
+        body: UserRegisterRequest,
+        request: Request,
+    ) -> UserResponse:
+        if settings.mode == "standalone":
+            raise HTTPException(
+                status_code=400,
+                detail="registration is disabled in standalone mode",
+            )
+        if not u_repo.is_valid_api_key(body.api_key):
+            raise HTTPException(
+                status_code=400,
+                detail="api_key must be 16 url-safe base64 chars",
+            )
+        # Per-IP rate limit (in-memory leaky bucket). Trips well before
+        # the users table fills with junk rows.
+        retry_after = await register_limiter.check(source_ip(request))
+        if retry_after is not None:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"too many registrations from this address — "
+                    f"try again in {retry_after}s"
+                ),
+                headers={"Retry-After": str(retry_after)},
+            )
+        try:
+            user = u_repo.register(
+                api_key=body.api_key,
+                first_name=body.first_name.strip(),
+            )
+        except DuplicateKeyError:
+            raise HTTPException(
+                status_code=409,
+                detail="this key is already claimed — pick another",
+            )
+        return UserResponse(**user)
+
+    @app.get("/api/me", response_model=UserResponse)
+    def users_me(user_id: int = Depends(get_current_user)) -> UserResponse:
+        if settings.mode == "standalone":
+            # Synthesise a record — no users row exists for the sentinel.
+            return UserResponse(
+                id=user_id, api_key="", first_name="",
+                created_at="", last_seen_at="",
+            )
+        user = u_repo.get_by_id(user_id)
+        if user is None:
+            # Shouldn't happen — dep would 401 first — but don't throw 500.
+            raise HTTPException(status_code=404, detail="user not found")
+        return UserResponse(**user)
+
+    @app.patch("/api/me", response_model=UserResponse)
+    def users_me_patch(
+        body: UserMePatch, user_id: int = Depends(get_current_user),
+    ) -> UserResponse:
+        if settings.mode == "standalone":
+            raise HTTPException(
+                status_code=400,
+                detail="profile edits disabled in standalone mode",
+            )
+        if body.first_name is not None:
+            u_repo.update_first_name(user_id, body.first_name.strip())
+        user = u_repo.get_by_id(user_id)
+        assert user is not None
+        return UserResponse(**user)
 
     @app.post("/api/svg-stack")
     def svg_stack(request: SvgStackRequest) -> Response:
@@ -138,16 +305,25 @@ def create_app() -> FastAPI:
     from .repositories import presets as p_repo
     from .repositories.materials import InUseError
 
-    # Palette
+    # Palette ------------------------------------------------------------
     @app.get("/api/palette", response_model=list[PaletteEntryResponse])
-    def palette_list(material_id: int | None = None) -> list[PaletteEntryResponse]:
-        return [PaletteEntryResponse(**e) for e in pal_repo.list_all(material_id=material_id)]
+    def palette_list(
+        material_id: int | None = None,
+        user_id: int = Depends(get_current_user),
+    ) -> list[PaletteEntryResponse]:
+        return [
+            PaletteEntryResponse(**e)
+            for e in pal_repo.list_all(owner_id=user_id, material_id=material_id)
+        ]
 
     @app.get("/api/palette/query", response_model=list[PaletteQueryResult])
     def palette_query(
         hex: str, limit: int = 5, material_id: int | None = None,
+        user_id: int = Depends(get_current_user),
     ) -> list[PaletteQueryResult]:
-        results = pal_repo.query_by_hex(hex, limit=limit, material_id=material_id)
+        results = pal_repo.query_by_hex(
+            hex, owner_id=user_id, limit=limit, material_id=material_id,
+        )
         return [
             PaletteQueryResult(
                 entry=PaletteEntryResponse(**r["entry"]),
@@ -157,131 +333,184 @@ def create_app() -> FastAPI:
         ]
 
     @app.delete("/api/palette/by-test/{test_id}", status_code=204)
-    def palette_delete_by_test(test_id: int) -> Response:
-        pal_repo.delete_by_test(test_id)
+    def palette_delete_by_test(
+        test_id: int, user_id: int = Depends(get_current_user),
+    ) -> Response:
+        pal_repo.delete_by_test(test_id, owner_id=user_id)
         return Response(status_code=204)
 
     @app.delete("/api/palette/{entry_id}", status_code=204)
-    def palette_delete(entry_id: int) -> Response:
-        if not pal_repo.delete_entry(entry_id):
+    def palette_delete(
+        entry_id: int, user_id: int = Depends(get_current_user),
+    ) -> Response:
+        if not pal_repo.delete_entry(entry_id, owner_id=user_id):
             raise HTTPException(status_code=404, detail="entry not found")
         return Response(status_code=204)
 
     @app.patch("/api/palette/{entry_id}", response_model=PaletteEntryResponse)
-    def palette_patch(entry_id: int, patch: PaletteEntryPatch) -> PaletteEntryResponse:
-        result = pal_repo.update_notes(entry_id, patch.notes)
+    def palette_patch(
+        entry_id: int, patch: PaletteEntryPatch,
+        user_id: int = Depends(get_current_user),
+    ) -> PaletteEntryResponse:
+        result = pal_repo.update_notes(entry_id, patch.notes, owner_id=user_id)
         if result is None:
             raise HTTPException(status_code=404, detail="entry not found")
         return PaletteEntryResponse(**result)
 
-    # Materials
+    # Materials ----------------------------------------------------------
     @app.post("/api/materials", response_model=MaterialResponse, status_code=201)
-    def materials_create(body: MaterialCreate) -> MaterialResponse:
-        return MaterialResponse(**m_repo.create(name=body.name, notes=body.notes))
+    def materials_create(
+        body: MaterialCreate, user_id: int = Depends(get_current_user),
+    ) -> MaterialResponse:
+        return MaterialResponse(**m_repo.create(
+            name=body.name, notes=body.notes, owner_id=user_id,
+        ))
 
     @app.get("/api/materials", response_model=list[MaterialResponse])
-    def materials_list() -> list[MaterialResponse]:
-        return [MaterialResponse(**m) for m in m_repo.list_all()]
+    def materials_list(
+        user_id: int = Depends(get_current_user),
+    ) -> list[MaterialResponse]:
+        return [MaterialResponse(**m) for m in m_repo.list_all(owner_id=user_id)]
 
     @app.get("/api/materials/{mid}", response_model=MaterialResponse)
-    def materials_get(mid: int) -> MaterialResponse:
-        m = m_repo.get(mid)
+    def materials_get(
+        mid: int, user_id: int = Depends(get_current_user),
+    ) -> MaterialResponse:
+        m = m_repo.get(mid, owner_id=user_id)
         if m is None:
             raise HTTPException(status_code=404, detail="material not found")
         return MaterialResponse(**m)
 
     @app.patch("/api/materials/{mid}", response_model=MaterialResponse)
-    def materials_patch(mid: int, body: MaterialUpdate) -> MaterialResponse:
-        if m_repo.get(mid) is None:
+    def materials_patch(
+        mid: int, body: MaterialUpdate,
+        user_id: int = Depends(get_current_user),
+    ) -> MaterialResponse:
+        if m_repo.get(mid, owner_id=user_id) is None:
             raise HTTPException(status_code=404, detail="material not found")
-        return MaterialResponse(**m_repo.update(mid, name=body.name, notes=body.notes))
+        return MaterialResponse(**m_repo.update(
+            mid, owner_id=user_id, name=body.name, notes=body.notes,
+        ))
 
     @app.delete("/api/materials/{mid}", status_code=204)
-    def materials_delete(mid: int) -> Response:
+    def materials_delete(
+        mid: int, user_id: int = Depends(get_current_user),
+    ) -> Response:
         try:
-            m_repo.delete(mid)
+            m_repo.delete(mid, owner_id=user_id)
         except InUseError as e:
             raise HTTPException(status_code=409, detail=str(e))
         return Response(status_code=204)
 
-    # Presets
+    # Presets ------------------------------------------------------------
     @app.post("/api/presets", response_model=PresetResponse, status_code=201)
-    def presets_create(body: PresetCreate) -> PresetResponse:
-        if m_repo.get(body.material_id) is None:
+    def presets_create(
+        body: PresetCreate, user_id: int = Depends(get_current_user),
+    ) -> PresetResponse:
+        if m_repo.get(body.material_id, owner_id=user_id) is None:
             raise HTTPException(status_code=400, detail="unknown material_id")
         return PresetResponse(**p_repo.create(
             material_id=body.material_id, name=body.name, color=body.color,
-            base_params=body.base_params.model_dump(),
+            base_params=body.base_params.model_dump(), owner_id=user_id,
         ))
 
     @app.get("/api/presets", response_model=list[PresetResponse])
-    def presets_list(material_id: int | None = None) -> list[PresetResponse]:
-        rows = p_repo.list_by_material(material_id) if material_id is not None else p_repo.list_all()
+    def presets_list(
+        material_id: int | None = None,
+        user_id: int = Depends(get_current_user),
+    ) -> list[PresetResponse]:
+        rows = (
+            p_repo.list_by_material(material_id, owner_id=user_id)
+            if material_id is not None
+            else p_repo.list_all(owner_id=user_id)
+        )
         return [PresetResponse(**p) for p in rows]
 
     @app.get("/api/presets/{pid}", response_model=PresetResponse)
-    def presets_get(pid: int) -> PresetResponse:
-        p = p_repo.get(pid)
+    def presets_get(
+        pid: int, user_id: int = Depends(get_current_user),
+    ) -> PresetResponse:
+        p = p_repo.get(pid, owner_id=user_id)
         if p is None:
             raise HTTPException(status_code=404, detail="preset not found")
         return PresetResponse(**p)
 
     @app.patch("/api/presets/{pid}", response_model=PresetResponse)
-    def presets_patch(pid: int, body: PresetUpdate) -> PresetResponse:
-        if p_repo.get(pid) is None:
+    def presets_patch(
+        pid: int, body: PresetUpdate,
+        user_id: int = Depends(get_current_user),
+    ) -> PresetResponse:
+        if p_repo.get(pid, owner_id=user_id) is None:
             raise HTTPException(status_code=404, detail="preset not found")
         base_params = body.base_params.model_dump() if body.base_params else None
         return PresetResponse(**p_repo.update(
-            pid, name=body.name, color=body.color, base_params=base_params,
+            pid, owner_id=user_id, name=body.name, color=body.color,
+            base_params=base_params,
         ))
 
     @app.post("/api/presets/{pid}/set-default", status_code=204)
-    def presets_set_default(pid: int) -> Response:
-        if p_repo.get(pid) is None:
+    def presets_set_default(
+        pid: int, user_id: int = Depends(get_current_user),
+    ) -> Response:
+        if p_repo.get(pid, owner_id=user_id) is None:
             raise HTTPException(status_code=404, detail="preset not found")
-        p_repo.set_default(pid)
+        p_repo.set_default(pid, owner_id=user_id)
         return Response(status_code=204)
 
     @app.delete("/api/presets/{pid}", status_code=204)
-    def presets_delete(pid: int) -> Response:
-        p_repo.delete(pid)
+    def presets_delete(
+        pid: int, user_id: int = Depends(get_current_user),
+    ) -> Response:
+        p_repo.delete(pid, owner_id=user_id)
         return Response(status_code=204)
 
     from .repositories import tests as t_repo
     from .repositories.tests import LockedError
 
-    # Tests
+    # Tests --------------------------------------------------------------
     @app.post("/api/tests", response_model=TestResponse, status_code=201)
-    def tests_create(body: TestCreate) -> TestResponse:
-        if m_repo.get(body.material_id) is None:
+    def tests_create(
+        body: TestCreate, user_id: int = Depends(get_current_user),
+    ) -> TestResponse:
+        if m_repo.get(body.material_id, owner_id=user_id) is None:
             raise HTTPException(status_code=400, detail="unknown material_id")
         t = t_repo.create(
             name=body.name, material_id=body.material_id,
             spec=body.spec.model_dump(), notes=body.notes,
+            owner_id=user_id,
         )
         return TestResponse(**t)
 
     @app.get("/api/tests", response_model=list[TestResponse])
-    def tests_list(material_id: int | None = None,
-                   status: str | None = None) -> list[TestResponse]:
+    def tests_list(
+        material_id: int | None = None,
+        status: str | None = None,
+        user_id: int = Depends(get_current_user),
+    ) -> list[TestResponse]:
         return [TestResponse(**t) for t in t_repo.list_all(
-            material_id=material_id, status=status,
+            owner_id=user_id, material_id=material_id, status=status,
         )]
 
     @app.get("/api/tests/{tid}", response_model=TestResponse)
-    def tests_get(tid: int) -> TestResponse:
-        t = t_repo.get(tid)
+    def tests_get(
+        tid: int, user_id: int = Depends(get_current_user),
+    ) -> TestResponse:
+        t = t_repo.get(tid, owner_id=user_id)
         if t is None:
             raise HTTPException(status_code=404, detail="test not found")
         return TestResponse(**t)
 
     @app.patch("/api/tests/{tid}", response_model=TestResponse)
-    def tests_patch(tid: int, body: TestUpdate) -> TestResponse:
-        if t_repo.get(tid) is None:
+    def tests_patch(
+        tid: int, body: TestUpdate,
+        user_id: int = Depends(get_current_user),
+    ) -> TestResponse:
+        if t_repo.get(tid, owner_id=user_id) is None:
             raise HTTPException(status_code=404, detail="test not found")
         try:
             t = t_repo.update(
-                tid, name=body.name, notes=body.notes,
+                tid, owner_id=user_id,
+                name=body.name, notes=body.notes,
                 spec=body.spec.model_dump() if body.spec else None,
             )
         except LockedError as e:
@@ -289,17 +518,21 @@ def create_app() -> FastAPI:
         return TestResponse(**t)
 
     @app.delete("/api/tests/{tid}", status_code=204)
-    def tests_delete(tid: int) -> Response:
-        if t_repo.get(tid) is None:
+    def tests_delete(
+        tid: int, user_id: int = Depends(get_current_user),
+    ) -> Response:
+        if t_repo.get(tid, owner_id=user_id) is None:
             raise HTTPException(status_code=404, detail="test not found")
-        t_repo.soft_delete(tid)
+        t_repo.soft_delete(tid, owner_id=user_id)
         return Response(status_code=204)
 
     from .services import xcs as xcs_service
 
     @app.post("/api/tests/{tid}/generate")
-    def tests_generate(tid: int) -> Response:
-        t = t_repo.get(tid)
+    def tests_generate(
+        tid: int, user_id: int = Depends(get_current_user),
+    ) -> Response:
+        t = t_repo.get(tid, owner_id=user_id)
         if t is None:
             raise HTTPException(status_code=404, detail="test not found")
         body = xcs_service.bytes_for_test(
@@ -326,94 +559,187 @@ def create_app() -> FastAPI:
             image_sha256=r["image_sha256"],
             excluded=r["excluded"], notes=r["notes"],
             swatches=[ResultSwatch(**s) for s in r["swatches"]],
+            owner_id=r["owner_id"],
+            visibility=r["visibility"],
         )
 
-    @app.post("/api/tests/{tid}/results", response_model=ResultResponse, status_code=201)
-    async def results_upload(tid: int, image: UploadFile = File(...)) -> ResultResponse:
-        t = t_repo.get(tid)
-        if t is None:
-            raise HTTPException(status_code=404, detail="test not found")
-
-        data = await image.read()
+    def _persist_upload(
+        *, tid: int, spec: dict, data: bytes, filename: str | None,
+        user_id: int,
+    ) -> ResultResponse:
+        """Shared tail for both upload routes: run capture against the
+        already-read image bytes, persist the result + image, mark test
+        tested, and return the ResultResponse. Raises HTTPException(400)
+        if the capture fails (e.g. photo doesn't align)."""
         try:
             cap_result = capture_service.run_capture(
-                image_bytes=data, test_id=tid, spec=t["spec"],
+                image_bytes=data, test_id=tid, spec=spec,
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        suffix = Path(image.filename or "upload.png").suffix or ".png"
+        suffix = Path(filename or "upload.png").suffix or ".png"
         # Two-step: insert with a placeholder image_path → get id → write file → update path.
         placeholder = r_repo.create(
             test_id=tid,
             image_path="pending",
             image_sha256=images.sha256_hex(data),
             swatches=cap_result.swatches,
+            owner_id=user_id,
         )
         rec = images.save(test_id=tid, result_id=placeholder["id"],
                           data=data, suffix=suffix)
-        # Write the real path back.
         with session_scope() as s:
             s.execute(
                 models.results.update()
                 .where(models.results.c.id == placeholder["id"])
                 .values(image_path=rec["path"])
             )
-        t_repo.mark_tested_and_lock(tid)
-        refreshed = r_repo.get(placeholder["id"])
+        t_repo.mark_tested_and_lock(tid, owner_id=user_id)
+        refreshed = r_repo.get(placeholder["id"], owner_id=user_id)
         return _result_to_response(refreshed)
 
-    @app.get("/api/tests/{tid}/results", response_model=list[ResultResponse])
-    def results_list(tid: int) -> list[ResultResponse]:
-        if t_repo.get(tid) is None:
+    @app.post("/api/tests/{tid}/results", response_model=ResultResponse, status_code=201)
+    async def results_upload(
+        tid: int, image: UploadFile = File(...),
+        user_id: int = Depends(get_current_user),
+    ) -> ResultResponse:
+        t = t_repo.get(tid, owner_id=user_id)
+        if t is None:
             raise HTTPException(status_code=404, detail="test not found")
-        return [_result_to_response(r) for r in r_repo.list_by_test(tid)]
+        data = await image.read()
+        return _persist_upload(
+            tid=tid, spec=t["spec"], data=data, filename=image.filename,
+            user_id=user_id,
+        )
+
+    @app.post("/api/results/preflight")
+    async def results_upload_preflight(
+        image: UploadFile = File(...),
+        user_id: int = Depends(get_current_user),
+    ) -> dict:
+        """Decode the photo's QR and return what test it matches + how
+        many results that test already has — without persisting anything.
+
+        The upload modal calls this first so it can warn the user before
+        re-processing a test that already has uploads."""
+        data = await image.read()
+        try:
+            qr_id = capture_service.detect_test_id(data)
+        except capture_service.CaptureError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        t = t_repo.get(qr_id, owner_id=user_id)
+        if t is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"QR matches test #{qr_id}, which doesn't exist for you. "
+                       f"Was the test deleted, or does it belong to another user?",
+            )
+        existing = r_repo.list_by_test(qr_id, owner_id=user_id, include_excluded=True)
+        return {
+            "test_id": qr_id,
+            "test_name": t["name"],
+            "existing_result_count": len(existing),
+        }
+
+    @app.post("/api/results/upload", response_model=ResultResponse, status_code=201)
+    async def results_upload_auto(
+        image: UploadFile = File(...),
+        user_id: int = Depends(get_current_user),
+    ) -> ResultResponse:
+        """Auto-match upload: read the QR on the photo, route to that test.
+
+        Only the caller's own tests are considered — a QR whose id matches
+        another user's test yields 404 (we don't want to silently leak the
+        existence of another account's tests)."""
+        data = await image.read()
+        try:
+            qr_id = capture_service.detect_test_id(data)
+        except capture_service.CaptureError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        t = t_repo.get(qr_id, owner_id=user_id)
+        if t is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"QR matches test #{qr_id}, which doesn't exist for you. "
+                       f"Was the test deleted, or does it belong to another user?",
+            )
+        return _persist_upload(
+            tid=qr_id, spec=t["spec"], data=data, filename=image.filename,
+            user_id=user_id,
+        )
+
+    @app.get("/api/tests/{tid}/results", response_model=list[ResultResponse])
+    def results_list(
+        tid: int, user_id: int = Depends(get_current_user),
+    ) -> list[ResultResponse]:
+        if t_repo.get(tid, owner_id=user_id) is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        return [
+            _result_to_response(r)
+            for r in r_repo.list_by_test(tid, owner_id=user_id)
+        ]
 
     @app.patch("/api/results/{rid}", response_model=ResultResponse)
-    def results_patch(rid: int, body: ResultPatch) -> ResultResponse:
-        if r_repo.get(rid) is None:
+    def results_patch(
+        rid: int, body: ResultPatch,
+        user_id: int = Depends(get_current_user),
+    ) -> ResultResponse:
+        if r_repo.get(rid, owner_id=user_id) is None:
             raise HTTPException(status_code=404, detail="result not found")
         if body.excluded is not None:
-            r_repo.set_excluded(rid, body.excluded)
+            r_repo.set_excluded(rid, body.excluded, owner_id=user_id)
         if body.notes is not None:
-            r_repo.set_notes(rid, body.notes)
-        return _result_to_response(r_repo.get(rid))
+            r_repo.set_notes(rid, body.notes, owner_id=user_id)
+        return _result_to_response(r_repo.get(rid, owner_id=user_id))
 
     @app.delete("/api/results/{rid}", status_code=204)
-    def results_delete(rid: int) -> Response:
-        path = r_repo.delete(rid)
+    def results_delete(
+        rid: int, user_id: int = Depends(get_current_user),
+    ) -> Response:
+        path = r_repo.delete(rid, owner_id=user_id)
         if path is None:
             raise HTTPException(status_code=404, detail="result not found")
         images.delete(path)
         return Response(status_code=204)
 
     @app.get("/api/results/{rid}/image")
-    def results_image(rid: int) -> Response:
-        r = r_repo.get(rid)
+    def results_image(
+        rid: int, user_id: int = Depends(get_current_user),
+    ) -> Response:
+        r = r_repo.get(rid, owner_id=user_id)
         if r is None:
             raise HTTPException(status_code=404, detail="result not found")
         data = images.read(r["image_path"])
         return Response(content=data, media_type="image/*")
 
     @app.get("/api/tests/{tid}/swatches", response_model=list[AveragedSwatch])
-    def test_swatches(tid: int) -> list[AveragedSwatch]:
-        if t_repo.get(tid) is None:
+    def test_swatches(
+        tid: int, user_id: int = Depends(get_current_user),
+    ) -> list[AveragedSwatch]:
+        if t_repo.get(tid, owner_id=user_id) is None:
             raise HTTPException(status_code=404, detail="test not found")
-        return [AveragedSwatch(**s) for s in r_repo.averaged_swatches(tid)]
+        return [
+            AveragedSwatch(**s)
+            for s in r_repo.averaged_swatches(tid, owner_id=user_id)
+        ]
 
     @app.post("/api/tests/{tid}/ingest-to-palette")
-    def tests_ingest_to_palette(tid: int, body: IngestToPaletteRequest) -> dict:
-        t = t_repo.get(tid)
+    def tests_ingest_to_palette(
+        tid: int, body: IngestToPaletteRequest,
+        user_id: int = Depends(get_current_user),
+    ) -> dict:
+        t = t_repo.get(tid, owner_id=user_id)
         if t is None:
             raise HTTPException(status_code=404, detail="test not found")
 
         if body.mode == "averaged":
-            swatches = r_repo.averaged_swatches(tid)
+            swatches = r_repo.averaged_swatches(tid, owner_id=user_id)
             source_result_id = None
         else:
             if body.result_id is None:
                 raise HTTPException(status_code=400, detail="result_id required for single_result")
-            r = r_repo.get(body.result_id)
+            r = r_repo.get(body.result_id, owner_id=user_id)
             if r is None or r["test_id"] != tid:
                 raise HTTPException(status_code=400, detail="result_id does not belong to test")
             swatches = r["swatches"]
@@ -442,9 +768,9 @@ def create_app() -> FastAPI:
                 "params": params,
             })
         if body.replace_existing:
-            ids = pal_repo.replace_for_test(tid, payload)
+            ids = pal_repo.replace_for_test(tid, payload, owner_id=user_id)
         else:
-            ids = pal_repo.insert_bulk(payload)
+            ids = pal_repo.insert_bulk(payload, owner_id=user_id)
         return {"added": len(ids), "ids": ids}
 
     # Mount built frontend at / if present (optional in dev / tests)

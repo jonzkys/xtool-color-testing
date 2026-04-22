@@ -1,4 +1,10 @@
-"""Palette repository — persistence + ΔE2000 query over SQLite."""
+"""Palette repository — persistence + ΔE2000 query over SQLite.
+
+Scoped per owner. query_by_hex only searches within the caller's own
+palette. Public entries from other owners aren't considered yet —
+future work will widen the filter to ``owner == self OR visibility ==
+'public'``.
+"""
 
 from __future__ import annotations
 
@@ -6,8 +12,9 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 
+from ..config import DEFAULT_VISIBILITY, STANDALONE_USER_ID
 from ..db import session_scope
 from ..models import palette_entries
 from ..palette import delta_e_2000, hex_to_lab
@@ -32,10 +39,14 @@ def _row_to_entry(r) -> dict[str, Any]:
         "source_result_id": r.source_result_id,
         "notes": r.notes,
         "created_at": r.created_at,
+        "owner_id": r.owner_id,
+        "visibility": r.visibility,
     }
 
 
-def _build_row(e: dict[str, Any], now: str) -> dict[str, Any]:
+def _build_row(
+    e: dict[str, Any], now: str, owner_id: str, visibility: str,
+) -> dict[str, Any]:
     """Build a DB row dict from an entry dict. Used by insert_bulk and replace_for_test."""
     L, a, b = hex_to_lab(e["hex"])
     return {
@@ -51,12 +62,17 @@ def _build_row(e: dict[str, Any], now: str) -> dict[str, Any]:
         "source_result_id": e.get("source_result_id"),
         "notes": e.get("notes", ""),
         "created_at": now,
+        "owner_id": owner_id,
+        "visibility": e.get("visibility", visibility),
     }
 
 
-def insert_bulk(entries: Iterable[dict[str, Any]]) -> list[int]:
+def insert_bulk(
+    entries: Iterable[dict[str, Any]], *, owner_id: int = STANDALONE_USER_ID,
+    visibility: str = DEFAULT_VISIBILITY,
+) -> list[int]:
     now = _now()
-    rows = [_build_row(e, now) for e in entries]
+    rows = [_build_row(e, now, owner_id, visibility) for e in entries]
     if not rows:
         return []
     with session_scope() as s:
@@ -67,12 +83,22 @@ def insert_bulk(entries: Iterable[dict[str, Any]]) -> list[int]:
         return ids
 
 
-def replace_for_test(test_id: int, entries: Iterable[dict[str, Any]]) -> list[int]:
-    """Delete all palette entries for test_id then insert new ones atomically."""
+def replace_for_test(
+    test_id: int, entries: Iterable[dict[str, Any]],
+    *, owner_id: int = STANDALONE_USER_ID, visibility: str = DEFAULT_VISIBILITY,
+) -> list[int]:
+    """Delete all palette entries for test_id (owner-scoped) then insert new ones atomically."""
     now = _now()
-    rows = [_build_row(e, now) for e in entries]
+    rows = [_build_row(e, now, owner_id, visibility) for e in entries]
     with session_scope() as s:
-        s.execute(palette_entries.delete().where(palette_entries.c.test_id == test_id))
+        s.execute(
+            palette_entries.delete().where(
+                and_(
+                    palette_entries.c.test_id == test_id,
+                    palette_entries.c.owner_id == owner_id,
+                ),
+            )
+        )
         ids: list[int] = []
         for row in rows:
             res = s.execute(palette_entries.insert().values(**row))
@@ -80,19 +106,25 @@ def replace_for_test(test_id: int, entries: Iterable[dict[str, Any]]) -> list[in
         return ids
 
 
-def list_all(*, material_id: int | None = None) -> list[dict[str, Any]]:
+def list_all(
+    *, owner_id: int = STANDALONE_USER_ID, material_id: int | None = None,
+) -> list[dict[str, Any]]:
     with session_scope() as s:
-        q = select(palette_entries)
+        q = select(palette_entries).where(
+            palette_entries.c.owner_id == owner_id,
+        )
         if material_id is not None:
             q = q.where(palette_entries.c.material_id == material_id)
         q = q.order_by(palette_entries.c.created_at.desc())
         return [_row_to_entry(r) for r in s.execute(q).all()]
 
 
-def query_by_hex(hex_: str, *, limit: int = 5,
-                 material_id: int | None = None) -> list[dict[str, Any]]:
+def query_by_hex(
+    hex_: str, *, owner_id: int = STANDALONE_USER_ID, limit: int = 5,
+    material_id: int | None = None,
+) -> list[dict[str, Any]]:
     target = hex_to_lab(hex_)
-    rows = list_all(material_id=material_id)
+    rows = list_all(owner_id=owner_id, material_id=material_id)
     scored = []
     for r in rows:
         de = delta_e_2000(target, tuple(r["lab"]))
@@ -101,28 +133,50 @@ def query_by_hex(hex_: str, *, limit: int = 5,
     return scored[:limit]
 
 
-def delete_entry(eid: int) -> bool:
+def delete_entry(eid: int, *, owner_id: int = STANDALONE_USER_ID) -> bool:
     with session_scope() as s:
-        res = s.execute(palette_entries.delete().where(palette_entries.c.id == eid))
+        res = s.execute(
+            palette_entries.delete().where(
+                and_(
+                    palette_entries.c.id == eid,
+                    palette_entries.c.owner_id == owner_id,
+                ),
+            )
+        )
         return res.rowcount > 0
 
 
-def delete_by_test(test_id: int) -> int:
+def delete_by_test(test_id: int, *, owner_id: int = STANDALONE_USER_ID) -> int:
     with session_scope() as s:
         res = s.execute(
-            palette_entries.delete().where(palette_entries.c.test_id == test_id)
+            palette_entries.delete().where(
+                and_(
+                    palette_entries.c.test_id == test_id,
+                    palette_entries.c.owner_id == owner_id,
+                ),
+            )
         )
         return res.rowcount
 
 
-def update_notes(eid: int, notes: str) -> dict[str, Any] | None:
+def update_notes(eid: int, notes: str, *, owner_id: int = STANDALONE_USER_ID) -> dict[str, Any] | None:
     with session_scope() as s:
         s.execute(
             palette_entries.update()
-            .where(palette_entries.c.id == eid)
+            .where(
+                and_(
+                    palette_entries.c.id == eid,
+                    palette_entries.c.owner_id == owner_id,
+                ),
+            )
             .values(notes=notes)
         )
         row = s.execute(
-            select(palette_entries).where(palette_entries.c.id == eid)
+            select(palette_entries).where(
+                and_(
+                    palette_entries.c.id == eid,
+                    palette_entries.c.owner_id == owner_id,
+                ),
+            )
         ).one_or_none()
         return _row_to_entry(row) if row else None

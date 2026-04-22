@@ -28,6 +28,20 @@ dependencies = [
 dev = [
     "fonttools>=4.60",
 ]
+# Install with `pip install -e ".[mysql]"` to use MySQL/MariaDB as the
+# backend. Pure-Python driver (no C toolchain required) — set
+# XCS_GEN_DB_URL="mysql+pymysql://user:pass@host/xcsgen?charset=utf8mb4"
+# and run migrations.
+mysql = [
+    "pymysql>=1.1",
+]
+# Install with `pip install -e ".[s3]"` to store result photos in S3.
+# boto3 auth comes from the default credential chain (IAM role /
+# env / ~/.aws) — the app never holds long-lived keys. Set
+# XCS_GEN_S3_BUCKET=your-bucket to activate.
+s3 = [
+    "boto3>=1.34",
+]
 
 [project.scripts]
 xcs-gen = "xcs_gen.cli:main"

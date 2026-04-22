@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { Info, Search, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Check, Copy, Info, Search, Trash2, X } from "lucide-react";
+import { DialogClose } from "@radix-ui/react-dialog";
 import {
   listPaletteEntries,
   queryPalette,
@@ -16,11 +17,11 @@ import {
   Card,
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
   EmptyState,
   Field,
   Input,
+  MetalBar,
   PageContainer,
   Section,
   Select,
@@ -28,6 +29,7 @@ import {
   TabList,
   TabPanel,
   Tabs,
+  cn,
 } from "../ui";
 
 type View = "query" | "browse";
@@ -442,62 +444,393 @@ function InfoModalContent({
   entry: PaletteEntry;
   materials: Material[];
 }) {
+  const [copied, setCopied] = useState(false);
   const materialName =
     materials.find((m) => m.id === entry.material_id)?.name ?? "(unknown material)";
 
+  const rgb = hexToRgb(entry.hex);
+  const hsl = rgbToHsl(rgb);
+  const lab = entry.lab;
+
+  const copyHex = useCallback(() => {
+    void navigator.clipboard?.writeText(entry.hex);
+    setCopied(true);
+    const t = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(t);
+  }, [entry.hex]);
+
+  const paramEntries = Object.entries(entry.params);
+  const capturedPretty = formatCaptured(entry.created_at);
+
   return (
-    <DialogContent width="md">
-      <DialogHeader>
-        <DialogTitle>Swatch details</DialogTitle>
-      </DialogHeader>
-      <div className="flex items-center gap-4 mb-5">
+    <DialogContent
+      width="lg"
+      className="p-0 overflow-hidden"
+      aria-describedby={undefined}
+    >
+      <DialogTitle className="sr-only">Swatch {entry.hex}</DialogTitle>
+
+      {/* Hero chip — the swatch as a physical specimen. Click to copy hex. */}
+      <button
+        type="button"
+        onClick={copyHex}
+        aria-label={`Copy ${entry.hex} to clipboard`}
+        className="group relative block w-full h-[210px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--color-primary)]/60"
+        style={{ background: entry.hex }}
+      >
+        {/* Soft inner vignette — gives the flat colour the sense of a
+            painted chip rather than a CSS fill. */}
         <div
-          className="h-16 w-16 rounded-[10px] border border-[color:var(--color-border-strong)] shrink-0"
-          style={{ background: entry.hex }}
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(ellipse at 50% 40%, transparent 55%, rgba(0,0,0,0.22) 100%)",
+          }}
         />
-        <div className="leading-tight">
-          <div className="font-mono text-[16px] font-semibold text-[color:var(--color-ink)]">
-            {entry.hex}
-          </div>
-          <div className="text-[12px] text-[color:var(--color-ink-muted)] mt-0.5">
-            σ {entry.sigma.toFixed(2)} · {entry.source}
-          </div>
+        {/* Fine grain overlay — inline SVG noise, low opacity. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-[0.08] mix-blend-overlay"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")",
+          }}
+        />
+
+        {/* Registration tick marks at each corner — print-shop crop-mark
+            motif. mix-blend-difference keeps them readable on any swatch
+            colour. */}
+        <TickMark corner="tl" />
+        <TickMark corner="tr" />
+        <TickMark corner="bl" />
+        <TickMark corner="br" />
+
+        {/* Top-right slug */}
+        <div
+          className="absolute top-4 right-5 font-mono text-[10px] tracking-[0.22em] uppercase font-semibold"
+          style={{ color: "white", mixBlendMode: "difference" }}
+        >
+          Swatch · Test {entry.test_id}
         </div>
+
+        {/* Bottom-left: HEX printed on the chip in display-monospace */}
+        <div
+          className="absolute bottom-4 left-5 font-mono text-[22px] tracking-[0.08em] font-semibold leading-none"
+          style={{ color: "white", mixBlendMode: "difference" }}
+        >
+          {entry.hex.toUpperCase()}
+        </div>
+
+        {/* Bottom-right: click-to-copy affordance. Morphs to a check on
+            copy and fades after 1.5s. */}
+        <div
+          className="absolute bottom-4 right-5 inline-flex items-center gap-1.5 font-mono text-[10px] tracking-[0.18em] uppercase font-semibold"
+          style={{ color: "white", mixBlendMode: "difference" }}
+        >
+          {copied ? (
+            <>
+              <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
+              Copied
+            </>
+          ) : (
+            <>
+              <Copy
+                className="h-3.5 w-3.5 opacity-70 group-hover:opacity-100 transition-opacity"
+                strokeWidth={2}
+              />
+              Copy hex
+            </>
+          )}
+        </div>
+      </button>
+
+      {/* Close button floated over the chip so it doesn't eat vertical
+          space. Uses mix-blend so it's visible against any colour. */}
+      <DialogClose
+        aria-label="Close"
+        className="absolute top-3 left-3 h-7 w-7 inline-flex items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60"
+        style={{ color: "white", mixBlendMode: "difference" }}
+      >
+        <X className="h-4 w-4" strokeWidth={2} />
+      </DialogClose>
+
+      <MetalBar />
+
+      {/* Colour-space readout strip — instrument panel across 4 axes. */}
+      <div className="grid grid-cols-4 divide-x divide-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]">
+        <ReadoutCell label="HEX" value={entry.hex.toUpperCase()} />
+        <ReadoutCell label="RGB" value={`${rgb.r} · ${rgb.g} · ${rgb.b}`} />
+        <ReadoutCell
+          label="L*a*b*"
+          value={
+            lab.length >= 3
+              ? `${fmtNum(lab[0])} · ${fmtNum(lab[1])} · ${fmtNum(lab[2])}`
+              : "—"
+          }
+        />
+        <ReadoutCell label="HSL" value={`${hsl.h}° · ${hsl.s}% · ${hsl.l}%`} />
       </div>
-      <dl className="grid grid-cols-[120px_1fr] gap-y-2 text-[12.5px]">
-        <InfoRow label="Material" value={materialName} />
-        <InfoRow label="Test" value={`#${entry.test_id}`} mono />
-        <InfoRow label="Captured" value={entry.created_at} mono />
-        {Object.entries(entry.params).map(([k, v]) => (
-          <InfoRow key={k} label={k} value={String(v)} mono />
-        ))}
-        {entry.notes && <InfoRow label="Notes" value={entry.notes} />}
-      </dl>
+
+      <MetalBar variant="soft" />
+
+      {/* Provenance block */}
+      <div className="px-6 pt-5 pb-5">
+        <SectionLabel>Provenance</SectionLabel>
+        <dl className="mt-3 grid grid-cols-[auto_1fr] items-center gap-x-6 gap-y-2.5 text-[12.5px]">
+          <FactLabel>Material</FactLabel>
+          <FactValue>{materialName}</FactValue>
+
+          <FactLabel>Test</FactLabel>
+          <FactValue mono>#{entry.test_id}</FactValue>
+
+          <FactLabel>Captured</FactLabel>
+          <FactValue mono>{capturedPretty}</FactValue>
+
+          <FactLabel>Source</FactLabel>
+          <dd className="self-center">
+            <SourceBadge source={entry.source} />
+          </dd>
+
+          <FactLabel>Deviation</FactLabel>
+          <dd className="self-center flex items-center gap-3">
+            <SigmaMeter sigma={entry.sigma} />
+            <span className="font-mono tabular-nums text-[12.5px] text-[color:var(--color-ink)]">
+              σ {entry.sigma.toFixed(2)}
+            </span>
+          </dd>
+        </dl>
+      </div>
+
+      {paramEntries.length > 0 && (
+        <>
+          <MetalBar variant="soft" />
+          <div className="px-6 pt-5 pb-5">
+            <SectionLabel>Laser parameters</SectionLabel>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {paramEntries.map(([k, v]) => (
+                <ParamChip key={k} name={k} value={v} />
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {entry.notes && (
+        <>
+          <MetalBar variant="soft" />
+          <div className="px-6 pt-5 pb-5">
+            <SectionLabel>Notes</SectionLabel>
+            <p className="mt-2 text-[13px] text-[color:var(--color-ink)] leading-relaxed whitespace-pre-wrap">
+              {entry.notes}
+            </p>
+          </div>
+        </>
+      )}
     </DialogContent>
   );
 }
 
-function InfoRow({
-  label,
-  value,
+function TickMark({ corner }: { corner: "tl" | "tr" | "bl" | "br" }) {
+  const pos = {
+    tl: "top-3 left-3",
+    tr: "top-3 right-3 rotate-90",
+    bl: "bottom-3 left-3 -rotate-90",
+    br: "bottom-3 right-3 rotate-180",
+  }[corner];
+  return (
+    <div
+      aria-hidden
+      className={cn("absolute h-3 w-3 pointer-events-none", pos)}
+      style={{ mixBlendMode: "difference" }}
+    >
+      <div className="absolute top-0 left-0 h-px w-full" style={{ background: "white" }} />
+      <div className="absolute top-0 left-0 w-px h-full" style={{ background: "white" }} />
+    </div>
+  );
+}
+
+function ReadoutCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="px-4 py-3.5">
+      <div className="font-mono text-[9.5px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)]">
+        {label}
+      </div>
+      <div className="mt-1 font-mono text-[12px] tabular-nums text-[color:var(--color-ink)] truncate">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className="inline-flex items-center gap-2 font-mono text-[10px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)]">
+      <span className="h-px w-4 bg-[color:var(--color-border-strong)]" aria-hidden />
+      {children}
+    </div>
+  );
+}
+
+function FactLabel({ children }: { children: ReactNode }) {
+  return (
+    <dt className="font-mono text-[10px] font-semibold tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)] self-center">
+      {children}
+    </dt>
+  );
+}
+
+function FactValue({
+  children,
   mono,
 }: {
-  label: string;
-  value: string;
+  children: ReactNode;
   mono?: boolean;
 }) {
   return (
-    <>
-      <dt className="text-[color:var(--color-ink-subtle)]">{label}</dt>
-      <dd
-        className={
-          mono
-            ? "font-mono text-[color:var(--color-ink)] tabular-nums"
-            : "text-[color:var(--color-ink)]"
-        }
-      >
-        {value}
-      </dd>
-    </>
+    <dd
+      className={cn(
+        "text-[color:var(--color-ink)] self-center",
+        mono && "font-mono tabular-nums",
+      )}
+    >
+      {children}
+    </dd>
   );
+}
+
+function SourceBadge({ source }: { source: PaletteEntry["source"] }) {
+  const label = source === "averaged" ? "averaged" : "single result";
+  const dotClass =
+    source === "averaged"
+      ? "bg-[color:var(--color-primary)]"
+      : "bg-[color:var(--color-secondary)]";
+  return (
+    <span className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface)] font-mono text-[11px] tracking-[0.04em] text-[color:var(--color-ink-muted)]">
+      <span className={cn("h-1.5 w-1.5 rounded-full", dotClass)} aria-hidden />
+      {label}
+    </span>
+  );
+}
+
+function SigmaMeter({ sigma }: { sigma: number }) {
+  // Scale σ onto a 0→3 "tight → noisy" range; anything above 3 pins at full.
+  const pct = Math.min(1, Math.max(0, sigma / 3)) * 100;
+  const fill =
+    pct < 50
+      ? "var(--color-success)"
+      : pct < 83
+        ? "var(--color-warning)"
+        : "var(--color-destructive)";
+  return (
+    <div
+      className="relative w-[110px] h-[4px] rounded-full bg-[color:var(--color-surface-elevated)] border border-[color:var(--color-border)] overflow-hidden"
+      role="img"
+      aria-label={`Sigma ${sigma.toFixed(2)} of 3`}
+    >
+      <div
+        className="absolute left-0 top-0 h-full rounded-full transition-[width] duration-500"
+        style={{ width: `${pct}%`, background: fill }}
+      />
+    </div>
+  );
+}
+
+function ParamChip({ name, value }: { name: string; value: string | number }) {
+  const unit = unitForParam(name);
+  const prettyName = name.replace(/_/g, " ");
+  return (
+    <div className="inline-flex items-baseline gap-2 px-2.5 py-1 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]">
+      <span className="font-mono text-[9.5px] font-semibold tracking-[0.16em] uppercase text-[color:var(--color-ink-subtle)]">
+        {prettyName}
+      </span>
+      <span className="font-mono text-[12px] tabular-nums font-medium text-[color:var(--color-ink)]">
+        {value}
+        {unit && (
+          <span className="ml-0.5 text-[10px] text-[color:var(--color-ink-muted)]">
+            {unit}
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+
+function unitForParam(name: string): string | null {
+  const map: Record<string, string> = {
+    speed: "mm/s",
+    power: "%",
+    frequency: "Hz",
+    freq: "Hz",
+    mopa_frequency: "Hz",
+    density: "l/cm",
+    passes: "×",
+    repeat: "×",
+    pulse_width: "ns",
+    pulsewidth: "ns",
+  };
+  return map[name.toLowerCase()] ?? null;
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const h = hex.replace("#", "").trim();
+  if (h.length !== 6) return { r: 0, g: 0, b: 0 };
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  };
+}
+
+function rgbToHsl({ r, g, b }: { r: number; g: number; b: number }): {
+  h: number;
+  s: number;
+  l: number;
+} {
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const l = (max + min) / 2;
+  let h = 0;
+  let s = 0;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case rn:
+        h = (gn - bn) / d + (gn < bn ? 6 : 0);
+        break;
+      case gn:
+        h = (bn - rn) / d + 2;
+        break;
+      case bn:
+        h = (rn - gn) / d + 4;
+        break;
+    }
+    h *= 60;
+  }
+  return {
+    h: Math.round(h),
+    s: Math.round(s * 100),
+    l: Math.round(l * 100),
+  };
+}
+
+function fmtNum(n: number | undefined | null): string {
+  if (n === undefined || n === null || Number.isNaN(n)) return "—";
+  return n.toFixed(1);
+}
+
+function formatCaptured(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.valueOf())) return iso;
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
 }

@@ -13,6 +13,7 @@ from xcs_gen.capture.layout import (
     QR_SIZE_DEFAULT_MM,
     compute_layout,
 )
+from xcs_gen.text import text_height
 
 from ..capture_pipeline import (
     QR_BL, QR_BR, QR_TL, QR_TR,
@@ -24,9 +25,39 @@ from ..capture_pipeline import (
 from ..capture_sampling import sample_grid
 from ..palette import hex_to_lab
 
+# Generator defaults that govern wrapped-grid row placement. Kept in sync
+# with generate_gradient's defaults (row_gap=1.0, tick_length=0.5,
+# label_font_size=1.2) so the capture math matches what was actually burned.
+_ROW_GAP_DEFAULT_MM = 1.0
+_LABEL_FONT_SIZE = 1.2
+_TICK_LENGTH_MM = 0.5
+
+
+def _effective_row_gap_mm(hide_axis_labels: bool) -> float:
+    """Vertical gap between wrapped rows, matching the generator's math."""
+    ann_space = 0.0 if hide_axis_labels else (
+        _TICK_LENGTH_MM + 0.05 + text_height(_LABEL_FONT_SIZE) + 0.05
+    )
+    return max(_ROW_GAP_DEFAULT_MM, ann_space)
+
 
 class CaptureError(Exception):
     """Raised by run_capture when the image can't be processed."""
+
+
+def detect_test_id(image_bytes: bytes) -> int:
+    """Peek at an uploaded photo and return the test id encoded in its QR,
+    without warping or sampling. Used by the auto-match upload route so we
+    can route a photo to the right test purely from its registration QR."""
+    try:
+        img = decode_image_bytes(image_bytes)
+    except Exception as e:
+        raise CaptureError(f"could not decode image: {e}") from e
+    try:
+        qr_id, _ = detect_fiducials(img)
+    except DetectionError as e:
+        raise CaptureError(str(e)) from e
+    return qr_id
 
 
 @dataclass
@@ -56,7 +87,22 @@ def run_capture(*, image_bytes: bytes, test_id: int,
     qr_size = reg.get("qr_size_mm") or QR_SIZE_DEFAULT_MM
     aruco_size = reg.get("aruco_size_mm") or ARUCO_SIZE_DEFAULT_MM
     grid_w = spec["width_mm"]
-    grid_h = spec["height_mm"]
+    # spec["height_mm"] is the per-row cell height. For wrapped 1D tests
+    # (rows > 1, y_param=None) the generator stacks rows with an
+    # inter-row gap, and places bottom registration markers at the true
+    # bottom of the stack. Match that geometry so the homography maps
+    # detected ArUcos to the correct burn-space coordinates; otherwise
+    # the warp compresses the whole physical grid into the top row.
+    row_height_mm = spec["height_mm"]
+    rows = spec.get("rows", 1) or 1
+    is_wrapped_1d = rows > 1 and spec.get("y_param") is None
+    row_stride_mm: float | None = None
+    if is_wrapped_1d:
+        gap = _effective_row_gap_mm(bool(spec.get("hide_axis_labels", False)))
+        row_stride_mm = row_height_mm + gap
+        grid_h = rows * row_height_mm + (rows - 1) * gap
+    else:
+        grid_h = row_height_mm
     margin = MARKER_MARGIN_MM
 
     # Burn-space anchors (mm) for each marker's reference point.
@@ -96,10 +142,14 @@ def run_capture(*, image_bytes: bytes, test_id: int,
     except DetectionError as e:
         raise CaptureError(str(e)) from e
 
+    # sample_grid's wrapped branch derives cell height from grid_size_mm[1] /
+    # rows, which assumes no inter-row gap. Pass the cells-only height and
+    # the explicit stride so the sampler hits each row's cells, not the gaps.
+    sample_grid_h = rows * row_height_mm if is_wrapped_1d else grid_h
     swatches_raw = sample_grid(
         warped,
         grid_origin_mm=grid_origin_mm,
-        grid_size_mm=(grid_w, grid_h),
+        grid_size_mm=(grid_w, sample_grid_h),
         px_per_mm=10.0,
         x_param=spec["x_param"],
         x_min=spec["x_min"], x_max=spec["x_max"], x_steps=spec["x_steps"],
@@ -107,8 +157,8 @@ def run_capture(*, image_bytes: bytes, test_id: int,
         y_min=spec.get("y_min") or 0.0,
         y_max=spec.get("y_max") or 0.0,
         y_steps=spec.get("y_steps") or 1,
-        rows=spec.get("rows", 1),
-        row_stride_mm=None,
+        rows=rows,
+        row_stride_mm=row_stride_mm,
     )
     swatches = [
         {

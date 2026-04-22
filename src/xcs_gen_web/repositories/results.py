@@ -1,4 +1,9 @@
-"""Results repository + averaged-swatch computation."""
+"""Results repository + averaged-swatch computation.
+
+Results inherit ownership from their parent test — the owner id passed
+to ``create`` must match the test's owner (routes enforce this via the
+current-user dependency).
+"""
 
 from __future__ import annotations
 
@@ -6,8 +11,9 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 
+from ..config import DEFAULT_VISIBILITY, STANDALONE_USER_ID
 from ..db import session_scope
 from ..models import results
 from ..palette import hex_to_lab
@@ -27,11 +33,17 @@ def _row(r) -> dict[str, Any]:
         "excluded": bool(r.excluded),
         "notes": r.notes,
         "swatches": json.loads(r.swatches_json),
+        "owner_id": r.owner_id,
+        "visibility": r.visibility,
     }
 
 
-def create(*, test_id: int, image_path: str, image_sha256: str,
-           swatches: list[dict[str, Any]], notes: str = "") -> dict[str, Any]:
+def create(
+    *, test_id: int, image_path: str, image_sha256: str,
+    swatches: list[dict[str, Any]], owner_id: int = STANDALONE_USER_ID,
+    notes: str = "",
+    visibility: str = DEFAULT_VISIBILITY,
+) -> dict[str, Any]:
     with session_scope() as s:
         res = s.execute(results.insert().values(
             test_id=test_id,
@@ -40,44 +52,67 @@ def create(*, test_id: int, image_path: str, image_sha256: str,
             image_sha256=image_sha256,
             excluded=0, notes=notes,
             swatches_json=json.dumps(swatches, separators=(",", ":")),
+            owner_id=owner_id, visibility=visibility,
         ))
         rid = res.inserted_primary_key[0]
-    return get(rid)
+    return get(rid, owner_id=owner_id)  # type: ignore[return-value]
 
 
-def get(rid: int) -> dict[str, Any] | None:
+def get(rid: int, *, owner_id: int = STANDALONE_USER_ID) -> dict[str, Any] | None:
     with session_scope() as s:
-        row = s.execute(select(results).where(results.c.id == rid)).one_or_none()
+        row = s.execute(
+            select(results).where(
+                and_(results.c.id == rid, results.c.owner_id == owner_id),
+            )
+        ).one_or_none()
         return _row(row) if row else None
 
 
-def list_by_test(tid: int, *, include_excluded: bool = True) -> list[dict[str, Any]]:
+def list_by_test(
+    tid: int, *, owner_id: int = STANDALONE_USER_ID, include_excluded: bool = True,
+) -> list[dict[str, Any]]:
     with session_scope() as s:
-        q = select(results).where(results.c.test_id == tid)
+        q = select(results).where(
+            and_(
+                results.c.test_id == tid,
+                results.c.owner_id == owner_id,
+            ),
+        )
         if not include_excluded:
             q = q.where(results.c.excluded == 0)
         q = q.order_by(results.c.uploaded_at.desc())
         return [_row(r) for r in s.execute(q).all()]
 
 
-def set_excluded(rid: int, excluded: bool) -> None:
+def set_excluded(rid: int, excluded: bool, *, owner_id: int = STANDALONE_USER_ID) -> None:
     with session_scope() as s:
-        s.execute(results.update().where(results.c.id == rid)
-                  .values(excluded=1 if excluded else 0))
+        s.execute(
+            results.update()
+            .where(and_(results.c.id == rid, results.c.owner_id == owner_id))
+            .values(excluded=1 if excluded else 0)
+        )
 
 
-def set_notes(rid: int, notes: str) -> None:
+def set_notes(rid: int, notes: str, *, owner_id: int = STANDALONE_USER_ID) -> None:
     with session_scope() as s:
-        s.execute(results.update().where(results.c.id == rid).values(notes=notes))
+        s.execute(
+            results.update()
+            .where(and_(results.c.id == rid, results.c.owner_id == owner_id))
+            .values(notes=notes)
+        )
 
 
-def delete(rid: int) -> str | None:
+def delete(rid: int, *, owner_id: int = STANDALONE_USER_ID) -> str | None:
     """Delete the row and return the image_path so the caller can unlink."""
-    row = get(rid)
+    row = get(rid, owner_id=owner_id)
     if row is None:
         return None
     with session_scope() as s:
-        s.execute(results.delete().where(results.c.id == rid))
+        s.execute(
+            results.delete().where(
+                and_(results.c.id == rid, results.c.owner_id == owner_id),
+            )
+        )
     return row["image_path"]
 
 
@@ -110,7 +145,7 @@ def _lab_to_hex(L: float, a: float, b: float) -> str:
     return f"#{to_srgb(r):02x}{to_srgb(g):02x}{to_srgb(b_):02x}"
 
 
-def averaged_swatches(tid: int) -> list[dict[str, Any]]:
+def averaged_swatches(tid: int, *, owner_id: int = STANDALONE_USER_ID) -> list[dict[str, Any]]:
     """Per (row, col): mean Lab across non-excluded results.
 
     Cells with no contributing samples are omitted. The sigma of the
@@ -118,7 +153,7 @@ def averaged_swatches(tid: int) -> list[dict[str, Any]]:
     Lab→sRGB round-trip of the mean Lab.
     """
     buckets: dict[tuple[int, int, Any], list[dict[str, Any]]] = {}
-    results_list = list_by_test(tid, include_excluded=False)
+    results_list = list_by_test(tid, owner_id=owner_id, include_excluded=False)
     for r in results_list:
         for sw in r["swatches"]:
             key = (sw["row"], sw["col"], sw["x_value"])

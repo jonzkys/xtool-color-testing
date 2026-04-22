@@ -8,6 +8,7 @@ export type Route =
   | { name: "svg-layers" }
   | { name: "library" }
   | { name: "palette" }
+  | { name: "spectrum"; id?: number }
   | { name: "styleguide" };
 
 export function parseRoute(hash: string): Route {
@@ -20,6 +21,9 @@ export function parseRoute(hash: string): Route {
   if (h === "svg-layers") return { name: "svg-layers" };
   if (h === "library") return { name: "library" };
   if (h === "palette") return { name: "palette" };
+  if (h === "spectrum") return { name: "spectrum" };
+  const ms = h.match(/^spectrum\/(\d+)$/);
+  if (ms) return { name: "spectrum", id: Number(ms[1]) };
   if (h === "styleguide") return { name: "styleguide" };
   return { name: "tests" };
 }
@@ -33,6 +37,7 @@ export function formatRoute(r: Route): string {
     case "svg-layers":  return "#/svg-layers";
     case "library":     return "#/library";
     case "palette":     return "#/palette";
+    case "spectrum":    return r.id != null ? `#/spectrum/${r.id}` : "#/spectrum";
     case "styleguide":  return "#/styleguide";
   }
 }

@@ -12,6 +12,19 @@ export async function uploadResult(testId: number, file: File): Promise<ResultRe
   const fd = new FormData(); fd.append("image", file);
   return j(await fetch(`/api/tests/${testId}/results`, { method: "POST", body: fd }));
 }
+export async function uploadResultAuto(file: File): Promise<ResultRecord> {
+  const fd = new FormData(); fd.append("image", file);
+  return j(await fetch(`/api/results/upload`, { method: "POST", body: fd }));
+}
+export interface UploadPreflight {
+  test_id: number;
+  test_name: string;
+  existing_result_count: number;
+}
+export async function preflightUpload(file: File): Promise<UploadPreflight> {
+  const fd = new FormData(); fd.append("image", file);
+  return j(await fetch(`/api/results/preflight`, { method: "POST", body: fd }));
+}
 export async function patchResult(rid: number, patch: { excluded?: boolean; notes?: string; }): Promise<ResultRecord> {
   return j(await fetch(`/api/results/${rid}`, {
     method: "PATCH",

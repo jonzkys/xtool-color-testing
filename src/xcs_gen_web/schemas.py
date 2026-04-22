@@ -297,6 +297,8 @@ class PaletteEntryResponse(BaseModel):
     x_value: float | None = None
     y_value: float | None = None
     source_result_id: int | None = None
+    owner_id: int
+    visibility: str
 
 
 class PaletteQueryResult(BaseModel):
@@ -323,6 +325,26 @@ class MaterialResponse(BaseModel):
     name: str
     notes: str
     created_at: str
+    owner_id: int
+    visibility: str
+
+
+class UserRegisterRequest(BaseModel):
+    # Enforced more strictly on the backend via the regex in repositories.users.
+    api_key: str = Field(min_length=16, max_length=16)
+    first_name: str = Field(default="", max_length=40)
+
+
+class UserMePatch(BaseModel):
+    first_name: str | None = Field(default=None, max_length=40)
+
+
+class UserResponse(BaseModel):
+    id: int
+    api_key: str
+    first_name: str
+    created_at: str
+    last_seen_at: str
 
 
 class PresetCreate(BaseModel):
@@ -347,6 +369,8 @@ class PresetResponse(BaseModel):
     base_params: BaseParams
     created_at: str
     updated_at: str
+    owner_id: int
+    visibility: str
 
 
 class TestSpec(BaseModel):
@@ -396,6 +420,8 @@ class TestResponse(BaseModel):
     created_at: str
     updated_at: str
     locked: bool
+    owner_id: int
+    visibility: str
 
 
 class ResultSwatch(BaseModel):
@@ -417,6 +443,8 @@ class ResultResponse(BaseModel):
     excluded: bool
     notes: str
     swatches: list[ResultSwatch]
+    owner_id: int
+    visibility: str
 
 
 class ResultPatch(BaseModel):
