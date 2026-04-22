@@ -119,6 +119,11 @@ jobs:
             --task-definition "$ECS_TASK_DEFINITION" \
             --query 'taskDefinition')
 
+          # Read the actual container name so the migration step below
+          # can build its override against the same target without us
+          # assuming a convention.
+          CONTAINER_NAME=$(echo "$TASK_DEF" | jq -r '.containerDefinitions[0].name')
+
           # Swap in the new image and strip the read-only fields that
           # register-task-definition refuses to accept on input.
           NEW_IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
@@ -134,6 +139,7 @@ jobs:
             --output text)
 
           echo "task-def-arn=$NEW_ARN" >> "$GITHUB_OUTPUT"
+          echo "container-name=$CONTAINER_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Run DB migrations (one-off task, blocking)
         # Run `alembic upgrade head` as a standalone ECS task using the
@@ -147,16 +153,17 @@ jobs:
           SUBNETS: ${{ secrets.ECS_SUBNETS }}
           SECURITY_GROUPS: ${{ secrets.ECS_SECURITY_GROUPS }}
           TASK_DEF: ${{ steps.task-def.outputs.task-def-arn }}
+          CONTAINER_NAME: ${{ steps.task-def.outputs.container-name }}
         run: |
           # Convert the comma-separated secret values into JSON arrays
           # that awsvpcConfiguration expects.
           SUBNETS_JSON=$(echo -n "$SUBNETS" | jq -Rc 'split(",")')
           SGS_JSON=$(echo -n "$SECURITY_GROUPS" | jq -Rc 'split(",")')
 
-          OVERRIDES=$(jq -cn \
+          OVERRIDES=$(jq -cn --arg name "$CONTAINER_NAME" \
             '{
               "containerOverrides": [{
-                "name": "xcsgen",
+                "name": $name,
                 "command": ["alembic", "upgrade", "head"]
               }]
             }')
@@ -188,11 +195,11 @@ jobs:
             --cluster "$ECS_CLUSTER" \
             --tasks "$TASK_ARN"
 
-          # Check exit code of the xcsgen container. Zero = migrations OK.
+          # Check the container's exit code. Zero = migrations OK.
           EXIT_CODE=$(aws ecs describe-tasks \
             --cluster "$ECS_CLUSTER" \
             --tasks "$TASK_ARN" \
-            --query 'tasks[0].containers[?name==`xcsgen`].exitCode | [0]' \
+            --query "tasks[0].containers[?name=='$CONTAINER_NAME'].exitCode | [0]" \
             --output text)
           STOP_REASON=$(aws ecs describe-tasks \
             --cluster "$ECS_CLUSTER" \
