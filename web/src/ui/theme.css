@@ -1,9 +1,10 @@
-/* Workshop Instrument design tokens — light mode.
- * Exposed to Tailwind v4's CSS-first theme system via @theme.
- * Dark mode palette will be added later in the polish phase.
+/* Workshop Instrument design tokens.
  *
- * The `--metal-bar` gradient is the one distinctive visual signature —
- * used under the TopBar, under Section labels, and under active tabs.
+ * Light mode is the default (declared in @theme). Dark mode re-declares
+ * the same tokens scoped to `.dark` on any ancestor — Tailwind v4 honours
+ * the CSS custom properties so every utility that reads `var(...)` picks
+ * up the dark values automatically. Toggle by adding/removing the class
+ * on `<html>`; persistence lives in ThemeToggle.
  */
 
 @theme {
@@ -26,8 +27,11 @@
   --color-secondary-tint: #E6ECF3;
 
   --color-success: #2F6F4E;
+  --color-success-tint: #E6F0EA;
   --color-warning: #C98A1E;
+  --color-warning-tint: #FBEFD9;
   --color-destructive: #9B2430;
+  --color-destructive-hover: #7F1B28;
   --color-destructive-tint: #FBE2E5;
 
   --font-sans: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -40,9 +44,17 @@
 
   --shadow-card: 0 1px 2px rgba(20, 10, 0, 0.04);
   --shadow-popover: 0 8px 24px rgba(20, 10, 0, 0.08);
+
+  /* Substrate-tone panel used by TestPreview to showcase the burn
+   * pattern. Kept dark in both modes — it represents the physical
+   * workpiece, not a surface the user reads text on.
+   */
+  --color-substrate: #22201C;
+  --color-substrate-ink: #C6BFB4;
 }
 
-/* Reusable gradients not representable as theme colours */
+/* Gradients not representable as theme colours — declared once and
+ * re-bound under .dark so the motif still reads as metal on dark bg. */
 :root {
   --metal-bar: linear-gradient(
     90deg,
@@ -59,3 +71,60 @@
     #C6BFB4 100%
   );
 }
+
+/* Dark palette — applied when `.dark` is on <html> (set by ThemeToggle). */
+.dark {
+  --color-bg: #14110F;
+  --color-surface: #1C1815;
+  --color-surface-elevated: #252019;
+
+  --color-ink: #F2EDE5;
+  --color-ink-muted: #ACA49A;
+  --color-ink-subtle: #807A72;
+
+  --color-border: #2B2622;
+  --color-border-strong: #3D3731;
+
+  --color-primary: #E85A1F;
+  --color-primary-hover: #F16F39;
+  --color-primary-tint: #3A1F12;
+
+  --color-secondary: #7FA4D1;
+  --color-secondary-tint: #1F2F44;
+
+  --color-success: #6BB085;
+  --color-success-tint: #1C2B22;
+  --color-warning: #E0B062;
+  --color-warning-tint: #2F2512;
+  --color-destructive: #D86A76;
+  --color-destructive-hover: #E28893;
+  --color-destructive-tint: #3A1F24;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.5);
+
+  /* Bump substrate slightly in dark mode so it still reads as a panel,
+   * not a continuation of the page. */
+  --color-substrate: #2B2824;
+
+  --metal-bar: linear-gradient(
+    90deg,
+    #45413A 0%,
+    #6B655C 20%,
+    #8F8A82 50%,
+    #6B655C 80%,
+    #45413A 100%
+  );
+  --metal-bar-soft: linear-gradient(
+    90deg,
+    #3A3630 0%,
+    #5A554E 50%,
+    #3A3630 100%
+  );
+}
+
+/* Everything theme-tokenised flips via the `.dark` custom-property
+ * re-declarations above — no `dark:` Tailwind utilities needed anywhere.
+ * If that changes, wire the class-based variant here:
+ *   @custom-variant dark (&:where(.dark, .dark *));
+ */

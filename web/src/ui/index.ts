@@ -26,3 +26,4 @@ export { EmptyState, type EmptyStateProps } from "./EmptyState";
 export { PageContainer, type PageContainerProps } from "./PageContainer";
 export { Toolbar, type ToolbarProps } from "./Toolbar";
 export { MetalBar, type MetalBarProps } from "./MetalBar";
+export { ThemeToggle, initThemeEagerly } from "./ThemeToggle";

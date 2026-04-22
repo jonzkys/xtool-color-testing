@@ -107,8 +107,7 @@ export function computePreviewGeometry(spec: TestSpec): PreviewGeometry {
 export function TestPreview({ spec, testId: _testId }: { spec: TestSpec; testId: number | null }) {
   const g = computePreviewGeometry(spec);
 
-  // Darker substrate-tone panel so the copper-ish cells glow a bit.
-  const panelBg = "#22201C";
+  // Token-backed substrate panel — flips in dark mode via --color-substrate.
   const cellFill = "#C78F3E";
   const cellStroke = "#7A5322";
 
@@ -123,8 +122,8 @@ export function TestPreview({ spec, testId: _testId }: { spec: TestSpec; testId:
         </div>
       </div>
       <div
-        className="rounded-[12px] border border-[color:var(--color-border)] overflow-hidden p-4"
-        style={{ background: panelBg, boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04), var(--shadow-card)" }}
+        className="rounded-[12px] border border-[color:var(--color-border)] overflow-hidden p-4 bg-[color:var(--color-substrate)]"
+        style={{ boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04), var(--shadow-card)" }}
       >
         <svg
           viewBox={`0 0 ${g.viewW} ${g.viewH}`}
@@ -168,7 +167,7 @@ export function TestPreview({ spec, testId: _testId }: { spec: TestSpec; testId:
                     x={g.gridX}
                     y={labelY}
                     fontSize={LABEL_FONT_MM}
-                    fill="#C6BFB4"
+                    fill="var(--color-substrate-ink)"
                     fontFamily="monospace"
                   >
                     {row.labelMin}
@@ -179,7 +178,7 @@ export function TestPreview({ spec, testId: _testId }: { spec: TestSpec; testId:
                     x={g.gridX + g.gridW}
                     y={labelY}
                     fontSize={LABEL_FONT_MM}
-                    fill="#C6BFB4"
+                    fill="var(--color-substrate-ink)"
                     fontFamily="monospace"
                     textAnchor="end"
                   >
@@ -196,40 +195,40 @@ export function TestPreview({ spec, testId: _testId }: { spec: TestSpec; testId:
                 y={g.qr.y}
                 width={g.qr.size}
                 height={g.qr.size}
-                fill="#F2EDE5"
+                fill="var(--color-substrate-ink)"
               />
               <rect
                 x={g.qr.x + g.qr.size * 0.2}
                 y={g.qr.y + g.qr.size * 0.2}
                 width={g.qr.size * 0.2}
                 height={g.qr.size * 0.2}
-                fill={panelBg}
+                fill="var(--color-substrate)"
               />
               <rect
                 x={g.qr.x + g.qr.size * 0.6}
                 y={g.qr.y + g.qr.size * 0.2}
                 width={g.qr.size * 0.2}
                 height={g.qr.size * 0.2}
-                fill={panelBg}
+                fill="var(--color-substrate)"
               />
               <rect
                 x={g.qr.x + g.qr.size * 0.2}
                 y={g.qr.y + g.qr.size * 0.6}
                 width={g.qr.size * 0.2}
                 height={g.qr.size * 0.2}
-                fill={panelBg}
+                fill="var(--color-substrate)"
               />
             </g>
           )}
           {g.arucos.map((a) => (
             <g key={a.id}>
-              <rect x={a.x} y={a.y} width={a.size} height={a.size} fill="#F2EDE5" />
+              <rect x={a.x} y={a.y} width={a.size} height={a.size} fill="var(--color-substrate-ink)" />
               <rect
                 x={a.x + a.size * 0.3}
                 y={a.y + a.size * 0.3}
                 width={a.size * 0.4}
                 height={a.size * 0.4}
-                fill={panelBg}
+                fill="var(--color-substrate)"
               />
             </g>
           ))}

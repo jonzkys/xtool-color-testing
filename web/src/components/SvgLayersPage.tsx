@@ -1149,7 +1149,7 @@ function PaletteMatchSection({
 
   if (!materialId) {
     return (
-      <div className="rounded-[6px] border border-[color:var(--color-warning)]/30 bg-[#FBEFD9]/60 px-3 py-2 text-[12px] text-[color:var(--color-warning)]">
+      <div className="rounded-[6px] border border-[color:var(--color-warning)]/30 bg-[color:var(--color-warning-tint)]/60 px-3 py-2 text-[12px] text-[color:var(--color-warning)]">
         Pick a project material in the left column to see palette matches.
       </div>
     );

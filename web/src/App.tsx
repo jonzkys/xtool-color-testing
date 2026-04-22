@@ -27,9 +27,15 @@ export default function App() {
     : "Palette";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+    <div className="flex flex-col h-screen">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-3 focus:py-1.5 focus:rounded-[6px] focus:bg-[color:var(--color-primary)] focus:text-white focus:text-[12px] focus:font-medium"
+      >
+        Skip to main content
+      </a>
       <TopBar title={title} route={route} onNavigate={navigate} />
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+      <main id="main-content" className="flex-1 min-h-0 overflow-auto">
         {route.name === "tests"        && <TestsPage />}
         {route.name === "test-new"     && <TestDetailPage testId="new" />}
         {route.name === "test-detail"  && <TestDetailPage testId={route.id} />}
@@ -38,7 +44,7 @@ export default function App() {
         {route.name === "library"      && <LibraryPage onMaterialsChange={() => {}} />}
         {route.name === "palette"      && <PalettePage />}
         {route.name === "styleguide"   && <StyleguidePage />}
-      </div>
+      </main>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { formatRoute, type Route } from "../router";
-import { cn, MetalBar, PageContainer } from "../ui";
+import { cn, MetalBar, PageContainer, ThemeToggle } from "../ui";
 
 interface Props {
   title: string;
@@ -42,11 +42,12 @@ export function TopBar({ title, route, onNavigate }: Props) {
             </TabLink>
           </nav>
           <div className="ml-auto flex items-center gap-3">
+            <span className="text-[12.5px] text-[color:var(--color-ink-muted)]">{title}</span>
             <span
               aria-hidden="true"
               className="h-6 w-px bg-[color:var(--color-border-strong)]"
             />
-            <span className="text-[12.5px] text-[color:var(--color-ink-muted)]">{title}</span>
+            <ThemeToggle />
           </div>
         </div>
       </PageContainer>
@@ -73,6 +74,7 @@ function TabLink({
   return (
     <a
       href={formatRoute(target)}
+      aria-current={active ? "page" : undefined}
       onClick={(e) => {
         e.preventDefault();
         onNavigate(target);
@@ -80,10 +82,10 @@ function TabLink({
       className={cn(
         "relative px-3 h-14 inline-flex items-center text-[13px]",
         "transition-colors no-underline",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)] focus-visible:ring-inset",
         active
           ? "text-[color:var(--color-primary)] font-medium"
           : "text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
-        // Active: ember underline flush with the header's bottom border.
         active &&
           "after:absolute after:left-3 after:right-3 after:bottom-[-1px] after:h-[2px] after:bg-[color:var(--color-primary)] after:rounded-full",
       )}

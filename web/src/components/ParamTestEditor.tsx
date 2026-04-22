@@ -191,7 +191,7 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [] }: Props) 
           </Select>
         </Field>
         {t.cell_shape === "circle" && !t.square_cells && (
-          <div className="rounded-[6px] border border-[color:var(--color-warning)]/30 bg-[#FBEFD9]/60 px-3 py-2 text-[11.5px] text-[color:var(--color-warning)]">
+          <div className="rounded-[6px] border border-[color:var(--color-warning)]/30 bg-[color:var(--color-warning-tint)]/60 px-3 py-2 text-[11.5px] text-[color:var(--color-warning)]">
             Circle cells render best with Square cells enabled — otherwise the
             inscribed circle leaves unburned metal at the top/bottom and the
             palette sampler may pick up that background.

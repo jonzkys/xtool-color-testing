@@ -15,8 +15,8 @@ const badgeStyles = cva(
         neutral: "bg-[color:var(--color-surface-elevated)] text-[color:var(--color-ink-muted)] border border-[color:var(--color-border-strong)]",
         accent: "bg-[color:var(--color-primary-tint)] text-[color:var(--color-primary)] border border-[color:var(--color-primary)]/30",
         info: "bg-[color:var(--color-secondary-tint)] text-[color:var(--color-secondary)] border border-[color:var(--color-secondary)]/25",
-        success: "bg-[#E6F0EA] text-[color:var(--color-success)] border border-[color:var(--color-success)]/25",
-        warning: "bg-[#FBEFD9] text-[color:var(--color-warning)] border border-[color:var(--color-warning)]/30",
+        success: "bg-[color:var(--color-success-tint)] text-[color:var(--color-success)] border border-[color:var(--color-success)]/25",
+        warning: "bg-[color:var(--color-warning-tint)] text-[color:var(--color-warning)] border border-[color:var(--color-warning)]/30",
         destructive: "bg-[color:var(--color-destructive-tint)] text-[color:var(--color-destructive)] border border-[color:var(--color-destructive)]/25",
       },
       size: {

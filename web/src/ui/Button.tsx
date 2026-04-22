@@ -28,7 +28,7 @@ const buttonStyles = cva(
         ],
         destructive: [
           "bg-[color:var(--color-destructive)] text-white",
-          "hover:bg-[#7F1B28]",
+          "hover:bg-[color:var(--color-destructive-hover)]",
         ],
         link: [
           "bg-transparent text-[color:var(--color-secondary)] underline-offset-2",
