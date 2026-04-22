@@ -1,0 +1,190 @@
+name: Deploy
+
+# -----------------------------------------------------------------------------
+# Deployment targets
+# -----------------------------------------------------------------------------
+# Backend:  source → Docker image → ECR → ECS task-def revision → service update
+# Frontend: web/ → static bundle → S3 sync → (optional) CloudFront invalidate
+#
+# Auto-runs on push to main, only for components that changed (via
+# dorny/paths-filter). workflow_dispatch lets you force-deploy a target
+# manually from the Actions UI.
+#
+# Required GitHub secrets (Settings → Secrets and variables → Actions):
+#   AWS_ROLE_ARN                — IAM role the workflow assumes via OIDC
+#   AWS_REGION                  — e.g. us-east-1
+#   ECR_REPOSITORY              — repository name (not the full URI)
+#   ECS_CLUSTER                 — ECS cluster name
+#   ECS_SERVICE                 — ECS service name
+#   ECS_TASK_DEFINITION         — task-definition FAMILY name
+#   S3_BUCKET                   — bucket that serves the static frontend
+#   CLOUDFRONT_DISTRIBUTION_ID  — optional; leave unset to skip invalidation
+#
+# The OIDC role trust policy must allow this repo (see the repo's DEPLOY.md
+# or infra/terraform for the policy; minimal inline IAM:
+#   s3:PutObject / s3:DeleteObject / s3:ListBucket on the FE bucket
+#   ecr:GetAuthorizationToken / BatchGetImage / PutImage / BatchCheckLayer…
+#   ecs:DescribeTaskDefinition / RegisterTaskDefinition / UpdateService
+#   iam:PassRole on the ECS task execution + task roles
+#   cloudfront:CreateInvalidation (if used)
+# )
+# -----------------------------------------------------------------------------
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "What to deploy"
+        required: true
+        default: backend
+        type: choice
+        options:
+          - backend
+          - frontend
+          - both
+
+permissions:
+  id-token: write   # OIDC auth to AWS
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'src/**'
+              - 'alembic/**'
+              - 'alembic.ini'
+              - 'pyproject.toml'
+              - 'Dockerfile'
+              - '.dockerignore'
+            frontend:
+              - 'web/**'
+
+  backend-deploy:
+    needs: changes
+    if: |
+      (github.event_name == 'push' && needs.changes.outputs.backend == 'true') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'backend' || inputs.target == 'both'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Update ECS task definition with new image
+        id: task-def
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+          ECS_TASK_DEFINITION: ${{ secrets.ECS_TASK_DEFINITION }}
+        run: |
+          # Pull the latest revision of the task definition.
+          TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition "$ECS_TASK_DEFINITION" \
+            --query 'taskDefinition')
+
+          # Swap in the new image and strip the read-only fields that
+          # register-task-definition refuses to accept on input.
+          NEW_IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          UPDATED=$(echo "$TASK_DEF" | \
+            jq --arg IMG "$NEW_IMAGE" \
+            '.containerDefinitions[0].image = $IMG |
+             del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                 .compatibilities, .registeredAt, .registeredBy)')
+
+          NEW_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$UPDATED" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "task-def-arn=$NEW_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to ECS
+        env:
+          ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
+          ECS_SERVICE: ${{ secrets.ECS_SERVICE }}
+        run: |
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --task-definition ${{ steps.task-def.outputs.task-def-arn }} \
+            --force-new-deployment
+
+  frontend-deploy:
+    needs: changes
+    if: |
+      (github.event_name == 'push' && needs.changes.outputs.frontend == 'true') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'frontend' || inputs.target == 'both'))
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install and build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to S3
+        # --delete removes files in the bucket that no longer exist in the
+        # build — keeps old hashed bundles from accumulating forever.
+        run: aws s3 sync dist/ s3://${{ secrets.S3_BUCKET }}/ --delete
+
+      - name: Invalidate CloudFront cache
+        # CloudFront is optional — the step skips itself cleanly when the
+        # secret isn't set, so deployments to an S3-only bucket still work.
+        env:
+          DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          if [ -n "$DISTRIBUTION_ID" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id "$DISTRIBUTION_ID" \
+              --paths "/*"
+          else
+            echo "CLOUDFRONT_DISTRIBUTION_ID not set — skipping invalidation"
+          fi

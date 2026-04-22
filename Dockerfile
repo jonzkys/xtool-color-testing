@@ -1,0 +1,86 @@
+# syntax=docker/dockerfile:1.6
+#
+# xcs-gen API image.
+#
+# Two-stage build: ``builder`` creates a venv with the package + mysql
+# + s3 extras pre-installed; ``runtime`` carries only the venv and the
+# runtime system libraries (no gcc, no headers, no pip cache).
+#
+# The frontend (web/dist) is NOT included — in the ECS + S3 deployment
+# the static bundle is served from CloudFront. Single-host deployments
+# that still want the single-container setup should run `npm run build`
+# and COPY web/dist manually (or use the legacy standalone pip install).
+
+# ---------------------------------------------------------------------
+# Stage 1 — builder: resolve and install Python deps into a venv.
+# ---------------------------------------------------------------------
+FROM python:3.12-slim AS builder
+
+# Build-only deps. Kept out of the runtime image so the final size
+# stays small.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy pyproject first so the pip install layer caches across source
+# edits — only invalidates when dependencies change.
+COPY pyproject.toml ./
+COPY src ./src
+
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --upgrade pip \
+    && /opt/venv/bin/pip install --no-cache-dir ".[mysql,s3]"
+
+
+# ---------------------------------------------------------------------
+# Stage 2 — runtime: slim image with only the venv + system libs.
+# ---------------------------------------------------------------------
+FROM python:3.12-slim AS runtime
+
+# Runtime-only system libraries:
+#   libzbar0 — pyzbar ctypes binding for QR decoding
+#   libgomp1 — OpenMP runtime that OpenCV wheels link against
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libzbar0 \
+        libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pull the pre-installed venv across — one layer, no second resolve.
+COPY --from=builder /opt/venv /opt/venv
+
+WORKDIR /app
+
+# Everything the app needs at runtime. alembic/ must be present so the
+# one-shot migration task can find the migration scripts.
+COPY src ./src
+COPY alembic ./alembic
+COPY alembic.ini ./
+
+# Non-root execution. The image should have no reason to escalate.
+RUN useradd --create-home --shell /bin/bash --uid 10001 xcsgen \
+    && chown -R xcsgen:xcsgen /app
+USER xcsgen
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    # Container defaults — migrations run as a separate one-off task in
+    # the deployment, NOT at app boot. The rest of the env (DB URL,
+    # S3 bucket, CORS origins, …) comes from the ECS task definition.
+    XCS_GEN_AUTO_MIGRATE=false \
+    XCS_GEN_HOST=0.0.0.0 \
+    XCS_GEN_PORT=4000
+
+EXPOSE 4000
+
+# The /api/health endpoint is public in any mode — safe for the LB to poll.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request, sys; \
+r = urllib.request.urlopen('http://127.0.0.1:4000/api/health', timeout=3); \
+sys.exit(0 if r.status == 200 else 1)"
+
+CMD ["uvicorn", "xcs_gen_web.app:app", "--host", "0.0.0.0", "--port", "4000"]
