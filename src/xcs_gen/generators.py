@@ -219,11 +219,25 @@ def generate_gradient(
         )
 
     if registration_mode != "off" and test_id is not None:
+        # Real grid height must include the inter-row gaps _generate_wrapped
+        # inserts between wrapped rows — otherwise bottom markers land inside
+        # the grid rather than below it.
+        if is_dual:
+            grid_h = total_height
+        elif rows > 1:
+            ann_space = 0.0 if hide_axis_labels else (
+                tick_length + 0.05 + text_height(label_font_size) + 0.05
+            )
+            effective_row_gap = max(row_gap, ann_space)
+            grid_h = rows * total_height + (rows - 1) * effective_row_gap
+        else:
+            grid_h = total_height
+
         layout = compute_layout(
             grid_x=start_x,
             grid_y=gradient_start_y,
             grid_w=total_width,
-            grid_h=(total_height * rows) if not is_dual else total_height,
+            grid_h=grid_h,
             mode=registration_mode,  # type: ignore[arg-type]
             qr_size_mm=registration_qr_size_mm,
             aruco_size_mm=registration_aruco_size_mm,

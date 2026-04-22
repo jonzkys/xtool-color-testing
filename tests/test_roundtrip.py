@@ -271,6 +271,67 @@ def test_default_row_stride_includes_ann_space():
     assert abs((rect_ys[1] - rect_ys[0]) - expected_stride) < 0.01
 
 
+def test_wrapped_registration_markers_sit_below_actual_grid():
+    """Bottom ArUcos on a wrapped 1D test must land beneath the last row,
+    not the naive rows*row_height point — the inter-row gaps expand the
+    real grid height when labels are visible."""
+    from xcs_gen.text import text_height
+
+    row_height = 6.0
+    row_gap = 0.2
+    rows = 12
+    ann_space = 0.5 + 0.05 + text_height(1.2) + 0.05
+    effective_row_gap = max(row_gap, ann_space)
+
+    project = generate_gradient(
+        x_param="speed", x_min=500, x_max=3000, x_steps=240,
+        rows=rows,
+        total_width=80.0, total_height=row_height, row_gap=row_gap,
+        registration_mode="auto",
+        test_id=42,
+    )
+
+    rect_ys = sorted({round(e.y, 3) for e in project.elements})
+    last_row_bottom = rect_ys[-1] + row_height
+
+    # Find the bottom ArUco(s) in the emitted bitmaps.
+    assert len(project.bitmaps) >= 2  # QR + at least one ArUco
+    bitmap_ys = sorted({round(b.y, 3) for b in project.bitmaps})
+    bottom_marker_y = bitmap_ys[-1]
+
+    # Bottom marker should be AT OR BELOW the last row's bottom, not
+    # stranded inside the grid. Allow up to 3mm margin.
+    assert bottom_marker_y >= last_row_bottom - 0.01, (
+        f"bottom marker at y={bottom_marker_y} is above last row bottom "
+        f"y={last_row_bottom} — registration math ignored inter-row gaps"
+    )
+
+    # Sanity: the row_gap expansion is what makes this non-trivial.
+    assert effective_row_gap > row_gap
+
+
+def test_wrapped_hide_axis_labels_markers_use_tight_stride():
+    """With hide_axis_labels=True the rows sit tight (just row_gap apart),
+    so the bottom marker also moves up accordingly."""
+    row_height = 6.0
+    row_gap = 0.2
+    rows = 12
+
+    project = generate_gradient(
+        x_param="speed", x_min=500, x_max=3000, x_steps=240,
+        rows=rows,
+        total_width=80.0, total_height=row_height, row_gap=row_gap,
+        registration_mode="auto",
+        hide_axis_labels=True,
+        test_id=42,
+    )
+
+    rect_ys = sorted({round(e.y, 3) for e in project.elements})
+    last_row_bottom = rect_ys[-1] + row_height
+    bottom_marker_y = sorted({round(b.y, 3) for b in project.bitmaps})[-1]
+    assert bottom_marker_y >= last_row_bottom - 0.01
+
+
 def test_1000_elements():
     """Scaling test: 1000 elements in 100mm."""
     project = generate_gradient(

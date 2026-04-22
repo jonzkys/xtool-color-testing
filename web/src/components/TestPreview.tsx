@@ -46,9 +46,11 @@ export function computePreviewGeometry(spec: TestSpec): PreviewGeometry {
     ? (spec.height_mm - Math.max(0, ySteps - 1) * spec.gap_mm) / ySteps
     : spec.height_mm;
   // Wrapped 1D rows get stretched apart to fit per-row axis labels — same
-  // expansion the generator applies via effective_row_gap. 2D has no
-  // per-row labels.
-  const interRowGap = !is2D && rowCount > 1
+  // expansion the generator applies via effective_row_gap. When the user
+  // has ticked "hide axis labels" there's no label to reserve space for,
+  // so the gap collapses back to `spec.gap_mm`. 2D has no per-row labels.
+  const rowsAnnotated = !is2D && rowCount > 1 && !spec.hide_axis_labels;
+  const interRowGap = rowsAnnotated
     ? Math.max(spec.gap_mm, ROW_ANNOTATION_MM)
     : spec.gap_mm;
   const gridH = is2D
@@ -81,14 +83,16 @@ export function computePreviewGeometry(spec: TestSpec): PreviewGeometry {
     const isLastRow = r === rowCount - 1;
     let labelMin = "";
     let labelMax = "";
-    if (is2D) {
-      if (isLastRow) {
-        labelMin = spec.x_min.toFixed(0);
-        labelMax = spec.x_max.toFixed(0);
+    if (!spec.hide_axis_labels) {
+      if (is2D) {
+        if (isLastRow) {
+          labelMin = spec.x_min.toFixed(0);
+          labelMax = spec.x_max.toFixed(0);
+        }
+      } else {
+        labelMin = (spec.x_min + cellIdx * step).toFixed(0);
+        labelMax = (spec.x_min + (cellIdx + take - 1) * step).toFixed(0);
       }
-    } else {
-      labelMin = (spec.x_min + cellIdx * step).toFixed(0);
-      labelMax = (spec.x_min + (cellIdx + take - 1) * step).toFixed(0);
     }
     rows.push({ yMm: rowY, heightMm: rowHeight, cells, labelMin, labelMax });
     if (!is2D) { cellIdx += take; cellsLeft -= take; }
