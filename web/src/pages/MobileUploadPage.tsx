@@ -181,7 +181,6 @@ export function MobileUploadPage({ mid }: Props) {
           data-testid="file-input"
           type="file"
           accept="image/*"
-          capture="environment"
           className="hidden"
           disabled={uploading}
           onChange={(e) => {
