@@ -36,13 +36,19 @@ def upgrade() -> None:
     with op.batch_alter_table("results") as batch:
         batch.add_column(
             sa.Column(
-                "via", sa.String(length=16),
+                "via", sa.String(length=16),  # 'desktop'|'mobile'; max 16
                 nullable=False, server_default="desktop",
             ),
+        )
+    with op.batch_alter_table("results") as batch:
+        batch.create_check_constraint(
+            "results_via_chk", "via IN ('desktop','mobile')",
         )
 
 
 def downgrade() -> None:
+    with op.batch_alter_table("results") as batch:
+        batch.drop_constraint("results_via_chk", type_="check")
     with op.batch_alter_table("results") as batch:
         batch.drop_column("via")
     op.drop_index("ix_users_mobile_id", table_name="users")
