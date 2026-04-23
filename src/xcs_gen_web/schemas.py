@@ -264,28 +264,9 @@ class SvgPreviewResponse(BaseModel):
     svg: str
 
 
-class RasterToSvgRequest(BaseModel):
-    """Request to vectorize a PNG/JPG via vtracer.
-
-    Image is sent as base64 (or data URL). Response is an SVG string that
-    can be fed into the existing SVG-layers endpoints.
-    """
-
-    image_data: str = Field(min_length=1, max_length=20_000_000)  # ~15 MB PNG
-    color_precision: int = Field(default=4, ge=1, le=8)
-    # Upper bounds kept in lockstep with the frontend's NumberField
-    # caps (web/src/components/SvgLayersPage.tsx). The frontend's caps
-    # are the UX hint; these are the actual DoS guard. Going higher
-    # doesn't produce better vectorisations — vtracer's cost scales
-    # per-layer and photo-quality "256 colours" just burns backend CPU.
-    layer_difference: int = Field(default=32, ge=0, le=128)
-    filter_speckle: int = Field(default=8, ge=0, le=64)
-    # 0 = no PIL pre-quantization, 2-32 = cap palette before vtracer.
-    max_colors: int = Field(default=0, ge=0, le=32)
-
-
-class RasterToSvgResponse(BaseModel):
-    svg: str
+# Raster-to-SVG schemas were removed when tracing moved to the
+# browser (web/src/tracer/vtracer.ts). Nothing on the backend now
+# consumes or produces raster-trace options.
 
 
 class PaletteEntryResponse(BaseModel):

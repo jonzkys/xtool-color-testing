@@ -65,22 +65,9 @@ export const DEFAULT_RASTER_TRACE_OPTIONS: RasterTraceOptions = {
   max_colors: 6,  // Default for raster: cap palette at 6 colors - best UX for photos
 };
 
-export async function rasterToSvg(
-  image_data_url: string,
-  options: RasterTraceOptions,
-): Promise<string> {
-  const resp = await fetch("/api/raster-to-svg", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ image_data: image_data_url, ...options }),
-  });
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error(err.detail ?? `HTTP ${resp.status}`);
-  }
-  const data = await resp.json();
-  return data.svg as string;
-}
+// Raster-to-SVG tracing is now client-side via vtracer-wasm; see
+// web/src/tracer/vtracer.ts. The old /api/raster-to-svg helper used
+// to live here.
 
 export async function previewSvg(
   svg_content: string,

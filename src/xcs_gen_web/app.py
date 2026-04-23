@@ -16,7 +16,6 @@ from .security import (
     RegistrationRateLimiter,
     source_ip,
 )
-from .raster_to_svg import RasterTraceOptions, decode_base64_image, png_to_svg
 from .schemas import (
     AveragedSwatch,
     BaseParams,
@@ -31,8 +30,6 @@ from .schemas import (
     PresetCreate,
     PresetResponse,
     PresetUpdate,
-    RasterToSvgRequest,
-    RasterToSvgResponse,
     ResultPatch,
     ResultResponse,
     ResultSwatch,
@@ -371,27 +368,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    @app.post("/api/raster-to-svg", response_model=RasterToSvgResponse)
-    def raster_to_svg_endpoint(request: RasterToSvgRequest) -> RasterToSvgResponse:
-        try:
-            img_bytes, fmt = decode_base64_image(request.image_data)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Could not decode image: {e}")
-
-        try:
-            svg = png_to_svg(
-                img_bytes, image_format=fmt,
-                options=RasterTraceOptions(
-                    color_precision=request.color_precision,
-                    layer_difference=request.layer_difference,
-                    filter_speckle=request.filter_speckle,
-                    max_colors=request.max_colors,
-                ),
-            )
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Trace failed: {e}")
-
-        return RasterToSvgResponse(svg=svg)
+    # /api/raster-to-svg moved into the frontend as vtracer-wasm. See
+    # web/src/tracer/vtracer.ts — no more server CPU burned on per-user
+    # tracing, no more network round-trip, and the backend no longer
+    # depends on the `vtracer` Python wheel.
 
     @app.post("/api/svg-layers")
     def svg_layers(request: SvgLayersRequest) -> Response:

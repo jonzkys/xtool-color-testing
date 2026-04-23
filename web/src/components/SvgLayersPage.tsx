@@ -13,10 +13,12 @@ import {
   DEFAULT_RASTER_TRACE_OPTIONS,
   detectSvgLayers,
   previewSvg,
-  rasterToSvg,
   svgLayersAndDownload,
 } from "../generate";
 import type { RasterTraceOptions } from "../generate";
+// Tracing runs in the browser via vtracer-wasm — no network roundtrip,
+// no backend CPU burn, instant feedback when knobs change.
+import { traceImageToSvg } from "../tracer/vtracer";
 import type {
   BaseParams,
   DetectedLayer,
@@ -316,7 +318,7 @@ export function SvgLayersPage() {
     setRasterDataUrl(dataUrl);
     setTracing(true);
     try {
-      const svg = await rasterToSvg(dataUrl, traceOptions);
+      const svg = await traceImageToSvg(dataUrl, traceOptions);
       await applyDetectedSvg(svg, suggested);
     } catch (err) {
       setDetectError((err as Error).message);
@@ -330,7 +332,7 @@ export function SvgLayersPage() {
     setDetectError(undefined);
     setTracing(true);
     try {
-      const svg = await rasterToSvg(rasterDataUrl, opts);
+      const svg = await traceImageToSvg(rasterDataUrl, opts);
       const currentName = request.name;
       await applyDetectedSvg(svg, currentName);
       setTracePending(false);

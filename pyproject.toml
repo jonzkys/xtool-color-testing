@@ -19,7 +19,9 @@ dependencies = [
     "svgelements>=1.9",
     "shapely>=2.0",
     "pyyaml>=6.0",
-    "vtracer>=0.6",
+    # vtracer was dropped when raster-to-SVG tracing moved to the
+    # browser (web/src/tracer/vtracer.ts uses vtracer-wasm). The Rust
+    # core is the same; only the call site moved.
     "opencv-contrib-python-headless>=4.8",
     "segno>=1.6",
     "numpy>=1.24",
