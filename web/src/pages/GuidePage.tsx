@@ -637,12 +637,14 @@ function LibrarySection() {
       aside={
         <>
           <Figure
+            src="/guide/fig-1-1-library.png"
             label="FIG. 1.1 — LIBRARY · MATERIALS LIST"
-            aspect="16 / 11"
+            aspect="16 / 10"
             pins={[
-              { xPct: 12, yPct: 10, tag: 1, caption: "New material — name, visibility, notes." },
-              { xPct: 50, yPct: 50, tag: 2, caption: "Materials you own; click to expand presets." },
-              { xPct: 88, yPct: 85, tag: 3, caption: "+ Preset adds a named parameter bundle." },
+              { xPct: 84, yPct: 10, tag: 1, caption: "New material — name, visibility, notes." },
+              { xPct: 18, yPct: 28, tag: 2, caption: "Materials you own; click to expand presets." },
+              { xPct: 80, yPct: 22, tag: 3, caption: "+ Preset adds a named parameter bundle." },
+              { xPct: 46, yPct: 30, tag: 4, caption: "Default preset — seeds new tests + layers." },
             ]}
           />
           <MaterialPresetGlyph />
@@ -789,22 +791,25 @@ function TestSection({ onOpenTests }: { onOpenTests: () => void }) {
         aside={
           <>
             <Figure
+              src="/guide/fig-2-1-test-editor.png"
               label="FIG. 2.1 — TEST EDITOR, FILLED"
-              aspect="16 / 12"
+              aspect="16 / 10"
               pins={[
-                { xPct: 20, yPct: 12, tag: 1, caption: "X-axis picker + range + step count." },
-                { xPct: 70, yPct: 32, tag: 2, caption: "Optional Y-axis — unlocks a 2-D grid." },
-                { xPct: 50, yPct: 58, tag: 3, caption: "Layout: width/height in mm, gap, rows." },
-                { xPct: 82, yPct: 82, tag: 4, caption: "Registration — QR + ArUcos for ingest." },
+                { xPct: 16, yPct: 30, tag: 1, caption: "X-axis picker + range + step count." },
+                { xPct: 16, yPct: 44, tag: 2, caption: "Optional Y-axis — unlocks a 2-D grid." },
+                { xPct: 16, yPct: 60, tag: 3, caption: "Layout: width / height / gap / rows." },
+                { xPct: 51, yPct: 40, tag: 4, caption: "Live preview with QR + ArUco markers baked in." },
+                { xPct: 63, yPct: 9,  tag: 5, caption: "Generate .xcs — retest chip shows the next burn index." },
               ]}
             />
             <ParamDiagram />
             <Figure
-              label="FIG. 2.2 — PREVIEW + GENERATE"
-              aspect="16 / 9"
+              src="/guide/fig-3-2-ingest-palette.png"
+              label="FIG. 2.2 — AVERAGED SWATCHES + INGEST"
+              aspect="16 / 10"
               pins={[
-                { xPct: 50, yPct: 35, tag: 1, caption: "Live preview of the burn pattern." },
-                { xPct: 85, yPct: 80, tag: 2, caption: "Generate .xcs and Retest buttons." },
+                { xPct: 78, yPct: 52, tag: 1, caption: "Averaged swatches grid — n × σ per cell." },
+                { xPct: 82, yPct: 76, tag: 2, caption: "Ingest to palette — averaged / from specific / replace." },
               ]}
             />
           </>
@@ -1003,20 +1008,23 @@ function IngestSection() {
         <>
           <IngestPipeline />
           <Figure
+            src="/guide/fig-3-1-upload-dialog.png"
             label="FIG. 3.1 — UPLOAD DIALOG"
             aspect="16 / 10"
             pins={[
-              { xPct: 50, yPct: 30, tag: 1, caption: "Drop or pick a photo — PNG / JPG / HEIC." },
-              { xPct: 50, yPct: 78, tag: 2, caption: "Auto-match routes the photo by QR payload." },
+              { xPct: 50, yPct: 46, tag: 1, caption: "Photograph in, test routed out — the server auto-matches via QR." },
+              { xPct: 50, yPct: 58, tag: 2, caption: "Drop or click to pick — JPEG / PNG / HEIC." },
+              { xPct: 36, yPct: 44, tag: 3, caption: "From phone — pair via QR for a mobile upload." },
             ]}
           />
           <Figure
+            src="/guide/fig-3-2-ingest-palette.png"
             label="FIG. 3.2 — INGEST TO PALETTE"
-            aspect="16 / 8"
+            aspect="16 / 10"
             pins={[
-              { xPct: 24, yPct: 50, tag: 1, caption: "Averaged vs from-specific-result." },
-              { xPct: 64, yPct: 80, tag: 2, caption: "Replace existing for this test." },
-              { xPct: 90, yPct: 50, tag: 3, caption: "Ingest button — writes to the Palette page." },
+              { xPct: 78, yPct: 54, tag: 1, caption: "Averaged across all non-excluded results vs from a specific upload." },
+              { xPct: 78, yPct: 64, tag: 2, caption: "Replace existing palette entries for this test." },
+              { xPct: 74, yPct: 74, tag: 3, caption: "Ingest — writes into the Palette page for the material." },
             ]}
           />
         </>
@@ -1162,13 +1170,15 @@ function SpectrumBriefSection({ onOpenSpectrum }: { onOpenSpectrum: () => void }
       }
       aside={
         <Figure
+          src="/guide/fig-4-1-spectrum.png"
           label="FIG. 4.1 — SPECTRUM PAGE"
           aspect="16 / 10"
           pins={[
-            { xPct: 85, yPct: 8, tag: 1, caption: "Stability chip — only appears when you have ≥ 2 results." },
-            { xPct: 50, yPct: 40, tag: 2, caption: "Sampled strip — each cell's averaged colour." },
-            { xPct: 50, yPct: 65, tag: 3, caption: "Variability bar underneath — per-cell ΔE spread." },
-            { xPct: 50, yPct: 90, tag: 4, caption: "Projection plot — curve fit + R² + residual ΔE." },
+            { xPct: 70, yPct: 12, tag: 1, caption: "Stability chip — only appears when you have ≥ 2 results." },
+            { xPct: 35, yPct: 12, tag: 2, caption: "Field manual pill — the deeper dive on projections and fits." },
+            { xPct: 50, yPct: 51, tag: 3, caption: "Sampled strip + per-cell variance seismograph." },
+            { xPct: 50, yPct: 70, tag: 4, caption: "Modeled strip — degree-N per-channel Lab reconstruction." },
+            { xPct: 50, yPct: 92, tag: 5, caption: "Projection plot — PC1 / L* / hue / chroma / ΔE₀ with fit curve." },
           ]}
         />
       }
@@ -1212,20 +1222,25 @@ function LayersSection({ onOpenLayers }: { onOpenLayers: () => void }) {
           <>
             <LayersPipeline />
             <Figure
+              src="/guide/fig-5-1-svg-upload.png"
               label="FIG. 5.1 — UPLOAD SVG / RASTER"
               aspect="16 / 10"
               pins={[
-                { xPct: 50, yPct: 50, tag: 1, caption: "Drop zone — accepts SVG, PNG, JPG, HEIC." },
+                { xPct: 15, yPct: 29, tag: 1, caption: "Drop zone — accepts SVG, PNG, JPG, HEIC." },
+                { xPct: 15, yPct: 22, tag: 2, caption: "Pick a project material first — unlocks palette match." },
+                { xPct: 15, yPct: 62, tag: 3, caption: "Collapse identical layers + Subtract overlaps, per project." },
               ]}
             />
             <Figure
+              src="/guide/fig-5-2-vtracer-knobs.png"
               label="FIG. 5.2 — VTRACER KNOBS (RASTER ONLY)"
               aspect="16 / 10"
               pins={[
-                { xPct: 20, yPct: 30, tag: 1, caption: "Max colours — 0 disables pre-quantisation." },
-                { xPct: 80, yPct: 30, tag: 2, caption: "Colour precision — detail vs speed." },
-                { xPct: 20, yPct: 80, tag: 3, caption: "Layer difference — collapses similar hues." },
-                { xPct: 80, yPct: 80, tag: 4, caption: "Filter speckle — drops JPEG noise." },
+                { xPct: 9,  yPct: 46, tag: 1, caption: "Max colours — 0 disables pre-quantisation." },
+                { xPct: 19, yPct: 46, tag: 2, caption: "Colour precision — detail vs speed." },
+                { xPct: 9,  yPct: 54, tag: 3, caption: "Layer difference — collapses similar hues." },
+                { xPct: 19, yPct: 54, tag: 4, caption: "Filter speckle — drops JPEG noise." },
+                { xPct: 18, yPct: 40, tag: 5, caption: "Re-trace — expensive, only runs when you press." },
               ]}
             />
           </>
@@ -1317,40 +1332,47 @@ function LayersSection({ onOpenLayers }: { onOpenLayers: () => void }) {
           aside={
             <>
               <Figure
+                src="/guide/fig-5-3-detected-layers.png"
                 label="FIG. 5.3 — DETECTED LAYERS PANEL"
-                aspect="16 / 14"
+                aspect="16 / 10"
                 pins={[
-                  { xPct: 40, yPct: 14, tag: 1, caption: "Colour chip · enable toggle · shape count." },
-                  { xPct: 85, yPct: 45, tag: 2, caption: "Auto-match all layers to palette." },
-                  { xPct: 85, yPct: 85, tag: 3, caption: "Include near-white layers." },
+                  { xPct: 15, yPct: 52, tag: 1, caption: "One row per unique colour — checkbox + chip + count." },
+                  { xPct: 15, yPct: 44, tag: 2, caption: "Auto-match all layers to palette." },
+                  { xPct: 15, yPct: 47, tag: 3, caption: "Include white — show near-white layers hidden by default." },
+                  { xPct: 15, yPct: 40, tag: 4, caption: "Merge similar — collapse near-duplicate hues." },
                 ]}
               />
               <SubtractOverlapsViz />
               <Figure
-                label="FIG. 5.4 — PER-LAYER EDITOR"
-                aspect="16 / 12"
+                src="/guide/fig-5-4-per-layer-editor.png"
+                label="FIG. 5.4 — PER-LAYER EDITOR · PALETTE MATCH"
+                aspect="16 / 10"
                 pins={[
-                  { xPct: 30, yPct: 18, tag: 1, caption: "Processing type — fill / engrave / cut / hatch." },
-                  { xPct: 70, yPct: 18, tag: 2, caption: "Scan angle for this layer." },
-                  { xPct: 30, yPct: 55, tag: 3, caption: "Base params — auto-filled by palette match." },
-                  { xPct: 50, yPct: 90, tag: 4, caption: "Hatch passes, when processing is HATCHED_LINES." },
+                  { xPct: 40, yPct: 32, tag: 1, caption: "ΔE-ranked palette candidates from the material's saved swatches." },
+                  { xPct: 64, yPct: 32, tag: 2, caption: "Apply → bakes the matched preset's power/speed/freq into this layer." },
+                  { xPct: 50, yPct: 60, tag: 3, caption: "Params in effect — editable per layer." },
+                  { xPct: 50, yPct: 74, tag: 4, caption: "Processing type — fill / engrave / cut / hatched lines." },
                 ]}
               />
               <HatchAngleViz />
               <Figure
+                src="/guide/fig-5-5-merge-dialog.png"
                 label="FIG. 5.5 — MERGE COLOURS DIALOG"
                 aspect="16 / 10"
                 pins={[
-                  { xPct: 30, yPct: 40, tag: 1, caption: "Groups of perceptually-close colours." },
-                  { xPct: 75, yPct: 40, tag: 2, caption: "Pick the destination colour per group." },
+                  { xPct: 50, yPct: 46, tag: 1, caption: "Similarity slider — lower = aggressive merging." },
+                  { xPct: 50, yPct: 53, tag: 2, caption: "Preview — colours within the threshold." },
+                  { xPct: 62, yPct: 59, tag: 3, caption: "Merge button — rewrites the SVG in place." },
                 ]}
               />
               <Figure
+                src="/guide/fig-5-6-preview-generate.png"
                 label="FIG. 5.6 — PREVIEW + GENERATE"
-                aspect="16 / 9"
+                aspect="16 / 10"
                 pins={[
-                  { xPct: 50, yPct: 45, tag: 1, caption: "Preview uses palette-matched burn colours." },
-                  { xPct: 85, yPct: 82, tag: 2, caption: "Generate .xcs file for XCS Studio." },
+                  { xPct: 80, yPct: 30, tag: 1, caption: "Design — the traced artwork with original colours." },
+                  { xPct: 80, yPct: 75, tag: 2, caption: "Expected burn — what will actually be engraved." },
+                  { xPct: 88, yPct: 9,  tag: 3, caption: "Generate .xcs — XCS Studio import-ready." },
                 ]}
               />
             </>
