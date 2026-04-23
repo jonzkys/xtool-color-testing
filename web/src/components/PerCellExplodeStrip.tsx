@@ -67,16 +67,27 @@ export function PerCellExplodeStrip({
           const d = deltas[i];
           const tone =
             d < 1 ? "calm" : d < 2 ? "hint" : d < 4 ? "warn" : "hot";
+          // Prefer the retest label when the burn was tagged — it's
+          // the user's own numbering. Fall back to the DB id for
+          // pre-retest-era results.
+          const hasRetest = (r.retest_index ?? 0) > 0;
+          const label = hasRetest
+            ? `retest #${r.retest_index}`
+            : `#${r.result_id}`;
           return (
             <div key={`${r.result_id}-${i}`} className="flex flex-col gap-1 min-w-[64px] flex-1">
               <div
                 className="h-16 rounded-[4px] border border-[color:var(--color-border)]"
                 style={{ background: r.hex }}
-                title={`${r.hex} · result #${r.result_id}`}
+                title={
+                  hasRetest
+                    ? `${r.hex} · result #${r.result_id} · retest #${r.retest_index}`
+                    : `${r.hex} · result #${r.result_id}`
+                }
               />
               <div className="flex items-baseline justify-between gap-1">
-                <span className="font-mono text-[9.5px] tracking-[0.12em] uppercase text-[color:var(--color-ink-subtle)]">
-                  #{r.result_id}
+                <span className="font-mono text-[9.5px] tracking-[0.12em] uppercase text-[color:var(--color-ink-subtle)] truncate">
+                  {label}
                 </span>
                 <span
                   className={cn(

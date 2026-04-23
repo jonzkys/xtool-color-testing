@@ -124,11 +124,18 @@ def emit_registration_markers(
     layout: RegistrationLayout,
     test_id: int,
     annotation_params: ProcessingParams,
+    retest_index: int = 0,
 ) -> None:
-    """Emit the QR (id-only) plus any ArUco corners on the annotation layer."""
+    """Emit the QR (id + retest index) plus any ArUco corners on the
+    annotation layer.
+
+    ``retest_index`` defaults to 0 so callers that don't care about the
+    retest feature (older unit tests, svg-stack callers that never
+    burn a gradient test) don't need to plumb the value through.
+    """
     if layout.qr is None:
         return
-    qr_text = encode_id(test_id)
+    qr_text = encode_id(test_id, retest_index)
     _emit_bitmap(
         project, bits=_qr_bits(qr_text),
         origin_x=layout.qr.x, origin_y=layout.qr.y,

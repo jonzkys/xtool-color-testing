@@ -39,6 +39,10 @@ def _row(r) -> dict[str, Any]:
         "locked": bool(r.locked),
         "owner_id": r.owner_id,
         "visibility": r.visibility,
+        # Pre-0006 rows don't have the column; getattr fallback keeps
+        # tests that use older DB snapshots working. New reads always
+        # carry an int.
+        "retest_index": int(getattr(r, "retest_index", 0) or 0),
     }
 
 
@@ -144,3 +148,32 @@ def soft_delete(tid: int, *, owner_id: int = STANDALONE_USER_ID) -> None:
             .where(and_(tests.c.id == tid, tests.c.owner_id == owner_id))
             .values(status="deleted", updated_at=_now())
         )
+
+
+def bump_retest_index(tid: int, *, owner_id: int = STANDALONE_USER_ID) -> dict[str, Any]:
+    """Increment ``retest_index`` on the test row and return the updated row.
+
+    Raises ``KeyError`` if the test doesn't exist for this owner — the
+    caller (API handler) maps it to HTTP 404. Not idempotent on
+    purpose: each call bumps by one because "retest" is an explicit
+    user action that indexes a new burn.
+    """
+    with session_scope() as s:
+        cur = s.execute(
+            select(tests).where(
+                and_(tests.c.id == tid, tests.c.owner_id == owner_id),
+            )
+        ).one_or_none()
+        if cur is None:
+            raise KeyError(tid)
+        next_idx = int(getattr(cur, "retest_index", 0) or 0) + 1
+        s.execute(
+            tests.update()
+            .where(and_(tests.c.id == tid, tests.c.owner_id == owner_id))
+            .values(retest_index=next_idx, updated_at=_now())
+        )
+    updated = get(tid, owner_id=owner_id)
+    # ``get`` can't return None here because we just held a row above;
+    # the assert narrows the type for callers.
+    assert updated is not None
+    return updated

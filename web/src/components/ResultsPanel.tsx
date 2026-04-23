@@ -186,8 +186,22 @@ export function ResultsPanel({
                   className="w-12 h-12 object-cover rounded-[6px] border border-[color:var(--color-border-strong)] shrink-0"
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="font-mono text-[12px] text-[color:var(--color-ink)]">
-                    #{r.id}
+                  <div className="flex items-center gap-1.5 font-mono text-[12px] text-[color:var(--color-ink)]">
+                    <span>#{r.id}</span>
+                    {(r.retest_index ?? 0) > 0 && (
+                      <span
+                        title="Retest index from the QR — distinguishes repeat burns of this test"
+                        className={cn(
+                          "inline-flex items-center h-4 px-1.5 rounded-[3px]",
+                          "font-mono text-[9.5px] font-semibold tracking-[0.14em] uppercase",
+                          "border border-[color:var(--color-primary)]/40",
+                          "bg-[color:var(--color-primary-tint)]",
+                          "text-[color:var(--color-primary)]",
+                        )}
+                      >
+                        retest #{r.retest_index}
+                      </span>
+                    )}
                   </div>
                   <div className="text-[11px] text-[color:var(--color-ink-muted)]">
                     {new Date(r.uploaded_at).toLocaleString()}

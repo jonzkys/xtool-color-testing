@@ -247,6 +247,7 @@ def project_to_xcs(project: Project) -> XCSProject:
             unidirectional=t.unidirectional,
             cell_shape=t.cell_shape,
             test_id=int(t.id) if t.id.isdigit() else None,
+            retest_index=t.retest_index,
             material_id=t.material_id,
             hide_axis_labels=t.hide_axis_labels,
         )

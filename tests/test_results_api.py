@@ -76,7 +76,7 @@ def test_auto_upload_routes_photo_to_test_via_qr(fresh_db, monkeypatch, tmp_path
     mid = m_repo.create(name="SS")["id"]
     tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
 
-    monkeypatch.setattr(cap, "detect_test_id", lambda _: tid)
+    monkeypatch.setattr(cap, "detect_test_id", lambda _: (tid, 0))
 
     r = c.post(
         "/api/results/upload",
@@ -93,7 +93,7 @@ def test_auto_upload_routes_photo_to_test_via_qr(fresh_db, monkeypatch, tmp_path
 
 def test_auto_upload_404_when_qr_matches_unknown_test(fresh_db, monkeypatch, tmp_path):
     monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
-    monkeypatch.setattr(cap, "detect_test_id", lambda _: 9999)
+    monkeypatch.setattr(cap, "detect_test_id", lambda _: (9999, 0))
     c = TestClient(create_app())
     r = c.post(
         "/api/results/upload",
@@ -111,7 +111,7 @@ def test_preflight_returns_test_info_and_existing_count(fresh_db, monkeypatch, t
     c = TestClient(create_app())
     mid = m_repo.create(name="SS")["id"]
     tid = t_repo.create(name="Speed sweep", material_id=mid, spec=SPEC)["id"]
-    monkeypatch.setattr(cap, "detect_test_id", lambda _: tid)
+    monkeypatch.setattr(cap, "detect_test_id", lambda _: (tid, 0))
 
     # No uploads yet.
     r = c.post(

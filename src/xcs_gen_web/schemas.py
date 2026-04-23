@@ -100,6 +100,13 @@ class ParamTest(BaseModel):
     # sampling still hits the right cells.
     hide_axis_labels: bool = False
 
+    # Server-filled. ``services/xcs.bytes_for_test`` stamps the current
+    # value in before the converter runs so the generator can embed it
+    # in the QR payload. Clients never set this explicitly — accepted
+    # on the wire only so the Pydantic round-trip inside the service
+    # layer keeps working.
+    retest_index: int = Field(default=0, ge=0)
+
     @model_validator(mode="after")
     def validate_ranges(self) -> "ParamTest":
         if self.x_min == self.x_max:
@@ -416,6 +423,8 @@ class TestResponse(BaseModel):
     locked: bool
     owner_id: int
     visibility: str
+    # Monotonic counter — each POST /api/tests/{id}/retest bumps by 1.
+    retest_index: int = 0
 
 
 class ResultSwatch(BaseModel):
@@ -439,6 +448,9 @@ class ResultResponse(BaseModel):
     swatches: list[ResultSwatch]
     owner_id: int
     visibility: str
+    # Copied from the QR at ingest. 0 for burns from pre-retest-era
+    # XCS files (the implicit "first burn").
+    retest_index: int = 0
 
 
 class ResultPatch(BaseModel):

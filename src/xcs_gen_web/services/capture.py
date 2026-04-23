@@ -45,25 +45,28 @@ class CaptureError(Exception):
     """Raised by run_capture when the image can't be processed."""
 
 
-def detect_test_id(image_bytes: bytes) -> int:
-    """Peek at an uploaded photo and return the test id encoded in its QR,
-    without warping or sampling. Used by the auto-match upload route so we
-    can route a photo to the right test purely from its registration QR."""
+def detect_test_id(image_bytes: bytes) -> tuple[int, int]:
+    """Peek at an uploaded photo and return ``(test_id, retest_index)``
+    encoded in its QR, without warping or sampling. Used by the
+    auto-match upload route so we can route a photo to the right test
+    + retest purely from its registration QR."""
     try:
         img = decode_image_bytes(image_bytes)
     except Exception as e:
         raise CaptureError(f"could not decode image: {e}") from e
     try:
-        qr_id, _ = detect_fiducials(img)
+        qr_id, retest_index, _ = detect_fiducials(img)
     except DetectionError as e:
         raise CaptureError(str(e)) from e
-    return qr_id
+    return qr_id, retest_index
 
 
 @dataclass
 class CaptureResult:
     swatches: list[dict[str, Any]]
     warped_image_bgr: np.ndarray
+    # Retest index decoded from the QR. Pre-retest-era burns → 0.
+    retest_index: int = 0
 
 
 def run_capture(*, image_bytes: bytes, test_id: int,
@@ -74,7 +77,7 @@ def run_capture(*, image_bytes: bytes, test_id: int,
         raise CaptureError(f"could not decode image: {e}") from e
 
     try:
-        qr_id, corners_px = detect_fiducials(img)
+        qr_id, retest_index, corners_px = detect_fiducials(img)
     except DetectionError as e:
         raise CaptureError(str(e)) from e
 
@@ -172,4 +175,8 @@ def run_capture(*, image_bytes: bytes, test_id: int,
         }
         for s in swatches_raw
     ]
-    return CaptureResult(swatches=swatches, warped_image_bgr=warped)
+    return CaptureResult(
+        swatches=swatches,
+        warped_image_bgr=warped,
+        retest_index=retest_index,
+    )

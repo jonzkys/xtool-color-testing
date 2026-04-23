@@ -385,7 +385,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         data = await image.read()
         try:
-            qr_id = capture_service.detect_test_id(data)
+            qr_id, _retest_idx = capture_service.detect_test_id(data)
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -758,6 +758,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         body = xcs_service.bytes_for_test(
             test_id=t["id"], name=t["name"],
             material_id=t["material_id"], spec=t["spec"],
+            retest_index=t.get("retest_index", 0),
         )
         safe_name = xcs_service._safe_project_name(t["name"], fallback=f"test-{t['id']}")
         return Response(
@@ -765,6 +766,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             media_type="application/octet-stream",
             headers={"Content-Disposition": f'attachment; filename="{safe_name}.xcs"'},
         )
+
+    @app.post("/api/tests/{tid}/retest", response_model=TestResponse)
+    def tests_retest(
+        tid: int, user_id: int = Depends(get_current_user),
+    ) -> TestResponse:
+        """Increment the test's retest counter.
+
+        Each call bumps ``retest_index`` by one — the user then hits
+        Generate to download an XCS whose QR carries the new number.
+        On ingest, the decoded retest_index lands on the result row so
+        the variability viz can label per-run history.
+        """
+        try:
+            row = t_repo.bump_retest_index(tid, owner_id=user_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="test not found")
+        return TestResponse(**row)
 
     from .services import capture as capture_service
     from .repositories import results as r_repo
@@ -781,6 +799,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             swatches=[ResultSwatch(**s) for s in r["swatches"]],
             owner_id=r["owner_id"],
             visibility=r["visibility"],
+            retest_index=r.get("retest_index", 0),
         )
 
     def _persist_upload(
@@ -807,6 +826,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             swatches=cap_result.swatches,
             owner_id=user_id,
             via=via,
+            retest_index=cap_result.retest_index,
         )
         rec = images.save(test_id=tid, result_id=placeholder["id"],
                           data=data, suffix=suffix)
@@ -846,7 +866,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         re-processing a test that already has uploads."""
         data = await image.read()
         try:
-            qr_id = capture_service.detect_test_id(data)
+            qr_id, _retest_idx = capture_service.detect_test_id(data)
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
         t = t_repo.get(qr_id, owner_id=user_id)
@@ -875,7 +895,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         existence of another account's tests)."""
         data = await image.read()
         try:
-            qr_id = capture_service.detect_test_id(data)
+            qr_id, _retest_idx = capture_service.detect_test_id(data)
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
         t = t_repo.get(qr_id, owner_id=user_id)

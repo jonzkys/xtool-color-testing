@@ -47,8 +47,9 @@ def _render_strip(px_per_mm: int = 20) -> tuple[np.ndarray, dict]:
 
 def test_detect_finds_qr_and_three_arucos():
     img, _ = _render_strip()
-    qr_id, corners = detect_fiducials(img)
+    qr_id, retest_index, corners = detect_fiducials(img)
     assert qr_id == 42
+    assert retest_index == 0
     # 4 QR polygon corners (keys 0/4/5/6) + 3 ArUco centres (1/2/3).
     assert set(corners.keys()) == {0, 1, 2, 3, 4, 5, 6}
     for k in corners:
@@ -64,6 +65,6 @@ def test_detect_succeeds_with_zero_arucos(monkeypatch):
     from xcs_gen_web import capture_pipeline
     img, _ = _render_strip()
     monkeypatch.setattr(capture_pipeline, "_aruco_centres_px", lambda _: {})
-    qr_id, corners = capture_pipeline.detect_fiducials(img)
+    qr_id, _retest_idx, corners = capture_pipeline.detect_fiducials(img)
     assert qr_id == 42
     assert set(corners.keys()) == {0, 4, 5, 6}

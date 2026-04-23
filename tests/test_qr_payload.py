@@ -8,8 +8,27 @@ from xcs_gen.capture.qr_payload import PayloadError, decode_payload, encode_id
 
 
 def test_encode_id_roundtrip():
+    # retest_index defaults to 0, which omits ``r`` from the encoded
+    # payload (to keep the wire compatible with pre-retest-era QRs)
+    # but decoder synthesises ``r: 0`` so downstream code can rely on
+    # the key always being present.
     s = encode_id(42)
-    assert decode_payload(s) == {"v": 1, "id": 42}
+    assert decode_payload(s) == {"v": 1, "id": 42, "r": 0}
+
+
+def test_encode_with_retest_index():
+    s = encode_id(42, retest_index=3)
+    assert decode_payload(s) == {"v": 1, "id": 42, "r": 3}
+
+
+def test_retest_index_defaults_when_missing_from_wire():
+    s = json.dumps({"v": 1, "id": 42})
+    assert decode_payload(s)["r"] == 0
+
+
+def test_encode_id_rejects_negative_retest_index():
+    with pytest.raises(PayloadError):
+        encode_id(42, retest_index=-1)
 
 
 def test_decode_accepts_string_id_for_legacy():

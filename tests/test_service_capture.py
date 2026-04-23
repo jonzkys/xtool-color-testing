@@ -18,7 +18,7 @@ def test_run_capture_id_mismatch_raises(monkeypatch):
     # Build a fake image and stub out the pipeline
     fake_img = np.zeros((10, 10, 3), dtype=np.uint8)
     monkeypatch.setattr(cap, "decode_image_bytes", lambda _: fake_img)
-    monkeypatch.setattr(cap, "detect_fiducials", lambda _: (99, {0: (0.0, 0.0), 1: (10.0, 0.0), 2: (0.0, 10.0), 3: (10.0, 10.0)}))
+    monkeypatch.setattr(cap, "detect_fiducials", lambda _: (99, 0, {0: (0.0, 0.0), 1: (10.0, 0.0), 2: (0.0, 10.0), 3: (10.0, 10.0)}))
 
     spec = {
         "width_mm": 40.0, "height_mm": 20.0,
@@ -79,7 +79,7 @@ def test_run_capture_wrapped_1d_samples_each_row(monkeypatch):
 
     fake_img = np.zeros((10, 10, 3), dtype=np.uint8)
     monkeypatch.setattr(cap, "decode_image_bytes", lambda _: fake_img)
-    monkeypatch.setattr(cap, "detect_fiducials", lambda _: (42, {}))
+    monkeypatch.setattr(cap, "detect_fiducials", lambda _: (42, 0, {}))
     monkeypatch.setattr(cap, "warp_to_burn_space", lambda *a, **kw: warped)
 
     spec = {

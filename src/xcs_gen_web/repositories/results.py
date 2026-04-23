@@ -36,6 +36,8 @@ def _row(r) -> dict[str, Any]:
         "owner_id": r.owner_id,
         "visibility": r.visibility,
         "via": r.via,
+        # Pre-0006 rows lack the column — keep older test DBs loading.
+        "retest_index": int(getattr(r, "retest_index", 0) or 0),
     }
 
 
@@ -45,6 +47,7 @@ def create(
     notes: str = "",
     visibility: str = DEFAULT_VISIBILITY,
     via: str = "desktop",
+    retest_index: int = 0,
 ) -> dict[str, Any]:
     with session_scope() as s:
         res = s.execute(results.insert().values(
@@ -56,6 +59,7 @@ def create(
             swatches_json=json.dumps(swatches, separators=(",", ":")),
             owner_id=owner_id, visibility=visibility,
             via=via,
+            retest_index=int(retest_index),
         ))
         rid = res.inserted_primary_key[0]
     return get(rid, owner_id=owner_id)  # type: ignore[return-value]
@@ -191,6 +195,7 @@ def averaged_swatches(tid: int, *, owner_id: int = STANDALONE_USER_ID) -> list[d
                 "x_value": sw["x_value"], "y_value": sw.get("y_value"),
                 "hex": sw["hex"], "lab": sw["lab"], "sigma": sw["sigma"],
                 "result_id": r["id"],
+                "retest_index": int(r.get("retest_index", 0) or 0),
             })
 
     out: list[dict[str, Any]] = []
@@ -208,7 +213,12 @@ def averaged_swatches(tid: int, *, owner_id: int = STANDALONE_USER_ID) -> list[d
             "sigma": max(it["sigma"] for it in items),
             "sample_count": n,
             "per_result": [
-                {"result_id": it["result_id"], "hex": it["hex"], "sigma": it["sigma"]}
+                {
+                    "result_id": it["result_id"],
+                    "hex": it["hex"],
+                    "sigma": it["sigma"],
+                    "retest_index": it["retest_index"],
+                }
                 for it in items
             ],
         })

@@ -150,6 +150,10 @@ export interface TestRecord {
   created_at: string;
   updated_at: string;
   locked: boolean;
+  /** Monotonic burn counter — bumped by POST /api/tests/{id}/retest. 0
+   *  for newly-created tests; the next Generate stamps the current
+   *  value into the XCS's QR payload. */
+  retest_index?: number;
 }
 
 export interface ResultSwatch {
@@ -167,11 +171,20 @@ export interface ResultRecord {
   excluded: boolean;
   notes: string;
   swatches: ResultSwatch[];
+  /** Copied from the QR on ingest; 0 for pre-retest-era burns. */
+  retest_index?: number;
 }
 
 export interface AveragedSwatch extends ResultSwatch {
   sample_count: number;
-  per_result: { result_id: number; hex: string; sigma: number }[];
+  per_result: {
+    result_id: number;
+    hex: string;
+    sigma: number;
+    /** Retest the run belongs to. Defaults server-side to 0 for
+     *  burns that didn't embed a retest index in their QR. */
+    retest_index?: number;
+  }[];
 }
 
 export interface PaletteEntry {

@@ -111,6 +111,7 @@ def generate_gradient(
     unidirectional: bool = False,
     cell_shape: str = "rect",  # "rect" | "circle"
     test_id: int | None = None,
+    retest_index: int = 0,
     material_id: str | None = None,
     hide_axis_labels: bool = False,
 ) -> XCSProject:
@@ -257,6 +258,7 @@ def generate_gradient(
             project,
             layout=layout,
             test_id=test_id,
+            retest_index=retest_index,
             annotation_params=annotation_params,
         )
 

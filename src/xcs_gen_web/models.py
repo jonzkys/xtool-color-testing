@@ -117,6 +117,10 @@ tests = Table(
     Column("locked", Integer, nullable=False, server_default="0"),
     Column("owner_id", Integer, nullable=False),
     Column("visibility", String(_VISIBILITY_LEN), nullable=False, server_default="private"),
+    # Monotonic counter incremented by POST /api/tests/{id}/retest. The
+    # current value is stamped into the generated XCS's QR payload so
+    # each burn carries a label; ingest copies it onto the result row.
+    Column("retest_index", Integer, nullable=False, server_default="0"),
     CheckConstraint("status IN ('created','tested','deleted')", name="tests_status_chk"),
     CheckConstraint(_VISIBILITY_CHECK, name="tests_visibility_chk"),
     Index("ix_tests_material_id", "material_id"),
@@ -137,6 +141,12 @@ results = Table(
     Column("owner_id", Integer, nullable=False),
     Column("visibility", String(_VISIBILITY_LEN), nullable=False, server_default="private"),
     Column("via", String(_STATUS_LEN), nullable=False, server_default="desktop"),
+    # Copied from the QR payload at ingest. Older burns without a
+    # retest_index field in their QR surface as 0 (the implicit "first
+    # burn"). Grouped with ``test_id`` only in indexing — there's no
+    # uniqueness constraint because the same retest can legitimately
+    # appear multiple times (two photos of the same run, say).
+    Column("retest_index", Integer, nullable=False, server_default="0"),
     CheckConstraint(_VISIBILITY_CHECK, name="results_visibility_chk"),
     CheckConstraint(_VIA_CHECK, name="results_via_chk"),
     Index("ix_results_test_id", "test_id"),

@@ -42,3 +42,10 @@ export async function generateTestXcs(id: number): Promise<Blob> {
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
   return r.blob();
 }
+
+/** Bump the test's retest counter. The user then clicks Generate to
+ *  download an XCS whose QR stamps the new number — the ingest path
+ *  copies that onto every result uploaded from this burn. */
+export async function retestTest(id: number): Promise<TestRecord> {
+  return j(await fetch(`/api/tests/${id}/retest`, { method: "POST" }));
+}

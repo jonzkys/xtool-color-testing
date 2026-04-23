@@ -169,7 +169,7 @@ def _seed_user_with_test(c, h, monkeypatch, tmp_path):
         name="T", material_id=matid, spec=SPEC,
         owner_id=_owner_id(c, h),
     )["id"]
-    monkeypatch.setattr(cap, "detect_test_id", lambda _: tid)
+    monkeypatch.setattr(cap, "detect_test_id", lambda _: (tid, 0))
     return mid, tid
 
 
@@ -272,7 +272,7 @@ def test_mobile_upload_rate_limit_blocks_after_cap(fresh_db, monkeypatch, tmp_pa
     detect_calls: list[bytes] = []
     def _counting_detect(data):
         detect_calls.append(data)
-        return tid
+        return (tid, 0)
     monkeypatch.setattr(cap, "detect_test_id", _counting_detect)
 
     for _ in range(2):

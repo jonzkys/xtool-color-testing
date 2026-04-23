@@ -101,8 +101,10 @@ def _preprocessing_variants(gray: np.ndarray) -> list[np.ndarray]:
     return [gray, otsu]
 
 
-def _qr_corners_px(img: np.ndarray) -> tuple[int, dict[int, tuple[float, float]]]:
-    """Return (qr_id, {QR_TL/BL/BR/TR: (x, y) in pixels}).
+def _qr_corners_px(
+    img: np.ndarray,
+) -> tuple[int, int, dict[int, tuple[float, float]]]:
+    """Return ``(qr_id, retest_index, {QR_TL/BL/BR/TR: (x, y) in pixels})``.
 
     Each QR contributes four anchor points rather than just one, so a
     homography can be solved even when some ArUco corners are missed.
@@ -112,6 +114,9 @@ def _qr_corners_px(img: np.ndarray) -> tuple[int, dict[int, tuple[float, float]]
     BR=max(x+y), TR=max(x-y), BL=min(x-y). This assumes the QR is
     roughly upright in the image, which is the normal case for hand-held
     phone shots of a flat burn.
+
+    ``retest_index`` is 0 for pre-retest-era QRs (``decode_payload``
+    supplies the default).
     """
     from xcs_gen.capture.qr_payload import PayloadError, decode_payload
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -130,7 +135,11 @@ def _qr_corners_px(img: np.ndarray) -> tuple[int, dict[int, tuple[float, float]]
             br = tuple(float(x) for x in arr[int(np.argmax(s))])
             tr = tuple(float(x) for x in arr[int(np.argmax(d))])
             bl = tuple(float(x) for x in arr[int(np.argmin(d))])
-            return payload["id"], {QR_TL: tl, QR_BL: bl, QR_BR: br, QR_TR: tr}
+            return (
+                payload["id"],
+                int(payload.get("r", 0) or 0),
+                {QR_TL: tl, QR_BL: bl, QR_BR: br, QR_TR: tr},
+            )
     raise DetectionError("no valid id-only QR detected")
 
 
@@ -155,20 +164,24 @@ def _aruco_centres_px(img: np.ndarray) -> dict[int, tuple[float, float]]:
     return out
 
 
-def detect_fiducials(img: np.ndarray) -> tuple[int, dict[int, tuple[float, float]]]:
-    """Return (qr_id, fiducials) where fiducials maps marker keys to pixel centres.
+def detect_fiducials(
+    img: np.ndarray,
+) -> tuple[int, int, dict[int, tuple[float, float]]]:
+    """Return ``(qr_id, retest_index, fiducials)`` where ``fiducials``
+    maps marker keys to pixel centres.
 
     Keys: 0/4/5/6 → QR TL/BL/BR/TR, 1/2/3 → ArUco TR/BL/BR centres. The
     four QR corners alone give a well-determined homography, so a
     partial ArUco detection (at least one of three) is still usable.
+    ``retest_index`` is 0 for burns predating the retest feature.
     """
-    qr_id, qr_corners = _qr_corners_px(img)
+    qr_id, retest_index, qr_corners = _qr_corners_px(img)
     arucos = _aruco_centres_px(img)
     # Accept any non-empty ArUco detection. Together with the 4 QR corners
     # that gives us at least 5 matches for the homography.
     corners: dict[int, tuple[float, float]] = dict(qr_corners)
     corners.update(arucos)
-    return qr_id, corners
+    return qr_id, retest_index, corners
 
 
 def warp_to_burn_space(

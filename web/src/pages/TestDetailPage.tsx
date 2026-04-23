@@ -7,6 +7,7 @@ import {
   updateTest,
   deleteTest,
   generateTestXcs,
+  retestTest,
   createTest,
 } from "../api/tests";
 import { listMaterials, listPresets } from "../api/library";
@@ -138,6 +139,25 @@ export function TestDetailPage({ testId }: Props) {
     }
   }
 
+  async function onRetest() {
+    if (!test) return;
+    const next = (test.retest_index ?? 0) + 1;
+    if (
+      !confirm(
+        `Bump this test's retest counter to #${next}?\n\nThe next Generate will stamp the new number into the QR so the burn uploaded from that XCS is labelled distinctly.`,
+      )
+    ) {
+      return;
+    }
+    setError(undefined);
+    try {
+      const updated = await retestTest(test.id);
+      setTest(updated);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   return (
     <PageContainer maxWidth="wide" className="py-6">
       <header className="mb-5 flex flex-wrap items-start gap-4">
@@ -185,6 +205,26 @@ export function TestDetailPage({ testId }: Props) {
             <Button variant="primary" onClick={onGenerate}>
               <Download className="h-4 w-4" />
               Generate .xcs
+              {(test.retest_index ?? 0) > 0 && (
+                <span className="ml-1 font-mono text-[10px] tabular-nums opacity-80">
+                  · retest #{test.retest_index}
+                </span>
+              )}
+            </Button>
+          )}
+          {test && (
+            <Button
+              variant="ghost"
+              onClick={onRetest}
+              size="sm"
+              title="Bump the retest counter and stamp it into the next Generate"
+            >
+              Retest
+              {(test.retest_index ?? 0) > 0 && (
+                <span className="ml-1 font-mono text-[10px] tabular-nums opacity-70">
+                  #{test.retest_index}
+                </span>
+              )}
             </Button>
           )}
           {test && (

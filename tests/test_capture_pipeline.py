@@ -47,10 +47,11 @@ def _render_strip(px_per_mm: int = 20) -> np.ndarray:
     return img
 
 
-def test_detect_fiducials_returns_id_and_four_corners():
+def test_detect_fiducials_returns_id_retest_and_four_corners():
     img = _render_strip()
-    qr_id, corners = detect_fiducials(img)
+    qr_id, retest_index, corners = detect_fiducials(img)
     assert qr_id == 7
+    assert retest_index == 0  # strip was rendered with no retest index
     # 4 QR polygon corners (0/4/5/6) + 3 ArUco centres (1/2/3).
     assert set(corners.keys()) == {0, 1, 2, 3, 4, 5, 6}
     for k in corners:
@@ -65,7 +66,7 @@ def test_detect_fiducials_raises_when_no_qr():
 
 def test_warp_produces_expected_canvas_size():
     img = _render_strip()
-    _, corners = detect_fiducials(img)
+    _, _, corners = detect_fiducials(img)
     # Fabricate anchor positions in mm; result canvas = 40x20 mm @ 10 px/mm
     burn_anchors = {
         0: (0.0, 0.0),
@@ -86,7 +87,7 @@ def test_warp_produces_expected_canvas_size():
 
 def test_warp_raises_with_fewer_than_four_anchors():
     img = _render_strip()
-    _, corners = detect_fiducials(img)
+    _, _, corners = detect_fiducials(img)
     # Only supply 3 anchors - should raise DetectionError
     burn_anchors = {
         0: (0.0, 0.0),
