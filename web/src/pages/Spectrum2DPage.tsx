@@ -1266,6 +1266,20 @@ function Viz3Marginals(props: Viz3Props) {
   const xClipOr: [number, number] = xClip ?? [0, grid.xs.length - 1];
   const yClipOr: [number, number] = yClip ?? [0, grid.ys.length - 1];
 
+  const isClipped =
+    xClipOr[0] !== 0 || xClipOr[1] !== grid.xs.length - 1 ||
+    yClipOr[0] !== 0 || yClipOr[1] !== grid.ys.length - 1;
+
+  // When the user is actively clipping, let them collapse the dimmed
+  // outside-of-clip area so the active region fills the space. Matches
+  // the 1-D Spectrum page's Crop toggle. Auto-disabled (not just
+  // hidden) when the clip covers the full grid — the button has
+  // nothing to do and we don't want to leave it in a half-on state.
+  const [cropped, setCropped] = useState(false);
+  useEffect(() => {
+    if (!isClipped && cropped) setCropped(false);
+  }, [isClipped, cropped]);
+
   // Row-mean strip — for each column, average over the rows inside yClip.
   const rowMeanStrip: Lab[] = useMemo(() => {
     const out: Lab[] = [];
@@ -1299,8 +1313,33 @@ function Viz3Marginals(props: Viz3Props) {
   return (
     <Section
       title="Crosshair strips · marginals"
-      description="Top strip = row-mean (varies with x). Left strip = col-mean (varies with y). Clip either to see how the other projects over that slice."
+      description="Top strip = row-mean (varies with x). Left strip = col-mean (varies with y). Drag the handles to clip either axis; the other strip recomputes over that slice."
       dense
+      actions={
+        <button
+          onClick={() => setCropped((v) => !v)}
+          disabled={!isClipped}
+          className={cn(
+            "inline-flex items-center h-7 px-2.5 rounded-[6px]",
+            "font-mono text-[10.5px] font-semibold tracking-[0.12em] uppercase",
+            "border transition-colors",
+            !isClipped
+              ? "border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)] cursor-not-allowed"
+              : cropped
+                ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
+                : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)] hover:border-[color:var(--color-ink-muted)]",
+          )}
+          title={
+            !isClipped
+              ? "Clip an axis first, then crop"
+              : cropped
+                ? "Show full grid — drag handles to change clip"
+                : "Hide clipped region and fill the strip with the active range"
+          }
+        >
+          {cropped ? "Cropped" : "Crop"}
+        </button>
+      }
     >
       <div className="grid grid-cols-[minmax(0,1fr)_260px] gap-4 items-start">
         <MarginalsL
@@ -1318,6 +1357,7 @@ function Viz3Marginals(props: Viz3Props) {
             setYClip(v[0] === 0 && v[1] === grid.ys.length - 1 ? null : v)
           }
           pinned={pinned}
+          cropped={cropped}
         />
         <MarginalsRail
           grid={grid}
@@ -1342,6 +1382,7 @@ function MarginalsL({
   setXClip,
   setYClip,
   pinned,
+  cropped,
 }: {
   grid: Grid;
   xParam: string;
@@ -1353,6 +1394,7 @@ function MarginalsL({
   setXClip: (v: [number, number]) => void;
   setYClip: (v: [number, number]) => void;
   pinned: { row: number; col: number } | null;
+  cropped: boolean;
 }) {
   const W = 720;
   const H = 520;
@@ -1364,16 +1406,29 @@ function MarginalsL({
   const centreW = W - centreX - LABEL;
   const centreH = H - centreY - LABEL;
 
-  // Full-grid cell sizes. Clipped cells render at low opacity on top of
-  // the strips so the drag handles have a continuous surface to slide
-  // on — matches the non-cropped mode of the 1-D Spectrum page.
-  const xCellW = centreW / grid.xs.length;
-  const yCellH = centreH / grid.ys.length;
+  // Cell sizes depend on mode: cropped expands the active region to
+  // fill the whole centre panel; uncropped keeps all cells at their
+  // full-grid positions and dims out-of-clip ones so the handles have
+  // a continuous surface to drag over.
+  const xSpanCount = cropped ? xClip[1] - xClip[0] + 1 : grid.xs.length;
+  const ySpanCount = cropped ? yClip[1] - yClip[0] + 1 : grid.ys.length;
+  const xCellW = centreW / xSpanCount;
+  const yCellH = centreH / ySpanCount;
 
-  // Data row 0 = bottom. Visual row index counts from the top.
-  const cellX = (col: number): number => centreX + col * xCellW;
-  const cellY = (row: number): number =>
-    centreY + (grid.ys.length - 1 - row) * yCellH;
+  // Data row 0 = bottom. In cropped mode the first visible column is
+  // xClip[0], so subtract that offset. Return null for cells that fall
+  // outside the cropped window.
+  const cellX = (col: number): number | null => {
+    if (cropped && (col < xClip[0] || col > xClip[1])) return null;
+    const base = cropped ? col - xClip[0] : col;
+    return centreX + base * xCellW;
+  };
+  const cellY = (row: number): number | null => {
+    if (cropped && (row < yClip[0] || row > yClip[1])) return null;
+    // Visually highest row (= largest row index) sits at the top.
+    const maxRow = cropped ? yClip[1] : grid.ys.length - 1;
+    return centreY + (maxRow - row) * yCellH;
+  };
 
   // ── Drag state for the four clip handles ───────────────────────────
   const svgRef = useRef<SVGSVGElement>(null);
@@ -1423,6 +1478,9 @@ function MarginalsL({
 
   // Handle screen coords. Start handles sit at the LEADING edge of the
   // first clipped cell; end handles at the TRAILING edge of the last.
+  // In cropped mode the handles collapse to the edges of the cropped
+  // panel (active region fills everything), so we hide them there —
+  // user uncrops to re-adjust.
   const xStartPx = centreX + xClip[0] * xCellW;
   const xEndPx = centreX + (xClip[1] + 1) * xCellW;
   const yStartPx = centreY + (grid.ys.length - yClip[0]) * yCellH; // bottom edge of lowest clipped row
@@ -1443,13 +1501,16 @@ function MarginalsL({
         onPointerCancel={onPointerUp}
         style={{ touchAction: "none" }}
       >
-        {/* Top horizontal strip — row-mean. Clipped columns dim. */}
+        {/* Top horizontal strip — row-mean. Clipped columns dim in
+            uncropped mode; in cropped mode they simply don't render. */}
         {rowMeanStrip.map((lab, i) => {
+          const x = cellX(i);
+          if (x == null) return null;
           const inClip = i >= xClip[0] && i <= xClip[1];
           return (
             <rect
               key={i}
-              x={cellX(i)}
+              x={x}
               y={STRIP}
               width={xCellW}
               height={STRIP}
@@ -1460,12 +1521,14 @@ function MarginalsL({
         })}
         {/* Left vertical strip — col-mean. */}
         {colMeanStrip.map((lab, i) => {
+          const y = cellY(i);
+          if (y == null) return null;
           const inClip = i >= yClip[0] && i <= yClip[1];
           return (
             <rect
               key={i}
               x={STRIP}
-              y={cellY(i)}
+              y={y}
               width={STRIP}
               height={yCellH}
               fill={labToHex(lab)}
@@ -1474,18 +1537,22 @@ function MarginalsL({
           );
         })}
 
-        {/* Centre mini-atlas (50% opacity when in clip, 15% when out) */}
+        {/* Centre mini-atlas. Uncropped: 0.5 in clip, 0.15 out.
+            Cropped: only in-clip cells render, all at 0.5. */}
         {grid.cells.map((row, r) =>
           row.map((cell, c) => {
             if (cell == null) return null;
+            const x = cellX(c);
+            const y = cellY(r);
+            if (x == null || y == null) return null;
             const inClip =
               c >= xClip[0] && c <= xClip[1] &&
               r >= yClip[0] && r <= yClip[1];
             return (
               <rect
                 key={`${r}-${c}`}
-                x={cellX(c)}
-                y={cellY(r)}
+                x={x}
+                y={y}
                 width={xCellW}
                 height={yCellH}
                 fill={cell.hex}
@@ -1502,72 +1569,82 @@ function MarginalsL({
         />
 
         {/* Pin cross-highlights */}
-        {pinned && (
-          <g pointerEvents="none">
-            <rect
-              x={cellX(pinned.col) + 0.5}
-              y={cellY(pinned.row) + 0.5}
-              width={xCellW - 1}
-              height={yCellH - 1}
-              fill="none"
-              stroke="var(--color-primary)"
-              strokeWidth={2}
-            />
-            <line
-              x1={cellX(pinned.col) + xCellW / 2}
-              y1={STRIP}
-              x2={cellX(pinned.col) + xCellW / 2}
-              y2={STRIP + STRIP}
-              stroke="var(--color-primary)" strokeWidth={1.5}
-            />
-            <line
-              x1={STRIP}
-              y1={cellY(pinned.row) + yCellH / 2}
-              x2={STRIP + STRIP}
-              y2={cellY(pinned.row) + yCellH / 2}
-              stroke="var(--color-primary)" strokeWidth={1.5}
-            />
-          </g>
-        )}
+        {pinned && (() => {
+          const px = cellX(pinned.col);
+          const py = cellY(pinned.row);
+          if (px == null || py == null) return null;
+          return (
+            <g pointerEvents="none">
+              <rect
+                x={px + 0.5}
+                y={py + 0.5}
+                width={xCellW - 1}
+                height={yCellH - 1}
+                fill="none"
+                stroke="var(--color-primary)"
+                strokeWidth={2}
+              />
+              <line
+                x1={px + xCellW / 2}
+                y1={STRIP}
+                x2={px + xCellW / 2}
+                y2={STRIP + STRIP}
+                stroke="var(--color-primary)" strokeWidth={1.5}
+              />
+              <line
+                x1={STRIP}
+                y1={py + yCellH / 2}
+                x2={STRIP + STRIP}
+                y2={py + yCellH / 2}
+                stroke="var(--color-primary)" strokeWidth={1.5}
+              />
+            </g>
+          );
+        })()}
 
-        {/* Drag handles. Each is an invisible wide hit target + a small
-            visible bracket. Pointer-move is captured at the svg level. */}
-        <ClipHandle
-          axis="x"
-          edge="start"
-          posPx={xStartPx}
-          stripStart={STRIP}
-          stripLen={STRIP}
-          dragging={dragging === "x0"}
-          onPointerDown={(e) => onPointerDown(e, "x0")}
-        />
-        <ClipHandle
-          axis="x"
-          edge="end"
-          posPx={xEndPx}
-          stripStart={STRIP}
-          stripLen={STRIP}
-          dragging={dragging === "x1"}
-          onPointerDown={(e) => onPointerDown(e, "x1")}
-        />
-        <ClipHandle
-          axis="y"
-          edge="start"
-          posPx={yStartPx}
-          stripStart={STRIP}
-          stripLen={STRIP}
-          dragging={dragging === "y0"}
-          onPointerDown={(e) => onPointerDown(e, "y0")}
-        />
-        <ClipHandle
-          axis="y"
-          edge="end"
-          posPx={yEndPx}
-          stripStart={STRIP}
-          stripLen={STRIP}
-          dragging={dragging === "y1"}
-          onPointerDown={(e) => onPointerDown(e, "y1")}
-        />
+        {/* Drag handles — only in uncropped mode. When cropped the
+            active region fills the panel; there's no dim surface for
+            the handle to drag over, so the user has to uncrop first. */}
+        {!cropped && (
+          <>
+            <ClipHandle
+              axis="x"
+              edge="start"
+              posPx={xStartPx}
+              stripStart={STRIP}
+              stripLen={STRIP}
+              dragging={dragging === "x0"}
+              onPointerDown={(e) => onPointerDown(e, "x0")}
+            />
+            <ClipHandle
+              axis="x"
+              edge="end"
+              posPx={xEndPx}
+              stripStart={STRIP}
+              stripLen={STRIP}
+              dragging={dragging === "x1"}
+              onPointerDown={(e) => onPointerDown(e, "x1")}
+            />
+            <ClipHandle
+              axis="y"
+              edge="start"
+              posPx={yStartPx}
+              stripStart={STRIP}
+              stripLen={STRIP}
+              dragging={dragging === "y0"}
+              onPointerDown={(e) => onPointerDown(e, "y0")}
+            />
+            <ClipHandle
+              axis="y"
+              edge="end"
+              posPx={yEndPx}
+              stripStart={STRIP}
+              stripLen={STRIP}
+              dragging={dragging === "y1"}
+              onPointerDown={(e) => onPointerDown(e, "y1")}
+            />
+          </>
+        )}
 
         {/* Axis labels */}
         <text
