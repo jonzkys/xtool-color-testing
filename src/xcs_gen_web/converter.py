@@ -254,6 +254,8 @@ def project_to_xcs(project: Project) -> XCSProject:
         if i == 0:
             merged.canvas_id = generated.canvas_id
         merged.elements.extend(generated.elements)
+        merged.circles.extend(generated.circles)
+        merged.paths.extend(generated.paths)
         merged.extra_displays.extend(generated.extra_displays)
         merged.extra_device_entries.extend(generated.extra_device_entries)
         merged.bitmaps.extend(generated.bitmaps)

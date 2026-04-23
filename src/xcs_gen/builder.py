@@ -317,25 +317,24 @@ def _build_path_display(path: Path) -> dict[str, Any]:
     }
 
 
-_CIRCLE_INTERNAL_UNIT = 40.0
-"""XCS Studio's canonical bbox dimension for CIRCLE elements.
+_CIRCLE_SCALE_DIVISOR = 5900.0
+"""XCS's invariant for CIRCLE: width (in bed-mm) divided by scale.x equals 5900.
 
-Natively-created circles in XCS always have width=height=40 (bbox in
-internal units) with ``scale`` set so that bbox * scale == the bed-mm
-diameter. Emitting width directly in mm with scale=1 makes XCS render
-the shape as a stroke-only line instead of a filled disc — verified
-against samples/eng-angle.xcs.
+Confirmed across every sample in samples/ (circles.xcs, eng-angle.xcs,
+shape.xcs): ``width`` carries the actual bed-mm diameter and ``scale`` is
+set to ``width / 5900``. An earlier attempt emitted ``width=40`` with
+``scale = diameter/40``, which XCS Studio opened but rendered as a
+broken/empty shape — it does not draw unless the 5900 invariant holds.
 """
 
 
 def _build_circle_display(circle: Circle) -> dict[str, Any]:
     """Build a display entry for a circle element."""
-    scale_x = circle.width / _CIRCLE_INTERNAL_UNIT
-    scale_y = circle.height / _CIRCLE_INTERNAL_UNIT
+    scale_x = circle.width / _CIRCLE_SCALE_DIVISOR
+    scale_y = circle.height / _CIRCLE_SCALE_DIVISOR
     return {
         "id": circle.id,
         "name": None,
-        "sourceId": None,
         "type": "CIRCLE",
         "x": circle.x,
         "y": circle.y,
@@ -348,7 +347,7 @@ def _build_circle_display(circle: Circle) -> dict[str, Any]:
         "offsetY": circle.y,
         "lockRatio": True,
         "isClosePath": True,
-        "zOrder": 3,
+        "zOrder": 1,
         "groupTags": [],
         "groupTag": _uuid(),
         "layerTag": circle.layer_color,
@@ -365,8 +364,8 @@ def _build_circle_display(circle: Circle) -> dict[str, Any]:
         "alpha": 1,
         "fill": {
             "paintType": "color",
-            "visible": True,
-            "color": 16421416,
+            "visible": False,
+            "color": 0,
             "alpha": 1,
         },
         "stroke": {
@@ -381,8 +380,8 @@ def _build_circle_display(circle: Circle) -> dict[str, Any]:
             "alignment": 0.5,
         },
         "effects": [],
-        "width": _CIRCLE_INTERNAL_UNIT,
-        "height": _CIRCLE_INTERNAL_UNIT,
+        "width": circle.width,
+        "height": circle.height,
         "isFill": circle.is_fill,
         "lineColor": 16421416,
         "fillColor": "#f9932b",
