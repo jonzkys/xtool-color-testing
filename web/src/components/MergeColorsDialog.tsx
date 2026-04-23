@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useState } from "react";
+import { useEffect, useDeferredValue, useMemo, useState } from "react";
 import {
   Button,
   cn,
@@ -43,6 +43,13 @@ export function MergeColorsDialog({
   // ``overrides`` lets the user click a source swatch to promote it as
   // representative — key is the cluster's default representativeColor.
   const [overrides, setOverrides] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (open) {
+      setPercent(DEFAULT_PERCENT);
+      setOverrides({});
+    }
+  }, [open]);
+
   const deferredPercent = useDeferredValue(percent);
 
   const threshold = percentToDeltaE(deferredPercent);
