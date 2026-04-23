@@ -1364,8 +1364,27 @@ function MarginalsL({
   const centreW = W - centreX - LABEL;
   const centreH = H - centreY - LABEL;
 
-  const xCellW = centreW / grid.xs.length;
-  const yCellH = centreH / grid.ys.length;
+  // Crop mode: when a clip range is narrower than the full grid, show
+  // only those columns / rows and let them fill the centre panel.
+  // Matches the 1-D Spectrum page's crop behaviour.
+  const xSpanCount = xClip[1] - xClip[0] + 1;
+  const ySpanCount = yClip[1] - yClip[0] + 1;
+  const xCellW = centreW / xSpanCount;
+  const yCellH = centreH / ySpanCount;
+
+  // Helpers: for a cell at data (row, col), compute its screen
+  // coordinates. Cells outside the clip return null so callers can skip.
+  const cellX = (col: number): number | null => {
+    if (col < xClip[0] || col > xClip[1]) return null;
+    return centreX + (col - xClip[0]) * xCellW;
+  };
+  const cellY = (row: number): number | null => {
+    if (row < yClip[0] || row > yClip[1]) return null;
+    // Data row 0 = bottom of plot, so the highest clipped row sits at
+    // centreY, the lowest clipped row at centreY + centreH - yCellH.
+    const visualIdx = yClip[1] - row; // 0 = topmost clipped row
+    return centreY + visualIdx * yCellH;
+  };
 
   return (
     <div
@@ -1373,48 +1392,51 @@ function MarginalsL({
       style={{ minWidth: 0 }}
     >
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" className="w-full h-auto">
-        {/* Top horizontal strip — row-mean (varies with x_param) */}
+        {/* Top horizontal strip — row-mean. Render only clipped columns
+            at their cropped positions so the active range fills the
+            strip. */}
         {rowMeanStrip.map((lab, i) => {
-          const inClip = i >= xClip[0] && i <= xClip[1];
+          const x = cellX(i);
+          if (x == null) return null;
           return (
             <rect
               key={i}
-              x={centreX + i * xCellW}
+              x={x}
               y={STRIP}
               width={xCellW}
               height={STRIP}
               fill={labToHex(lab)}
-              opacity={inClip ? 1 : 0.3}
             />
           );
         })}
-        {/* Left vertical strip — col-mean (varies with y_param) */}
+        {/* Left vertical strip — col-mean. Same story for rows. */}
         {colMeanStrip.map((lab, i) => {
-          const inClip = i >= yClip[0] && i <= yClip[1];
-          const visualRow = grid.ys.length - 1 - i;
+          const y = cellY(i);
+          if (y == null) return null;
           return (
             <rect
               key={i}
               x={STRIP}
-              y={centreY + visualRow * yCellH}
+              y={y}
               width={STRIP}
               height={yCellH}
               fill={labToHex(lab)}
-              opacity={inClip ? 1 : 0.3}
             />
           );
         })}
 
-        {/* Centre mini-atlas (50% opacity) */}
+        {/* Centre mini-atlas (50% opacity) — only clipped region */}
         {grid.cells.map((row, r) =>
           row.map((cell, c) => {
-            const visualRow = grid.ys.length - 1 - r;
             if (cell == null) return null;
+            const x = cellX(c);
+            const y = cellY(r);
+            if (x == null || y == null) return null;
             return (
               <rect
                 key={`${r}-${c}`}
-                x={centreX + c * xCellW}
-                y={centreY + visualRow * yCellH}
+                x={x}
+                y={y}
                 width={xCellW}
                 height={yCellH}
                 fill={cell.hex}
@@ -1430,35 +1452,41 @@ function MarginalsL({
           fill="none" stroke="var(--color-border)" strokeWidth={1}
         />
 
-        {/* Pin cross-highlights */}
-        {pinned && (
-          <g pointerEvents="none">
-            <rect
-              x={centreX + pinned.col * xCellW + 0.5}
-              y={centreY + (grid.ys.length - 1 - pinned.row) * yCellH + 0.5}
-              width={xCellW - 1}
-              height={yCellH - 1}
-              fill="none"
-              stroke="var(--color-primary)"
-              strokeWidth={2}
-            />
-            {/* guide into each strip */}
-            <line
-              x1={centreX + (pinned.col + 0.5) * xCellW}
-              y1={STRIP}
-              x2={centreX + (pinned.col + 0.5) * xCellW}
-              y2={STRIP + STRIP}
-              stroke="var(--color-primary)" strokeWidth={1.5}
-            />
-            <line
-              x1={STRIP}
-              y1={centreY + (grid.ys.length - 1 - pinned.row + 0.5) * yCellH}
-              x2={STRIP + STRIP}
-              y2={centreY + (grid.ys.length - 1 - pinned.row + 0.5) * yCellH}
-              stroke="var(--color-primary)" strokeWidth={1.5}
-            />
-          </g>
-        )}
+        {/* Pin cross-highlights — only drawn when the pinned cell is
+            actually inside the current clip. Outside, the guideline
+            would point at empty space. */}
+        {pinned && (() => {
+          const px = cellX(pinned.col);
+          const py = cellY(pinned.row);
+          if (px == null || py == null) return null;
+          return (
+            <g pointerEvents="none">
+              <rect
+                x={px + 0.5}
+                y={py + 0.5}
+                width={xCellW - 1}
+                height={yCellH - 1}
+                fill="none"
+                stroke="var(--color-primary)"
+                strokeWidth={2}
+              />
+              <line
+                x1={px + xCellW / 2}
+                y1={STRIP}
+                x2={px + xCellW / 2}
+                y2={STRIP + STRIP}
+                stroke="var(--color-primary)" strokeWidth={1.5}
+              />
+              <line
+                x1={STRIP}
+                y1={py + yCellH / 2}
+                x2={STRIP + STRIP}
+                y2={py + yCellH / 2}
+                stroke="var(--color-primary)" strokeWidth={1.5}
+              />
+            </g>
+          );
+        })()}
 
         {/* Axis labels */}
         <text
@@ -1479,30 +1507,6 @@ function MarginalsL({
           {yParam} · col-mean
         </text>
 
-        {/* Clip handles (simple: click-drag handled by bracket buttons in rail) */}
-        {/* Visual clip tick marks on strips */}
-        <g>
-          <line
-            x1={centreX + (xClip[0]) * xCellW} y1={STRIP}
-            x2={centreX + (xClip[0]) * xCellW} y2={STRIP + STRIP}
-            stroke="var(--color-ink)" strokeWidth={2}
-          />
-          <line
-            x1={centreX + (xClip[1] + 1) * xCellW} y1={STRIP}
-            x2={centreX + (xClip[1] + 1) * xCellW} y2={STRIP + STRIP}
-            stroke="var(--color-ink)" strokeWidth={2}
-          />
-          <line
-            x1={STRIP} y1={centreY + (grid.ys.length - 1 - yClip[1]) * yCellH}
-            x2={STRIP + STRIP} y2={centreY + (grid.ys.length - 1 - yClip[1]) * yCellH}
-            stroke="var(--color-ink)" strokeWidth={2}
-          />
-          <line
-            x1={STRIP} y1={centreY + (grid.ys.length - yClip[0]) * yCellH}
-            x2={STRIP + STRIP} y2={centreY + (grid.ys.length - yClip[0]) * yCellH}
-            stroke="var(--color-ink)" strokeWidth={2}
-          />
-        </g>
       </svg>
       {/* Sub-controls for clip range under the SVG */}
       <div className="mt-2 grid grid-cols-2 gap-3">
@@ -1610,7 +1614,15 @@ function MarginalsRail({
     <div className="flex flex-col gap-3">
       <FitCard label={`${xParam} · row-mean`} fit={xFit} />
       <FitCard label={`${yParam} · col-mean`} fit={yFit} />
-      <MetaChip label="Method">PC1 along each marginal · deg-2 polyfit · mean residual ΔE76</MetaChip>
+      {/* Intentionally a plain info block — the MetaChip pill truncates
+          awkwardly for multi-line strings at this width. */}
+      <div className="rounded-[10px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] p-3 flex flex-col gap-1">
+        <Kicker>Method</Kicker>
+        <p className="text-[11.5px] leading-[1.45] text-[color:var(--color-ink-muted)]">
+          PC1 along each marginal, fit with a degree-2 polynomial.
+          Residual reported as mean ΔE76.
+        </p>
+      </div>
     </div>
   );
 }
