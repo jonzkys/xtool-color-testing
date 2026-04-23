@@ -1393,22 +1393,72 @@ function PaletteMatchSection({
             </Button>
           </div>
           {results.length > 1 && (
-            <Field label="Choose match" inline>
-              <Select
-                value={selectedId}
-                onChange={(e) => setSelectedId(e.target.value)}
-              >
+            <div>
+              <div className="flex items-baseline justify-between mb-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
+                  {results.length} matches
+                </span>
+                <span className="text-[10.5px] text-[color:var(--color-ink-subtle)]">
+                  click a swatch to preview its params
+                </span>
+              </div>
+              <div className="grid gap-1.5 [grid-template-columns:repeat(auto-fill,minmax(82px,1fr))]">
                 {results.map((r) => {
+                  const isActive = String(r.entry.id) === selectedId;
                   const p = r.entry.params;
+                  const laser = String(p.laser ?? "red");
                   return (
-                    <option key={r.entry.id} value={String(r.entry.id)}>
-                      {r.entry.hex}  ΔE={r.delta_e.toFixed(1)}  ·  P={p.power}%
-                      S={p.speed} {p.laser}
-                    </option>
+                    <button
+                      key={r.entry.id}
+                      type="button"
+                      onClick={() => setSelectedId(String(r.entry.id))}
+                      aria-pressed={isActive}
+                      aria-label={`Select palette match ${r.entry.hex}`}
+                      title={`ΔE ${r.delta_e.toFixed(2)} · ${p.power}% · ${p.speed} mm/s · ${laser}`}
+                      className={cn(
+                        "group relative rounded-[6px] overflow-hidden border text-left transition-all",
+                        "focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/50",
+                        isActive
+                          ? "border-[color:var(--color-primary)] shadow-[0_0_0_1px_var(--color-primary)_inset]"
+                          : "border-[color:var(--color-border)] hover:border-[color:var(--color-border-strong)]",
+                      )}
+                    >
+                      <div
+                        className="aspect-[4/3] w-full"
+                        style={{ background: r.entry.hex }}
+                      />
+                      <div
+                        className={cn(
+                          "px-1.5 py-1 border-t leading-tight",
+                          isActive
+                            ? "bg-[color:var(--color-primary-tint)] border-[color:var(--color-primary)]/30"
+                            : "bg-[color:var(--color-surface)] border-[color:var(--color-border)]",
+                        )}
+                      >
+                        <div className="font-mono text-[10px] text-[color:var(--color-ink)] truncate">
+                          {r.entry.hex}
+                        </div>
+                        <div className="flex items-center justify-between mt-0.5">
+                          <span className="font-mono text-[9.5px] text-[color:var(--color-ink-subtle)]">
+                            ΔE {r.delta_e.toFixed(1)}
+                          </span>
+                          <span
+                            aria-hidden="true"
+                            title={`${laser} laser`}
+                            className={cn(
+                              "h-1.5 w-1.5 rounded-full shrink-0",
+                              laser === "blue"
+                                ? "bg-[color:var(--color-secondary)]"
+                                : "bg-[color:var(--color-primary)]",
+                            )}
+                          />
+                        </div>
+                      </div>
+                    </button>
                   );
                 })}
-              </Select>
-            </Field>
+              </div>
+            </div>
           )}
           <div className="font-mono text-[11px] text-[color:var(--color-ink-subtle)]">
             {Object.entries(paletteParamsToBaseParams(selected.entry.params))
