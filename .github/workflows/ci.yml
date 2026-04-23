@@ -137,7 +137,7 @@ jobs:
             -e "SELECT version_num FROM alembic_version" 2>/dev/null)
           echo "alembic_version = $VER"
           # Update this when a new migration is added.
-          test "$VER" = "0004"
+          test "$VER" = "0005"
 
       - name: Run alembic upgrade head AGAIN (idempotence check)
         # Should be a no-op — alembic sees it's at head and exits. A
