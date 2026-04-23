@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Camera, Trash2, Upload } from "lucide-react";
 import type { AveragedSwatch, ResultRecord } from "../types";
 import { useAuthedImage } from "../hooks/useAuthedImage";
+import { ResultDetailDialog } from "./ResultDetailDialog";
 import {
   listResults,
   uploadResult,
@@ -37,6 +38,8 @@ export function ResultsPanel({
   const [mode, setMode] = useState<"averaged" | "single_result">("averaged");
   const [sourceResultId, setSourceResultId] = useState<number | null>(null);
   const [replaceExisting, setReplaceExisting] = useState(false);
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const detailResult = results.find((r) => r.id === detailId) ?? null;
 
   async function refresh(opts: { autoSelect?: boolean } = {}) {
     try {
@@ -174,8 +177,20 @@ export function ResultsPanel({
             {results.map((r) => (
               <div
                 key={r.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setDetailId(r.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setDetailId(r.id);
+                  }
+                }}
                 className={cn(
                   "flex items-center gap-3 rounded-[8px] border px-2.5 py-2 bg-[color:var(--color-surface)]",
+                  "cursor-pointer transition-colors",
+                  "hover:border-[color:var(--color-border-strong)] hover:bg-[color:var(--color-surface-elevated)]",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/40",
                   r.excluded
                     ? "border-[color:var(--color-border)] opacity-50"
                     : "border-[color:var(--color-border)]",
@@ -208,7 +223,10 @@ export function ResultsPanel({
                     {Math.max(...r.swatches.map((s) => s.sigma), 0).toFixed(1)}
                   </div>
                 </div>
-                <label className="flex items-center gap-1 text-[11px] text-[color:var(--color-ink-muted)]">
+                <label
+                  className="flex items-center gap-1 text-[11px] text-[color:var(--color-ink-muted)]"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <input
                     type="checkbox"
                     checked={r.excluded}
@@ -218,7 +236,10 @@ export function ResultsPanel({
                 </label>
                 <button
                   type="button"
-                  onClick={() => onDeleteResult(r.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteResult(r.id);
+                  }}
                   className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
                   title="Delete result"
                 >
@@ -360,6 +381,12 @@ export function ResultsPanel({
           )}
         </div>
       </Card>
+
+      <ResultDetailDialog
+        open={detailId !== null}
+        onOpenChange={(o) => !o && setDetailId(null)}
+        result={detailResult}
+      />
     </div>
   );
 }
