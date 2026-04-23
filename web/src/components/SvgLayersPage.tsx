@@ -534,11 +534,10 @@ export function SvgLayersPage() {
             {rasterDataUrl && (
               <Section
                 title="Trace options"
-                description={
-                  tracePending
-                    ? "Unsaved changes — click Re-trace to apply."
-                    : "Adjust knobs, then click Re-trace. vtracer is expensive on larger images."
-                }
+                // Keep the description stable across ``tracePending`` so the
+                // left sidebar doesn't relayout on every keystroke. Pending
+                // state is already signalled by the button's variant swap.
+                description="Adjust knobs, then click Re-trace. vtracer is expensive on larger images."
                 actions={
                   <div className="flex items-center gap-1.5">
                     <Button
@@ -555,11 +554,7 @@ export function SvgLayersPage() {
                       onClick={() => void retrace(traceOptions)}
                       disabled={tracing || !rasterDataUrl}
                     >
-                      {tracing
-                        ? "Tracing…"
-                        : tracePending
-                          ? "Re-trace"
-                          : "Re-trace (no changes)"}
+                      {tracing ? "Tracing…" : "Re-trace"}
                     </Button>
                   </div>
                 }

@@ -29,8 +29,18 @@ export function Section({
   return (
     <section className={cn("flex flex-col", className)}>
       {(title || actions) && (
-        <header className={cn("flex items-end justify-between gap-3", dense ? "mb-2" : "mb-3")}>
-          <div className="flex-1 min-w-0">
+        <header
+          className={cn(
+            // ``flex-wrap`` so long ``actions`` content drops onto its own
+            // line in narrow columns (e.g. the SVG Layers left sidebar)
+            // instead of crushing the description into a vertical stack of
+            // letters. ``basis-[180px]`` on the title block reserves enough
+            // room for words to break on spaces before wrap kicks in.
+            "flex flex-wrap items-end justify-between gap-x-3 gap-y-2",
+            dense ? "mb-2" : "mb-3",
+          )}
+        >
+          <div className="flex-1 min-w-0 basis-[180px]">
             {title && (
               <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
                 {title}
@@ -40,7 +50,9 @@ export function Section({
               <p className="mt-1 text-[12px] text-[color:var(--color-ink-muted)]">{description}</p>
             )}
           </div>
-          {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+          {actions && (
+            <div className="flex items-center gap-2 shrink-0 ml-auto">{actions}</div>
+          )}
         </header>
       )}
       {!dense && (
