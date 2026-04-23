@@ -445,3 +445,7 @@ class IngestToPaletteRequest(BaseModel):
     mode: Literal["averaged", "single_result"]
     result_id: int | None = None     # required when mode == "single_result"
     replace_existing: bool = False
+
+
+class MobileIdResponse(BaseModel):
+    mobile_id: str

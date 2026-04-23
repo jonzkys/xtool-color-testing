@@ -53,3 +53,52 @@ def test_rotate_mobile_id_raises_for_unknown_user(fresh_db):
 
 def test_get_by_mobile_id_returns_none_for_empty_string(fresh_db):
     assert u_repo.get_by_mobile_id("") is None
+
+
+from fastapi.testclient import TestClient
+
+from xcs_gen_web.app import create_app
+
+
+def _multi_user_client(monkeypatch, api_key: str = "aaaaaaaaaaaaaaaa"):
+    """Spin up the app in multi-user mode and register a user.
+    Returns (client, headers) where headers carry X-User-Id."""
+    monkeypatch.setenv("XCS_GEN_MODE", "multi_user")
+    c = TestClient(create_app())
+    c.post(
+        "/api/users/register",
+        json={"api_key": api_key, "first_name": "Test"},
+    )
+    return c, {"X-User-Id": api_key}
+
+
+def test_post_mobile_id_returns_a_value(fresh_db, monkeypatch):
+    c, h = _multi_user_client(monkeypatch)
+    r = c.post("/api/me/mobile-id", headers=h)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "mobile_id" in body and isinstance(body["mobile_id"], str)
+    assert len(body["mobile_id"]) >= 20
+
+
+def test_post_mobile_id_is_idempotent(fresh_db, monkeypatch):
+    c, h = _multi_user_client(monkeypatch)
+    a = c.post("/api/me/mobile-id", headers=h).json()["mobile_id"]
+    b = c.post("/api/me/mobile-id", headers=h).json()["mobile_id"]
+    assert a == b
+
+
+def test_rotate_mobile_id_changes_the_value(fresh_db, monkeypatch):
+    c, h = _multi_user_client(monkeypatch)
+    old = c.post("/api/me/mobile-id", headers=h).json()["mobile_id"]
+    r = c.post("/api/me/mobile-id/rotate", headers=h)
+    assert r.status_code == 200, r.text
+    new = r.json()["mobile_id"]
+    assert new != old
+
+
+def test_mobile_id_endpoints_require_auth_in_multi_user_mode(fresh_db, monkeypatch):
+    monkeypatch.setenv("XCS_GEN_MODE", "multi_user")
+    c = TestClient(create_app())
+    assert c.post("/api/me/mobile-id").status_code == 401
+    assert c.post("/api/me/mobile-id/rotate").status_code == 401

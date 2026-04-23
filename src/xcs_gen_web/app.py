@@ -24,6 +24,7 @@ from .schemas import (
     MaterialCreate,
     MaterialResponse,
     MaterialUpdate,
+    MobileIdResponse,
     PaletteEntryPatch,
     PaletteEntryResponse,
     PaletteQueryResult,
@@ -309,6 +310,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 detail="this key is already claimed — pick another",
             )
         return UserResponse(**user)
+
+    @app.post("/api/me/mobile-id", response_model=MobileIdResponse)
+    def me_mobile_id_get_or_create(
+        user_id: int = Depends(get_current_user),
+    ) -> MobileIdResponse:
+        return MobileIdResponse(
+            mobile_id=u_repo.get_or_create_mobile_id(user_id),
+        )
+
+    @app.post("/api/me/mobile-id/rotate", response_model=MobileIdResponse)
+    def me_mobile_id_rotate(
+        user_id: int = Depends(get_current_user),
+    ) -> MobileIdResponse:
+        return MobileIdResponse(
+            mobile_id=u_repo.rotate_mobile_id(user_id),
+        )
 
     @app.get("/api/me", response_model=UserResponse)
     def users_me(user_id: int = Depends(get_current_user)) -> UserResponse:
