@@ -1,4 +1,4 @@
-import type { DetectedLayer, SvgLayersRequest, SvgStackRequest } from "./types";
+import type { SvgLayersRequest, SvgStackRequest } from "./types";
 
 async function postAndDownload(endpoint: string, body: unknown, filename: string): Promise<void> {
   const resp = await fetch(endpoint, {
@@ -38,18 +38,9 @@ export async function svgLayersAndDownload(request: SvgLayersRequest): Promise<v
   return postAndDownload("/api/svg-layers", request, `${request.name || "svg-layers"}.xcs`);
 }
 
-export async function detectSvgLayers(svg_content: string, width_mm: number): Promise<DetectedLayer[]> {
-  const resp = await fetch("/api/svg-detect-layers", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ svg_content, width_mm }),
-  });
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error(err.detail ?? `HTTP ${resp.status}`);
-  }
-  return resp.json();
-}
+// detectSvgLayers moved to web/src/svg/detectLayers.ts — the browser
+// already has the SVG text, so the round-trip through Python svgelements
+// was pure overhead. Import directly from that module.
 
 export interface RasterTraceOptions {
   color_precision: number;

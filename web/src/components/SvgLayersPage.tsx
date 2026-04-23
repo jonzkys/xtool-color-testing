@@ -12,11 +12,13 @@ import {
 import { defaultBaseParams, defaultHatchPass } from "../defaults";
 import {
   DEFAULT_RASTER_TRACE_OPTIONS,
-  detectSvgLayers,
   previewSvg,
   svgLayersAndDownload,
 } from "../generate";
 import type { RasterTraceOptions } from "../generate";
+// Colour detection runs in the browser via DOMParser + getComputedStyle —
+// no round-trip, no backend CPU, same shape as the old API response.
+import { detectSvgLayers } from "../svg/detectLayers";
 // Tracing runs in the browser via vtracer-wasm — no network roundtrip,
 // no backend CPU burn, instant feedback when knobs change.
 import { traceImageToSvg } from "../tracer/vtracer";
@@ -353,7 +355,7 @@ export function SvgLayersPage() {
       layers: [],
     }));
     try {
-      const detected = await detectSvgLayers(svgText, 50);
+      const detected = detectSvgLayers(svgText);
       setRawDetected(detected);
       const visible = detected.filter(
         (d) => includeNearWhite || !d.is_near_white,

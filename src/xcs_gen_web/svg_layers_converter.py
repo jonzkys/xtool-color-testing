@@ -12,19 +12,16 @@ import json
 import os
 import tempfile
 import time
-from collections import Counter
 from contextlib import nullcontext
 from dataclasses import replace
 
 from xcs_gen.builder import build_xcs
 from xcs_gen.model import GRADIENT_LAYER_COLOR, Path, Rect, XCSProject
-from xcs_gen.svg_source import ParsedShape, is_near_white, parse_svg
+from xcs_gen.svg_source import ParsedShape, parse_svg
 
 from .converter import _to_processing_params
 from .schemas import (
-    DetectedLayer,
     LayerSpec,
-    SvgDetectRequest,
     SvgLayersRequest,
     SvgPreviewRequest,
     SvgPreviewResponse,
@@ -39,61 +36,6 @@ def _write_svg_to_temp(svg_content: str) -> str:
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(svg_content)
     return temp_path
-
-
-def detect_svg_layers(request: SvgDetectRequest) -> list[DetectedLayer]:
-    """Parse an SVG and return the unique colors (for UI layer list population).
-
-    Returned in SVG document order so the UI can reflect z-stacking as it
-    appears in the source file. Each color is reported once with the count
-    of shapes using it and whether it shows up as a fill or only a stroke.
-    """
-    assert_shape_count(request.svg_content)
-    temp_path = _write_svg_to_temp(request.svg_content)
-    try:
-        parsed = parse_svg(
-            temp_path,
-            total_width=request.width_mm,
-            total_height=None,
-        )
-    finally:
-        try:
-            os.unlink(temp_path)
-        except OSError:
-            pass
-
-    # Track first-seen index for stable ordering
-    order: dict[str, int] = {}
-    is_fill: dict[str, bool] = {}
-    counts: Counter[str] = Counter()
-
-    for shape in parsed.shapes:
-        # Fill is the primary bucket
-        if shape.fill and shape.fill != "none":
-            color = shape.fill
-            if color not in order:
-                order[color] = len(order)
-                is_fill[color] = True
-            counts[color] += 1
-            continue
-        # Otherwise stroke-only
-        if shape.stroke and shape.stroke != "none":
-            color = shape.stroke
-            if color not in order:
-                order[color] = len(order)
-                is_fill[color] = False
-            counts[color] += 1
-
-    result = [
-        DetectedLayer(
-            color=c,
-            shape_count=counts[c],
-            is_fill=is_fill[c],
-            is_near_white=is_near_white(c),
-        )
-        for c in sorted(order, key=order.get)
-    ]
-    return result
 
 
 def _shape_primary_color(shape: ParsedShape) -> str | None:

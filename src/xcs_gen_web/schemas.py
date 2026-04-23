@@ -225,24 +225,10 @@ class SvgLayersRequest(BaseModel):
     subtract_overlaps: bool = False
 
 
-class SvgDetectRequest(BaseModel):
-    """Request to detect the unique colors present in an SVG."""
-
-    svg_content: str = Field(min_length=1, max_length=10_000_000)
-    width_mm: float = Field(default=100.0, gt=0, le=500)
-
-
-class DetectedLayer(BaseModel):
-    """One color detected in an SVG with a usage count."""
-
-    color: str
-    shape_count: int
-    is_fill: bool  # True = appears as a fill, False = appears only as stroke
-    # True when every RGB channel is >= 245 (pure white + vtracer near-white
-    # artefacts). The UI hides these by default; users can tick "Include
-    # white" to surface them. Default False keeps the field optional on the
-    # wire for older clients / persisted snapshots.
-    is_near_white: bool = False
+# SvgDetectRequest + DetectedLayer used to live here. Layer colour
+# detection now runs client-side (web/src/svg/detectLayers.ts); the
+# TypeScript ``DetectedLayer`` type in web/src/types.ts is the sole
+# source of truth for the shape.
 
 
 class SvgPreviewRequest(BaseModel):

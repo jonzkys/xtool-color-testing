@@ -10,11 +10,9 @@ from xcs_gen_web.app import create_app
 from xcs_gen_web.schemas import (
     BaseParams,
     LayerSpec,
-    SvgDetectRequest,
     SvgLayersRequest,
 )
 from xcs_gen_web.svg_layers_converter import (
-    detect_svg_layers,
     svg_layers_to_xcs,
 )
 
@@ -39,18 +37,6 @@ def _layer(color: str, **overrides) -> LayerSpec:
     )
     defaults.update(overrides)
     return LayerSpec(**defaults)
-
-
-def test_detect_layers_returns_all_svg_colors():
-    req = SvgDetectRequest(svg_content=PIKACHU_SVG.read_text(), width_mm=50.0)
-    layers = detect_svg_layers(req)
-    colors = {l.color for l in layers}
-    # Pikachu has these five fills
-    assert "#000000" in colors
-    assert "#ffd73e" in colors
-    assert "#ee4e36" in colors
-    # All layers have a positive shape_count and is_fill marked
-    assert all(l.shape_count > 0 for l in layers)
 
 
 def test_layers_request_emits_paths_per_layer():
@@ -132,18 +118,6 @@ def test_unmatched_colors_produce_error():
     )
     with pytest.raises(ValueError, match="No SVG shapes matched"):
         svg_layers_to_xcs(req)
-
-
-def test_api_detect_endpoint():
-    client = TestClient(create_app())
-    resp = client.post("/api/svg-detect-layers", json={
-        "svg_content": PIKACHU_SVG.read_text(),
-        "width_mm": 50,
-    })
-    assert resp.status_code == 200
-    layers = resp.json()
-    assert len(layers) >= 3
-    assert all("color" in l and "shape_count" in l and "is_fill" in l for l in layers)
 
 
 def test_api_preview_returns_svg_string():
@@ -397,41 +371,8 @@ def test_api_layers_endpoint_rejects_hatched_with_empty_passes():
     assert "HATCHED_LINES" in resp.text
 
 
-def test_detected_layer_is_near_white_defaults_false():
-    from xcs_gen_web.schemas import DetectedLayer
-    layer = DetectedLayer(color="#ff0000", shape_count=3, is_fill=True)
-    assert layer.is_near_white is False
-
-
-def test_detected_layer_is_near_white_round_trips_true():
-    from xcs_gen_web.schemas import DetectedLayer
-    layer = DetectedLayer.model_validate({
-        "color": "#ffffff",
-        "shape_count": 1,
-        "is_fill": True,
-        "is_near_white": True,
-    })
-    assert layer.is_near_white is True
-
-
-def test_detect_svg_layers_flags_white_and_near_white(tmp_path):
-    """detect_svg_layers marks pure-white and vtracer near-white colours
-    with is_near_white=True; dim or coloured shades are False."""
-    svg = (
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
-        '<rect x="0" y="0" width="100" height="100" fill="#ffffff"/>'   # pure white
-        '<rect x="10" y="10" width="20" height="20" fill="#e4e5e5"/>'    # vtracer near-grey, caught
-        '<circle cx="60" cy="60" r="10" fill="#ff0000"/>'                # red — not near-white
-        '<circle cx="80" cy="80" r="5" fill="#dbdbdb"/>'                 # 219 — below bright threshold
-        '<rect x="40" y="40" width="5" height="5" fill="#fff5e6"/>'     # cream, spread=25, excluded
-        '</svg>'
-    )
-    req = SvgDetectRequest(svg_content=svg, width_mm=50.0)
-    layers = detect_svg_layers(req)
-
-    flags = {l.color: l.is_near_white for l in layers}
-    assert flags["#ffffff"] is True
-    assert flags["#e4e5e5"] is True
-    assert flags["#ff0000"] is False
-    assert flags["#dbdbdb"] is False
-    assert flags["#fff5e6"] is False
+# DetectedLayer / detect_svg_layers tests moved with the code to the
+# client — web/src/svg/detectLayers.ts is now the source of truth and
+# its pure-JS near-white logic is covered by the browser-side detection.
+# ``is_near_white`` (pure function in xcs_gen/svg_source.py) still has
+# its own unit tests in tests/test_svg_source.py.

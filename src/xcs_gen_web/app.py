@@ -20,7 +20,6 @@ from .security import (
 from .schemas import (
     AveragedSwatch,
     BaseParams,
-    DetectedLayer,
     IngestToPaletteRequest,
     MaterialCreate,
     MaterialResponse,
@@ -34,7 +33,6 @@ from .schemas import (
     ResultPatch,
     ResultResponse,
     ResultSwatch,
-    SvgDetectRequest,
     SvgLayersRequest,
     SvgPreviewRequest,
     SvgPreviewResponse,
@@ -48,7 +46,6 @@ from .schemas import (
 )
 from .svg_converter import svg_stack_to_xcs_bytes
 from .svg_layers_converter import (
-    detect_svg_layers,
     svg_layers_to_xcs_bytes,
     svg_preview,
 )
@@ -358,12 +355,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
         )
 
-    @app.post("/api/svg-detect-layers", response_model=list[DetectedLayer])
-    def svg_detect(request: SvgDetectRequest) -> list[DetectedLayer]:
-        try:
-            return detect_svg_layers(request)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+    # /api/svg-detect-layers moved into the frontend as a DOMParser +
+    # getComputedStyle walk in web/src/svg/detectLayers.ts — the browser
+    # already has the SVG text, so the round-trip through svgelements
+    # was pure overhead.
 
     @app.post("/api/svg-preview", response_model=SvgPreviewResponse)
     def svg_preview_endpoint(request: SvgPreviewRequest) -> SvgPreviewResponse:
