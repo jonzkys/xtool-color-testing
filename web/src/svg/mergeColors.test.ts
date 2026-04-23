@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, test } from "vitest";
-import { mergeColorsInSvg, type MergeGroup } from "./mergeColors";
+import { mergeColorsInSvg, computeColorMergeGroups, type MergeGroup } from "./mergeColors";
+import type { LayerSpec } from "../types";
 
 const wrap = (body: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">${body}</svg>`;
@@ -119,5 +120,103 @@ describe("mergeColorsInSvg", () => {
 
   test("throws on malformed SVG", () => {
     expect(() => mergeColorsInSvg("<svg><not-closed>", [])).toThrow();
+  });
+});
+
+function layerWithColor(color: string): LayerSpec {
+  return {
+    color,
+    name: color,
+    enabled: true,
+    processing_type: "VECTOR_ENGRAVING",
+    scan_angle: 90,
+    base_params: {
+      laser: "red",
+      power: 50, speed: 100, frequency: 20000,
+      density: 40, passes: 1, pulse_width: 100,
+    },
+    angle_mode: "fixed",
+    material_id: null,
+    hatch_passes: [],
+  };
+}
+
+describe("computeColorMergeGroups", () => {
+  test("single cluster when all colours are within threshold", () => {
+    const layers = [
+      layerWithColor("#ff0000"),
+      layerWithColor("#fb0002"),
+      layerWithColor("#f60404"),
+    ];
+    const counts = { "#ff0000": 100, "#fb0002": 50, "#f60404": 25 };
+    const groups = computeColorMergeGroups(layers, counts, 5);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].sourceColors).toEqual(
+      expect.arrayContaining(["#ff0000", "#fb0002", "#f60404"]),
+    );
+    // Dominant (highest shape_count) becomes the representative.
+    expect(groups[0].representativeColor).toBe("#ff0000");
+  });
+
+  test("multiple clusters for distinct colour families", () => {
+    const layers = [
+      layerWithColor("#ff0000"),
+      layerWithColor("#fb0002"),
+      layerWithColor("#0000ff"),
+      layerWithColor("#0404fb"),
+    ];
+    const counts = {
+      "#ff0000": 200, "#fb0002": 50, "#0000ff": 180, "#0404fb": 40,
+    };
+    const groups = computeColorMergeGroups(layers, counts, 5);
+    expect(groups).toHaveLength(2);
+    const reps = groups.map((g) => g.representativeColor).sort();
+    expect(reps).toEqual(["#0000ff", "#ff0000"]);
+  });
+
+  test("no groups when every colour is beyond threshold", () => {
+    const layers = [
+      layerWithColor("#ff0000"),
+      layerWithColor("#00ff00"),
+      layerWithColor("#0000ff"),
+    ];
+    const counts = { "#ff0000": 10, "#00ff00": 10, "#0000ff": 10 };
+    // ΔE between primaries is way beyond 5.
+    const groups = computeColorMergeGroups(layers, counts, 5);
+    expect(groups).toHaveLength(0);
+  });
+
+  test("singleton layers omitted from output", () => {
+    const layers = [
+      layerWithColor("#ff0000"),
+      layerWithColor("#fb0002"),
+      layerWithColor("#00ff00"),
+    ];
+    const counts = { "#ff0000": 100, "#fb0002": 50, "#00ff00": 80 };
+    const groups = computeColorMergeGroups(layers, counts, 5);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].sourceColors).not.toContain("#00ff00");
+  });
+
+  test("dominant-first seeding: biggest shape_count becomes rep", () => {
+    // Both reds within threshold but #fb0002 has more shapes.
+    const layers = [
+      layerWithColor("#ff0000"),
+      layerWithColor("#fb0002"),
+    ];
+    const counts = { "#ff0000": 20, "#fb0002": 500 };
+    const groups = computeColorMergeGroups(layers, counts, 5);
+    expect(groups[0].representativeColor).toBe("#fb0002");
+  });
+
+  test("missing shape count treated as zero (not dominant)", () => {
+    const layers = [
+      layerWithColor("#ff0000"),
+      layerWithColor("#fb0002"),
+    ];
+    // #ff0000 has a count, #fb0002 missing entirely -> falls back to 0.
+    const counts = { "#ff0000": 10 };
+    const groups = computeColorMergeGroups(layers, counts, 5);
+    expect(groups[0].representativeColor).toBe("#ff0000");
   });
 });

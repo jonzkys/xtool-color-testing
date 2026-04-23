@@ -1,4 +1,6 @@
 import { normalizeColor } from "./color";
+import { deltaE2000, hexToLab, type Lab } from "../color/math";
+import type { LayerSpec } from "../types";
 
 export interface MergeGroup {
   /** Colours that should collapse into ``representativeColor``. All
@@ -81,4 +83,47 @@ export function mergeColorsInSvg(
     return `<?xml version="1.0" encoding="UTF-8"?>\n${serialized}`;
   }
   return serialized;
+}
+
+/**
+ * Greedy star clustering: sort layers by shape count desc so dominant
+ * colours seed clusters first; each seed absorbs any remaining colour
+ * within ``thresholdDeltaE``. Returns only clusters with ≥2 members.
+ *
+ * Star (seed + satellites) rather than transitive single-linkage keeps
+ * results predictable — "colours close to red become red" instead of
+ * surprising chain-linking through a midtone.
+ */
+export function computeColorMergeGroups(
+  layers: LayerSpec[],
+  shapeCountsByColor: Record<string, number>,
+  thresholdDeltaE: number,
+): MergeGroup[] {
+  const entries = layers.map((l) => ({
+    color: l.color,
+    count: shapeCountsByColor[l.color] ?? 0,
+    lab: /^#[0-9a-fA-F]{6}$/.test(l.color) ? hexToLab(l.color) : null,
+  }));
+  // Dominant first.
+  entries.sort((a, b) => b.count - a.count);
+
+  const assigned = new Set<string>();
+  const groups: MergeGroup[] = [];
+
+  for (const seed of entries) {
+    if (assigned.has(seed.color) || !seed.lab) continue;
+    const cluster: string[] = [seed.color];
+    assigned.add(seed.color);
+    for (const cand of entries) {
+      if (assigned.has(cand.color) || !cand.lab) continue;
+      if (deltaE2000(seed.lab as Lab, cand.lab as Lab) <= thresholdDeltaE) {
+        cluster.push(cand.color);
+        assigned.add(cand.color);
+      }
+    }
+    if (cluster.length >= 2) {
+      groups.push({ sourceColors: cluster, representativeColor: seed.color });
+    }
+  }
+  return groups;
 }
