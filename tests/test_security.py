@@ -7,7 +7,7 @@ from xcs_gen_web.security import MobileUploadRateLimiter, truncate_mid
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 def test_mobile_rate_limiter_allows_under_hour_cap():
