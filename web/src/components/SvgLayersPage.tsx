@@ -631,7 +631,7 @@ export function SvgLayersPage() {
               >
                 <div className="grid grid-cols-2 gap-2">
                   <NumberField
-                    label="Max colours (0 = off)"
+                    label="Max colours"
                     value={traceOptions.max_colors}
                     integer
                     min={0}
@@ -974,7 +974,7 @@ function PreviewBlock({
         {subtext && <span className="text-[11px]">{subtext}</span>}
         {trailing && <span className="ml-auto">{trailing}</span>}
       </div>
-      <Card variant="inset" padded={false} className="min-h-[240px] max-h-[40vh] flex items-center justify-center overflow-hidden">
+      <Card variant="inset" padded={false} className="h-[40vh] min-h-[240px] overflow-hidden">
         {children}
       </Card>
     </div>
@@ -1250,25 +1250,23 @@ function SvgPreview({
     });
   }, [svg, highlightColor, enabledColors, colorMap]);
 
-  if (!svg) {
-    return (
-      <EmptyState
-        icon={<FileCode2 className="h-6 w-6" />}
-        title="Upload an SVG"
-        description="Drop a file on the left panel to preview it here."
-      />
-    );
-  }
-
   return (
     <div
       ref={wrapperRef}
-      className="w-full h-full min-h-[220px] flex items-center justify-center p-3"
+      className="w-full h-full flex items-center justify-center p-3"
     >
-      <div
-        className="w-full h-full flex items-center justify-center [&>svg]:max-w-full [&>svg]:max-h-full"
-        dangerouslySetInnerHTML={{ __html: svg }}
-      />
+      {svg ? (
+        <div
+          className="w-full h-full flex items-center justify-center [&>svg]:max-w-full [&>svg]:max-h-full"
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      ) : (
+        <EmptyState
+          icon={<FileCode2 className="h-6 w-6" />}
+          title="Upload an SVG"
+          description="Drop a file on the left panel to preview it here."
+        />
+      )}
     </div>
   );
 }
