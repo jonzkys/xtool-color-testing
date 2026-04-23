@@ -267,7 +267,7 @@ export function Spectrum2DPage() {
         </div>
       </header>
 
-      <SpectrumAbout open={aboutOpen} onOpenChange={setAboutOpen} />
+      <SpectrumAbout open={aboutOpen} onOpenChange={setAboutOpen} initialTab="2d" />
 
       {tests.length === 0 ? (
         <Section>
