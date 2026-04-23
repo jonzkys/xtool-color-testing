@@ -72,7 +72,18 @@ def subtract_overlapping_shapes(shapes: list[ParsedShape]) -> list[ParsedShape]:
 
     Stroked-only (fill is None) shapes pass through unchanged - strokes are
     1D and not subject to area subtraction.
+
+    Implementation note — walks bottom→top but builds the "above" mask
+    incrementally via a suffix-union table computed once, top→bottom.
+    The old implementation rebuilt ``unary_union(polys[i+1:])`` for every
+    ``i``, which is O(N²) unions; at ~1000 shapes that's where the
+    500-layer timeout was coming from. The ``disjoint`` short-circuit
+    skips the (expensive) ``difference`` call whenever a shape's bbox
+    doesn't touch anything stacked above it — the common case on sparse
+    vtracer output.
     """
+    n = len(shapes)
+
     # Pre-compute polygons for filled shapes; keep strokes-only aside.
     polys: list[Polygon | MultiPolygon | None] = []
     for sh in shapes:
@@ -88,9 +99,21 @@ def subtract_overlapping_shapes(shapes: list[ParsedShape]) -> list[ParsedShape]:
             continue
         polys.append(p)
 
-    # For each shape, union of higher-index filled polygons
+    # suffix_unions[i] = unary_union(polys[i+1:]) — the "mask" that sits
+    # above shape i. Built once, top→bottom, so each shape contributes to
+    # at most one union call (O(N) unions total instead of the old O(N²)).
+    suffix_unions: list[Polygon | MultiPolygon | None] = [None] * n
+    for i in range(n - 2, -1, -1):
+        above_p = polys[i + 1]
+        prev_suffix = suffix_unions[i + 1]
+        if above_p is None:
+            suffix_unions[i] = prev_suffix
+        elif prev_suffix is None or prev_suffix.is_empty:
+            suffix_unions[i] = above_p
+        else:
+            suffix_unions[i] = unary_union([prev_suffix, above_p])
+
     result: list[ParsedShape] = []
-    n = len(shapes)
     for i in range(n):
         sh = shapes[i]
         my_poly = polys[i]
@@ -99,13 +122,12 @@ def subtract_overlapping_shapes(shapes: list[ParsedShape]) -> list[ParsedShape]:
             result.append(sh)
             continue
 
-        higher = [p for p in polys[i + 1:] if p is not None and not p.is_empty]
-        if not higher:
-            # Nothing above; shape survives unchanged
+        above = suffix_unions[i]
+        if above is None or above.is_empty or my_poly.disjoint(above):
+            # Nothing above, or bboxes don't even touch — no work to do.
             result.append(sh)
             continue
 
-        above = unary_union(higher)
         diff = my_poly.difference(above)
         if diff.is_empty:
             # Fully covered by higher shapes - drop
