@@ -127,3 +127,50 @@ export function computeColorMergeGroups(
   }
   return groups;
 }
+
+/**
+ * Group enabled layers by byte-identical laser parameters. Returns one
+ * array per group of ≥2 layers; singletons are omitted. Within each
+ * group, layers retain their original order in the input array (the
+ * first member is the natural representative).
+ *
+ * The canonical key excludes ``color``, ``name``, ``enabled``, and
+ * ``material_id`` (the last is provenance, not behaviour). For
+ * ``HATCHED_LINES`` layers, ``scan_angle`` and ``angle_mode`` are
+ * excluded because they're semantically unused by the XCS pipeline;
+ * ``hatch_passes`` (order-sensitive) is included. For non-hatched
+ * layers, ``hatch_passes`` is excluded and scan_angle/angle_mode are
+ * included.
+ */
+export function computeParamMergeGroups(layers: LayerSpec[]): LayerSpec[][] {
+  const buckets = new Map<string, LayerSpec[]>();
+  for (const layer of layers) {
+    if (!layer.enabled) continue;
+    const key = JSON.stringify(canonicalKey(layer));
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.push(layer);
+    } else {
+      buckets.set(key, [layer]);
+    }
+  }
+  return [...buckets.values()].filter((g) => g.length >= 2);
+}
+
+function canonicalKey(l: LayerSpec) {
+  const p = l.base_params;
+  const base = {
+    processing_type: l.processing_type,
+    laser: p.laser,
+    power: p.power,
+    speed: p.speed,
+    frequency: p.frequency,
+    density: p.density,
+    passes: p.passes,
+    pulse_width: p.pulse_width,
+  };
+  if (l.processing_type === "HATCHED_LINES") {
+    return { ...base, hatch_passes: l.hatch_passes };
+  }
+  return { ...base, scan_angle: l.scan_angle, angle_mode: l.angle_mode };
+}

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, test } from "vitest";
-import { mergeColorsInSvg, computeColorMergeGroups, type MergeGroup } from "./mergeColors";
+import { mergeColorsInSvg, computeColorMergeGroups, computeParamMergeGroups, type MergeGroup } from "./mergeColors";
 import type { LayerSpec } from "../types";
+import { defaultHatchPass } from "../defaults";
 
 const wrap = (body: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">${body}</svg>`;
@@ -219,5 +220,144 @@ describe("computeColorMergeGroups", () => {
     const counts = { "#ff0000": 10 };
     const groups = computeColorMergeGroups(layers, counts, 5);
     expect(groups[0].representativeColor).toBe("#ff0000");
+  });
+});
+
+function baseParamsOf(overrides: Partial<LayerSpec["base_params"]> = {}): LayerSpec["base_params"] {
+  return {
+    laser: "red",
+    power: 50, speed: 100, frequency: 20000,
+    density: 40, passes: 1, pulse_width: 100,
+    scan_angle: 90,
+    ...overrides,
+  };
+}
+
+function layer(overrides: Partial<LayerSpec> = {}): LayerSpec {
+  return {
+    color: "#ff0000",
+    name: "layer",
+    enabled: true,
+    processing_type: "VECTOR_ENGRAVING",
+    scan_angle: 90,
+    base_params: baseParamsOf(),
+    angle_mode: "fixed",
+    material_id: null,
+    hatch_passes: [],
+    ...overrides,
+  };
+}
+
+describe("computeParamMergeGroups", () => {
+  test("identical enabled layers collapse into one group", () => {
+    const layers = [
+      layer({ color: "#ff0000" }),
+      layer({ color: "#fb0002" }),
+      layer({ color: "#00ff00" }),
+    ];
+    // All three have identical params — only the color differs, so all three collapse.
+    const groups = computeParamMergeGroups(layers);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].map((l) => l.color).sort()).toEqual(
+      ["#00ff00", "#fb0002", "#ff0000"],
+    );
+  });
+
+  test("different scan_angle prevents collapse for non-hatched", () => {
+    const layers = [
+      layer({ color: "#ff0000", scan_angle: 90 }),
+      layer({ color: "#fb0002", scan_angle: 45 }),
+    ];
+    const groups = computeParamMergeGroups(layers);
+    expect(groups).toHaveLength(0);
+  });
+
+  test("different angle_mode prevents collapse for non-hatched", () => {
+    const layers = [
+      layer({ color: "#ff0000", angle_mode: "fixed" }),
+      layer({ color: "#fb0002", angle_mode: "crosshatch" }),
+    ];
+    const groups = computeParamMergeGroups(layers);
+    expect(groups).toHaveLength(0);
+  });
+
+  test("scan_angle and angle_mode ignored for HATCHED_LINES", () => {
+    const layers = [
+      layer({
+        color: "#ff0000",
+        processing_type: "HATCHED_LINES",
+        scan_angle: 90,
+        angle_mode: "fixed",
+        hatch_passes: [defaultHatchPass(0)],
+      }),
+      layer({
+        color: "#fb0002",
+        processing_type: "HATCHED_LINES",
+        scan_angle: 45,          // Differs, but ignored for hatched.
+        angle_mode: "crosshatch",// Differs, but ignored for hatched.
+        hatch_passes: [defaultHatchPass(0)],
+      }),
+    ];
+    const groups = computeParamMergeGroups(layers);
+    expect(groups).toHaveLength(1);
+  });
+
+  test("different hatch_passes prevents collapse for HATCHED_LINES", () => {
+    const layers = [
+      layer({
+        color: "#ff0000",
+        processing_type: "HATCHED_LINES",
+        hatch_passes: [defaultHatchPass(0)],
+      }),
+      layer({
+        color: "#fb0002",
+        processing_type: "HATCHED_LINES",
+        hatch_passes: [defaultHatchPass(0), defaultHatchPass(90)],
+      }),
+    ];
+    const groups = computeParamMergeGroups(layers);
+    expect(groups).toHaveLength(0);
+  });
+
+  test("different base params (power) prevents collapse", () => {
+    const layers = [
+      layer({ color: "#ff0000", base_params: baseParamsOf({ power: 50 }) }),
+      layer({ color: "#fb0002", base_params: baseParamsOf({ power: 60 }) }),
+    ];
+    const groups = computeParamMergeGroups(layers);
+    expect(groups).toHaveLength(0);
+  });
+
+  test("disabled layers excluded from grouping", () => {
+    const layers = [
+      layer({ color: "#ff0000", enabled: true }),
+      layer({ color: "#fb0002", enabled: false }),
+      layer({ color: "#f60404", enabled: true }),
+    ];
+    const groups = computeParamMergeGroups(layers);
+    // Two enabled layers with identical params -> one group of two.
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toHaveLength(2);
+    expect(groups[0].map((l) => l.color).sort()).toEqual(["#f60404", "#ff0000"]);
+  });
+
+  test("material_id and name do not affect grouping", () => {
+    const layers = [
+      layer({ color: "#ff0000", name: "alpha", material_id: "1" }),
+      layer({ color: "#fb0002", name: "beta",  material_id: "2" }),
+    ];
+    const groups = computeParamMergeGroups(layers);
+    expect(groups).toHaveLength(1);
+  });
+
+  test("representatives preserve request-list order", () => {
+    const layers = [
+      layer({ color: "#00ff00" }),  // index 0
+      layer({ color: "#ff0000" }),  // index 1
+      layer({ color: "#fb0002" }),  // index 2 — same params as #ff0000
+    ];
+    const groups = computeParamMergeGroups(layers);
+    // First-occurrence rep = #00ff00 (appears first) since all three match.
+    expect(groups[0][0].color).toBe("#00ff00");
   });
 });
