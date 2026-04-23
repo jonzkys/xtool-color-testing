@@ -264,7 +264,16 @@ def test_mobile_upload_rate_limit_blocks_after_cap(fresh_db, monkeypatch, tmp_pa
     monkeypatch.setenv("XCS_GEN_MOBILE_UPLOAD_RATE_PER_HOUR", "2")
     monkeypatch.setenv("XCS_GEN_MOBILE_UPLOAD_RATE_PER_DAY", "999")
     c, h = _multi_user_client(monkeypatch)
-    mid, _tid = _seed_user_with_test(c, h, monkeypatch, tmp_path)
+    mid, tid = _seed_user_with_test(c, h, monkeypatch, tmp_path)
+
+    # Wrap detect_test_id so we can assert the blocked request never
+    # reaches the fiducial pipeline (proves the limiter short-circuits
+    # BEFORE expensive work, not just somewhere upstream of the response).
+    detect_calls: list[bytes] = []
+    def _counting_detect(data):
+        detect_calls.append(data)
+        return tid
+    monkeypatch.setattr(cap, "detect_test_id", _counting_detect)
 
     for _ in range(2):
         r = c.post(
@@ -272,9 +281,13 @@ def test_mobile_upload_rate_limit_blocks_after_cap(fresh_db, monkeypatch, tmp_pa
             files={"image": ("p.jpg", b"fake", "image/jpeg")},
         )
         assert r.status_code == 201
+    assert len(detect_calls) == 2
+
     r = c.post(
         f"/api/m/{mid}/upload",
         files={"image": ("p.jpg", b"fake", "image/jpeg")},
     )
     assert r.status_code == 429
     assert "Retry-After" in r.headers
+    # Critical assertion: the blocked request did NOT reach detect_test_id.
+    assert len(detect_calls) == 2

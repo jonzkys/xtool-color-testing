@@ -391,11 +391,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from .repositories import tests as t_repo
         t = t_repo.get(qr_id, owner_id=user["id"])
         if t is None:
+            # Generic message — the mobile route is unauthenticated
+            # beyond the mid, so we deliberately don't echo the test
+            # id back or hint that it might exist in another account.
             raise HTTPException(
                 status_code=404,
-                detail=f"QR matches test #{qr_id}, which doesn't exist for "
-                       "you. Was the test deleted, or does it belong to "
-                       "another user?",
+                detail="test not found — it may have been deleted, or the QR is from a different account",
             )
 
         result = _persist_upload(
