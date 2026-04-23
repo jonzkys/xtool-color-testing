@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Camera, Trash2, Upload } from "lucide-react";
 import type { AveragedSwatch, ResultRecord } from "../types";
+import { useAuthedImage } from "../hooks/useAuthedImage";
 import {
   listResults,
   uploadResult,
@@ -180,11 +181,7 @@ export function ResultsPanel({
                     : "border-[color:var(--color-border)]",
                 )}
               >
-                <img
-                  src={r.image_url}
-                  alt=""
-                  className="w-12 h-12 object-cover rounded-[6px] border border-[color:var(--color-border-strong)] shrink-0"
-                />
+                <ResultThumbnail imageUrl={r.image_url} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 font-mono text-[12px] text-[color:var(--color-ink)]">
                     <span>#{r.id}</span>
@@ -363,6 +360,34 @@ export function ResultsPanel({
           )}
         </div>
       </Card>
+    </div>
+  );
+}
+
+// Result image URLs are auth-gated ``/api/results/{rid}/image`` endpoints.
+// In split-origin deployments (CloudFront frontend + separate API host) a
+// bare ``<img src={image_url}>`` fetches relative to the page origin and
+// can't carry the ``X-User-Id`` header either way. useAuthedImage fetches
+// the bytes through the app's auth-decorated fetch and hands us a blob URL.
+function ResultThumbnail({ imageUrl }: { imageUrl: string }) {
+  const blobUrl = useAuthedImage(imageUrl);
+  return (
+    <div
+      aria-hidden={!blobUrl}
+      className={cn(
+        "w-12 h-12 rounded-[6px] border border-[color:var(--color-border-strong)] shrink-0 overflow-hidden",
+        blobUrl
+          ? "bg-[color:var(--color-surface)]"
+          : "bg-[color:var(--color-surface-elevated)] animate-pulse",
+      )}
+    >
+      {blobUrl && (
+        <img
+          src={blobUrl}
+          alt=""
+          className="w-full h-full object-cover"
+        />
+      )}
     </div>
   );
 }

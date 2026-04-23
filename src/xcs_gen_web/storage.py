@@ -106,7 +106,7 @@ _CONTENT_TYPES = {
 }
 
 
-def _content_type_for(suffix: str) -> str:
+def content_type_for(suffix: str) -> str:
     return _CONTENT_TYPES.get(suffix.lower(), "application/octet-stream")
 
 
@@ -199,7 +199,7 @@ class S3Storage:
             Bucket=self.bucket,
             Key=key,
             Body=data,
-            ContentType=_content_type_for(suffix),
+            ContentType=content_type_for(suffix),
             ServerSideEncryption=_SSE_ALGORITHM,
         )
         return {"path": self._uri(key), "sha256": sha256_hex(data)}

@@ -948,11 +948,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def results_image(
         rid: int, user_id: int = Depends(get_current_user),
     ) -> Response:
+        from .storage import content_type_for
         r = r_repo.get(rid, owner_id=user_id)
         if r is None:
             raise HTTPException(status_code=404, detail="result not found")
         data = images.read(r["image_path"])
-        return Response(content=data, media_type="image/*")
+        # ``image/*`` is a wildcard only valid in Accept headers, not a real
+        # Content-Type — browsers that MIME-sniff strictly (e.g. Safari
+        # cross-origin) refuse to render it. Derive the real type from the
+        # stored file's suffix so every browser displays the image.
+        suffix = Path(r["image_path"]).suffix
+        return Response(content=data, media_type=content_type_for(suffix))
 
     @app.get("/api/tests/{tid}/swatches", response_model=list[AveragedSwatch])
     def test_swatches(

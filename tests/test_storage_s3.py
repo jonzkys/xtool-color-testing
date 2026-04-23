@@ -22,7 +22,7 @@ from xcs_gen_web.storage import (
     FilesystemStorage,
     S3Storage,
     _assert_safe_suffix,
-    _content_type_for,
+    content_type_for,
     _parse_s3_uri,
     get_storage,
 )
@@ -59,10 +59,10 @@ def test_parse_s3_uri_rejects_missing_key():
 
 
 def test_content_type_maps_common_image_suffixes():
-    assert _content_type_for(".png") == "image/png"
-    assert _content_type_for(".JPG") == "image/jpeg"  # case-insensitive
-    assert _content_type_for(".heic") == "image/heic"
-    assert _content_type_for(".xyz") == "application/octet-stream"
+    assert content_type_for(".png") == "image/png"
+    assert content_type_for(".JPG") == "image/jpeg"  # case-insensitive
+    assert content_type_for(".heic") == "image/heic"
+    assert content_type_for(".xyz") == "application/octet-stream"
 
 
 def test_safe_suffix_rejects_traversal_attempts():
