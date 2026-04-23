@@ -15,6 +15,7 @@ from dataclasses import replace
 
 from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import unary_union
+from shapely.strtree import STRtree
 
 from xcs_gen.hatch import svg_d_to_polygon
 from xcs_gen.svg_source import ParsedShape
@@ -73,14 +74,14 @@ def subtract_overlapping_shapes(shapes: list[ParsedShape]) -> list[ParsedShape]:
     Stroked-only (fill is None) shapes pass through unchanged - strokes are
     1D and not subject to area subtraction.
 
-    Implementation note — walks bottom→top but builds the "above" mask
-    incrementally via a suffix-union table computed once, top→bottom.
-    The old implementation rebuilt ``unary_union(polys[i+1:])`` for every
-    ``i``, which is O(N²) unions; at ~1000 shapes that's where the
-    500-layer timeout was coming from. The ``disjoint`` short-circuit
-    skips the (expensive) ``difference`` call whenever a shape's bbox
-    doesn't touch anything stacked above it — the common case on sparse
-    vtracer output.
+    Implementation note — uses an STRtree spatial index to only consider
+    shapes whose bbox actually overlaps the target. A naive
+    ``unary_union(polys[i+1:])`` per iteration is O(N²) in polygon size;
+    a suffix-union cache improves that but still accumulates one huge
+    polygon that makes later ``difference()`` calls expensive. The tree
+    query cuts each iteration to its true spatial neighbours — for
+    sparse vtracer output that's typically dozens of shapes, not the
+    full remainder of the z-stack.
     """
     n = len(shapes)
 
@@ -99,19 +100,17 @@ def subtract_overlapping_shapes(shapes: list[ParsedShape]) -> list[ParsedShape]:
             continue
         polys.append(p)
 
-    # suffix_unions[i] = unary_union(polys[i+1:]) — the "mask" that sits
-    # above shape i. Built once, top→bottom, so each shape contributes to
-    # at most one union call (O(N) unions total instead of the old O(N²)).
-    suffix_unions: list[Polygon | MultiPolygon | None] = [None] * n
-    for i in range(n - 2, -1, -1):
-        above_p = polys[i + 1]
-        prev_suffix = suffix_unions[i + 1]
-        if above_p is None:
-            suffix_unions[i] = prev_suffix
-        elif prev_suffix is None or prev_suffix.is_empty:
-            suffix_unions[i] = above_p
-        else:
-            suffix_unions[i] = unary_union([prev_suffix, above_p])
+    # Build an STRtree over the non-None polygons. ``tree_geoms[k]`` is
+    # the k-th polygon inserted; ``tree_orig[k]`` maps it back to its
+    # original shape index (z-order).
+    tree_geoms: list[Polygon | MultiPolygon] = []
+    tree_orig: list[int] = []
+    for i, p in enumerate(polys):
+        if p is None:
+            continue
+        tree_geoms.append(p)
+        tree_orig.append(i)
+    tree = STRtree(tree_geoms) if tree_geoms else None
 
     result: list[ParsedShape] = []
     for i in range(n):
@@ -122,9 +121,26 @@ def subtract_overlapping_shapes(shapes: list[ParsedShape]) -> list[ParsedShape]:
             result.append(sh)
             continue
 
-        above = suffix_unions[i]
-        if above is None or above.is_empty or my_poly.disjoint(above):
-            # Nothing above, or bboxes don't even touch — no work to do.
+        # Spatial candidates whose bbox intersects this shape's bbox.
+        # Filter to only those stacked above (z > i). ``tree.query``
+        # returns tree-local indices; ``tree_orig`` maps them back.
+        higher: list[Polygon | MultiPolygon] = []
+        if tree is not None:
+            for k in tree.query(my_poly):
+                orig_i = tree_orig[int(k)]
+                if orig_i <= i:
+                    continue
+                cand = tree_geoms[int(k)]
+                if not cand.is_empty:
+                    higher.append(cand)
+        if not higher:
+            # Nothing spatially above this shape; keep it as-is.
+            result.append(sh)
+            continue
+
+        above = higher[0] if len(higher) == 1 else unary_union(higher)
+        if above.is_empty or my_poly.disjoint(above):
+            # Bbox-overlap but no actual geometric overlap.
             result.append(sh)
             continue
 
