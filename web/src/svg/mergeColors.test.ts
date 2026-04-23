@@ -134,6 +134,7 @@ function layerWithColor(color: string): LayerSpec {
       laser: "red",
       power: 50, speed: 100, frequency: 20000,
       density: 40, passes: 1, pulse_width: 100,
+      scan_angle: 90,
     },
     angle_mode: "fixed",
     material_id: null,
