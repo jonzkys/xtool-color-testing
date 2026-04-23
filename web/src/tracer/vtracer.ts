@@ -153,7 +153,14 @@ export async function traceImageToSvg(
 
   const config: VtracerConfig = {
     ...FIXED_CONFIG,
-    colorPrecision: opts.color_precision,
+    // vtracer-wasm hands ``colorPrecision`` straight through as
+    // visioncortex's ``is_same_color_a`` = precision LOSS. The upstream
+    // vtracer CLI instead converts the user-facing precision to loss via
+    // ``8 - color_precision`` (see visioncortex/vtracer config.rs). Our
+    // UI uses the CLI's convention (higher = more fidelity), so we do
+    // the same conversion here. Without it, 8 collapses the whole image
+    // and 1 over-splits — backwards from the knob's help text.
+    colorPrecision: Math.max(0, Math.min(8, 8 - opts.color_precision)),
     layerDifference: opts.layer_difference,
     filterSpeckle: opts.filter_speckle,
   };
