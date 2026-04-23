@@ -315,6 +315,7 @@ export function SvgLayersPage() {
   async function handleMergeConfirm(groups: MergeGroup[]) {
     setMergeDialogOpen(false);
     if (groups.length === 0) return;
+    setDetectError(undefined);
     try {
       const merged = mergeColorsInSvg(request.svg_content, groups);
       await applyDetectedSvg(merged, request.name);
@@ -325,7 +326,12 @@ export function SvgLayersPage() {
 
   async function handleResetMerges() {
     if (!originalSvgContent) return;
-    await applyDetectedSvg(originalSvgContent, request.name);
+    setDetectError(undefined);
+    try {
+      await applyDetectedSvg(originalSvgContent, request.name);
+    } catch (err) {
+      setDetectError((err as Error).message);
+    }
   }
 
   async function applyDetectedSvg(svgText: string, suggestedName: string) {
@@ -642,6 +648,8 @@ export function SvgLayersPage() {
                         type="button"
                         onClick={handleResetMerges}
                         title="Reset to detected layers"
+                        aria-label="Reset to originally detected layers"
+                        className="appearance-none bg-transparent border-0 p-0 cursor-pointer"
                       >
                         <Badge variant="accent" size="sm">merged · reset</Badge>
                       </button>
