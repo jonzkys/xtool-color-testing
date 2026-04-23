@@ -35,6 +35,7 @@ def _row(r) -> dict[str, Any]:
         "swatches": json.loads(r.swatches_json),
         "owner_id": r.owner_id,
         "visibility": r.visibility,
+        "via": r.via,
     }
 
 
@@ -43,6 +44,7 @@ def create(
     swatches: list[dict[str, Any]], owner_id: int = STANDALONE_USER_ID,
     notes: str = "",
     visibility: str = DEFAULT_VISIBILITY,
+    via: str = "desktop",
 ) -> dict[str, Any]:
     with session_scope() as s:
         res = s.execute(results.insert().values(
@@ -53,6 +55,7 @@ def create(
             excluded=0, notes=notes,
             swatches_json=json.dumps(swatches, separators=(",", ":")),
             owner_id=owner_id, visibility=visibility,
+            via=via,
         ))
         rid = res.inserted_primary_key[0]
     return get(rid, owner_id=owner_id)  # type: ignore[return-value]

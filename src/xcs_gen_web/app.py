@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .config import Settings
@@ -26,6 +26,7 @@ from .schemas import (
     MaterialUpdate,
     MobileCheckResponse,
     MobileIdResponse,
+    MobileUploadResponse,
     PaletteEntryPatch,
     PaletteEntryResponse,
     PaletteQueryResult,
@@ -260,6 +261,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.register_limiter = register_limiter
 
+    from .security import MobileUploadRateLimiter
+    app.state.mobile_upload_limiter = MobileUploadRateLimiter(
+        per_hour=settings.mobile_upload_rate_per_hour,
+        per_day=settings.mobile_upload_rate_per_day,
+    )
+
     @app.get("/api/health")
     def health() -> dict[str, str]:
         # Exposes mode so the frontend can adapt its UI (e.g. show a
@@ -339,6 +346,64 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="mobile id not found")
         return MobileCheckResponse(
             ok=True, display_name=user.get("first_name") or "you",
+        )
+
+    @app.post(
+        "/api/m/{mid}/upload",
+        response_model=MobileUploadResponse,
+        status_code=201,
+    )
+    async def mobile_upload(
+        mid: str,
+        request: Request,
+        image: UploadFile = File(...),
+    ) -> MobileUploadResponse:
+        """Unauthenticated upload tied to a mobile_id. Resolves the mid
+        to a user, then runs the existing fiducial pipeline and persists
+        the result against that user's matching test.
+
+        IMPORTANT: this endpoint MUST NOT consult X-User-Id. The mid is
+        the only identity signal accepted here."""
+        from .services import capture as capture_service
+        from .repositories import results as r_repo
+        from . import images, models
+        from .db import session_scope
+
+        user = u_repo.get_by_mobile_id(mid)
+        if user is None:
+            raise HTTPException(status_code=404, detail="mobile id not found")
+
+        limiter = request.app.state.mobile_upload_limiter
+        retry = await limiter.check(mid)
+        if retry is not None:
+            return JSONResponse(
+                {"detail": "rate limit exceeded"},
+                status_code=429,
+                headers={"Retry-After": str(retry)},
+            )
+
+        data = await image.read()
+        try:
+            qr_id = capture_service.detect_test_id(data)
+        except capture_service.CaptureError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        from .repositories import tests as t_repo
+        t = t_repo.get(qr_id, owner_id=user["id"])
+        if t is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"QR matches test #{qr_id}, which doesn't exist for "
+                       "you. Was the test deleted, or does it belong to "
+                       "another user?",
+            )
+
+        result = _persist_upload(
+            tid=qr_id, spec=t["spec"], data=data, filename=image.filename,
+            user_id=user["id"], via="mobile",
+        )
+        return MobileUploadResponse(
+            result_id=result.id, test_id=qr_id, test_name=t["name"],
         )
 
     @app.get("/api/me", response_model=UserResponse)
@@ -691,7 +756,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def _persist_upload(
         *, tid: int, spec: dict, data: bytes, filename: str | None,
-        user_id: int,
+        user_id: int, via: str = "desktop",
     ) -> ResultResponse:
         """Shared tail for both upload routes: run capture against the
         already-read image bytes, persist the result + image, mark test
@@ -712,6 +777,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             image_sha256=images.sha256_hex(data),
             swatches=cap_result.swatches,
             owner_id=user_id,
+            via=via,
         )
         rec = images.save(test_id=tid, result_id=placeholder["id"],
                           data=data, suffix=suffix)

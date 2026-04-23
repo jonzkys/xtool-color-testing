@@ -454,3 +454,9 @@ class MobileIdResponse(BaseModel):
 class MobileCheckResponse(BaseModel):
     ok: bool
     display_name: str
+
+
+class MobileUploadResponse(BaseModel):
+    result_id: int
+    test_id: int
+    test_name: str
