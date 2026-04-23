@@ -291,3 +291,55 @@ def test_mobile_upload_rate_limit_blocks_after_cap(fresh_db, monkeypatch, tmp_pa
     assert "Retry-After" in r.headers
     # Critical assertion: the blocked request did NOT reach detect_test_id.
     assert len(detect_calls) == 2
+
+
+def test_recent_mobile_uploads_returns_only_mobile_for_caller(fresh_db, monkeypatch, tmp_path):
+    c, h = _multi_user_client(monkeypatch)
+    mid, tid = _seed_user_with_test(c, h, monkeypatch, tmp_path)
+
+    # Two mobile uploads + one desktop upload, all by the same user.
+    c.post(f"/api/m/{mid}/upload",
+           files={"image": ("a.jpg", b"fake", "image/jpeg")})
+    c.post(f"/api/m/{mid}/upload",
+           files={"image": ("b.jpg", b"fake", "image/jpeg")})
+    c.post(f"/api/tests/{tid}/results",
+           files={"image": ("c.jpg", b"fake", "image/jpeg")},
+           headers=h)
+
+    r = c.get("/api/me/mobile-uploads/recent?since=0", headers=h)
+    assert r.status_code == 200, r.text
+    rows = r.json()
+    assert len(rows) == 2
+    for row in rows:
+        assert row["test_id"] == tid
+        assert row["test_name"] == "T"
+
+
+def test_recent_mobile_uploads_filters_by_since(fresh_db, monkeypatch, tmp_path):
+    import time as time_module
+    c, h = _multi_user_client(monkeypatch)
+    mid, _tid = _seed_user_with_test(c, h, monkeypatch, tmp_path)
+
+    c.post(f"/api/m/{mid}/upload",
+           files={"image": ("a.jpg", b"fake", "image/jpeg")})
+    cutoff = int(time_module.time()) + 5  # 5s in the future
+    time_module.sleep(0.01)
+
+    r = c.get(f"/api/me/mobile-uploads/recent?since={cutoff}", headers=h)
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_recent_mobile_uploads_isolated_between_users(fresh_db, monkeypatch, tmp_path):
+    c, hA = _multi_user_client(monkeypatch, api_key="aaaaaaaaaaaaaaaa")
+    midA, _ = _seed_user_with_test(c, hA, monkeypatch, tmp_path)
+    c.post(f"/api/m/{midA}/upload",
+           files={"image": ("a.jpg", b"fake", "image/jpeg")})
+
+    # Register user B and assert B's recent list is empty.
+    c.post("/api/users/register",
+           json={"api_key": "bbbbbbbbbbbbbbbb", "first_name": "B"})
+    hB = {"X-User-Id": "bbbbbbbbbbbbbbbb"}
+    r = c.get("/api/me/mobile-uploads/recent?since=0", headers=hB)
+    assert r.status_code == 200
+    assert r.json() == []

@@ -27,6 +27,7 @@ from .schemas import (
     MobileCheckResponse,
     MobileIdResponse,
     MobileUploadResponse,
+    RecentMobileUpload,
     PaletteEntryPatch,
     PaletteEntryResponse,
     PaletteQueryResult,
@@ -406,6 +407,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return MobileUploadResponse(
             result_id=result.id, test_id=qr_id, test_name=t["name"],
         )
+
+    @app.get(
+        "/api/me/mobile-uploads/recent",
+        response_model=list[RecentMobileUpload],
+    )
+    def me_mobile_uploads_recent(
+        since: int = 0,
+        user_id: int = Depends(get_current_user),
+    ) -> list[RecentMobileUpload]:
+        """Polled by the desktop QR dialog. ``since`` is unix seconds —
+        the dialog passes the timestamp of the most recent row it has
+        already shown."""
+        from .repositories import results as r_repo
+        from .repositories import tests as t_repo
+        rows = r_repo.list_recent_for_user(
+            owner_id=user_id, since_unix=since, via="mobile",
+        )
+        out: list[RecentMobileUpload] = []
+        for row in rows:
+            t = t_repo.get(row["test_id"], owner_id=user_id)
+            if t is None:
+                continue
+            out.append(RecentMobileUpload(
+                result_id=row["id"], test_id=row["test_id"],
+                test_name=t["name"], uploaded_at=row["uploaded_at"],
+            ))
+        return out
 
     @app.get("/api/me", response_model=UserResponse)
     def users_me(user_id: int = Depends(get_current_user)) -> UserResponse:

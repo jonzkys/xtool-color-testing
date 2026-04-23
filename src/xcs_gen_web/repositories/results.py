@@ -119,6 +119,33 @@ def delete(rid: int, *, owner_id: int = STANDALONE_USER_ID) -> str | None:
     return row["image_path"]
 
 
+def list_recent_for_user(
+    *, owner_id: int, since_unix: int, via: str = "mobile",
+) -> list[dict[str, Any]]:
+    """Return rows owned by ``owner_id`` whose ``uploaded_at`` (ISO
+    timestamp) is greater than ``since_unix``, optionally filtered to a
+    given ``via``. Newest first.
+
+    The polling endpoint passes since_unix as the unix-seconds threshold
+    to filter on. Comparing on the ISO column directly works because ISO
+    8601 sorts lexicographically; we convert since to ISO with the same
+    timezone (UTC) the writes use."""
+    since_iso = datetime.fromtimestamp(since_unix, tz=timezone.utc).isoformat()
+    with session_scope() as s:
+        rows = s.execute(
+            select(results)
+            .where(
+                and_(
+                    results.c.owner_id == owner_id,
+                    results.c.via == via,
+                    results.c.uploaded_at > since_iso,
+                ),
+            )
+            .order_by(results.c.uploaded_at.desc())
+        ).fetchall()
+    return [_row(r) for r in rows]
+
+
 def _lab_to_hex(L: float, a: float, b: float) -> str:
     """Inverse of palette.hex_to_lab for rendering the averaged colour.
 

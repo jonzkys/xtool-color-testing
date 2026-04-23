@@ -460,3 +460,10 @@ class MobileUploadResponse(BaseModel):
     result_id: int
     test_id: int
     test_name: str
+
+
+class RecentMobileUpload(BaseModel):
+    result_id: int
+    test_id: int
+    test_name: str
+    uploaded_at: str   # ISO 8601
