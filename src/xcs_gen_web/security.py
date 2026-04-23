@@ -147,3 +147,54 @@ def source_ip(request: Request) -> str:
             return first
     client = request.client
     return client.host if client else "unknown"
+
+
+# ---------------------------------------------------------------------
+# Mobile upload rate limit (per mobile_id)
+# ---------------------------------------------------------------------
+
+class MobileUploadRateLimiter:
+    """Two-window in-memory limiter keyed by mobile_id.
+
+    Each ``check(mid)`` call enforces both an hourly and a daily cap.
+    Returns None when allowed, otherwise the seconds the caller must
+    wait before retrying (the longer of the two windows that's full).
+
+    Same alpha-only caveat as RegistrationRateLimiter — single-process
+    bound, replace with Redis if we ever go multi-host."""
+
+    def __init__(self, *, per_hour: int, per_day: int) -> None:
+        self.per_hour = per_hour
+        self.per_day = per_day
+        self._hour_window = 3600
+        self._day_window = 86400
+        self._hits: dict[str, deque[float]] = {}
+        self._lock = asyncio.Lock()
+
+    async def check(self, mid: str) -> int | None:
+        if self.per_hour <= 0 and self.per_day <= 0:
+            return None
+        now = time.monotonic()
+        async with self._lock:
+            hits = self._hits.setdefault(mid, deque())
+            # Prune anything older than the longer (day) window.
+            day_cutoff = now - self._day_window
+            while hits and hits[0] < day_cutoff:
+                hits.popleft()
+            # Hour cap.
+            if self.per_hour > 0:
+                hour_cutoff = now - self._hour_window
+                hour_hits = sum(1 for t in hits if t >= hour_cutoff)
+                if hour_hits >= self.per_hour:
+                    oldest_in_hour = next(t for t in hits if t >= hour_cutoff)
+                    return max(1, int(oldest_in_hour + self._hour_window - now) + 1)
+            # Day cap.
+            if self.per_day > 0 and len(hits) >= self.per_day:
+                return max(1, int(hits[0] + self._day_window - now) + 1)
+            hits.append(now)
+            return None
+
+
+def truncate_mid(mid: str) -> str:
+    """Last-4 redaction for log lines. Never log the full mobile_id."""
+    return "***" + mid[-4:]

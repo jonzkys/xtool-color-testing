@@ -77,6 +77,11 @@ class Settings:
     # source IP per rolling hour. Prevents trivial "fill the users
     # table" spam on public deployments. Disable by setting to 0.
     register_rate_per_hour: int = 20
+    # Per-mobile-id caps for /api/m/{mid}/upload. Failed fiducial
+    # detections still count against the budget — the work cost is
+    # the same. Set either to 0 to disable.
+    mobile_upload_rate_per_hour: int = 30
+    mobile_upload_rate_per_day: int = 200
 
     # Image storage ------------------------------------------------------
     # Setting ``s3_bucket`` activates S3 for *new* uploads. Reads transparently
@@ -116,6 +121,12 @@ class Settings:
             ),
             register_rate_per_hour=int(
                 os.environ.get("XCS_GEN_REGISTER_RATE_PER_HOUR", "20"),
+            ),
+            mobile_upload_rate_per_hour=int(
+                os.environ.get("XCS_GEN_MOBILE_UPLOAD_RATE_PER_HOUR", "30")
+            ),
+            mobile_upload_rate_per_day=int(
+                os.environ.get("XCS_GEN_MOBILE_UPLOAD_RATE_PER_DAY", "200")
             ),
             s3_bucket=os.environ.get("XCS_GEN_S3_BUCKET") or None,
             s3_prefix=os.environ.get("XCS_GEN_S3_PREFIX", "").strip("/"),
