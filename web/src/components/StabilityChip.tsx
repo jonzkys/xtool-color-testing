@@ -44,9 +44,9 @@ export function StabilityChip({
       disabled={!clickable}
       title={
         clickable
-          ? `Jump to first unstable cell (ΔE > 2.0, ${stability.unstableCount} total)`
+          ? `Jump to first unstable cell (mean ΔE > 4 between runs; ${stability.unstableCount} of ${stability.cellsWithReplicates} replicated cells)`
           : hasReplicates
-            ? `All ${stability.cellsWithReplicates} replicated cells look stable`
+            ? `All ${stability.cellsWithReplicates} replicated cells have mean ΔE ≤ 4 between runs`
             : "Upload another result to see per-cell variability"
       }
       className={cn(

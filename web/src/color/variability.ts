@@ -90,8 +90,20 @@ export function computeCellSpread(swatch: AveragedSwatch): CellSpread {
 }
 
 /** Cells whose mean-ΔE-to-centroid is above this threshold are
- *  flagged as "unstable" in the header chip and can be jumped to. */
-export const UNSTABLE_SPREAD_THRESHOLD = 2.0;
+ *  flagged as "unstable" in the header chip and can be jumped to.
+ *
+ *  ΔE 4 (not 2) because laser-engraved swatches carry natural
+ *  burn-to-burn noise from focus / angle / oxidation / camera ICC
+ *  variance even when the visual match is excellent. The perceptual
+ *  ranges we're borrowing from industrial colour-matching work out to:
+ *
+ *    ΔE < 2.3  — imperceptible (CIEDE2000 "just noticeable")
+ *    ΔE 2.3-4  — perceptible only on close inspection
+ *    ΔE > 4    — clearly different burn-to-burn
+ *
+ *  Using ΔE76 (fast) for the per-cell rank; the absolute numbers
+ *  differ slightly from ΔE2000 but the ranking stays the same. */
+export const UNSTABLE_SPREAD_THRESHOLD = 4.0;
 
 export interface GridStability {
   /** Total number of swatches considered. */

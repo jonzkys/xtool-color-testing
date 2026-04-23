@@ -964,18 +964,6 @@ function SpectrumStrip({
           })}
         </div>
 
-        {/* V2-A variance envelope — paints a translucent ΔE band over
-            the cells, width per-cell proportional to that cell's
-            ΔE-to-centroid spread. Sits above the cells but below the
-            range brackets. */}
-        {showVariability && maxVisibleSpread > 0 && (
-          <VarianceEnvelope
-            count={stripSamples.length}
-            spreads={stripSpreads!}
-            maxSpread={maxVisibleSpread}
-          />
-        )}
-
         {/* Fine grain for physicality. */}
         <div
           aria-hidden
@@ -1024,6 +1012,18 @@ function SpectrumStrip({
           </div>
         )}
       </div>
+
+      {/* V2-B seismograph — per-cell ΔE spread rendered as a tiny
+          separate bar beneath the swatch strip. Keeps the main strip
+          clean (no tint over the colours) while giving a scan-friendly
+          read of which parameter regions are unstable. Hidden when no
+          cell has replicate data. */}
+      {showVariability && maxVisibleSpread > 0 && (
+        <VarianceSeismograph
+          spreads={stripSpreads!}
+          maxSpread={maxVisibleSpread}
+        />
+      )}
 
       {/* Axis ticks underneath — span the full sweep normally, but
           collapse to the active range when cropped. */}
@@ -1116,92 +1116,109 @@ function GhostFan({ spread }: { spread: CellSpread }) {
 }
 
 /**
- * V2-A — ΔE envelope. One SVG laid over the strip cells. At every
- * cell's centre-x the envelope's half-height is proportional to that
- * cell's ΔE-to-centroid spread; the band is coloured along the ΔE
- * tone ramp (slate for stable, primary for unstable).
+ * V2-B — ΔE seismograph. A dedicated thin bar rendered beneath the
+ * main SpectrumStrip. At each cell's x position we draw a vertical
+ * hatch whose height = ``spread / maxSpread`` and whose colour lives
+ * on the ΔE tone ramp (slate → warm → primary). A dashed outer
+ * overlay tracks ``maxSpread`` so outliers beyond the mean are still
+ * visible without dominating the read.
+ *
+ * Sits on its own surface so the engraved colours on the main strip
+ * stay unmuddied — the earlier V2-A variant laid this band on top of
+ * the cells and tinted them.
  */
-function VarianceEnvelope({
-  count,
+function VarianceSeismograph({
   spreads,
   maxSpread,
 }: {
-  count: number;
   spreads: CellSpread[];
   maxSpread: number;
 }) {
-  // Build a smooth top/bottom polyline through the cell centres.
-  const WIDTH = 1000;  // viewBox — scales with container
-  const HEIGHT = 60;   // matches strip height (68) minus a little gutter
-  const half = HEIGHT / 2;
-  const cellW = WIDTH / count;
-  const points: { x: number; y: number; sp: CellSpread }[] = spreads.map((sp, i) => {
-    const cx = (i + 0.5) * cellW;
-    return { x: cx, y: sp.spread / maxSpread, sp };
-  });
-  // Top / bottom ribbons. Use a fairly wide dynamic range so a 3 ΔE
-  // cell noticeably dominates a 0.5 ΔE neighbour.
-  const topPath = "M 0 " + half +
-    " L " + points.map((p) => `${p.x} ${half - p.y * (half - 4)}`).join(" L ") +
-    ` L ${WIDTH} ${half} Z`;
-  const botPath = "M 0 " + half +
-    " L " + points.map((p) => `${p.x} ${half + p.y * (half - 4)}`).join(" L ") +
-    ` L ${WIDTH} ${half} Z`;
-
+  // Fixed pixel height — small enough not to dominate; tall enough to
+  // read magnitude at a glance.
+  const HEIGHT = 22;
+  // Summary numbers in a mono-caps header above the bar.
+  const meanSpread =
+    spreads.filter((s) => s.n >= 2).reduce((acc, s) => acc + s.spread, 0) /
+    Math.max(1, spreads.filter((s) => s.n >= 2).length);
+  const worstSpread = Math.max(...spreads.map((s) => s.maxSpread), 0);
+  const worstIdx = spreads.reduce(
+    (best, sp, i) => (sp.maxSpread > spreads[best].maxSpread ? i : best),
+    0,
+  );
   return (
-    <svg
-      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-      preserveAspectRatio="none"
-      className="pointer-events-none absolute inset-x-0 top-0 w-full"
-      style={{ height: HEIGHT }}
-      aria-hidden
-    >
-      <defs>
-        {/* Along-x gradient — pure function of per-cell spread. Each
-            cell contributes a stop at its centre; lerp between stops
-            to paint local instability. */}
-        <linearGradient id="variance-band" x1="0" y1="0" x2="1" y2="0">
-          {points.map((p, i) => {
-            const t = Math.min(1, p.sp.spread / 4);  // 4 ΔE is "clearly off"
-            const stop = p.x / WIDTH;
-            const colour = `rgba(184,65,14,${0.10 + t * 0.35})`;
-            return <stop key={i} offset={`${stop * 100}%`} stopColor={colour} />;
+    <div className="mt-1">
+      <div className="flex items-baseline justify-between font-mono text-[9.5px] tracking-[0.16em] uppercase text-[color:var(--color-ink-subtle)] mb-0.5">
+        <span>stability · ΔE per cell</span>
+        <span className="tabular-nums text-[color:var(--color-ink-muted)]">
+          avg ΔE {meanSpread.toFixed(2)} · worst ΔE {worstSpread.toFixed(2)}
+          {` @ cell ${worstIdx + 1}`}
+        </span>
+      </div>
+      <div
+        className="relative rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] overflow-hidden"
+        style={{ height: HEIGHT }}
+      >
+        {/* Baseline grid — three faint horizontal ticks at 25 / 50 / 75 %
+            so the eye can estimate "how big is this bar" without a y-axis. */}
+        {[0.25, 0.5, 0.75].map((f) => (
+          <div
+            key={f}
+            aria-hidden
+            className="absolute inset-x-0 h-px"
+            style={{
+              top: `${f * 100}%`,
+              background: "var(--color-border)",
+              opacity: 0.35,
+            }}
+          />
+        ))}
+        <svg
+          viewBox={`0 0 ${spreads.length} 1`}
+          preserveAspectRatio="none"
+          className="absolute inset-0 w-full h-full"
+          aria-hidden
+        >
+          {spreads.map((sp, i) => {
+            if (sp.n < 2) return null;
+            const h = sp.spread / maxSpread; // 0..1
+            // Tone: slate when stable, primary when trending unstable.
+            // 4 ΔE76 is "clearly off"; 2 ΔE is "noticeable on inspection".
+            const t = Math.min(1, sp.spread / 4);
+            const stroke = `rgba(${Math.round(132 + t * 52)}, ${Math.round(
+              120 - t * 55,
+            )}, ${Math.round(110 - t * 96)}, ${0.55 + t * 0.4})`;
+            return (
+              <rect
+                key={i}
+                x={i + 0.05}
+                y={1 - h}
+                width={0.9}
+                height={h}
+                fill={stroke}
+              />
+            );
           })}
-        </linearGradient>
-      </defs>
-      <path d={topPath} fill="url(#variance-band)" />
-      <path d={botPath} fill="url(#variance-band)" />
-      {/* Centerline — stays visible even when the band is thin. */}
-      <line
-        x1={0} y1={half} x2={WIDTH} y2={half}
-        stroke="var(--color-ink)" strokeOpacity={0.45} strokeWidth={0.8}
-      />
-      {/* Outer stipple = max-spread hints at outliers beyond the mean. */}
-      <path
-        d={
-          "M 0 " + half +
-          " L " + points.map((p) => `${p.x} ${half - (p.sp.maxSpread / maxSpread) * (half - 2)}`).join(" L ") +
-          ` L ${WIDTH} ${half}`
-        }
-        fill="none"
-        stroke="var(--color-primary)"
-        strokeOpacity={0.35}
-        strokeWidth={0.6}
-        strokeDasharray="2 2"
-      />
-      <path
-        d={
-          "M 0 " + half +
-          " L " + points.map((p) => `${p.x} ${half + (p.sp.maxSpread / maxSpread) * (half - 2)}`).join(" L ") +
-          ` L ${WIDTH} ${half}`
-        }
-        fill="none"
-        stroke="var(--color-primary)"
-        strokeOpacity={0.35}
-        strokeWidth={0.6}
-        strokeDasharray="2 2"
-      />
-    </svg>
+          {/* Outlier hint — the max-spread overlay as a dashed polyline
+              so the peak per cell is still legible even when the mean bar
+              is short. */}
+          <polyline
+            fill="none"
+            stroke="var(--color-primary)"
+            strokeOpacity={0.55}
+            strokeWidth={0.02}
+            strokeDasharray="0.15 0.1"
+            points={spreads
+              .map((sp, i) => {
+                const h = sp.n >= 2 ? sp.maxSpread / maxSpread : 0;
+                return `${i + 0.5},${1 - h}`;
+              })
+              .join(" ")}
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+      </div>
+    </div>
   );
 }
 
