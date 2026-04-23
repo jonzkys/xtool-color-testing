@@ -754,7 +754,7 @@ export function SvgLayersPage() {
                 </label>
               )}
               {hasLayers && (
-                <ul className="flex flex-col gap-1.5">
+                <ul className="flex flex-col gap-1.5 max-h-[40vh] overflow-y-auto -mx-1 px-1">
                   {[...request.layers].reverse().map((l) => {
                     const isSel = selectedColor === l.color;
                     return (
