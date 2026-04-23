@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, test, beforeEach } from "vitest";
+import { describe, expect, test, it, beforeEach } from "vitest";
 import { parseRoute, formatRoute } from "./router";
 
 beforeEach(() => { window.location.hash = ""; });
@@ -33,5 +33,17 @@ describe("formatRoute", () => {
     ] as const) {
       expect(parseRoute(formatRoute(r))).toEqual(r);
     }
+  });
+});
+
+describe("mobile-upload route", () => {
+  it("parses #/m/<mid>", () => {
+    expect(parseRoute("#/m/abc_def_123")).toEqual({
+      name: "mobile-upload", mid: "abc_def_123",
+    });
+  });
+  it("formats mobile-upload to #/m/<mid>", () => {
+    expect(formatRoute({ name: "mobile-upload", mid: "xyz" }))
+      .toBe("#/m/xyz");
   });
 });

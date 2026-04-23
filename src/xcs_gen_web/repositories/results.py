@@ -35,6 +35,7 @@ def _row(r) -> dict[str, Any]:
         "swatches": json.loads(r.swatches_json),
         "owner_id": r.owner_id,
         "visibility": r.visibility,
+        "via": r.via,
     }
 
 
@@ -43,6 +44,7 @@ def create(
     swatches: list[dict[str, Any]], owner_id: int = STANDALONE_USER_ID,
     notes: str = "",
     visibility: str = DEFAULT_VISIBILITY,
+    via: str = "desktop",
 ) -> dict[str, Any]:
     with session_scope() as s:
         res = s.execute(results.insert().values(
@@ -53,6 +55,7 @@ def create(
             excluded=0, notes=notes,
             swatches_json=json.dumps(swatches, separators=(",", ":")),
             owner_id=owner_id, visibility=visibility,
+            via=via,
         ))
         rid = res.inserted_primary_key[0]
     return get(rid, owner_id=owner_id)  # type: ignore[return-value]
@@ -114,6 +117,33 @@ def delete(rid: int, *, owner_id: int = STANDALONE_USER_ID) -> str | None:
             )
         )
     return row["image_path"]
+
+
+def list_recent_for_user(
+    *, owner_id: int, since_unix: int, via: str = "mobile",
+) -> list[dict[str, Any]]:
+    """Return rows owned by ``owner_id`` whose ``uploaded_at`` (ISO
+    timestamp) is greater than ``since_unix``, optionally filtered to a
+    given ``via``. Newest first.
+
+    The polling endpoint passes since_unix as the unix-seconds threshold
+    to filter on. Comparing on the ISO column directly works because ISO
+    8601 sorts lexicographically; we convert since to ISO with the same
+    timezone (UTC) the writes use."""
+    since_iso = datetime.fromtimestamp(since_unix, tz=timezone.utc).isoformat()
+    with session_scope() as s:
+        rows = s.execute(
+            select(results)
+            .where(
+                and_(
+                    results.c.owner_id == owner_id,
+                    results.c.via == via,
+                    results.c.uploaded_at > since_iso,
+                ),
+            )
+            .order_by(results.c.uploaded_at.desc())
+        ).fetchall()
+    return [_row(r) for r in rows]
 
 
 def _lab_to_hex(L: float, a: float, b: float) -> str:

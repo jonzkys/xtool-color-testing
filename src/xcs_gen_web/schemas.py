@@ -463,3 +463,25 @@ class IngestToPaletteRequest(BaseModel):
     mode: Literal["averaged", "single_result"]
     result_id: int | None = None     # required when mode == "single_result"
     replace_existing: bool = False
+
+
+class MobileIdResponse(BaseModel):
+    mobile_id: str
+
+
+class MobileCheckResponse(BaseModel):
+    ok: bool
+    display_name: str
+
+
+class MobileUploadResponse(BaseModel):
+    result_id: int
+    test_id: int
+    test_name: str
+
+
+class RecentMobileUpload(BaseModel):
+    result_id: int
+    test_id: int
+    test_name: str
+    uploaded_at: str   # ISO 8601

@@ -37,6 +37,7 @@ metadata = MetaData()
 # Shared constraint sql — applied per-table so the value stays consistent
 # across inserts regardless of which writer populated the row.
 _VISIBILITY_CHECK = "visibility IN ('private','public')"
+_VIA_CHECK = "via IN ('desktop','mobile')"
 
 # Standard column sizes. Kept here (not magic numbers scattered through
 # the file) so future widening is a single edit.
@@ -68,7 +69,9 @@ users = Table(
     Column("first_name", String(_NAME_LEN), nullable=False, server_default=""),
     Column("created_at", String(_ISO_TS_LEN), nullable=False),
     Column("last_seen_at", String(_ISO_TS_LEN), nullable=False),
+    Column("mobile_id", String(_API_KEY_LEN), nullable=True),
     Index("ix_users_api_key", "api_key", unique=True),
+    Index("ix_users_mobile_id", "mobile_id", unique=True),
 )
 
 
@@ -133,7 +136,9 @@ results = Table(
     Column("swatches_json", Text, nullable=False),
     Column("owner_id", Integer, nullable=False),
     Column("visibility", String(_VISIBILITY_LEN), nullable=False, server_default="private"),
+    Column("via", String(_STATUS_LEN), nullable=False, server_default="desktop"),
     CheckConstraint(_VISIBILITY_CHECK, name="results_visibility_chk"),
+    CheckConstraint(_VIA_CHECK, name="results_via_chk"),
     Index("ix_results_test_id", "test_id"),
     Index("ix_results_owner", "owner_id"),
 )

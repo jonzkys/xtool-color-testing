@@ -10,7 +10,8 @@ export type Route =
   | { name: "palette" }
   | { name: "spectrum"; id?: number }
   | { name: "spectrum-2d"; id?: number }
-  | { name: "styleguide" };
+  | { name: "styleguide" }
+  | { name: "mobile-upload"; mid: string };
 
 export function parseRoute(hash: string): Route {
   const h = hash.replace(/^#/, "").replace(/^\/+/, "");
@@ -29,6 +30,8 @@ export function parseRoute(hash: string): Route {
   const ms = h.match(/^spectrum\/(\d+)$/);
   if (ms) return { name: "spectrum", id: Number(ms[1]) };
   if (h === "styleguide") return { name: "styleguide" };
+  const mm = h.match(/^m\/([A-Za-z0-9_\-]+)$/);
+  if (mm) return { name: "mobile-upload", mid: mm[1] };
   return { name: "tests" };
 }
 
@@ -44,6 +47,7 @@ export function formatRoute(r: Route): string {
     case "spectrum":    return r.id != null ? `#/spectrum/${r.id}` : "#/spectrum";
     case "spectrum-2d": return r.id != null ? `#/spectrum-2d/${r.id}` : "#/spectrum-2d";
     case "styleguide":  return "#/styleguide";
+    case "mobile-upload": return `#/m/${r.mid}`;
   }
 }
 

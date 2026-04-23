@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, AlertTriangle, CheckCircle2, Image as ImageIcon, Loader2, QrCode, UploadCloud } from "lucide-react";
 import { preflightUpload, uploadResultAuto, type UploadPreflight } from "../api/results";
 import { getTest } from "../api/tests";
@@ -12,6 +12,10 @@ import {
   DialogTitle,
   MetalBar,
 } from "../ui";
+import { MobileQrTab } from "./MobileQrTab";
+import { getHealth } from "../api/users";
+
+type Tab = "device" | "phone";
 
 type State =
   | { kind: "idle" }
@@ -41,6 +45,17 @@ export function UploadResultDialog({
   const [state, setState] = useState<State>({ kind: "idle" });
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const [tab, setTab] = useState<Tab>("device");
+  const [mode, setMode] = useState<"standalone" | "multi_user" | null>(null);
+
+  useEffect(() => {
+    getHealth()
+      .then((h) => setMode(
+        h.mode === "standalone" ? "standalone" : "multi_user",
+      ))
+      .catch(() => setMode("standalone"));  // Fail closed: hide the tab.
+  }, []);
 
   const handleOpenChange = useCallback(
     (o: boolean) => {
@@ -133,65 +148,91 @@ export function UploadResultDialog({
 
         <MetalBar variant="soft" />
 
+        {mode === "multi_user" && (
+          <div className="flex border-b border-[color:var(--color-border)] mb-0 px-5 pt-3">
+            {(["device", "phone"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={
+                  "px-4 h-9 text-[13px] " +
+                  (tab === t
+                    ? "border-b-2 border-[color:var(--color-primary)] text-[color:var(--color-ink)] font-medium"
+                    : "text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]")
+                }
+              >
+                {t === "device" ? "From this device" : "From phone"}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="p-5">
-          {state.kind === "idle" && (
-            <DropZone
-              dragOver={dragOver}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(true);
-              }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={onDrop}
-              onClick={() => inputRef.current?.click()}
-            />
+          {(tab === "device" || mode !== "multi_user") && (
+            <>
+              {state.kind === "idle" && (
+                <DropZone
+                  dragOver={dragOver}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragOver(true);
+                  }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={onDrop}
+                  onClick={() => inputRef.current?.click()}
+                />
+              )}
+
+              {state.kind === "preflighting" && (
+                <UploadingState
+                  fileName={state.fileName}
+                  label="Reading QR…"
+                  steps={["Scan", "Detect test"]}
+                />
+              )}
+
+              {state.kind === "confirm" && (
+                <ConfirmReprocessState
+                  preflight={state.preflight}
+                  fileName={state.fileName}
+                  onConfirm={() => runUpload(state.file)}
+                  onCancel={() => setState({ kind: "idle" })}
+                />
+              )}
+
+              {state.kind === "uploading" && (
+                <UploadingState fileName={state.fileName} />
+              )}
+
+              {state.kind === "success" && (
+                <SuccessState
+                  result={state.result}
+                  test={state.test}
+                  fileName={state.fileName}
+                  onClose={() => handleOpenChange(false)}
+                  onAnother={() => setState({ kind: "idle" })}
+                />
+              )}
+
+              {state.kind === "error" && (
+                <ErrorState
+                  message={state.message}
+                  onRetry={() => setState({ kind: "idle" })}
+                />
+              )}
+
+              <input
+                ref={inputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={onPick}
+              />
+            </>
           )}
 
-          {state.kind === "preflighting" && (
-            <UploadingState
-              fileName={state.fileName}
-              label="Reading QR…"
-              steps={["Scan", "Detect test"]}
-            />
-          )}
-
-          {state.kind === "confirm" && (
-            <ConfirmReprocessState
-              preflight={state.preflight}
-              fileName={state.fileName}
-              onConfirm={() => runUpload(state.file)}
-              onCancel={() => setState({ kind: "idle" })}
-            />
-          )}
-
-          {state.kind === "uploading" && (
-            <UploadingState fileName={state.fileName} />
-          )}
-
-          {state.kind === "success" && (
-            <SuccessState
-              result={state.result}
-              test={state.test}
-              fileName={state.fileName}
-              onClose={() => handleOpenChange(false)}
-              onAnother={() => setState({ kind: "idle" })}
-            />
-          )}
-
-          {state.kind === "error" && (
-            <ErrorState
-              message={state.message}
-              onRetry={() => setState({ kind: "idle" })}
-            />
-          )}
-
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={onPick}
-          />
+          {tab === "phone" && mode === "multi_user" && <MobileQrTab />}
         </div>
       </DialogContent>
     </Dialog>
