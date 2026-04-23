@@ -181,7 +181,10 @@ export function SvgLayersPage() {
   }, [rawDetected]);
 
   const paramGroups = useMemo(
-    () => (collapseIdenticalLayers ? computeParamMergeGroups(request.layers) : []),
+    () =>
+      collapseIdenticalLayers
+        ? computeParamMergeGroups(request.layers.filter((l) => l.enabled))
+        : [],
     [collapseIdenticalLayers, request.layers],
   );
   const collapseBefore = paramGroups.reduce((n, g) => n + g.length, 0);
@@ -836,7 +839,7 @@ export function SvgLayersPage() {
                     </span>
                   </span>
                 </div>
-                {collapseBefore > 0 && collapseAfter > 0 && (
+                {collapseAfter > 0 && (
                   <Badge variant="accent" size="sm">{collapseBefore}→{collapseAfter}</Badge>
                 )}
               </label>
