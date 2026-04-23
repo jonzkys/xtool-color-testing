@@ -1364,83 +1364,132 @@ function MarginalsL({
   const centreW = W - centreX - LABEL;
   const centreH = H - centreY - LABEL;
 
-  // Crop mode: when a clip range is narrower than the full grid, show
-  // only those columns / rows and let them fill the centre panel.
-  // Matches the 1-D Spectrum page's crop behaviour.
-  const xSpanCount = xClip[1] - xClip[0] + 1;
-  const ySpanCount = yClip[1] - yClip[0] + 1;
-  const xCellW = centreW / xSpanCount;
-  const yCellH = centreH / ySpanCount;
+  // Full-grid cell sizes. Clipped cells render at low opacity on top of
+  // the strips so the drag handles have a continuous surface to slide
+  // on — matches the non-cropped mode of the 1-D Spectrum page.
+  const xCellW = centreW / grid.xs.length;
+  const yCellH = centreH / grid.ys.length;
 
-  // Helpers: for a cell at data (row, col), compute its screen
-  // coordinates. Cells outside the clip return null so callers can skip.
-  const cellX = (col: number): number | null => {
-    if (col < xClip[0] || col > xClip[1]) return null;
-    return centreX + (col - xClip[0]) * xCellW;
+  // Data row 0 = bottom. Visual row index counts from the top.
+  const cellX = (col: number): number => centreX + col * xCellW;
+  const cellY = (row: number): number =>
+    centreY + (grid.ys.length - 1 - row) * yCellH;
+
+  // ── Drag state for the four clip handles ───────────────────────────
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [dragging, setDragging] =
+    useState<null | "x0" | "x1" | "y0" | "y1">(null);
+
+  /** Convert a DOM pointer event into the SVG's viewBox coordinate
+   *  system — responsive scaling means we can't just subtract rect
+   *  offsets. */
+  const toSvgPoint = (e: React.PointerEvent<SVGElement>) => {
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return { x: 0, y: 0 };
+    const p = pt.matrixTransform(ctm.inverse());
+    return { x: p.x, y: p.y };
   };
-  const cellY = (row: number): number | null => {
-    if (row < yClip[0] || row > yClip[1]) return null;
-    // Data row 0 = bottom of plot, so the highest clipped row sits at
-    // centreY, the lowest clipped row at centreY + centreH - yCellH.
-    const visualIdx = yClip[1] - row; // 0 = topmost clipped row
-    return centreY + visualIdx * yCellH;
+
+  const onPointerDown = (
+    e: React.PointerEvent<SVGElement>,
+    handle: "x0" | "x1" | "y0" | "y1",
+  ) => {
+    e.stopPropagation();
+    setDragging(handle);
+    (e.target as Element).setPointerCapture(e.pointerId);
   };
+  const onPointerMove = (e: React.PointerEvent<SVGElement>) => {
+    if (!dragging) return;
+    const { x, y } = toSvgPoint(e);
+    if (dragging === "x0" || dragging === "x1") {
+      const col = Math.round((x - centreX) / xCellW - 0.5);
+      const clamped = Math.max(0, Math.min(grid.xs.length - 1, col));
+      if (dragging === "x0") setXClip([Math.min(clamped, xClip[1]), xClip[1]]);
+      else setXClip([xClip[0], Math.max(clamped, xClip[0])]);
+    } else {
+      const visualRow = Math.round((y - centreY) / yCellH - 0.5);
+      const row = grid.ys.length - 1 - visualRow;
+      const clamped = Math.max(0, Math.min(grid.ys.length - 1, row));
+      if (dragging === "y0") setYClip([Math.min(clamped, yClip[1]), yClip[1]]);
+      else setYClip([yClip[0], Math.max(clamped, yClip[0])]);
+    }
+  };
+  const onPointerUp = () => setDragging(null);
+
+  // Handle screen coords. Start handles sit at the LEADING edge of the
+  // first clipped cell; end handles at the TRAILING edge of the last.
+  const xStartPx = centreX + xClip[0] * xCellW;
+  const xEndPx = centreX + (xClip[1] + 1) * xCellW;
+  const yStartPx = centreY + (grid.ys.length - yClip[0]) * yCellH; // bottom edge of lowest clipped row
+  const yEndPx = centreY + (grid.ys.length - 1 - yClip[1]) * yCellH; // top edge of highest clipped row
 
   return (
     <div
       className="rounded-[10px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] p-2"
       style={{ minWidth: 0 }}
     >
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" className="w-full h-auto">
-        {/* Top horizontal strip — row-mean. Render only clipped columns
-            at their cropped positions so the active range fills the
-            strip. */}
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="xMidYMid meet"
+        className="w-full h-auto"
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        style={{ touchAction: "none" }}
+      >
+        {/* Top horizontal strip — row-mean. Clipped columns dim. */}
         {rowMeanStrip.map((lab, i) => {
-          const x = cellX(i);
-          if (x == null) return null;
+          const inClip = i >= xClip[0] && i <= xClip[1];
           return (
             <rect
               key={i}
-              x={x}
+              x={cellX(i)}
               y={STRIP}
               width={xCellW}
               height={STRIP}
               fill={labToHex(lab)}
+              opacity={inClip ? 1 : 0.3}
             />
           );
         })}
-        {/* Left vertical strip — col-mean. Same story for rows. */}
+        {/* Left vertical strip — col-mean. */}
         {colMeanStrip.map((lab, i) => {
-          const y = cellY(i);
-          if (y == null) return null;
+          const inClip = i >= yClip[0] && i <= yClip[1];
           return (
             <rect
               key={i}
               x={STRIP}
-              y={y}
+              y={cellY(i)}
               width={STRIP}
               height={yCellH}
               fill={labToHex(lab)}
+              opacity={inClip ? 1 : 0.3}
             />
           );
         })}
 
-        {/* Centre mini-atlas (50% opacity) — only clipped region */}
+        {/* Centre mini-atlas (50% opacity when in clip, 15% when out) */}
         {grid.cells.map((row, r) =>
           row.map((cell, c) => {
             if (cell == null) return null;
-            const x = cellX(c);
-            const y = cellY(r);
-            if (x == null || y == null) return null;
+            const inClip =
+              c >= xClip[0] && c <= xClip[1] &&
+              r >= yClip[0] && r <= yClip[1];
             return (
               <rect
                 key={`${r}-${c}`}
-                x={x}
-                y={y}
+                x={cellX(c)}
+                y={cellY(r)}
                 width={xCellW}
                 height={yCellH}
                 fill={cell.hex}
-                opacity={0.5}
+                opacity={inClip ? 0.5 : 0.15}
               />
             );
           }),
@@ -1452,41 +1501,73 @@ function MarginalsL({
           fill="none" stroke="var(--color-border)" strokeWidth={1}
         />
 
-        {/* Pin cross-highlights — only drawn when the pinned cell is
-            actually inside the current clip. Outside, the guideline
-            would point at empty space. */}
-        {pinned && (() => {
-          const px = cellX(pinned.col);
-          const py = cellY(pinned.row);
-          if (px == null || py == null) return null;
-          return (
-            <g pointerEvents="none">
-              <rect
-                x={px + 0.5}
-                y={py + 0.5}
-                width={xCellW - 1}
-                height={yCellH - 1}
-                fill="none"
-                stroke="var(--color-primary)"
-                strokeWidth={2}
-              />
-              <line
-                x1={px + xCellW / 2}
-                y1={STRIP}
-                x2={px + xCellW / 2}
-                y2={STRIP + STRIP}
-                stroke="var(--color-primary)" strokeWidth={1.5}
-              />
-              <line
-                x1={STRIP}
-                y1={py + yCellH / 2}
-                x2={STRIP + STRIP}
-                y2={py + yCellH / 2}
-                stroke="var(--color-primary)" strokeWidth={1.5}
-              />
-            </g>
-          );
-        })()}
+        {/* Pin cross-highlights */}
+        {pinned && (
+          <g pointerEvents="none">
+            <rect
+              x={cellX(pinned.col) + 0.5}
+              y={cellY(pinned.row) + 0.5}
+              width={xCellW - 1}
+              height={yCellH - 1}
+              fill="none"
+              stroke="var(--color-primary)"
+              strokeWidth={2}
+            />
+            <line
+              x1={cellX(pinned.col) + xCellW / 2}
+              y1={STRIP}
+              x2={cellX(pinned.col) + xCellW / 2}
+              y2={STRIP + STRIP}
+              stroke="var(--color-primary)" strokeWidth={1.5}
+            />
+            <line
+              x1={STRIP}
+              y1={cellY(pinned.row) + yCellH / 2}
+              x2={STRIP + STRIP}
+              y2={cellY(pinned.row) + yCellH / 2}
+              stroke="var(--color-primary)" strokeWidth={1.5}
+            />
+          </g>
+        )}
+
+        {/* Drag handles. Each is an invisible wide hit target + a small
+            visible bracket. Pointer-move is captured at the svg level. */}
+        <ClipHandle
+          axis="x"
+          edge="start"
+          posPx={xStartPx}
+          stripStart={STRIP}
+          stripLen={STRIP}
+          dragging={dragging === "x0"}
+          onPointerDown={(e) => onPointerDown(e, "x0")}
+        />
+        <ClipHandle
+          axis="x"
+          edge="end"
+          posPx={xEndPx}
+          stripStart={STRIP}
+          stripLen={STRIP}
+          dragging={dragging === "x1"}
+          onPointerDown={(e) => onPointerDown(e, "x1")}
+        />
+        <ClipHandle
+          axis="y"
+          edge="start"
+          posPx={yStartPx}
+          stripStart={STRIP}
+          stripLen={STRIP}
+          dragging={dragging === "y0"}
+          onPointerDown={(e) => onPointerDown(e, "y0")}
+        />
+        <ClipHandle
+          axis="y"
+          edge="end"
+          posPx={yEndPx}
+          stripStart={STRIP}
+          stripLen={STRIP}
+          dragging={dragging === "y1"}
+          onPointerDown={(e) => onPointerDown(e, "y1")}
+        />
 
         {/* Axis labels */}
         <text
@@ -1508,7 +1589,8 @@ function MarginalsL({
         </text>
 
       </svg>
-      {/* Sub-controls for clip range under the SVG */}
+      {/* Keep the dropdown controls too — useful for keyboard users and
+          for resetting to full range. */}
       <div className="mt-2 grid grid-cols-2 gap-3">
         <ClipControl
           label={`${xParam} clip`}
@@ -1524,6 +1606,88 @@ function MarginalsL({
         />
       </div>
     </div>
+  );
+}
+
+function ClipHandle({
+  axis,
+  edge,
+  posPx,
+  stripStart,
+  stripLen,
+  dragging,
+  onPointerDown,
+}: {
+  axis: "x" | "y";
+  edge: "start" | "end";
+  /** Position along the variable axis (x for horizontal strip, y for vertical). */
+  posPx: number;
+  /** Start of the strip along its fixed axis. */
+  stripStart: number;
+  /** Thickness of the strip along its fixed axis. */
+  stripLen: number;
+  dragging: boolean;
+  onPointerDown: (e: React.PointerEvent<SVGElement>) => void;
+}) {
+  // Visual bracket: a stem through the strip + a perpendicular cap at
+  // the outer edge so it reads as a draggable pull. Larger invisible
+  // hit target makes it easy to grab. Cursor hints are axis-aware.
+  const HIT = 14;
+  if (axis === "x") {
+    const stem = stripStart;
+    const stemEnd = stripStart + stripLen;
+    const capSize = 6;
+    const dir = edge === "start" ? -1 : 1;
+    return (
+      <g
+        onPointerDown={onPointerDown}
+        style={{ cursor: "ew-resize" }}
+      >
+        <rect
+          x={posPx - HIT / 2} y={stem - 6}
+          width={HIT} height={stripLen + 12}
+          fill="transparent"
+        />
+        <line
+          x1={posPx} y1={stem}
+          x2={posPx} y2={stemEnd}
+          stroke={dragging ? "var(--color-primary)" : "var(--color-ink)"}
+          strokeWidth={dragging ? 2.5 : 2}
+        />
+        <path
+          d={`M ${posPx} ${stem - 2} L ${posPx + dir * capSize} ${stem - 2} L ${posPx + dir * capSize} ${stem - 2 - capSize} Z`}
+          fill={dragging ? "var(--color-primary)" : "var(--color-ink)"}
+        />
+      </g>
+    );
+  }
+  const stem = stripStart;
+  const stemEnd = stripStart + stripLen;
+  const capSize = 6;
+  // edge="start" → bottom edge in data (visually lower, larger y);
+  // edge="end"   → top edge in data (visually higher, smaller y).
+  const dir = edge === "start" ? 1 : -1;
+  return (
+    <g
+      onPointerDown={onPointerDown}
+      style={{ cursor: "ns-resize" }}
+    >
+      <rect
+        x={stem - 6} y={posPx - HIT / 2}
+        width={stripLen + 12} height={HIT}
+        fill="transparent"
+      />
+      <line
+        x1={stem} y1={posPx}
+        x2={stemEnd} y2={posPx}
+        stroke={dragging ? "var(--color-primary)" : "var(--color-ink)"}
+        strokeWidth={dragging ? 2.5 : 2}
+      />
+      <path
+        d={`M ${stem - 2} ${posPx} L ${stem - 2} ${posPx + dir * capSize} L ${stem - 2 - capSize} ${posPx + dir * capSize} Z`}
+        fill={dragging ? "var(--color-primary)" : "var(--color-ink)"}
+      />
+    </g>
   );
 }
 
