@@ -232,6 +232,137 @@ export function projectLab(lab: Lab, pca: PcaResult): number {
   return c0 * pca.axis[0] + c1 * pca.axis[1] + c2 * pca.axis[2];
 }
 
+export interface Pca2Result {
+  /** Unit-length first principal axis in Lab. */
+  axis1: [number, number, number];
+  /** Unit-length second principal axis, orthogonal to ``axis1``. */
+  axis2: [number, number, number];
+  /** Centroid of the input cloud. */
+  mean: [number, number, number];
+  /** Each input's projection onto ``axis1`` (mean-centred). */
+  projected1: number[];
+  /** Each input's projection onto ``axis2`` (mean-centred). */
+  projected2: number[];
+  /** Fraction of total variance captured by PC1 / PC2 (each ≤ 1). */
+  variance_ratio_1: number;
+  variance_ratio_2: number;
+}
+
+/** Two-component PCA in Lab space. Extracts PC1 via power iteration, then
+ *  deflates the covariance matrix and extracts PC2 the same way.
+ *
+ *  Used by the 2D Spectrum page's drift map to draw samples in a
+ *  (PC1, PC2) plane. Kept separate from ``pca1`` rather than folded into
+ *  it because 1D callers don't want PC2 overhead.
+ */
+export function pca2(labs: Lab[]): Pca2Result {
+  const n = labs.length;
+  if (n === 0) {
+    return {
+      axis1: [1, 0, 0],
+      axis2: [0, 1, 0],
+      mean: [0, 0, 0],
+      projected1: [],
+      projected2: [],
+      variance_ratio_1: 0,
+      variance_ratio_2: 0,
+    };
+  }
+  const mean: [number, number, number] = [0, 0, 0];
+  for (const l of labs) {
+    mean[0] += l[0] / n;
+    mean[1] += l[1] / n;
+    mean[2] += l[2] / n;
+  }
+  const centered: Lab[] = labs.map((l) => [
+    l[0] - mean[0],
+    l[1] - mean[1],
+    l[2] - mean[2],
+  ]);
+  const cov: number[][] = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  const denom = Math.max(1, n - 1);
+  for (const c of centered) {
+    for (let i = 0; i < 3; i++)
+      for (let j = 0; j < 3; j++) cov[i][j] += (c[i] * c[j]) / denom;
+  }
+  const totalVar = cov[0][0] + cov[1][1] + cov[2][2];
+
+  const powerIterate = (
+    m: number[][],
+    seed: [number, number, number],
+  ): [[number, number, number], number] => {
+    let v: [number, number, number] = [seed[0], seed[1], seed[2]];
+    for (let k = 0; k < 40; k++) {
+      const nv: [number, number, number] = [0, 0, 0];
+      for (let i = 0; i < 3; i++)
+        for (let j = 0; j < 3; j++) nv[i] += m[i][j] * v[j];
+      const norm = Math.hypot(nv[0], nv[1], nv[2]) || 1;
+      v = [nv[0] / norm, nv[1] / norm, nv[2] / norm];
+    }
+    const Av: [number, number, number] = [0, 0, 0];
+    for (let i = 0; i < 3; i++)
+      for (let j = 0; j < 3; j++) Av[i] += m[i][j] * v[j];
+    const lambda = v[0] * Av[0] + v[1] * Av[1] + v[2] * Av[2];
+    return [v, lambda];
+  };
+
+  const [v1, lambda1] = powerIterate(cov, [1, 0, 0]);
+
+  // Deflate: cov' = cov - λ₁ v₁ v₁ᵀ so the next dominant eigenpair is PC2.
+  const deflated: number[][] = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++)
+      deflated[i][j] = cov[i][j] - lambda1 * v1[i] * v1[j];
+
+  // Seed PC2 with [1, 1, 1] minus its v1-projection — guaranteed to be
+  // non-zero and orthogonal to v1 unless v1 itself is [1, 1, 1] (which
+  // can't happen for a unit vector). A standard-basis seed would fail
+  // when v1 aligns with an axis AND the deflated matrix's kernel
+  // contains that same axis — the seed would sit entirely in the kernel
+  // and power iteration would yield the zero vector.
+  const rawSeed: [number, number, number] = [1, 1, 1];
+  const sdot = v1[0] + v1[1] + v1[2];
+  const sRaw: [number, number, number] = [
+    rawSeed[0] - sdot * v1[0],
+    rawSeed[1] - sdot * v1[1],
+    rawSeed[2] - sdot * v1[2],
+  ];
+  const sNorm = Math.hypot(sRaw[0], sRaw[1], sRaw[2]) || 1;
+  const seed: [number, number, number] = [sRaw[0] / sNorm, sRaw[1] / sNorm, sRaw[2] / sNorm];
+  const [v2Raw, lambda2] = powerIterate(deflated, seed);
+
+  // Re-orthogonalise against v1 to clean up any drift from power iteration.
+  const dot = v1[0] * v2Raw[0] + v1[1] * v2Raw[1] + v1[2] * v2Raw[2];
+  const v2u: [number, number, number] = [
+    v2Raw[0] - dot * v1[0],
+    v2Raw[1] - dot * v1[1],
+    v2Raw[2] - dot * v1[2],
+  ];
+  const v2Norm = Math.hypot(v2u[0], v2u[1], v2u[2]) || 1;
+  const v2: [number, number, number] = [v2u[0] / v2Norm, v2u[1] / v2Norm, v2u[2] / v2Norm];
+
+  const projected1 = centered.map((c) => c[0] * v1[0] + c[1] * v1[1] + c[2] * v1[2]);
+  const projected2 = centered.map((c) => c[0] * v2[0] + c[1] * v2[1] + c[2] * v2[2]);
+
+  return {
+    axis1: v1,
+    axis2: v2,
+    mean,
+    projected1,
+    projected2,
+    variance_ratio_1: totalVar > 0 ? lambda1 / totalVar : 0,
+    variance_ratio_2: totalVar > 0 ? Math.max(0, lambda2) / totalVar : 0,
+  };
+}
+
 /** Ensure the projection monotonically increases with `reference` where
  *  possible; flips the axis sign if the correlation is negative. */
 export function alignPcaWithReference(

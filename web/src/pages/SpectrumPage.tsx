@@ -213,6 +213,22 @@ export function SpectrumPage() {
                 ?
               </span>
             </button>
+            {/* Companion link to the 2-axis playground. Shown unconditionally
+                so users without 2-D tests yet still learn the page exists. */}
+            <button
+              type="button"
+              onClick={() => navigate({ name: "spectrum-2d" })}
+              className={cn(
+                "inline-flex items-center h-8 px-3 rounded-full",
+                "border border-[color:var(--color-border-strong)]",
+                "bg-[color:var(--color-surface-elevated)] text-[color:var(--color-ink-muted)]",
+                "hover:text-[color:var(--color-ink)] hover:border-[color:var(--color-primary)]/50",
+                "font-mono text-[11px] font-semibold tracking-[0.14em] uppercase",
+                "transition-colors",
+              )}
+            >
+              2-axis spectrum →
+            </button>
           </div>
           <p className="mt-1 text-[13px] text-[color:var(--color-ink-muted)] max-w-[68ch]">
             Pick a single-axis test and explore how the swept parameter

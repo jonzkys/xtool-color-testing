@@ -9,6 +9,7 @@ export type Route =
   | { name: "library" }
   | { name: "palette" }
   | { name: "spectrum"; id?: number }
+  | { name: "spectrum-2d"; id?: number }
   | { name: "styleguide" };
 
 export function parseRoute(hash: string): Route {
@@ -21,6 +22,9 @@ export function parseRoute(hash: string): Route {
   if (h === "svg-layers") return { name: "svg-layers" };
   if (h === "library") return { name: "library" };
   if (h === "palette") return { name: "palette" };
+  if (h === "spectrum-2d") return { name: "spectrum-2d" };
+  const m2d = h.match(/^spectrum-2d\/(\d+)$/);
+  if (m2d) return { name: "spectrum-2d", id: Number(m2d[1]) };
   if (h === "spectrum") return { name: "spectrum" };
   const ms = h.match(/^spectrum\/(\d+)$/);
   if (ms) return { name: "spectrum", id: Number(ms[1]) };
@@ -38,6 +42,7 @@ export function formatRoute(r: Route): string {
     case "library":     return "#/library";
     case "palette":     return "#/palette";
     case "spectrum":    return r.id != null ? `#/spectrum/${r.id}` : "#/spectrum";
+    case "spectrum-2d": return r.id != null ? `#/spectrum-2d/${r.id}` : "#/spectrum-2d";
     case "styleguide":  return "#/styleguide";
   }
 }

@@ -7,6 +7,7 @@ import { PalettePage } from "./components/PalettePage";
 import { TestsPage } from "./pages/TestsPage";
 import { TestDetailPage } from "./pages/TestDetailPage";
 import { SpectrumPage } from "./pages/SpectrumPage";
+import { Spectrum2DPage } from "./pages/Spectrum2DPage";
 import { StyleguidePage } from "./pages/StyleguidePage";
 import { WelcomeDialog } from "./components/WelcomeDialog";
 import { getHealth } from "./api/users";
@@ -51,6 +52,7 @@ export default function App() {
     : route.name === "library"    ? "Library"
     : route.name === "styleguide" ? "Styleguide"
     : route.name === "spectrum"   ? "Spectrum"
+    : route.name === "spectrum-2d" ? "Spectrum · 2D"
     : "Palette";
 
   return (
@@ -71,6 +73,7 @@ export default function App() {
         {gate === "ready" && route.name === "library"      && <LibraryPage onMaterialsChange={() => {}} />}
         {gate === "ready" && route.name === "palette"      && <PalettePage />}
         {gate === "ready" && route.name === "spectrum"     && <SpectrumPage />}
+        {gate === "ready" && route.name === "spectrum-2d"  && <Spectrum2DPage />}
         {gate === "ready" && route.name === "styleguide"   && <StyleguidePage />}
       </main>
       <WelcomeDialog
