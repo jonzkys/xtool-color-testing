@@ -174,14 +174,55 @@ class SvgStackRequest(BaseModel):
 _COLOR_PATTERN = r"^(#[0-9a-f]{6}|none)$"
 
 
+class HatchRampStop(BaseModel):
+    """One stop in a multi-stop ramp. ``position`` ∈ [0, 1] along the
+    ramp axis; ``value`` is the parameter value at that position."""
+
+    position: float = Field(ge=0.0, le=1.0)
+    value: float
+
+
 class HatchRamp(BaseModel):
-    """One linear ramp interpolating a parameter across the shape."""
+    """A ramp interpolating a parameter across the shape along an axis.
+
+    Backward-compatible shape:
+
+    - Legacy clients send ``{param, axis, min, max}`` → interpreted as
+      two stops at positions 0 and 1. This is still the supported
+      wire format when ``stops`` is omitted.
+    - New clients can send ``{param, axis, stops: [{position, value}, ...]}``
+      to express multi-stop / piecewise-linear gradients. ``min`` /
+      ``max`` fields are ignored when ``stops`` is present.
+
+    Stops are sorted by position before interpolation; the first stop
+    clamps values below its position, the last stop clamps above.
+    """
 
     param: Literal["power", "speed", "frequency", "density",
                    "passes", "pulse_width", "spacing"]
     axis: Literal["perp", "parallel", "x", "y"]
+    # Legacy two-point ramp. Kept required for backward compat so
+    # existing persisted LayerSpec rows keep validating; new clients
+    # that use ``stops`` can pass the first / last stop's values here
+    # for the equivalent round-trip.
     min: float
     max: float
+    stops: list[HatchRampStop] | None = None
+
+    @model_validator(mode="after")
+    def _check_stops(self) -> "HatchRamp":
+        if self.stops is not None:
+            if len(self.stops) < 2:
+                raise ValueError("stops must have at least two entries")
+            # Positions must be sorted and span the full [0, 1] range —
+            # otherwise the interpolation is ambiguous. We sort on the
+            # fly here so a client emitting them out-of-order still gets
+            # through; the invariant is that the span is complete.
+            ordered = sorted(self.stops, key=lambda s: s.position)
+            if ordered[0].position > 0.001 or ordered[-1].position < 0.999:
+                raise ValueError("stops must span position 0..1 inclusive")
+            object.__setattr__(self, "stops", ordered)
+        return self
 
 
 class HatchPass(BaseModel):

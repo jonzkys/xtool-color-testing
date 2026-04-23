@@ -109,7 +109,6 @@ export function GuidePage() {
             </Panel>
           ))}
         </div>
-        <Colophon />
       </PageContainer>
       <CompassNav active={active} onJump={jump} />
     </div>
@@ -238,22 +237,6 @@ function Panel({
 
       <div className="mt-7">{children}</div>
     </section>
-  );
-}
-
-function Colophon() {
-  return (
-    <footer className="mt-8 pt-8 pb-4 border-t border-[color:var(--color-border)]">
-      <div className="inline-flex items-center gap-2 font-mono text-[10px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)] mb-2">
-        <span className="h-px w-4 bg-[color:var(--color-border-strong)]" aria-hidden />
-        Colophon
-      </div>
-      <p className="text-[13px] text-[color:var(--color-ink-muted)] max-w-[60ch] leading-relaxed">
-        Set and printed in JetBrains Mono + Inter. Diagrams are hand-made
-        in SVG. If you spot something wrong, misleading, or just worth
-        explaining better, please open an issue.
-      </p>
-    </footer>
   );
 }
 

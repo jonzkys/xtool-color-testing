@@ -361,13 +361,30 @@ RampAxis = Literal["perp", "parallel", "x", "y"]
 
 
 @dataclass
+class HatchRampStop:
+    """One stop in a multi-stop ramp. ``position`` is 0..1 along the
+    ramp axis; ``value`` is the parameter value at that position."""
+
+    position: float
+    value: float
+
+
+@dataclass
 class HatchRamp:
-    """Linearly interpolate one ProcessingParams field (or 'spacing') across the shape.
+    """Ramp a ProcessingParams field (or 'spacing') across the shape.
 
     The `axis` determines which dimension of the shape drives the interpolation:
       perp     — perpendicular to the hatch angle (classic top-to-bottom fade for 0°)
       parallel — along the hatch angle (segments along a line vary)
       x, y     — shape bbox axes, regardless of hatch angle
+
+    Two shapes:
+
+    * Legacy: ``min_value`` + ``max_value`` give a linear ramp between
+      the ends (two implicit stops at positions 0 and 1).
+    * Multi-stop: ``stops`` (if non-empty) takes precedence; the ramp
+      is piecewise-linear between adjacent stops. Must have ≥ 2 stops
+      sorted by position with the first at 0 and the last at 1.
     """
 
     param: str          # "power", "speed", "frequency", "density", "passes",
@@ -375,6 +392,7 @@ class HatchRamp:
     axis: RampAxis
     min_value: float
     max_value: float
+    stops: list[HatchRampStop] = field(default_factory=list)
 
 
 @dataclass

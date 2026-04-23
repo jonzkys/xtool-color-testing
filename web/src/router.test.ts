@@ -14,7 +14,8 @@ describe("parseRoute", () => {
     expect(parseRoute("#/tests/new")).toEqual({ name: "test-new" });
   });
   test("top-level tabs", () => {
-    expect(parseRoute("#/svg-stack")).toEqual({ name: "svg-stack" });
+    expect(parseRoute("#/loom")).toEqual({ name: "loom" });
+    expect(parseRoute("#/svg-stack")).toEqual({ name: "loom" }); // legacy alias
     expect(parseRoute("#/svg-layers")).toEqual({ name: "svg-layers" });
     expect(parseRoute("#/library")).toEqual({ name: "library" });
     expect(parseRoute("#/palette")).toEqual({ name: "palette" });
@@ -27,7 +28,7 @@ describe("formatRoute", () => {
       { name: "tests" },
       { name: "test-new" },
       { name: "test-detail", id: 7 },
-      { name: "svg-stack" },
+      { name: "loom" },
       { name: "library" },
       { name: "palette" },
     ] as const) {

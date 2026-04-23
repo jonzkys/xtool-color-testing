@@ -140,6 +140,7 @@ def build_svg_layers_project(
             from xcs_gen.builder import _build_rect_display, build_device_entry
             from xcs_gen.svg_source import HatchPass as LibHatchPass
             from xcs_gen.svg_source import HatchRamp as LibHatchRamp
+            from xcs_gen.svg_source import HatchRampStop as LibHatchRampStop
 
             layer_params = _to_processing_params(layer.base_params)
             polygon = svg_d_to_polygon(shape.d, fill_rule=shape.fill_rule)
@@ -152,8 +153,17 @@ def build_svg_layers_project(
                     angle=hp.angle,
                     spacing=hp.spacing,
                     ramps=[
-                        LibHatchRamp(param=r.param, axis=r.axis,
-                                     min_value=r.min, max_value=r.max)
+                        LibHatchRamp(
+                            param=r.param, axis=r.axis,
+                            min_value=r.min, max_value=r.max,
+                            stops=[
+                                LibHatchRampStop(
+                                    position=s.position,
+                                    value=s.value,
+                                )
+                                for s in (r.stops or [])
+                            ],
+                        )
                         for r in hp.ramps
                     ],
                 )

@@ -52,11 +52,21 @@ export type HatchRampParam =
 
 export type HatchRampAxis = "perp" | "parallel" | "x" | "y";
 
+export interface HatchRampStopSpec {
+  /** 0..1 along the ramp axis. */
+  position: number;
+  value: number;
+}
+
 export interface HatchRampSpec {
   param: HatchRampParam;
   axis: HatchRampAxis;
   min: number;
   max: number;
+  /** Optional multi-stop override. When present, backend uses
+   *  piecewise-linear interpolation of these stops and ignores
+   *  min/max. Must include endpoints at position 0 and 1. */
+  stops?: HatchRampStopSpec[] | null;
 }
 
 export interface HatchPassSpec {

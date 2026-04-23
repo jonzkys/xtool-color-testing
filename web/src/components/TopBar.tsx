@@ -47,8 +47,8 @@ export function TopBar({ title, route, onNavigate }: Props) {
             <TabLink route={route} target={{ name: "tests" }} onNavigate={onNavigate}>
               Tests
             </TabLink>
-            <TabLink route={route} target={{ name: "svg-stack" }} onNavigate={onNavigate}>
-              SVG stack
+            <TabLink route={route} target={{ name: "loom" }} onNavigate={onNavigate}>
+              Loom
             </TabLink>
             <TabLink route={route} target={{ name: "svg-layers" }} onNavigate={onNavigate}>
               SVG layers

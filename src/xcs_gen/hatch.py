@@ -210,7 +210,7 @@ def generate_hatch_segments(
                 rot_bounds=(minx, miny, maxx, maxy),
                 world_bounds=(world_minx, world_miny, world_maxx, world_maxy),
             )
-            step = spacing_ramp.min_value + pos * (spacing_ramp.max_value - spacing_ramp.min_value)
+            step = _ramp_value_at(spacing_ramp, pos)
             if step < min_spacing:
                 step = min_spacing
         # Center the line within its step band so placement is symmetric.
@@ -240,7 +240,7 @@ def generate_hatch_segments(
                     rot_bounds=(minx, miny, maxx, maxy),
                     world_bounds=(world_minx, world_miny, world_maxx, world_maxy),
                 )
-                value = ramp.min_value + pos * (ramp.max_value - ramp.min_value)
+                value = _ramp_value_at(ramp, pos)
                 _set_param_on(params, ramp.param, value)
 
             line = _segment_to_line(
@@ -342,6 +342,37 @@ def _ramp_position(
     elif t > 1.0:
         t = 1.0
     return t
+
+
+def _ramp_value_at(ramp, pos: float) -> float:
+    """Evaluate a ramp at normalised position ``pos`` ∈ [0, 1].
+
+    Prefers ``ramp.stops`` when non-empty (piecewise-linear between
+    adjacent stops; clamps at the ends), otherwise falls back to the
+    two-point ``min_value`` / ``max_value`` linear form.
+    """
+    stops = getattr(ramp, "stops", None) or []
+    if len(stops) >= 2:
+        # Stops are sorted by position on construction; if not, sort
+        # here defensively — cheap vs. the hatch inner loop.
+        if any(stops[i].position > stops[i + 1].position for i in range(len(stops) - 1)):
+            stops = sorted(stops, key=lambda s: s.position)
+        if pos <= stops[0].position:
+            return stops[0].value
+        if pos >= stops[-1].position:
+            return stops[-1].value
+        # Find the bracketing pair.
+        for i in range(len(stops) - 1):
+            a, b = stops[i], stops[i + 1]
+            if a.position <= pos <= b.position:
+                span = b.position - a.position
+                if span <= 0:
+                    return a.value
+                t = (pos - a.position) / span
+                return a.value + t * (b.value - a.value)
+        return stops[-1].value
+    # Legacy two-point linear form.
+    return ramp.min_value + pos * (ramp.max_value - ramp.min_value)
 
 
 _INT_PARAM_FIELDS = {"speed", "density", "passes", "pulse_width"}

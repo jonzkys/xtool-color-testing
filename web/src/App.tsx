@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { TopBar } from "./components/TopBar";
-import { SvgStackPage } from "./components/SvgStackPage";
+import { LoomPage } from "./pages/LoomPage";
 import { SvgLayersPage } from "./components/SvgLayersPage";
 import { LibraryPage } from "./components/LibraryPage";
 import { PalettePage } from "./components/PalettePage";
@@ -56,7 +56,7 @@ export default function App() {
     route.name === "tests"        ? "Tests"
     : route.name === "test-new"   ? "New test"
     : route.name === "test-detail" ? `Test #${route.id}`
-    : route.name === "svg-stack"  ? "SVG stack"
+    : route.name === "loom"       ? "Loom"
     : route.name === "svg-layers" ? "SVG layers"
     : route.name === "library"    ? "Library"
     : route.name === "styleguide" ? "Styleguide"
@@ -78,7 +78,7 @@ export default function App() {
         {gate === "ready" && route.name === "tests"        && <TestsPage />}
         {gate === "ready" && route.name === "test-new"     && <TestDetailPage testId="new" />}
         {gate === "ready" && route.name === "test-detail"  && <TestDetailPage testId={route.id} />}
-        {gate === "ready" && route.name === "svg-stack"    && <SvgStackPage />}
+        {gate === "ready" && route.name === "loom"         && <LoomPage />}
         {gate === "ready" && route.name === "svg-layers"   && <SvgLayersPage />}
         {gate === "ready" && route.name === "library"      && <LibraryPage onMaterialsChange={() => {}} />}
         {gate === "ready" && route.name === "palette"      && <PalettePage />}
