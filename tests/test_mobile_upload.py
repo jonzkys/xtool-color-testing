@@ -28,3 +28,28 @@ def test_get_by_mobile_id_returns_user_or_none(fresh_db):
     mid = u_repo.get_or_create_mobile_id(user["id"])
     assert u_repo.get_by_mobile_id(mid)["id"] == user["id"]
     assert u_repo.get_by_mobile_id("nonexistent_value") is None
+
+
+import pytest
+
+
+def test_get_or_create_mobile_id_raises_for_unknown_user(fresh_db):
+    with pytest.raises(ValueError, match="no such user"):
+        u_repo.get_or_create_mobile_id(99999)
+
+
+def test_rotate_mobile_id_makes_new_resolve_and_old_dead(fresh_db):
+    user = u_repo.register(api_key="dddddddddddddddd", first_name="D")
+    old = u_repo.get_or_create_mobile_id(user["id"])
+    new = u_repo.rotate_mobile_id(user["id"])
+    assert u_repo.get_by_mobile_id(new) is not None
+    assert u_repo.get_by_mobile_id(old) is None
+
+
+def test_rotate_mobile_id_raises_for_unknown_user(fresh_db):
+    with pytest.raises(ValueError, match="no such user"):
+        u_repo.rotate_mobile_id(99999)
+
+
+def test_get_by_mobile_id_returns_none_for_empty_string(fresh_db):
+    assert u_repo.get_by_mobile_id("") is None
