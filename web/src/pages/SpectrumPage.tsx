@@ -16,6 +16,13 @@ import {
 import { listTests } from "../api/tests";
 import { getAveragedSwatches } from "../api/results";
 import type { AveragedSwatch, TestRecord } from "../types";
+import {
+  computeCellSpread,
+  computeGridStability,
+  type CellSpread,
+} from "../color/variability";
+import { StabilityChip } from "../components/StabilityChip";
+import { PerCellExplodeStrip } from "../components/PerCellExplodeStrip";
 import { useRoute } from "../router";
 import {
   Badge,
@@ -165,6 +172,23 @@ export function SpectrumPage() {
   const selected = tests.find((t) => t.id === selectedId);
   const [aboutOpen, setAboutOpen] = useState(false);
 
+  // Variability state — lifted to the page level so the header's
+  // Stability chip can broadcast "jump to first unstable cell" to the
+  // body without any imperative ref choreography.
+  const stability = useMemo(
+    () => computeGridStability(swatches ?? []),
+    [swatches],
+  );
+  const [pinnedX, setPinnedX] = useState<number | null>(null);
+  useEffect(() => {
+    setPinnedX(null);
+  }, [selectedId]);
+  const jumpToUnstable = () => {
+    if (stability.unstableSwatches.length === 0) return;
+    const first = stability.unstableSwatches[0];
+    if (first.x_value != null) setPinnedX(first.x_value);
+  };
+
   return (
     <PageContainer className="py-8">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -229,6 +253,7 @@ export function SpectrumPage() {
             >
               2-axis spectrum →
             </button>
+            <StabilityChip stability={stability} onJumpToUnstable={jumpToUnstable} />
           </div>
           <p className="mt-1 text-[13px] text-[color:var(--color-ink-muted)] max-w-[68ch]">
             Pick a single-axis test and explore how the swept parameter
@@ -286,7 +311,12 @@ export function SpectrumPage() {
           </div>
         </Section>
       ) : (
-        <SpectrumBody test={selected!} swatches={swatches} />
+        <SpectrumBody
+          test={selected!}
+          swatches={swatches}
+          pinnedX={pinnedX}
+          setPinnedX={setPinnedX}
+        />
       )}
     </PageContainer>
   );
@@ -297,11 +327,18 @@ export function SpectrumPage() {
 function SpectrumBody({
   test,
   swatches,
+  pinnedX,
+  setPinnedX,
 }: {
   test: TestRecord;
   swatches: AveragedSwatch[];
+  pinnedX: number | null;
+  setPinnedX: (x: number | null) => void;
 }) {
   // Sort by x_value so every downstream visualization stays ordered.
+  // Also keep the source ``AveragedSwatch`` on each record so the strip
+  // can render per-cell variability (ghost fans, envelope width)
+  // without a second lookup by x.
   const fullSamples = useMemo(() => {
     return [...swatches]
       .filter((s) => s.x_value != null && s.lab?.length === 3)
@@ -310,8 +347,19 @@ function SpectrumBody({
         x: s.x_value,
         hex: s.hex,
         lab: s.lab as Lab,
+        swatch: s,
       }));
   }, [swatches]);
+
+  const fullSpreads: CellSpread[] = useMemo(
+    () => fullSamples.map((s) => computeCellSpread(s.swatch)),
+    [fullSamples],
+  );
+  const anyReplicates = fullSpreads.some((sp) => sp.n >= 2);
+  // Index of the pinned cell within ``fullSamples``, or -1 when no pin.
+  const pinnedIdx = pinnedX == null
+    ? -1
+    : fullSamples.findIndex((s) => s.x === pinnedX);
 
   const fullXMin = fullSamples[0]?.x ?? 0;
   const fullXMax = fullSamples[fullSamples.length - 1]?.x ?? 0;
@@ -501,13 +549,30 @@ function SpectrumBody({
         <StripLabel text="Sampled" hint="what the photo actually captured" />
         <SpectrumStrip
           fullSamples={fullSamples}
+          fullSpreads={fullSpreads}
           fullXMin={fullXMin}
           fullXMax={fullXMax}
           rangeStart={rangeStart}
           rangeEnd={rangeEnd}
           onRangeChange={applyRange}
           cropped={cropped && clipped}
+          variabilityOn={anyReplicates}
+          pinnedIdx={pinnedIdx}
+          onPinCell={(i) => {
+            if (i == null) {
+              setPinnedX(null);
+            } else {
+              setPinnedX(fullSamples[i]?.x ?? null);
+            }
+          }}
         />
+        {pinnedIdx >= 0 && fullSpreads[pinnedIdx]?.n >= 2 && (
+          <PerCellExplodeStrip
+            label={`${PROJ_META[projection].label} @ ${String(test.spec.x_param)} = ${fmtNum(fullSamples[pinnedIdx].x)}`}
+            cell={fullSamples[pinnedIdx].swatch}
+            onClose={() => setPinnedX(null)}
+          />
+        )}
 
         {modeled && (
           <div className="mt-3">
@@ -745,20 +810,36 @@ function MiniStat({
 
 function SpectrumStrip({
   fullSamples,
+  fullSpreads,
   fullXMin,
   fullXMax,
   rangeStart,
   rangeEnd,
   onRangeChange,
   cropped,
+  variabilityOn,
+  pinnedIdx,
+  onPinCell,
 }: {
   fullSamples: { x: number; hex: string; lab: Lab }[];
+  /** Optional, index-aligned with ``fullSamples``. When provided, the
+   *  strip overlays a ΔE envelope + per-cell ghost fans. Pass
+   *  ``undefined`` for pages that don't have replicate data (e.g.
+   *  the modeled strip). */
+  fullSpreads?: CellSpread[];
   fullXMin: number;
   fullXMax: number;
   rangeStart: number;
   rangeEnd: number;
   onRangeChange: (start: number, end: number) => void;
   cropped: boolean;
+  /** Master toggle for the variability overlays. False → strip renders
+   *  identically to its pre-variability look. */
+  variabilityOn?: boolean;
+  /** Index into ``fullSamples`` of the pinned cell, or -1. */
+  pinnedIdx?: number;
+  /** Click a cell → pin (or unpin when clicking the pinned cell). */
+  onPinCell?: (i: number | null) => void;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
@@ -768,9 +849,27 @@ function SpectrumStrip({
   // overlays / brackets / handles collapse to the edges and hide.
   const stripXMin = cropped ? rangeStart : fullXMin;
   const stripXMax = cropped ? rangeEnd : fullXMax;
-  const stripSamples = cropped
-    ? fullSamples.filter((s) => s.x >= rangeStart && s.x <= rangeEnd)
-    : fullSamples;
+  // Align spreads with the (possibly cropped) visible samples so indices
+  // into ``stripSamples`` line up with spread metadata.
+  const visibleIdx = cropped
+    ? fullSamples.reduce<number[]>((acc, s, i) => {
+        if (s.x >= rangeStart && s.x <= rangeEnd) acc.push(i);
+        return acc;
+      }, [])
+    : fullSamples.map((_, i) => i);
+  const stripSamples = visibleIdx.map((i) => fullSamples[i]);
+  const stripSpreads = fullSpreads
+    ? visibleIdx.map((i) => fullSpreads[i])
+    : undefined;
+  const showVariability =
+    !!variabilityOn && !!stripSpreads && stripSpreads.some((sp) => sp.n >= 2);
+  // Ghost fans are dense, so auto-hide above 40 cells; user can still
+  // hover a cell to reveal its fan (we always render the hover state).
+  const ghostAlwaysOn = stripSamples.length <= 40;
+  // Max spread across visible cells drives the envelope's vertical scale.
+  const maxVisibleSpread = stripSpreads
+    ? stripSpreads.reduce((m, sp) => Math.max(m, sp.maxSpread), 0)
+    : 0;
 
   // Fraction of the strip width occupied by a given x-value (in the
   // current strip's coordinate space).
@@ -824,20 +923,58 @@ function SpectrumStrip({
         {/* Colour cells — every sample rendered; when cropped the strip
             is already filtered to the active range. */}
         <div className="absolute inset-0 flex">
-          {stripSamples.map((s, i) => (
-            <div
-              key={i}
-              className="h-full flex-1 transition-transform duration-100"
-              style={{
-                background: s.hex,
-                transform: hover === i ? "scaleY(1.03)" : undefined,
-              }}
-              onMouseEnter={() => setHover(i)}
-              onMouseLeave={() => setHover((h) => (h === i ? null : h))}
-              title={`${s.hex} · ${fmtNum(s.x)}`}
-            />
-          ))}
+          {stripSamples.map((s, i) => {
+            const fullI = visibleIdx[i];
+            const spread = stripSpreads?.[i];
+            const isPinned = pinnedIdx === fullI;
+            const showFan =
+              showVariability &&
+              spread != null &&
+              spread.n >= 2 &&
+              (ghostAlwaysOn || hover === i || isPinned);
+            return (
+              <div
+                key={i}
+                className={cn(
+                  "relative h-full flex-1 transition-transform duration-100",
+                  onPinCell && "cursor-pointer",
+                )}
+                style={{
+                  background: s.hex,
+                  transform: hover === i ? "scaleY(1.03)" : undefined,
+                  boxShadow: isPinned
+                    ? "inset 0 0 0 2px var(--color-primary)"
+                    : undefined,
+                }}
+                onMouseEnter={() => setHover(i)}
+                onMouseLeave={() => setHover((h) => (h === i ? null : h))}
+                onClick={() => {
+                  if (!onPinCell) return;
+                  onPinCell(pinnedIdx === fullI ? null : fullI);
+                }}
+                title={
+                  spread && spread.n >= 2
+                    ? `${s.hex} · ${fmtNum(s.x)} · N=${spread.n} · ΔE ${spread.spread.toFixed(1)}`
+                    : `${s.hex} · ${fmtNum(s.x)}`
+                }
+              >
+                {showFan && spread && <GhostFan spread={spread} />}
+              </div>
+            );
+          })}
         </div>
+
+        {/* V2-A variance envelope — paints a translucent ΔE band over
+            the cells, width per-cell proportional to that cell's
+            ΔE-to-centroid spread. Sits above the cells but below the
+            range brackets. */}
+        {showVariability && maxVisibleSpread > 0 && (
+          <VarianceEnvelope
+            count={stripSamples.length}
+            spreads={stripSpreads!}
+            maxSpread={maxVisibleSpread}
+          />
+        )}
 
         {/* Fine grain for physicality. */}
         <div
@@ -911,6 +1048,160 @@ function SpectrumStrip({
         })}
       </div>
     </div>
+  );
+}
+
+/* ------------ Variability overlays (1D) ------------------------------- */
+
+/**
+ * V1-A — Halo fan on a SpectrumStrip cell. Renders a thin horizontal
+ * row of per-result swatches along the cell's bottom edge, plus a
+ * 1-px orange tick above it positioned at ``spread / maxSpread`` — a
+ * sampled-gauge read for how much this specific cell disagrees across
+ * runs.
+ */
+function GhostFan({ spread }: { spread: CellSpread }) {
+  if (spread.n < 2) return null;
+  // Cap fan density so the swatches stay visually discrete; anything
+  // beyond 12 collapses into a "+N" tag at the far right.
+  const MAX_VISIBLE = 12;
+  const visible = spread.labs.slice(0, MAX_VISIBLE);
+  const overflow = spread.n - visible.length;
+  // Use labs straight from the CellSpread — same index-order the
+  // backend sent. Convert back to CSS rgb via a tiny Lab→hex.
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end h-[26%]">
+      {/* ΔE tick ribbon above the swatches */}
+      <div
+        className="absolute top-0 left-0 right-0 h-[3px]"
+        style={{
+          background: "var(--color-surface)",
+          opacity: 0.35,
+        }}
+      />
+      {spread.maxSpread > 0 && (
+        <div
+          className="absolute -top-[2px] h-[4px] w-[2px] rounded-sm"
+          style={{
+            left: `calc(${Math.min(1, spread.spread / spread.maxSpread) * 100}% - 1px)`,
+            background: "var(--color-primary)",
+          }}
+        />
+      )}
+      <div className="relative flex-1 flex">
+        {visible.map((lab, i) => (
+          <div
+            key={i}
+            className="h-full flex-1"
+            style={{
+              background: labToHex(lab),
+              opacity: 0.92,
+            }}
+          />
+        ))}
+        {overflow > 0 && (
+          <div
+            className="h-full px-1 flex items-center font-mono text-[9px] tracking-[0.08em]"
+            style={{
+              background: "rgba(0,0,0,0.55)",
+              color: "white",
+            }}
+          >
+            +{overflow}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * V2-A — ΔE envelope. One SVG laid over the strip cells. At every
+ * cell's centre-x the envelope's half-height is proportional to that
+ * cell's ΔE-to-centroid spread; the band is coloured along the ΔE
+ * tone ramp (slate for stable, primary for unstable).
+ */
+function VarianceEnvelope({
+  count,
+  spreads,
+  maxSpread,
+}: {
+  count: number;
+  spreads: CellSpread[];
+  maxSpread: number;
+}) {
+  // Build a smooth top/bottom polyline through the cell centres.
+  const WIDTH = 1000;  // viewBox — scales with container
+  const HEIGHT = 60;   // matches strip height (68) minus a little gutter
+  const half = HEIGHT / 2;
+  const cellW = WIDTH / count;
+  const points: { x: number; y: number; sp: CellSpread }[] = spreads.map((sp, i) => {
+    const cx = (i + 0.5) * cellW;
+    return { x: cx, y: sp.spread / maxSpread, sp };
+  });
+  // Top / bottom ribbons. Use a fairly wide dynamic range so a 3 ΔE
+  // cell noticeably dominates a 0.5 ΔE neighbour.
+  const topPath = "M 0 " + half +
+    " L " + points.map((p) => `${p.x} ${half - p.y * (half - 4)}`).join(" L ") +
+    ` L ${WIDTH} ${half} Z`;
+  const botPath = "M 0 " + half +
+    " L " + points.map((p) => `${p.x} ${half + p.y * (half - 4)}`).join(" L ") +
+    ` L ${WIDTH} ${half} Z`;
+
+  return (
+    <svg
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      preserveAspectRatio="none"
+      className="pointer-events-none absolute inset-x-0 top-0 w-full"
+      style={{ height: HEIGHT }}
+      aria-hidden
+    >
+      <defs>
+        {/* Along-x gradient — pure function of per-cell spread. Each
+            cell contributes a stop at its centre; lerp between stops
+            to paint local instability. */}
+        <linearGradient id="variance-band" x1="0" y1="0" x2="1" y2="0">
+          {points.map((p, i) => {
+            const t = Math.min(1, p.sp.spread / 4);  // 4 ΔE is "clearly off"
+            const stop = p.x / WIDTH;
+            const colour = `rgba(184,65,14,${0.10 + t * 0.35})`;
+            return <stop key={i} offset={`${stop * 100}%`} stopColor={colour} />;
+          })}
+        </linearGradient>
+      </defs>
+      <path d={topPath} fill="url(#variance-band)" />
+      <path d={botPath} fill="url(#variance-band)" />
+      {/* Centerline — stays visible even when the band is thin. */}
+      <line
+        x1={0} y1={half} x2={WIDTH} y2={half}
+        stroke="var(--color-ink)" strokeOpacity={0.45} strokeWidth={0.8}
+      />
+      {/* Outer stipple = max-spread hints at outliers beyond the mean. */}
+      <path
+        d={
+          "M 0 " + half +
+          " L " + points.map((p) => `${p.x} ${half - (p.sp.maxSpread / maxSpread) * (half - 2)}`).join(" L ") +
+          ` L ${WIDTH} ${half}`
+        }
+        fill="none"
+        stroke="var(--color-primary)"
+        strokeOpacity={0.35}
+        strokeWidth={0.6}
+        strokeDasharray="2 2"
+      />
+      <path
+        d={
+          "M 0 " + half +
+          " L " + points.map((p) => `${p.x} ${half + (p.sp.maxSpread / maxSpread) * (half - 2)}`).join(" L ") +
+          ` L ${WIDTH} ${half}`
+        }
+        fill="none"
+        stroke="var(--color-primary)"
+        strokeOpacity={0.35}
+        strokeWidth={0.6}
+        strokeDasharray="2 2"
+      />
+    </svg>
   );
 }
 

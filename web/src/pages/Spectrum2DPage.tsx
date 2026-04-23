@@ -30,10 +30,17 @@ import {
   type Lab,
   type PolyFit,
 } from "../color/math";
+import {
+  computeCellSpread,
+  computeConstellationScale,
+  computeGridStability,
+} from "../color/variability";
 import { listTests } from "../api/tests";
 import { getAveragedSwatches } from "../api/results";
 import type { AveragedSwatch, TestRecord } from "../types";
 import { useRoute } from "../router";
+import { StabilityChip } from "../components/StabilityChip";
+import { PerCellExplodeStrip } from "../components/PerCellExplodeStrip";
 import {
   Button,
   cn,
@@ -56,6 +63,9 @@ type Cell = {
   y: number; // y_param value
   hex: string;
   lab: Lab;
+  /** Source swatch kept alongside so viz can reach per_result /
+   *  variability without re-looking-up in the flat array. */
+  swatch: AveragedSwatch;
 };
 
 type Grid = {
@@ -108,6 +118,7 @@ function pivotSwatches(swatches: AveragedSwatch[]): Grid {
       col: c,
       x: s.x_value,
       y: s.y_value as number,
+      swatch: s,
       hex: s.hex,
       lab: s.lab as Lab,
     };
@@ -184,6 +195,26 @@ export function Spectrum2DPage() {
 
   const selected = tests.find((t) => t.id === selectedId);
 
+  // Grid-level variability summary for the header chip. Computed at the
+  // page level (not inside the body) so the chip can render during the
+  // single-run / loading states too.
+  const stability = useMemo(
+    () => computeGridStability(swatches ?? []),
+    [swatches],
+  );
+
+  // "Jump to first unstable cell" is a one-shot signal from header →
+  // body: bumping the nonce value tells the body's effect to consume
+  // the pending pin and then forget it, so re-clicks keep working.
+  const [jumpNonce, setJumpNonce] = useState(0);
+  const jumpToUnstable = () => setJumpNonce((n) => n + 1);
+  const pendingPin = useMemo(() => {
+    if (stability.unstableSwatches.length === 0) return null;
+    const s = stability.unstableSwatches[0];
+    if (s.row == null || s.col == null) return null;
+    return { row: s.row, col: s.col };
+  }, [stability]);
+
   return (
     <PageContainer className="py-8">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -240,6 +271,7 @@ export function Spectrum2DPage() {
             >
               ← 1-axis spectrum
             </button>
+            <StabilityChip stability={stability} onJumpToUnstable={jumpToUnstable} />
           </div>
           <p className="mt-1 text-[13px] text-[color:var(--color-ink-muted)] max-w-[72ch]">
             Pick a 2-axis test. The atlas is the measured grid, the drift map
@@ -294,7 +326,12 @@ export function Spectrum2DPage() {
           </div>
         </Section>
       ) : (
-        <Spectrum2DBody test={selected!} swatches={swatches} />
+        <Spectrum2DBody
+          test={selected!}
+          swatches={swatches}
+          jumpNonce={jumpNonce}
+          pendingPin={pendingPin}
+        />
       )}
     </PageContainer>
   );
@@ -307,9 +344,13 @@ export function Spectrum2DPage() {
 function Spectrum2DBody({
   test,
   swatches,
+  jumpNonce,
+  pendingPin,
 }: {
   test: TestRecord;
   swatches: AveragedSwatch[];
+  jumpNonce: number;
+  pendingPin: { row: number; col: number } | null;
 }) {
   const grid = useMemo(() => pivotSwatches(swatches), [swatches]);
 
@@ -323,6 +364,9 @@ function Spectrum2DBody({
   const [threadMode, setThreadMode] = useState<"both" | "rows" | "cols">("both");
   const [contourCount, setContourCount] = useState<1 | 3 | 5>(3);
   const [threshold, setThreshold] = useState<number | null>(null); // in axis units
+  const [atlasMode, setAtlasMode] = useState<"swatch" | "constellation" | "hybrid">(
+    "swatch",
+  );
 
   // Reset state when the test changes.
   useEffect(() => {
@@ -330,7 +374,21 @@ function Spectrum2DBody({
     setXClip(null);
     setYClip(null);
     setThreshold(null);
+    setAtlasMode("swatch");
   }, [test.id]);
+
+  // One-shot jump from the header Stability chip. ``jumpNonce`` is the
+  // trigger, ``pendingPin`` is the target cell. We pin it and scroll
+  // the atlas into view; the pin ripples through all three viz.
+  useEffect(() => {
+    if (jumpNonce === 0) return;
+    if (pendingPin == null) return;
+    setPinned(pendingPin);
+    // Smooth-scroll the first section into view so the user sees
+    // where we jumped.
+    const el = document.getElementById("spec2d-atlas");
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [jumpNonce, pendingPin]);
 
   if (grid.flat.length === 0) {
     return (
@@ -343,20 +401,35 @@ function Spectrum2DBody({
     );
   }
 
+  const pinnedCell =
+    pinned != null ? grid.cells[pinned.row][pinned.col] : null;
+
   return (
     <div className="flex flex-col gap-6">
-      <Viz1Atlas
-        test={test}
-        grid={grid}
-        activeAxis={activeAxis}
-        setActiveAxis={setActiveAxis}
-        threshold={threshold}
-        setThreshold={setThreshold}
-        contourCount={contourCount}
-        setContourCount={setContourCount}
-        pinned={pinned}
-        setPinned={setPinned}
-      />
+      <div id="spec2d-atlas">
+        <Viz1Atlas
+          test={test}
+          grid={grid}
+          activeAxis={activeAxis}
+          setActiveAxis={setActiveAxis}
+          threshold={threshold}
+          setThreshold={setThreshold}
+          contourCount={contourCount}
+          setContourCount={setContourCount}
+          pinned={pinned}
+          setPinned={setPinned}
+          atlasMode={atlasMode}
+          setAtlasMode={setAtlasMode}
+        />
+        {pinnedCell && pinnedCell.swatch.per_result?.length &&
+          pinnedCell.swatch.per_result.length >= 2 && (
+          <PerCellExplodeStrip
+            label={`${String(test.spec.x_param)}=${fmtTick(pinnedCell.x)} · ${String(test.spec.y_param)}=${fmtTick(pinnedCell.y)}`}
+            cell={pinnedCell.swatch}
+            onClose={() => setPinned(null)}
+          />
+        )}
+      </div>
       <MetalBar />
       <Viz2DriftMap
         test={test}
@@ -397,10 +470,25 @@ type Viz1Props = {
   setContourCount: (c: 1 | 3 | 5) => void;
   pinned: { row: number; col: number } | null;
   setPinned: (p: { row: number; col: number } | null) => void;
+  atlasMode: "swatch" | "constellation" | "hybrid";
+  setAtlasMode: (m: "swatch" | "constellation" | "hybrid") => void;
 };
 
 function Viz1Atlas(props: Viz1Props) {
-  const { grid, activeAxis, setActiveAxis, threshold, setThreshold, contourCount, pinned, setPinned } = props;
+  const { grid, activeAxis, setActiveAxis, threshold, setThreshold, contourCount, pinned, setPinned, atlasMode, setAtlasMode } = props;
+
+  // Constellation scale: fixed across all cells so dot-cloud size
+  // compares honestly cell-to-cell. Estimated from the grid's 95th
+  // percentile a*b* max-spread. Cheap enough to recompute per render.
+  const cellPxEstimate = 48; // average cell size; AtlasGrid refines per-cell
+  const constellationScale = useMemo(
+    () => computeConstellationScale(grid.flat.map((c) => c.swatch), cellPxEstimate),
+    [grid],
+  );
+  const hasReplicates = useMemo(
+    () => grid.flat.some((c) => (c.swatch.per_result?.length ?? 0) >= 2),
+    [grid],
+  );
 
   // Axis values across the grid → used for contours and threshold slider.
   const values = useMemo(() => {
@@ -439,6 +527,34 @@ function Viz1Atlas(props: Viz1Props) {
       title="Atlas"
       description="Measured grid. Pick a Lab axis and drag the threshold to see all cells sharing a value."
       dense
+      actions={
+        hasReplicates ? (
+          <div className="inline-flex rounded-[6px] overflow-hidden border border-[color:var(--color-border)]">
+            {(["swatch", "constellation", "hybrid"] as const).map((m, i) => (
+              <button
+                key={m}
+                onClick={() => setAtlasMode(m)}
+                className={cn(
+                  "h-7 px-2.5 font-mono text-[10.5px] font-semibold tracking-[0.08em] uppercase",
+                  i > 0 && "border-l border-[color:var(--color-border)]",
+                  atlasMode === m
+                    ? "bg-[color:var(--color-ink)] text-[color:var(--color-surface)]"
+                    : "text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
+                )}
+                title={
+                  m === "swatch"
+                    ? "Plain averaged swatches"
+                    : m === "constellation"
+                      ? "Per-cell Lab scatter of all runs"
+                      : "Constellation overlaid on dimmed swatch"
+                }
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        ) : null
+      }
     >
       <div className="grid grid-cols-[minmax(0,1fr)_220px] gap-4 items-start">
         <AtlasGrid
@@ -463,6 +579,8 @@ function Viz1Atlas(props: Viz1Props) {
           }}
           xParam={String(props.test.spec.x_param)}
           yParam={String(props.test.spec.y_param)}
+          atlasMode={atlasMode}
+          constellationScale={constellationScale}
         />
         <AtlasRail
           activeAxis={activeAxis}
@@ -491,6 +609,8 @@ function AtlasGrid({
   onPin,
   xParam,
   yParam,
+  atlasMode,
+  constellationScale,
 }: {
   grid: Grid;
   values: (number | null)[][];
@@ -502,6 +622,8 @@ function AtlasGrid({
   onPin: (p: { row: number; col: number }) => void;
   xParam: string;
   yParam: string;
+  atlasMode: "swatch" | "constellation" | "hybrid";
+  constellationScale: number;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<{ row: number; col: number } | null>(null);
@@ -663,6 +785,12 @@ function AtlasGrid({
                 />
               );
             }
+            const bgOpacity =
+              atlasMode === "constellation"
+                ? 0.35
+                : atlasMode === "hybrid"
+                  ? 0.55
+                  : 1;
             return (
               <g
                 key={`${r}-${c}`}
@@ -674,7 +802,18 @@ function AtlasGrid({
                 <rect
                   x={x} y={y} width={cellW} height={cellH}
                   fill={cell.hex}
+                  opacity={bgOpacity}
                 />
+                {atlasMode !== "swatch" && (
+                  <ConstellationGlyph
+                    cell={cell}
+                    x={x}
+                    y={y}
+                    cellW={cellW}
+                    cellH={cellH}
+                    scale={constellationScale}
+                  />
+                )}
                 {(isPinned || isHover) && (
                   <rect
                     x={x + 0.5} y={y + 0.5}
@@ -1949,6 +2088,80 @@ function fmtTick(v: number): string {
   if (abs >= 100) return v.toFixed(0);
   if (abs >= 10) return v.toFixed(1);
   return v.toFixed(2);
+}
+
+// V3-A glyph. Each cell becomes a miniature Lab a*-by-b* scatter:
+// white dots with slate borders for each per-result sample, orange
+// centroid, thin slate axis cross whose arms = max a*/b* spread
+// across this cell's samples. ``scale`` is the shared global
+// px-per-ΔE factor so dot clouds across cells compare honestly.
+// Single-result cells collapse to just the centroid dot.
+function ConstellationGlyph({
+  cell,
+  x,
+  y,
+  cellW,
+  cellH,
+  scale,
+}: {
+  cell: Cell;
+  x: number;
+  y: number;
+  cellW: number;
+  cellH: number;
+  scale: number;
+}) {
+  const per = cell.swatch.per_result ?? [];
+  const cx = x + cellW / 2;
+  const cy = y + cellH / 2;
+  if (per.length < 2 || scale <= 0) {
+    return (
+      <circle cx={cx} cy={cy} r={1.8} fill="var(--color-primary)" pointerEvents="none" />
+    );
+  }
+  const spread = computeCellSpread(cell.swatch);
+  // Cloud extent in screen px (cap at cell half so it never leaves
+  // the cell even when the global scale is generous).
+  const axisLenPx = Math.min(
+    cellW * 0.42,
+    cellH * 0.42,
+    Math.max(6, spread.maxSpread * scale),
+  );
+  const dotR = Math.max(1.2, Math.min(2.4, cellW * 0.08));
+  return (
+    <g pointerEvents="none">
+      {/* Axis cross = local scalebar. Slate, faint. */}
+      <line
+        x1={cx - axisLenPx} y1={cy}
+        x2={cx + axisLenPx} y2={cy}
+        stroke="var(--color-ink)" strokeOpacity={0.35} strokeWidth={0.6}
+      />
+      <line
+        x1={cx} y1={cy - axisLenPx}
+        x2={cx} y2={cy + axisLenPx}
+        stroke="var(--color-ink)" strokeOpacity={0.35} strokeWidth={0.6}
+      />
+      {/* Per-result dots placed as (a* - centroid_a, b* - centroid_b)
+          offsets. L* drops out — it's encoded in the cell background. */}
+      {spread.labs.map((lab, i) => {
+        const da = (lab[1] - spread.centroidLab[1]) * scale;
+        const db = (lab[2] - spread.centroidLab[2]) * scale;
+        return (
+          <circle
+            key={i}
+            cx={cx + da}
+            cy={cy - db}
+            r={dotR}
+            fill="white"
+            stroke="var(--color-ink)"
+            strokeWidth={0.5}
+          />
+        );
+      })}
+      {/* Centroid dot — always last so it sits on top. */}
+      <circle cx={cx} cy={cy} r={Math.max(1.4, dotR * 1.2)} fill="var(--color-primary)" />
+    </g>
+  );
 }
 
 /* ========================================================================
