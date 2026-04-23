@@ -31,7 +31,7 @@ import type {
 } from "../types";
 import { HatchPassesEditor } from "./HatchPassesEditor";
 import { MergeColorsDialog } from "./MergeColorsDialog";
-import { mergeColorsInSvg, type MergeGroup } from "../svg/mergeColors";
+import { mergeColorsInSvg, computeParamMergeGroups, type MergeGroup } from "../svg/mergeColors";
 import { validateLayerSpec } from "../validation";
 import type { LibraryState } from "../library";
 import { listMaterials, listPresets } from "../api/library";
@@ -133,6 +133,7 @@ export function SvgLayersPage() {
   const [rawDetected, setRawDetected] = useState<DetectedLayer[]>([]);
   const [originalSvgContent, setOriginalSvgContent] = useState<string | null>(null);
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [collapseIdenticalLayers, setCollapseIdenticalLayers] = useState(true);
   const [filename, setFilename] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [isolateSelected, setIsolateSelected] = useState(false);
@@ -178,6 +179,13 @@ export function SvgLayersPage() {
     for (const d of rawDetected) out[d.color] = d.shape_count;
     return out;
   }, [rawDetected]);
+
+  const paramGroups = useMemo(
+    () => (collapseIdenticalLayers ? computeParamMergeGroups(request.layers) : []),
+    [collapseIdenticalLayers, request.layers],
+  );
+  const collapseBefore = paramGroups.reduce((n, g) => n + g.length, 0);
+  const collapseAfter = paramGroups.length;
 
   useEffect(() => {
     if (!request.subtract_overlaps || !request.svg_content) {
@@ -445,12 +453,33 @@ export function SvgLayersPage() {
     setErrorMessage(undefined);
     setGenerating(true);
     try {
-      await svgLayersAndDownload(request);
+      await svgLayersAndDownload(buildGenerateRequest());
     } catch (err) {
       setErrorMessage((err as Error).message);
     } finally {
       setGenerating(false);
     }
+  }
+
+  function buildGenerateRequest(): SvgLayersRequest {
+    if (!collapseIdenticalLayers) return request;
+    const groups = computeParamMergeGroups(request.layers.filter((l) => l.enabled));
+    if (groups.length === 0) return request;
+
+    const mergeGroups: MergeGroup[] = groups.map((members) => ({
+      sourceColors: members.map((m) => m.color),
+      representativeColor: members[0].color,
+    }));
+    const representatives = new Set(mergeGroups.map((g) => g.representativeColor));
+    const loserColors = new Set(
+      mergeGroups.flatMap((g) => g.sourceColors.filter((c) => c !== g.representativeColor)),
+    );
+
+    const collapsedSvg = mergeColorsInSvg(request.svg_content, mergeGroups);
+    const collapsedLayers = request.layers.filter(
+      (l) => !loserColors.has(l.color) || representatives.has(l.color),
+    );
+    return { ...request, svg_content: collapsedSvg, layers: collapsedLayers };
   }
 
   const hasLayers = request.layers.length > 0;
@@ -792,6 +821,25 @@ export function SvgLayersPage() {
                   />
                 </Field>
               </div>
+              <label className="flex items-start justify-between gap-2 text-[12.5px] text-[color:var(--color-ink-muted)]">
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={collapseIdenticalLayers}
+                    onChange={(e) => setCollapseIdenticalLayers(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Collapse identical layers
+                    <span className="block text-[11px] text-[color:var(--color-ink-subtle)]">
+                      Layers with the same params merge into one output.
+                    </span>
+                  </span>
+                </div>
+                {collapseBefore > 0 && collapseAfter > 0 && (
+                  <Badge variant="accent" size="sm">{collapseBefore}→{collapseAfter}</Badge>
+                )}
+              </label>
               <label className="flex items-start gap-2 text-[12.5px] text-[color:var(--color-ink-muted)]">
                 <input
                   type="checkbox"
