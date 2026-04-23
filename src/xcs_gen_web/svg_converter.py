@@ -18,6 +18,7 @@ from xcs_gen.svg_source import parse_svg
 
 from .converter import _to_processing_params
 from .schemas import SvgStackRequest
+from .svg_guard import assert_shape_count
 from .svg_subtract import subtract_overlapping_shapes
 
 
@@ -132,6 +133,7 @@ def svg_stack_to_xcs(request: SvgStackRequest) -> XCSProject:
 
 def svg_stack_to_xcs_bytes(request: SvgStackRequest) -> bytes:
     """Convert the request into .xcs file bytes."""
+    assert_shape_count(request.svg_content)
     xcs = svg_stack_to_xcs(request)
     data = build_xcs(xcs)
     return json.dumps(data, separators=(",", ":")).encode("utf-8")

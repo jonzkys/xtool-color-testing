@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import Settings
 from .deps import get_current_user
+from .logging_config import configure_logging
 from .security import (
     MaxBodySizeMiddleware,
     RegistrationRateLimiter,
@@ -224,6 +225,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """
     if settings is None:
         settings = Settings.from_env()
+    # Configure logging before anything that might log (migrations emit
+    # INFO lines; without this call they'd be swallowed).
+    configure_logging()
     if settings.auto_migrate:
         _run_migrations()
     # Startup sanity check for common misconfiguration.

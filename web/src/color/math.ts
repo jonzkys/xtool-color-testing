@@ -92,6 +92,68 @@ export function deltaE76(a: Lab, b: Lab): number {
   return Math.sqrt(dL * dL + da * da + db * db);
 }
 
+/** CIEDE2000 color difference (Sharma et al. 2005).
+ *
+ *  Ported verbatim from ``src/xcs_gen_web/palette.py::delta_e_2000``. Used on
+ *  the client so "match all layers to palette" doesn't fire N parallel API
+ *  calls — we load the user's palette once and do the math locally.
+ */
+export function deltaE2000(a: Lab, b: Lab): number {
+  const [L1, a1, b1] = a;
+  const [L2, a2, b2] = b;
+
+  const avgL = (L1 + L2) / 2;
+  const C1 = Math.sqrt(a1 * a1 + b1 * b1);
+  const C2 = Math.sqrt(a2 * a2 + b2 * b2);
+  const avgC = (C1 + C2) / 2;
+
+  const avgC7 = Math.pow(avgC, 7);
+  const G = 0.5 * (1 - Math.sqrt(avgC7 / (avgC7 + Math.pow(25, 7))));
+  const a1p = (1 + G) * a1;
+  const a2p = (1 + G) * a2;
+
+  const C1p = Math.sqrt(a1p * a1p + b1 * b1);
+  const C2p = Math.sqrt(a2p * a2p + b2 * b2);
+  const avgCp = (C1p + C2p) / 2;
+
+  const rad = Math.PI / 180;
+  const deg = 180 / Math.PI;
+  const h1p = ((Math.atan2(b1, a1p) * deg) % 360 + 360) % 360;
+  const h2p = ((Math.atan2(b2, a2p) * deg) % 360 + 360) % 360;
+
+  const avgHp = Math.abs(h1p - h2p) > 180 ? (h1p + h2p + 360) / 2 : (h1p + h2p) / 2;
+
+  const T =
+    1 -
+    0.17 * Math.cos((avgHp - 30) * rad) +
+    0.24 * Math.cos(2 * avgHp * rad) +
+    0.32 * Math.cos((3 * avgHp + 6) * rad) -
+    0.20 * Math.cos((4 * avgHp - 63) * rad);
+
+  let dhp = h2p - h1p;
+  if (Math.abs(dhp) > 180) dhp -= dhp > 0 ? 360 : -360;
+
+  const dLp = L2 - L1;
+  const dCp = C2p - C1p;
+  const dHp = 2 * Math.sqrt(C1p * C2p) * Math.sin((dhp / 2) * rad);
+
+  const SL = 1 + (0.015 * Math.pow(avgL - 50, 2)) / Math.sqrt(20 + Math.pow(avgL - 50, 2));
+  const SC = 1 + 0.045 * avgCp;
+  const SH = 1 + 0.015 * avgCp * T;
+
+  const dTheta = 30 * Math.exp(-Math.pow((avgHp - 275) / 25, 2));
+  const avgCp7 = Math.pow(avgCp, 7);
+  const RC = 2 * Math.sqrt(avgCp7 / (avgCp7 + Math.pow(25, 7)));
+  const RT = -RC * Math.sin(2 * dTheta * rad);
+
+  return Math.sqrt(
+    Math.pow(dLp / SL, 2) +
+      Math.pow(dCp / SC, 2) +
+      Math.pow(dHp / SH, 2) +
+      RT * (dCp / SC) * (dHp / SH),
+  );
+}
+
 /* ---------------- PCA -------------------------------------------------- */
 
 export interface PcaResult {

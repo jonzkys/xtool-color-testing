@@ -11,7 +11,9 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from collections import Counter
+from contextlib import nullcontext
 from dataclasses import replace
 
 from xcs_gen.builder import build_xcs
@@ -27,7 +29,9 @@ from .schemas import (
     SvgPreviewRequest,
     SvgPreviewResponse,
 )
+from .svg_guard import assert_shape_count
 from .svg_subtract import subtract_overlapping_shapes
+from .timing import TimingReport
 
 
 def _write_svg_to_temp(svg_content: str) -> str:
@@ -44,6 +48,7 @@ def detect_svg_layers(request: SvgDetectRequest) -> list[DetectedLayer]:
     appears in the source file. Each color is reported once with the count
     of shapes using it and whether it shows up as a fill or only a stroke.
     """
+    assert_shape_count(request.svg_content)
     temp_path = _write_svg_to_temp(request.svg_content)
     try:
         parsed = parse_svg(
@@ -104,6 +109,7 @@ def build_svg_layers_project(
     request: SvgLayersRequest,
     *,
     max_segments: int = 50000,
+    report: TimingReport | None = None,
 ) -> XCSProject:
     """Parse SVG, group shapes by color, emit Paths or hatch Lines per layer.
 
@@ -117,20 +123,24 @@ def build_svg_layers_project(
         max_segments: Hard cap on total hatched Line segments.  Raises
             ValueError if exceeded (with the worst-offending color in the
             message).
+        report: Optional timing collector; phases are recorded if provided.
 
     Raises:
         ValueError: on parse failure, no shapes, no enabled layers, or
             hatched output exceeding *max_segments*.
     """
+    _phase = report.phase if report else (lambda _name: nullcontext())
+
     temp_path = _write_svg_to_temp(request.svg_content)
     try:
-        parse_result = parse_svg(
-            temp_path,
-            total_width=request.width_mm,
-            total_height=request.height_mm,
-            start_x=request.start_x,
-            start_y=request.start_y,
-        )
+        with _phase("parse"):
+            parse_result = parse_svg(
+                temp_path,
+                total_width=request.width_mm,
+                total_height=request.height_mm,
+                start_x=request.start_x,
+                start_y=request.start_y,
+            )
     finally:
         try:
             os.unlink(temp_path)
@@ -152,7 +162,8 @@ def build_svg_layers_project(
     # design tools treat hidden layers. Then we filter to enabled colors.
     shapes = list(parse_result.shapes)
     if request.subtract_overlaps:
-        shapes = subtract_overlapping_shapes(shapes)
+        with _phase("subtract"):
+            shapes = subtract_overlapping_shapes(shapes)
 
     shapes = [
         shape for shape in shapes
@@ -170,6 +181,10 @@ def build_svg_layers_project(
     segment_count = 0
     per_color_counts: dict[str, int] = {}
 
+    # Manual phase timer here instead of ``with report.phase("emit"):``
+    # because the loop body is long and re-indenting it just for the
+    # context manager noise isn't worth it.
+    _emit_start = time.perf_counter()
     # One Path per shape using its layer's params. HATCHED_LINES shapes are
     # handled separately below (no Path emitted for them).
     for shape in shapes:
@@ -262,6 +277,10 @@ def build_svg_layers_project(
         )
         project.paths.append(p)
 
+    if report is not None:
+        report.phases.append(("emit", time.perf_counter() - _emit_start))
+        report.set("hatch_segments", segment_count)
+
     # Multi-pass behaviour is now handled by XCS natively via
     # ProcessingParams.repeat + angle_type + cross_angle on each layer's
     # params (piped through _to_processing_params via layer.angle_mode).
@@ -292,6 +311,7 @@ def svg_preview(request: SvgPreviewRequest) -> SvgPreviewResponse:
     shape, using the shape's original fill color. viewBox matches the
     ParseResult's output dims so the UI can drop it into the preview pane.
     """
+    assert_shape_count(request.svg_content)
     temp_path = _write_svg_to_temp(request.svg_content)
     try:
         parsed = parse_svg(
@@ -350,6 +370,27 @@ def svg_preview(request: SvgPreviewRequest) -> SvgPreviewResponse:
 
 def svg_layers_to_xcs_bytes(request: SvgLayersRequest) -> bytes:
     """Convert to .xcs file bytes (JSON-encoded)."""
-    xcs = build_svg_layers_project(request)
-    data = build_xcs(xcs)
-    return json.dumps(data, separators=(",", ":")).encode("utf-8")
+    assert_shape_count(request.svg_content)
+
+    # Per-phase timing so a slow request log-line tells us which step
+    # (parse vs subtract vs emit vs json.dumps) caused it. Especially
+    # useful when the pipeline hits a gateway timeout — the report line
+    # is written even on failure (emit() still runs in the finally
+    # equivalent below, but we also want it on success).
+    report = TimingReport("svg-layers")
+    report.set("svg_bytes", len(request.svg_content))
+    report.set("layers_enabled", sum(1 for l in request.layers if l.enabled))
+    report.set("subtract", request.subtract_overlaps)
+
+    try:
+        xcs = build_svg_layers_project(request, report=report)
+        report.set("paths", len(xcs.paths))
+        report.set("extra_displays", len(xcs.extra_displays))
+        with report.phase("build_xcs"):
+            data = build_xcs(xcs)
+        with report.phase("json.dumps"):
+            body = json.dumps(data, separators=(",", ":")).encode("utf-8")
+        report.set("output_bytes", len(body))
+        return body
+    finally:
+        report.emit()

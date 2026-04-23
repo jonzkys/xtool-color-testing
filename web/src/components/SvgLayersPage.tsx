@@ -23,6 +23,7 @@ import type {
   BaseParams,
   DetectedLayer,
   LayerSpec,
+  PaletteEntry,
   PaletteQueryResult,
   SvgLayersRequest,
   SvgProcessingType,
@@ -32,7 +33,8 @@ import { validateLayerSpec } from "../validation";
 import type { LibraryState } from "../library";
 import { listMaterials, listPresets } from "../api/library";
 import { MaterialPresetPicker } from "./MaterialPresetPicker";
-import { queryPalette } from "../api/palette";
+import { listPaletteEntries, queryPalette } from "../api/palette";
+import { deltaE2000, hexToLab, type Lab } from "../color/math";
 import {
   Badge,
   Button,
@@ -148,6 +150,12 @@ export function SvgLayersPage() {
   );
   const [autoApplying, setAutoApplying] = useState(false);
   const [autoApplyMessage, setAutoApplyMessage] = useState<string | undefined>();
+  // Cache the full palette per material_id. Auto-match used to fire one
+  // /api/palette/query per layer (N parallel requests, each running
+  // CIEDE2000 across the whole palette on the server). With the cache we
+  // do one /api/palette fetch and run CIEDE2000 locally — zero per-layer
+  // server CPU, zero network RTT per layer.
+  const paletteCacheRef = useRef<Map<string, PaletteEntry[]>>(new Map());
 
   const selected = useMemo(
     () => request.layers.find((l) => l.color === selectedColor) ?? null,
@@ -164,20 +172,28 @@ export function SvgLayersPage() {
       setSubtractedSvg(null);
       return;
     }
+    // Debounce the preview call: every width/enable-toggle change fires this
+    // effect, and /api/svg-preview runs shapely unary_union + difference on
+    // the server. Without a delay, dragging a slider queues one request per
+    // tick and pegs a backend CPU. 300 ms feels instant to the user and
+    // collapses a drag into ~1 request.
     let cancelled = false;
-    previewSvg(request.svg_content, {
-      enabled_colors: [...enabledColors],
-      subtract_overlaps: true,
-      width_mm: request.width_mm,
-    })
-      .then((svg) => {
-        if (!cancelled) setSubtractedSvg(svg);
+    const timer = window.setTimeout(() => {
+      previewSvg(request.svg_content, {
+        enabled_colors: [...enabledColors],
+        subtract_overlaps: true,
+        width_mm: request.width_mm,
       })
-      .catch(() => {
-        if (!cancelled) setSubtractedSvg(null);
-      });
+        .then((svg) => {
+          if (!cancelled) setSubtractedSvg(svg);
+        })
+        .catch(() => {
+          if (!cancelled) setSubtractedSvg(null);
+        });
+    }, 300);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [request.subtract_overlaps, request.svg_content, request.width_mm, enabledColors]);
 
@@ -226,14 +242,35 @@ export function SvgLayersPage() {
     setAutoApplying(true);
     setAutoApplyMessage(undefined);
     try {
-      const results = await Promise.all(
-        request.layers.map(async (l) => {
-          if (!/^#[0-9a-fA-F]{6}$/.test(l.color)) return { layer: l, best: null };
-          const matIdNum = request.material_id ? Number(request.material_id) : undefined;
-          const res = await queryPalette(l.color, { limit: 1, material_id: matIdNum });
-          return { layer: l, best: res[0] ?? null };
-        }),
-      );
+      const matIdNum = Number(request.material_id);
+      const cacheKey = String(matIdNum);
+      let palette = paletteCacheRef.current.get(cacheKey);
+      if (!palette) {
+        palette = await listPaletteEntries(matIdNum);
+        paletteCacheRef.current.set(cacheKey, palette);
+      }
+      const results = request.layers.map((l) => {
+        if (!/^#[0-9a-fA-F]{6}$/.test(l.color) || palette!.length === 0) {
+          return { layer: l, best: null as PaletteQueryResult | null };
+        }
+        const target = hexToLab(l.color);
+        let bestEntry: PaletteEntry | null = null;
+        let bestDelta = Infinity;
+        for (const entry of palette!) {
+          const entryLab = entry.lab.length >= 3
+            ? ([entry.lab[0], entry.lab[1], entry.lab[2]] as Lab)
+            : hexToLab(entry.hex);
+          const d = deltaE2000(target, entryLab);
+          if (d < bestDelta) {
+            bestDelta = d;
+            bestEntry = entry;
+          }
+        }
+        return {
+          layer: l,
+          best: bestEntry ? { entry: bestEntry, delta_e: bestDelta } : null,
+        };
+      });
 
       let applied = 0;
       const nextPredicted: Record<string, string> = { ...predictedByColor };
