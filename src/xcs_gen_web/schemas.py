@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from xcs_gen.pulse_width import ALLOWED_PULSE_WIDTHS, snap_pulse_width
 
 
 class BaseParams(BaseModel):
@@ -15,8 +17,24 @@ class BaseParams(BaseModel):
     frequency: int = Field(ge=1)
     density: int = Field(ge=1)
     passes: int = Field(ge=1)
+    # F2 Ultra MOPA accepts only a fixed preset list of pulse widths —
+    # see ``xcs_gen.pulse_width``. We coerce out-of-list values to the
+    # nearest allowed one so legacy DB rows and forgiving API callers
+    # don't 422; the machine would reject a non-preset value anyway.
     pulse_width: int = Field(ge=1)
     laser: Literal["red", "blue"]
+
+    @field_validator("pulse_width", mode="before")
+    @classmethod
+    def _snap_pulse_width(cls, v: object) -> int:
+        if isinstance(v, (int, float)) and int(v) in ALLOWED_PULSE_WIDTHS:
+            return int(v)
+        try:
+            return snap_pulse_width(float(v))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"pulse_width must be one of {ALLOWED_PULSE_WIDTHS}, got {v!r}"
+            )
     # Starting scan angle in degrees. 90 = vertical scan (default, efficient
     # for narrow elements); 0 = horizontal. For angle_mode="incremental" XCS
     # rotates from this angle between passes; for "crosshatch" it alternates

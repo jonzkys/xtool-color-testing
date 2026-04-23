@@ -10,6 +10,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { defaultBaseParams, defaultHatchPass } from "../defaults";
+import { PulseWidthSelect } from "./PulseWidthSelect";
 import {
   DEFAULT_RASTER_TRACE_OPTIONS,
   previewSvg,
@@ -1130,10 +1131,8 @@ function LayerEditor({
             min={1}
             onChange={(v) => onBasePatch({ passes: v })}
           />
-          <NumberField
-            label="Pulse width (ns)"
+          <PulseWidthSelect
             value={layer.base_params.pulse_width}
-            integer
             onChange={(v) => onBasePatch({ pulse_width: v })}
           />
           <div className="col-span-2">

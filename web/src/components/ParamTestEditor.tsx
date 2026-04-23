@@ -3,6 +3,12 @@ import type { ParamName, RegistrationMode, TestSpec } from "../types";
 import { PARAM_NAMES } from "../types";
 import { squareCellHeight } from "../specUtils";
 import { Field, NumberField, Section, Select } from "../ui";
+import { PulseWidthSelect } from "./PulseWidthSelect";
+import {
+  ALLOWED_PULSE_WIDTHS,
+  allowedPulseWidthsInRange,
+  snapPulseWidth,
+} from "../laser/pulseWidths";
 
 interface Props {
   spec: TestSpec;
@@ -59,30 +65,41 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [] }: Props) 
             ))}
           </Select>
         </Field>
-        <div className="grid grid-cols-3 gap-3">
-          <NumberField
-            label="Min"
-            value={t.x_min}
-            onChange={(v) => updateSpec({ x_min: v })}
-            issue={findIssue("x_min")}
-            disabled={locked}
+        {t.x_param === "pulse_width" ? (
+          <PulseWidthAxisFields
+            min={t.x_min}
+            max={t.x_max}
+            steps={t.x_steps}
+            locked={locked}
+            onChange={(patch) => updateSpec(patch as Partial<TestSpec>)}
+            fieldPrefix="x"
           />
-          <NumberField
-            label="Max"
-            value={t.x_max}
-            onChange={(v) => updateSpec({ x_max: v })}
-            disabled={locked}
-          />
-          <NumberField
-            label="Steps"
-            value={t.x_steps}
-            integer
-            min={2}
-            onChange={(v) => updateSpec({ x_steps: v })}
-            issue={findIssue("x_steps")}
-            disabled={locked}
-          />
-        </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-3">
+            <NumberField
+              label="Min"
+              value={t.x_min}
+              onChange={(v) => updateSpec({ x_min: v })}
+              issue={findIssue("x_min")}
+              disabled={locked}
+            />
+            <NumberField
+              label="Max"
+              value={t.x_max}
+              onChange={(v) => updateSpec({ x_max: v })}
+              disabled={locked}
+            />
+            <NumberField
+              label="Steps"
+              value={t.x_steps}
+              integer
+              min={2}
+              onChange={(v) => updateSpec({ x_steps: v })}
+              issue={findIssue("x_steps")}
+              disabled={locked}
+            />
+          </div>
+        )}
       </Section>
 
       <Section title="Y axis (optional)">
@@ -107,7 +124,16 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [] }: Props) 
             ))}
           </Select>
         </Field>
-        {t.y_param && (
+        {t.y_param === "pulse_width" ? (
+          <PulseWidthAxisFields
+            min={t.y_min ?? ALLOWED_PULSE_WIDTHS[0]}
+            max={t.y_max ?? ALLOWED_PULSE_WIDTHS[ALLOWED_PULSE_WIDTHS.length - 1]}
+            steps={t.y_steps ?? 2}
+            locked={locked}
+            onChange={(patch) => updateSpec(patch as Partial<TestSpec>)}
+            fieldPrefix="y"
+          />
+        ) : t.y_param ? (
           <div className="grid grid-cols-3 gap-3">
             <NumberField
               label="Min"
@@ -130,7 +156,7 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [] }: Props) 
               disabled={locked}
             />
           </div>
-        )}
+        ) : null}
       </Section>
 
       <Section title="Layout">
@@ -251,10 +277,8 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [] }: Props) 
                 : undefined
             }
           />
-          <NumberField
-            label="Pulse width (ns)"
+          <PulseWidthSelect
             value={t.base_params.pulse_width}
-            integer
             onChange={(v) => updateBase({ pulse_width: v })}
           />
           <Field label="Laser">
@@ -388,5 +412,101 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [] }: Props) 
         </p>
       </Section>
     </div>
+  );
+}
+
+/** Axis-fields for ``pulse_width``-swept axes. The laser only accepts a
+ *  preset list, so we can't use a free-form min/max + steps form — we
+ *  render three dropdowns constrained to the preset values and cap the
+ *  step count to the number of presets inside the selected range.
+ *
+ *  ``fieldPrefix`` is ``"x"`` or ``"y"``; the component emits
+ *  ``updateSpec({ [prefix_min]: ..., [prefix_max]: ..., [prefix_steps]: ... })``
+ *  patches so the parent's single updateSpec handler stays unchanged.
+ */
+function PulseWidthAxisFields({
+  min,
+  max,
+  steps,
+  locked,
+  onChange,
+  fieldPrefix,
+}: {
+  min: number;
+  max: number;
+  steps: number;
+  locked: boolean;
+  onChange: (patch: Record<string, number>) => void;
+  fieldPrefix: "x" | "y";
+}) {
+  const snappedMin = snapPulseWidth(min);
+  const snappedMax = snapPulseWidth(max);
+  // Effective range used for the step cap — always keep min ≤ max.
+  const lo = Math.min(snappedMin, snappedMax);
+  const hi = Math.max(snappedMin, snappedMax);
+  const inRange = allowedPulseWidthsInRange(lo, hi);
+  const maxSteps = Math.max(2, inRange.length);
+  const clampedSteps = Math.max(2, Math.min(steps, maxSteps));
+  const exceeded = steps > maxSteps;
+
+  return (
+    <>
+      <div className="grid grid-cols-3 gap-3">
+        <Field label="Min">
+          <Select
+            value={String(snappedMin)}
+            disabled={locked}
+            onChange={(e) =>
+              onChange({ [`${fieldPrefix}_min`]: Number(e.target.value) })
+            }
+          >
+            {ALLOWED_PULSE_WIDTHS.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Max">
+          <Select
+            value={String(snappedMax)}
+            disabled={locked}
+            onChange={(e) =>
+              onChange({ [`${fieldPrefix}_max`]: Number(e.target.value) })
+            }
+          >
+            {ALLOWED_PULSE_WIDTHS.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <NumberField
+          label={`Steps (max ${maxSteps})`}
+          value={clampedSteps}
+          integer
+          min={2}
+          max={maxSteps}
+          disabled={locked}
+          onChange={(v) =>
+            onChange({
+              [`${fieldPrefix}_steps`]: Math.max(2, Math.min(v, maxSteps)),
+            })
+          }
+        />
+      </div>
+      {exceeded && (
+        <p className="mt-2 font-mono text-[11px] text-[color:var(--color-primary)]">
+          Capped to {maxSteps} — the MOPA only has that many preset widths
+          between {lo} and {hi} ns. Widen the range or lower the step
+          count.
+        </p>
+      )}
+      <p className="mt-1 text-[11.5px] text-[color:var(--color-ink-muted)] leading-relaxed">
+        Pulse width is quantised to the F2 Ultra's preset list
+        (2, 4, 6, 9, 13, 20, 30, 45, 60, 80, 100, 150, 200, 250, 350, 500).
+      </p>
+    </>
   );
 }

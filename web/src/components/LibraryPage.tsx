@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from "lucide-react";
 import { defaultBaseParams } from "../defaults";
+import { PulseWidthSelect } from "./PulseWidthSelect";
 import type { Material, Preset } from "../library";
 import {
   createMaterial,
@@ -517,12 +518,13 @@ function PresetCard({
           onChange={(v) => setDraftParams((p) => ({ ...p, passes: v }))}
           onCommit={(v) => commitParam("passes", v)}
         />
-        <NumberField
+        <PulseWidthSelect
           label="Pulse width"
           value={draftParams.pulse_width}
-          integer
-          onChange={(v) => setDraftParams((p) => ({ ...p, pulse_width: v }))}
-          onCommit={(v) => commitParam("pulse_width", v)}
+          onChange={(v) => {
+            setDraftParams((p) => ({ ...p, pulse_width: v }));
+            commitParam("pulse_width", v);
+          }}
         />
         <div className="col-span-2">
           <Field label="Laser">

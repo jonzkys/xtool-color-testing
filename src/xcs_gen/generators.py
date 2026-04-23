@@ -8,6 +8,7 @@ from dataclasses import replace
 from .builder import build_device_entry, build_line_display
 from .capture.layout import compute_layout, registration_reservation_mm
 from .capture.marker_render import emit_registration_markers
+from .pulse_width import allowed_pulse_widths_in_range, snap_pulse_width
 from .model import (
     ANNOTATION_LAYER_COLOR,
     GRADIENT_LAYER_COLOR,
@@ -154,6 +155,16 @@ def generate_gradient(
 
     is_dual = y_param is not None and y_steps > 1
 
+    # Axes that name ``pulse_width`` can't take arbitrary N — the
+    # machine only accepts a preset list. Cap both the step count and
+    # the concrete values to the allowed ones before anything else
+    # consumes x_steps / y_steps (summary line, layout math, label
+    # generation). Callers should already enforce this at the API
+    # boundary, but the defensive cap keeps the generator honest.
+    x_steps = effective_step_count(x_param, x_min, x_max, x_steps)
+    if is_dual and y_param is not None:
+        y_steps = effective_step_count(y_param, y_min, y_max, y_steps)
+
     project = XCSProject()
 
     # Reserve space above gradient for summary text
@@ -193,8 +204,8 @@ def generate_gradient(
     if is_dual:
         _generate_dual_axis(
             project,
-            x_param=x_param, x_values=_linspace(x_min, x_max, x_steps),
-            y_param=y_param, y_values=_linspace(y_min, y_max, y_steps),
+            x_param=x_param, x_values=_axis_values(x_param, x_min, x_max, x_steps),
+            y_param=y_param, y_values=_axis_values(y_param, y_min, y_max, y_steps),
             x_steps=x_steps, y_steps=y_steps,
             total_width=total_width, total_height=total_height,
             gap=gap, start_x=start_x, start_y=gradient_start_y,
@@ -207,7 +218,7 @@ def generate_gradient(
     else:
         _generate_wrapped(
             project,
-            x_param=x_param, x_values=_linspace(x_min, x_max, x_steps),
+            x_param=x_param, x_values=_axis_values(x_param, x_min, x_max, x_steps),
             x_steps=x_steps, rows=rows, row_gap=row_gap,
             total_width=total_width, row_height=total_height,
             gap=gap, start_x=start_x, start_y=gradient_start_y,
@@ -848,6 +859,40 @@ def _linspace(start: float, stop: float, n: int) -> list[float]:
         return [start]
     step = (stop - start) / (n - 1)
     return [start + i * step for i in range(n)]
+
+
+def _axis_values(param: str, lo: float, hi: float, n: int) -> list[float]:
+    """Return the concrete values used along a sweep axis.
+
+    For general params this is just a linear interpolation. For
+    ``pulse_width`` the laser only accepts a fixed preset list, so we
+    step through the allowed values inside ``[lo, hi]`` — the axis may
+    end up with fewer points than ``n`` requested (enforced by
+    :func:`effective_step_count`, which the caller uses to keep
+    ``x_steps`` / ``y_steps`` in sync with reality).
+    """
+    if param == "pulse_width":
+        allowed = allowed_pulse_widths_in_range(lo, hi)
+        if not allowed:
+            # Nothing in range — fall back to the nearest single value
+            # rather than emitting an empty gradient. This matches the
+            # frontend's "warn + cap" UX rather than crashing the
+            # caller.
+            return [float(snap_pulse_width(lo))]
+        return [float(v) for v in allowed[:n]]
+    return _linspace(lo, hi, n)
+
+
+def effective_step_count(param: str, lo: float, hi: float, requested: int) -> int:
+    """How many distinct sweep values we can actually produce for an axis.
+
+    General params honour ``requested`` verbatim. ``pulse_width`` gets
+    capped at the number of machine-allowed values inside the range.
+    """
+    if param == "pulse_width":
+        allowed = allowed_pulse_widths_in_range(lo, hi)
+        return max(1, min(requested, len(allowed) or 1))
+    return requested
 
 
 def generate_from_svg(

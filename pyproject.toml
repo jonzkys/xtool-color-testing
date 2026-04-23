@@ -75,6 +75,9 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Keep pytest out of git worktree subtrees so their src/ directories
+# don't shadow the main repo's ``xcs_gen_web`` package during imports.
+norecursedirs = [".worktrees", ".git", ".venv", "node_modules", "web"]
 filterwarnings = [
     "ignore::pytest.PytestCollectionWarning",
 ]

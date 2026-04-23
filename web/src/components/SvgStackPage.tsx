@@ -6,6 +6,7 @@ import type { SvgProcessingType, SvgStackRequest } from "../types";
 import type { LibraryState } from "../library";
 import { listMaterials, listPresets } from "../api/library";
 import { MaterialPresetPicker } from "./MaterialPresetPicker";
+import { PulseWidthSelect } from "./PulseWidthSelect";
 import {
   Button,
   Card,
@@ -306,10 +307,8 @@ export function SvgStackPage() {
                 min={1}
                 onChange={(v) => updateBase({ passes: v })}
               />
-              <NumberField
-                label="Pulse width (ns)"
+              <PulseWidthSelect
                 value={request.base_params.pulse_width}
-                integer
                 onChange={(v) => updateBase({ pulse_width: v })}
               />
               <div className="col-span-2">
