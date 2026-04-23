@@ -13,6 +13,7 @@ import { WelcomeDialog } from "./components/WelcomeDialog";
 import { getHealth } from "./api/users";
 import { hasStoredKey } from "./api/users";
 import { useRoute } from "./router";
+import { MobileUploadPage } from "./pages/MobileUploadPage";
 
 export default function App() {
   const [route, navigate] = useRoute();
@@ -42,6 +43,13 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  if (route.name === "mobile-upload") {
+    // Mobile page renders alone — no TopBar, no WelcomeDialog, no
+    // multi-user gate. The page authenticates via the mid in the URL
+    // and never touches the desktop's stored api_key.
+    return <MobileUploadPage mid={route.mid} />;
+  }
 
   const title =
     route.name === "tests"        ? "Tests"
