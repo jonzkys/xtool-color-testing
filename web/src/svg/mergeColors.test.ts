@@ -319,6 +319,23 @@ describe("computeParamMergeGroups", () => {
     expect(groups).toHaveLength(0);
   });
 
+  test("reordered hatch_passes prevents collapse for HATCHED_LINES", () => {
+    const layers = [
+      layer({
+        color: "#ff0000",
+        processing_type: "HATCHED_LINES",
+        hatch_passes: [defaultHatchPass(0), defaultHatchPass(90)],
+      }),
+      layer({
+        color: "#fb0002",
+        processing_type: "HATCHED_LINES",
+        hatch_passes: [defaultHatchPass(90), defaultHatchPass(0)],
+      }),
+    ];
+    const groups = computeParamMergeGroups(layers);
+    expect(groups).toHaveLength(0);
+  });
+
   test("different base params (power) prevents collapse", () => {
     const layers = [
       layer({ color: "#ff0000", base_params: baseParamsOf({ power: 50 }) }),
