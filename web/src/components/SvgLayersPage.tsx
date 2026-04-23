@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Combine,
   Download,
   Eye,
   EyeOff,
@@ -29,6 +30,8 @@ import type {
   SvgProcessingType,
 } from "../types";
 import { HatchPassesEditor } from "./HatchPassesEditor";
+import { MergeColorsDialog } from "./MergeColorsDialog";
+import { mergeColorsInSvg, type MergeGroup } from "../svg/mergeColors";
 import { validateLayerSpec } from "../validation";
 import type { LibraryState } from "../library";
 import { listMaterials, listPresets } from "../api/library";
@@ -128,6 +131,8 @@ export function SvgLayersPage() {
   const [request, setRequest] = useState<SvgLayersRequest>(() => defaultRequest(""));
   const [includeNearWhite, setIncludeNearWhite] = useState(false);
   const [rawDetected, setRawDetected] = useState<DetectedLayer[]>([]);
+  const [originalSvgContent, setOriginalSvgContent] = useState<string | null>(null);
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [filename, setFilename] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [isolateSelected, setIsolateSelected] = useState(false);
@@ -167,6 +172,12 @@ export function SvgLayersPage() {
     () => new Set(request.layers.filter((l) => l.enabled).map((l) => l.color)),
     [request.layers],
   );
+
+  const shapeCountsByColor = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const d of rawDetected) out[d.color] = d.shape_count;
+    return out;
+  }, [rawDetected]);
 
   useEffect(() => {
     if (!request.subtract_overlaps || !request.svg_content) {
@@ -301,6 +312,22 @@ export function SvgLayersPage() {
     }
   }
 
+  async function handleMergeConfirm(groups: MergeGroup[]) {
+    setMergeDialogOpen(false);
+    if (groups.length === 0) return;
+    try {
+      const merged = mergeColorsInSvg(request.svg_content, groups);
+      await applyDetectedSvg(merged, request.name);
+    } catch (err) {
+      setDetectError((err as Error).message);
+    }
+  }
+
+  async function handleResetMerges() {
+    if (!originalSvgContent) return;
+    await applyDetectedSvg(originalSvgContent, request.name);
+  }
+
   async function applyDetectedSvg(svgText: string, suggestedName: string) {
     setRequest((prev) => ({
       ...prev,
@@ -348,6 +375,7 @@ export function SvgLayersPage() {
     if (isSvg || !isRaster) {
       setRasterDataUrl(null);
       const text = await file.text();
+      setOriginalSvgContent(text);
       await applyDetectedSvg(text, suggested);
       return;
     }
@@ -357,6 +385,7 @@ export function SvgLayersPage() {
     setTracing(true);
     try {
       const svg = await traceImageToSvg(dataUrl, traceOptions);
+      setOriginalSvgContent(svg);
       await applyDetectedSvg(svg, suggested);
     } catch (err) {
       setDetectError((err as Error).message);
@@ -371,6 +400,7 @@ export function SvgLayersPage() {
     setTracing(true);
     try {
       const svg = await traceImageToSvg(rasterDataUrl, opts);
+      setOriginalSvgContent(svg);
       const currentName = request.name;
       await applyDetectedSvg(svg, currentName);
       setTracePending(false);
@@ -603,11 +633,38 @@ export function SvgLayersPage() {
             )}
 
             <Section
-              title={`Layers${hasLayers ? ` (${request.layers.length})` : ""}`}
+              title={
+                <span className="inline-flex items-center gap-2">
+                  <span>Layers{hasLayers ? ` (${request.layers.length})` : ""}</span>
+                  {originalSvgContent !== null &&
+                    originalSvgContent !== request.svg_content && (
+                      <button
+                        type="button"
+                        onClick={handleResetMerges}
+                        title="Reset to detected layers"
+                      >
+                        <Badge variant="accent" size="sm">merged · reset</Badge>
+                      </button>
+                    )}
+                </span>
+              }
               description={
                 hasLayers
                   ? "Top = drawn on top. Subtraction removes lower layers where upper ones cover."
                   : undefined
+              }
+              actions={
+                hasLayers && request.layers.length >= 2 ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setMergeDialogOpen(true)}
+                    title="Merge colors that are within a similarity threshold"
+                  >
+                    <Combine className="h-4 w-4" />
+                    Merge similar…
+                  </Button>
+                ) : undefined
               }
               dense
             >
@@ -827,6 +884,13 @@ export function SvgLayersPage() {
           </PreviewBlock>
         </div>
       </div>
+      <MergeColorsDialog
+        open={mergeDialogOpen}
+        onOpenChange={setMergeDialogOpen}
+        layers={request.layers}
+        shapeCountsByColor={shapeCountsByColor}
+        onConfirm={handleMergeConfirm}
+      />
     </PageContainer>
   );
 }
