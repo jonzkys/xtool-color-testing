@@ -449,7 +449,18 @@ function Viz1Atlas(props: Viz1Props) {
           threshold={threshold ?? (vmin + vmax) / 2}
           contourCount={contourCount}
           pinned={pinned}
-          onPin={(p) => setPinned(pinned && pinned.row === p.row && pinned.col === p.col ? null : p)}
+          onPin={(p) => {
+            const already = pinned && pinned.row === p.row && pinned.col === p.col;
+            setPinned(already ? null : p);
+            // Snap the contour threshold to the clicked cell's value on
+            // the active axis so the Atlas responds in-place — otherwise
+            // the effect of pinning is only visible after scrolling to
+            // the drift map / marginals.
+            if (!already) {
+              const cell = grid.cells[p.row][p.col];
+              if (cell != null) setThreshold(labAxisValue(cell.lab, activeAxis));
+            }
+          }}
           xParam={String(props.test.spec.x_param)}
           yParam={String(props.test.spec.y_param)}
         />
@@ -1720,11 +1731,14 @@ function marchingSquares(
       const v11 = values[r + 1][c + 1]; // top-right
       if (v00 == null || v10 == null || v01 == null || v11 == null) continue;
 
-      // Cell centre positions in screen coords. Note the vertical flip.
-      const p00 = { x: padX + (c + 0.5) * cellW, y: padY + (rows - 1 - r - 0.5) * cellH };
-      const p10 = { x: padX + (c + 1.5) * cellW, y: padY + (rows - 1 - r - 0.5) * cellH };
-      const p01 = { x: padX + (c + 0.5) * cellW, y: padY + (rows - 1 - r - 1.5) * cellH };
-      const p11 = { x: padX + (c + 1.5) * cellW, y: padY + (rows - 1 - r - 1.5) * cellH };
+      // Cell centre positions in screen coords. Vertical flip: data row 0
+      // is the BOTTOM visual row, so data row r's centre-y is
+      // ``padY + (rows - 0.5 - r) * cellH`` (not the - 1 - r - 0.5 form
+      // I had before, which floated contours a full cellH too high).
+      const p00 = { x: padX + (c + 0.5) * cellW, y: padY + (rows - 0.5 - r) * cellH };
+      const p10 = { x: padX + (c + 1.5) * cellW, y: padY + (rows - 0.5 - r) * cellH };
+      const p01 = { x: padX + (c + 0.5) * cellW, y: padY + (rows - 1.5 - r) * cellH };
+      const p11 = { x: padX + (c + 1.5) * cellW, y: padY + (rows - 1.5 - r) * cellH };
 
       // Build the bitmask for marching squares (standard 4-corner).
       const b00 = v00 >= threshold ? 1 : 0;
