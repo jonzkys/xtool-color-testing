@@ -102,3 +102,31 @@ def test_mobile_id_endpoints_require_auth_in_multi_user_mode(fresh_db, monkeypat
     c = TestClient(create_app())
     assert c.post("/api/me/mobile-id").status_code == 401
     assert c.post("/api/me/mobile-id/rotate").status_code == 401
+
+
+def test_mobile_check_returns_display_name(fresh_db, monkeypatch):
+    c, h = _multi_user_client(monkeypatch)
+    mid = c.post("/api/me/mobile-id", headers=h).json()["mobile_id"]
+    r = c.get(f"/api/m/{mid}/check")
+    assert r.status_code == 200, r.text
+    assert r.json() == {"ok": True, "display_name": "Test"}
+
+
+def test_mobile_check_404_for_unknown_mid(fresh_db, monkeypatch):
+    monkeypatch.setenv("XCS_GEN_MODE", "multi_user")
+    c = TestClient(create_app())
+    assert c.get("/api/m/nope_nope_nope_nope_nope/check").status_code == 404
+
+
+def test_mobile_check_ignores_x_user_id(fresh_db, monkeypatch):
+    """The /api/m/* surface accepts no auth header. Sending one doesn't
+    change behaviour and never elevates the request."""
+    c, h = _multi_user_client(monkeypatch)
+    mid = c.post("/api/me/mobile-id", headers=h).json()["mobile_id"]
+    # Send the auth header explicitly with a bogus value — should still
+    # 200 because the route doesn't read it.
+    r = c.get(
+        f"/api/m/{mid}/check",
+        headers={"X-User-Id": "nonsense_nonsense"},
+    )
+    assert r.status_code == 200

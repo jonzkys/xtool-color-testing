@@ -449,3 +449,8 @@ class IngestToPaletteRequest(BaseModel):
 
 class MobileIdResponse(BaseModel):
     mobile_id: str
+
+
+class MobileCheckResponse(BaseModel):
+    ok: bool
+    display_name: str

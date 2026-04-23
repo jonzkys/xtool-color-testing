@@ -24,6 +24,7 @@ from .schemas import (
     MaterialCreate,
     MaterialResponse,
     MaterialUpdate,
+    MobileCheckResponse,
     MobileIdResponse,
     PaletteEntryPatch,
     PaletteEntryResponse,
@@ -325,6 +326,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> MobileIdResponse:
         return MobileIdResponse(
             mobile_id=u_repo.rotate_mobile_id(user_id),
+        )
+
+    @app.get("/api/m/{mid}/check", response_model=MobileCheckResponse)
+    def mobile_check(mid: str) -> MobileCheckResponse:
+        """Resolve a mobile_id to a user's display name. The mobile
+        page calls this on load to confirm the link is live and to
+        greet the phone-holder by name (so they can verify they're
+        about to upload to the right account before they shoot)."""
+        user = u_repo.get_by_mobile_id(mid)
+        if user is None:
+            raise HTTPException(status_code=404, detail="mobile id not found")
+        return MobileCheckResponse(
+            ok=True, display_name=user.get("first_name") or "you",
         )
 
     @app.get("/api/me", response_model=UserResponse)
