@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { UploadCloud } from "lucide-react";
+import { BookOpen, UploadCloud } from "lucide-react";
 import { formatRoute, type Route } from "../router";
 import { cn, MetalBar, PageContainer, ThemeToggle } from "../ui";
 import { UploadResultDialog } from "./UploadResultDialog";
@@ -70,6 +70,26 @@ export function TopBar({ title, route, onNavigate }: Props) {
               aria-hidden="true"
               className="h-6 w-px bg-[color:var(--color-border-strong)]"
             />
+            <button
+              type="button"
+              onClick={() => onNavigate({ name: "guide" })}
+              title="Open the Getting Started guide"
+              aria-label="Open the Getting Started guide"
+              className={cn(
+                "inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[6px]",
+                "border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]",
+                route.name === "guide"
+                  ? "text-[color:var(--color-primary)] border-[color:var(--color-primary)]/50 bg-[color:var(--color-primary-tint)]/40"
+                  : "text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-primary)] hover:border-[color:var(--color-primary)]/50 hover:bg-[color:var(--color-primary-tint)]/40",
+                "transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
+              )}
+            >
+              <BookOpen className="h-3.5 w-3.5" strokeWidth={1.75} />
+              <span className="font-mono text-[10.5px] tracking-[0.12em] uppercase font-semibold">
+                Guide
+              </span>
+            </button>
             <button
               type="button"
               onClick={() => setUploadOpen(true)}

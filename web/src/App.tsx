@@ -9,6 +9,7 @@ import { TestDetailPage } from "./pages/TestDetailPage";
 import { SpectrumPage } from "./pages/SpectrumPage";
 import { Spectrum2DPage } from "./pages/Spectrum2DPage";
 import { StyleguidePage } from "./pages/StyleguidePage";
+import { GuidePage } from "./pages/GuidePage";
 import { WelcomeDialog } from "./components/WelcomeDialog";
 import { getHealth } from "./api/users";
 import { hasStoredKey } from "./api/users";
@@ -61,6 +62,7 @@ export default function App() {
     : route.name === "styleguide" ? "Styleguide"
     : route.name === "spectrum"   ? "Spectrum"
     : route.name === "spectrum-2d" ? "Spectrum · 2D"
+    : route.name === "guide"      ? "Guide"
     : "Palette";
 
   return (
@@ -83,6 +85,7 @@ export default function App() {
         {gate === "ready" && route.name === "spectrum"     && <SpectrumPage />}
         {gate === "ready" && route.name === "spectrum-2d"  && <Spectrum2DPage />}
         {gate === "ready" && route.name === "styleguide"   && <StyleguidePage />}
+        {gate === "ready" && route.name === "guide"        && <GuidePage />}
       </main>
       <WelcomeDialog
         open={gate === "welcome"}
