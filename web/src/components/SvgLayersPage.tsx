@@ -974,7 +974,7 @@ function PreviewBlock({
         {subtext && <span className="text-[11px]">{subtext}</span>}
         {trailing && <span className="ml-auto">{trailing}</span>}
       </div>
-      <Card variant="inset" padded={false} className="min-h-[240px] flex items-center justify-center overflow-hidden">
+      <Card variant="inset" padded={false} className="min-h-[240px] max-h-[40vh] flex items-center justify-center overflow-hidden">
         {children}
       </Card>
     </div>
