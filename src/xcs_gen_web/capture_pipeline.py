@@ -101,22 +101,16 @@ def _preprocessing_variants(gray: np.ndarray) -> list[np.ndarray]:
     return [gray, otsu]
 
 
-def _qr_corners_px(
+def _qr_polygon_raw(
     img: np.ndarray,
-) -> tuple[int, int, dict[int, tuple[float, float]]]:
-    """Return ``(qr_id, retest_index, {QR_TL/BL/BR/TR: (x, y) in pixels})``.
+) -> tuple[int, int, np.ndarray]:
+    """Return ``(qr_id, retest_index, polygon_px)`` where ``polygon_px``
+    is the raw 4-point polygon returned by pyzbar, unlabelled.
 
-    Each QR contributes four anchor points rather than just one, so a
-    homography can be solved even when some ArUco corners are missed.
-    pyzbar's polygon order is inconsistent across photos (it depends on
-    which finder-pattern side the decoder landed on), so we canonicalise
-    the four polygon vertices by image-space position — TL=min(x+y),
-    BR=max(x+y), TR=max(x-y), BL=min(x-y). This assumes the QR is
-    roughly upright in the image, which is the normal case for hand-held
-    phone shots of a flat burn.
-
-    ``retest_index`` is 0 for pre-retest-era QRs (``decode_payload``
-    supplies the default).
+    Labelling each polygon vertex as QR_TL / QR_TR / QR_BR / QR_BL
+    happens at the caller (``detect_fiducials``) using ArUco-derived
+    burn-space orientation — pyzbar's polygon order isn't consistent
+    enough to rely on across rotated / skewed phone shots.
     """
     from xcs_gen.capture.qr_payload import PayloadError, decode_payload
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -129,18 +123,88 @@ def _qr_corners_px(
             if len(sym.polygon) < 4:
                 continue
             arr = np.array([[p.x, p.y] for p in sym.polygon[:4]], dtype=np.float32)
-            s = arr[:, 0] + arr[:, 1]
-            d = arr[:, 0] - arr[:, 1]
-            tl = tuple(float(x) for x in arr[int(np.argmin(s))])
-            br = tuple(float(x) for x in arr[int(np.argmax(s))])
-            tr = tuple(float(x) for x in arr[int(np.argmax(d))])
-            bl = tuple(float(x) for x in arr[int(np.argmin(d))])
             return (
                 payload["id"],
                 int(payload.get("r", 0) or 0),
-                {QR_TL: tl, QR_BL: bl, QR_BR: br, QR_TR: tr},
+                arr,
             )
     raise DetectionError("no valid id-only QR detected")
+
+
+def _label_qr_corners(
+    polygon_px: np.ndarray,
+    arucos_px: dict[int, tuple[float, float]],
+) -> dict[int, tuple[float, float]]:
+    """Classify each of the 4 QR polygon vertices into a burn-space
+    corner key (``QR_TL`` / ``QR_TR`` / ``QR_BR`` / ``QR_BL``).
+
+    Uses the 3 ArUco centres (IDs 1/2/3 at burn-space TR/BL/BR
+    respectively) to derive the burn-space x and y axes in image
+    coordinates, then classifies each QR polygon vertex by its
+    sign-of-dot-product relative to the polygon's centroid. This is
+    robust to arbitrary rotation + skew of the photo.
+
+    When fewer than 3 ArUcos are detected the orientation can't be
+    determined reliably; we fall back to the old image-space
+    canonicalisation (``min(x+y)`` = TL, etc.), which is only
+    correct for roughly-upright photos but is the best we can do
+    without the ArUco anchors.
+    """
+    pts = polygon_px.astype(np.float64)
+    if not all(k in arucos_px for k in (1, 2, 3)):
+        # Fallback: assume the tag is upright in the image. Wrong for
+        # rotated photos, but those can't be rescued without ArUcos.
+        s = pts[:, 0] + pts[:, 1]
+        d = pts[:, 0] - pts[:, 1]
+        return {
+            QR_TL: tuple(float(v) for v in pts[int(np.argmin(s))]),
+            QR_BR: tuple(float(v) for v in pts[int(np.argmax(s))]),
+            QR_TR: tuple(float(v) for v in pts[int(np.argmax(d))]),
+            QR_BL: tuple(float(v) for v in pts[int(np.argmin(d))]),
+        }
+
+    ar_tr = np.asarray(arucos_px[1], dtype=np.float64)
+    ar_bl = np.asarray(arucos_px[2], dtype=np.float64)
+    ar_br = np.asarray(arucos_px[3], dtype=np.float64)
+
+    # Burn-space basis vectors projected into image space. In burn
+    # coordinates: +x goes from BL → BR, +y goes from TR → BR
+    # (top-to-bottom). We keep direction only — magnitude cancels in
+    # the sign test.
+    bx = ar_br - ar_bl
+    by = ar_br - ar_tr
+    bx = bx / (np.linalg.norm(bx) + 1e-9)
+    by = by / (np.linalg.norm(by) + 1e-9)
+
+    centroid = pts.mean(axis=0)
+    quadrant_to_key = {
+        (-1, -1): QR_TL,
+        (+1, -1): QR_TR,
+        (+1, +1): QR_BR,
+        (-1, +1): QR_BL,
+    }
+    result: dict[int, tuple[float, float]] = {}
+    for pt in pts:
+        rel = pt - centroid
+        sign_x = 1 if float(rel @ bx) > 0 else -1
+        sign_y = 1 if float(rel @ by) > 0 else -1
+        key = quadrant_to_key[(sign_x, sign_y)]
+        result[key] = (float(pt[0]), float(pt[1]))
+
+    # Defensive: if two polygon points land in the same quadrant
+    # (degenerate case — QR decoded with collinear polygon), we'd be
+    # missing a key. Fill any gap with the image-space fallback so
+    # callers don't KeyError downstream.
+    if len(result) < 4:
+        fb = {
+            QR_TL: tuple(float(v) for v in pts[int(np.argmin(pts[:, 0] + pts[:, 1]))]),
+            QR_BR: tuple(float(v) for v in pts[int(np.argmax(pts[:, 0] + pts[:, 1]))]),
+            QR_TR: tuple(float(v) for v in pts[int(np.argmax(pts[:, 0] - pts[:, 1]))]),
+            QR_BL: tuple(float(v) for v in pts[int(np.argmin(pts[:, 0] - pts[:, 1]))]),
+        }
+        for k, v in fb.items():
+            result.setdefault(k, v)
+    return result
 
 
 def _aruco_centres_px(img: np.ndarray) -> dict[int, tuple[float, float]]:
@@ -174,11 +238,19 @@ def detect_fiducials(
     four QR corners alone give a well-determined homography, so a
     partial ArUco detection (at least one of three) is still usable.
     ``retest_index`` is 0 for burns predating the retest feature.
+
+    QR corner labelling uses the ArUco markers' known burn-space
+    positions (IDs 1/2/3 = TR/BL/BR) to determine image-space
+    orientation first, then classifies each QR polygon vertex into the
+    right burn-space quadrant. This makes the pipeline robust to
+    rotated photos (e.g. phone pictures taken with the tag landscape
+    vs portrait). When fewer than 3 ArUcos are detected we fall back
+    to assuming the tag is upright in the image — less accurate but
+    the old behaviour is preserved as a graceful degradation.
     """
-    qr_id, retest_index, qr_corners = _qr_corners_px(img)
+    qr_id, retest_index, qr_polygon = _qr_polygon_raw(img)
     arucos = _aruco_centres_px(img)
-    # Accept any non-empty ArUco detection. Together with the 4 QR corners
-    # that gives us at least 5 matches for the homography.
+    qr_corners = _label_qr_corners(qr_polygon, arucos)
     corners: dict[int, tuple[float, float]] = dict(qr_corners)
     corners.update(arucos)
     return qr_id, retest_index, corners
