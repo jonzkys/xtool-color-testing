@@ -22,13 +22,15 @@ _SHAPE_TAG_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Ceiling applies to every SVG endpoint. Chosen because:
-#   - Normal hand-authored SVGs fit well under 5k shapes.
-#   - vtracer output for a typical photo lands at 1-3k layers.
-#   - Shapely union/difference time grows superlinearly past 10k shapes,
-#     which is where a single request starts to block the event loop
-#     noticeably.
-MAX_SVG_SHAPES = 5000
+# Ceiling applies to every SVG endpoint. Original pick was 5 k but real
+# user work (high-detail vtracer output from detailed raster art)
+# regularly blows past that. 20 k is the current ceiling — still guards
+# against abusive / accidental million-shape SVGs, but accommodates the
+# legitimate heavy-detail workflow. Shapely work inside the pipeline
+# (subtract, hatch) is already bounded by the STRtree spatial-index
+# optimisation + per-phase timing report so grossly-slow requests are
+# visible in the log before they ever time out.
+MAX_SVG_SHAPES = 20_000
 
 
 def count_shapes(svg_content: str) -> int:
