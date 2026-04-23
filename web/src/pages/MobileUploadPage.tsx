@@ -35,6 +35,18 @@ export function MobileUploadPage({ mid }: Props) {
     return () => { cancelled = true; };
   }, [mid]);
 
+  // Revoke any object URL we created when state moves away from it
+  // (Upload another, Continue on desktop) or when the component unmounts.
+  // Without this, picking a file and navigating away leaks the blob —
+  // on mobile, repeated use accumulates 10s of MB of unfreed memory.
+  useEffect(() => {
+    if (state.kind !== "uploading" && state.kind !== "success") return;
+    const url = state.previewUrl;
+    return () => {
+      try { URL.revokeObjectURL(url); } catch { /* noop */ }
+    };
+  }, [state]);
+
   const onPick = async (file: File) => {
     if (state.kind !== "idle" && state.kind !== "no_markers" &&
         state.kind !== "network_error" && state.kind !== "rate_limited") {
@@ -64,9 +76,6 @@ export function MobileUploadPage({ mid }: Props) {
   };
 
   const reset = () => {
-    if (state.kind === "success" || state.kind === "uploading") {
-      try { URL.revokeObjectURL(state.previewUrl); } catch { /* noop */ }
-    }
     if ("displayName" in state) {
       setState({ kind: "idle", displayName: state.displayName });
     }

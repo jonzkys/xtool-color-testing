@@ -47,12 +47,18 @@ export function MobileQrTab() {
         const rows = await listRecentMobileUploads(sinceRef.current);
         if (stopped) return;
         if (rows.length > 0) {
-          setRecent((prev) => [...rows, ...prev].slice(0, 20));
-          // Advance the cursor to the newest uploaded_at + 1s buffer.
-          const newest = rows[0].uploaded_at;
-          sinceRef.current = Math.floor(
-            new Date(newest).getTime() / 1000,
-          ) + 1;
+          setRecent((prev) => {
+            const seen = new Set(prev.map((u) => u.result_id));
+            const fresh = rows.filter((u) => !seen.has(u.result_id));
+            return [...fresh, ...prev].slice(0, 20);
+          });
+          // Advance the cursor to the newest uploaded_at. We deduplicate by
+          // result_id above, so it's safe to re-include the same second on
+          // the next poll — concurrent-second uploads can no longer be lost.
+          const newestUnix = Math.floor(
+            new Date(rows[0].uploaded_at).getTime() / 1000,
+          );
+          sinceRef.current = newestUnix;
         }
       } catch {
         // Silent — transient failures recover on the next tick.
