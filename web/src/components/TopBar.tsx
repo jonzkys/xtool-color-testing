@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
-import { BookOpen, UploadCloud } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { BookOpen, Sparkles, UploadCloud } from "lucide-react";
 import { formatRoute, type Route } from "../router";
 import { cn, MetalBar, PageContainer, ThemeToggle } from "../ui";
 import { UploadResultDialog } from "./UploadResultDialog";
 import { AccountMenu } from "./AccountMenu";
+import { getChangelog } from "../api/changelog";
 
 interface Props {
   title: string;
@@ -18,6 +19,7 @@ interface Props {
 export function TopBar({ title, route, onNavigate }: Props) {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [mode, setMode] = useState<"standalone" | "multi_user" | null>(null);
+  const [unseenChanges, setUnseenChanges] = useState(0);
 
   // Probe the backend once so we can render a mode badge + user chip
   // when running in multi-user mode. Intentionally silent on failure
@@ -30,6 +32,26 @@ export function TopBar({ title, route, onNavigate }: Props) {
       })
       .catch(() => {});
   }, []);
+
+  const refreshUnseen = useCallback(async () => {
+    if (!mode) return;
+    try {
+      const payload = await getChangelog(mode);
+      setUnseenChanges(payload.unseen_count);
+    } catch {
+      // Silent — TopBar badge isn't worth surfacing a toast for.
+    }
+  }, [mode]);
+
+  // Once we know the mode, fetch the unseen count. Also listen for
+  // the `changelog:seen` DOM event so the badge clears in the same
+  // tab after the user views the page (without a round-trip).
+  useEffect(() => {
+    void refreshUnseen();
+    const onSeen = () => setUnseenChanges(0);
+    window.addEventListener("changelog:seen", onSeen);
+    return () => window.removeEventListener("changelog:seen", onSeen);
+  }, [refreshUnseen]);
 
   return (
     <header className="shrink-0 bg-[color:var(--color-surface)] border-b border-[color:var(--color-border)]">
@@ -90,6 +112,11 @@ export function TopBar({ title, route, onNavigate }: Props) {
                 Guide
               </span>
             </button>
+            <ChangelogButton
+              active={route.name === "changelog"}
+              unseen={unseenChanges}
+              onClick={() => onNavigate({ name: "changelog" })}
+            />
             <button
               type="button"
               onClick={() => setUploadOpen(true)}
@@ -116,6 +143,53 @@ export function TopBar({ title, route, onNavigate }: Props) {
       <MetalBar />
       <UploadResultDialog open={uploadOpen} onOpenChange={setUploadOpen} />
     </header>
+  );
+}
+
+function ChangelogButton({
+  active,
+  unseen,
+  onClick,
+}: {
+  active: boolean;
+  unseen: number;
+  onClick: () => void;
+}) {
+  const hasUnseen = unseen > 0;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={hasUnseen ? `${unseen} new update${unseen === 1 ? "" : "s"}` : "What's new"}
+      aria-label="Open changelog"
+      className={cn(
+        "relative inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[6px]",
+        "border bg-[color:var(--color-surface-elevated)]",
+        "transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
+        active
+          ? "text-[color:var(--color-primary)] border-[color:var(--color-primary)]/50 bg-[color:var(--color-primary-tint)]/40"
+          : hasUnseen
+            // Unseen: promote to primary-accent border + subtle tint so
+            // the button reads as "something here" without a noisy red
+            // blob. Mirrors how the Loom badge is built.
+            ? "text-[color:var(--color-primary)] border-[color:var(--color-primary)]/60 bg-[color:var(--color-primary-tint)]/50 hover:bg-[color:var(--color-primary-tint)]/70"
+            : "text-[color:var(--color-ink-muted)] border-[color:var(--color-border)] hover:text-[color:var(--color-primary)] hover:border-[color:var(--color-primary)]/50 hover:bg-[color:var(--color-primary-tint)]/40",
+      )}
+    >
+      <Sparkles className="h-3.5 w-3.5" strokeWidth={1.75} />
+      <span className="font-mono text-[10.5px] tracking-[0.12em] uppercase font-semibold">
+        {hasUnseen ? "New" : "Log"}
+      </span>
+      {hasUnseen && (
+        <span
+          aria-hidden
+          className="absolute -top-1 -right-1 inline-flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-[color:var(--color-primary)] px-1 font-mono text-[9px] font-bold text-white"
+        >
+          {unseen > 9 ? "9+" : unseen}
+        </span>
+      )}
+    </button>
   );
 }
 

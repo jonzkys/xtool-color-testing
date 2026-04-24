@@ -88,6 +88,30 @@ def update_first_name(uid: int, first_name: str) -> dict[str, Any] | None:
     return get_by_id(uid)
 
 
+def get_last_seen_change(uid: int) -> str | None:
+    """Return the user's last-seen changelog entry id, or None if they
+    have never dismissed the badge. Used by the Changelog endpoint to
+    compute unseen_count."""
+    with session_scope() as s:
+        row = s.execute(
+            select(users.c.last_seen_change_id).where(users.c.id == uid)
+        ).one_or_none()
+        if row is None:
+            return None
+        return row.last_seen_change_id or None
+
+
+def set_last_seen_change(uid: int, change_id: str) -> None:
+    """Record that the user has seen changelog entries up to ``change_id``.
+    Overwrites (doesn't compare) — the frontend always sends the newest
+    id, so the column reflects "most recent thing the user has acknowledged"."""
+    with session_scope() as s:
+        s.execute(
+            users.update().where(users.c.id == uid)
+            .values(last_seen_change_id=change_id)
+        )
+
+
 def touch_last_seen(uid: int) -> None:
     """Bump last_seen_at. Called from the current-user dep on every
     authenticated request. Cheap single-row UPDATE, no SELECT first."""

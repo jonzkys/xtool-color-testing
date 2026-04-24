@@ -63,6 +63,72 @@ actually drive the tool. Treat UI polish as product work, not decoration.
   tooling is set up — use it for golden-path walkthroughs and
   regression checks on adjacent pages.
 
+## Shipping a change: changelog + PR workflow
+
+**Every user-visible change goes on a feature branch with a PR — no
+direct pushes to `main`.**
+
+```bash
+# 1. Branch off main
+git checkout main && git pull
+git checkout -b feat/<slug>
+
+# 2. Do the work. For user-visible changes, add a changelog entry
+#    (see below) in the SAME commit as the code.
+
+# 3. Push + open a draft PR
+git push -u origin feat/<slug>
+gh pr create --draft --title "..." --body "..."
+
+# 4. Flip to ready-for-review when CI is green
+gh pr ready
+```
+
+Exceptions: ambient infra tweaks to `.github/`, fixing your own typo
+in a doc, etc. — things a reviewer would just rubber-stamp. When in
+doubt, open the PR.
+
+### Changelog entries
+
+Entries live in `changelog/*.md` as markdown with YAML frontmatter.
+The `#/changelog` page parses the directory on every request; the
+TopBar shows a "NEW" badge until the user dismisses by viewing.
+
+**When to write one — three levels:**
+
+| Level | Examples | Format |
+|---|---|---|
+| **major** | new page, new primary feature, API break | Title + summary + full markdown body, usually with a screenshot |
+| **minor** | visible bug fix, UX polish, small enhancement | Title + (optional) one-line summary; no body |
+| *trivial* | refactor, rename, comment-only change, test-only | **No entry.** |
+
+**Filename:** `changelog/YYYY-MM-DD-<slug>.md`. The `id` in
+frontmatter must match the filename stem — it's the key the TopBar
+uses to compare "last seen" vs "latest".
+
+**Shape:**
+```markdown
+---
+id: 2026-04-23-loom
+date: 2026-04-23
+level: major
+title: Loom — gradient-hatched fill
+summary: One-line blurb for the list view.
+images:
+  - src: loom-preview.png    # lives in changelog/images/
+    caption: A silhouette filled with gradient hatch.
+---
+
+Full markdown body for majors. Minors can omit.
+```
+
+**Images:** drop them in `changelog/images/`. Reference by filename
+only; the backend serves them as `/changelog-media/<filename>`.
+
+**Voice:** match the Workshop Instrument register — the changelog is
+read, not skimmed. Active verbs, concrete examples, no marketing-ese.
+Look at existing entries before writing a new one.
+
 ## Environment variables (prefix: `XCS_GEN_`)
 - `XCS_GEN_MODE` — `standalone` (default) or `multi_user`
 - `XCS_GEN_DB_URL` — override SQLite; use `mysql+pymysql://...` for MySQL
