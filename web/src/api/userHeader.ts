@@ -20,6 +20,52 @@
 
 const STORAGE_KEY = "xcsgen:userId";
 
+const PREV_KEY = "xcsgen:userId:prev";
+
+/** Literal API-key value that signals "demo account" to the backend. */
+export const DEMO_API_KEY = "DEMO";
+
+export function isDemoUser(): boolean {
+  return getCurrentUserId() === DEMO_API_KEY;
+}
+
+/**
+ * Switch the app into demo mode. If a real key is already stored, it
+ * is preserved under ``PREV_KEY`` so ``exitDemo()`` can restore it and
+ * users don't lose their session when they click a demo link from
+ * within the app.
+ */
+export function enterDemo(): void {
+  try {
+    const current = localStorage.getItem(STORAGE_KEY);
+    if (current && current !== DEMO_API_KEY) {
+      localStorage.setItem(PREV_KEY, current);
+    }
+    localStorage.setItem(STORAGE_KEY, DEMO_API_KEY);
+  } catch {
+    /* storage disabled — ignore; app will re-gate on next load */
+  }
+}
+
+/**
+ * Leave demo mode. Restores the previously-saved real key if any;
+ * otherwise clears the slot entirely (Welcome gate picks up from
+ * there).
+ */
+export function exitDemo(): void {
+  try {
+    const prev = localStorage.getItem(PREV_KEY);
+    if (prev) {
+      localStorage.setItem(STORAGE_KEY, prev);
+      localStorage.removeItem(PREV_KEY);
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Base URL the interceptor prefixes onto ``/api/*`` calls. Set at
  * build time via ``VITE_API_BASE_URL`` — unset means relative URLs,
