@@ -91,20 +91,24 @@ jobs:
         # Actually-authenticated query, not just `mysqladmin ping` —
         # ping returns success the moment the socket answers, but the
         # image's entrypoint keeps running init SQL in parallel AFTER
-        # that point (including setting the root password). Using a
-        # real SELECT as the probe avoids the race where a subsequent
-        # step tries to authenticate before init finishes.
+        # that point (including setting the root password and creating
+        # the MYSQL_USER). Using real SELECTs as the probe avoids the
+        # race where a subsequent step tries to authenticate before
+        # init finishes. We require BOTH root (for admin commands) AND
+        # xcsgen (proves the MYSQL_USER init step has completed) to
+        # authenticate — probing only root raced against the GRANT
+        # step below, which then tripped ER_CANT_GRANT_WITH_CREATE_USER
+        # (MySQL 8 refuses implicit user-creation via GRANT).
         run: |
           for i in $(seq 1 60); do
-            if docker exec mysql-ci \
-                mysql -uroot -prootpass -e "SELECT 1" \
-                >/dev/null 2>&1; then
-              echo "MySQL auth'd query succeeded after ${i}s"
+            if docker exec mysql-ci mysql -uroot -prootpass -e "SELECT 1" >/dev/null 2>&1 \
+               && docker exec mysql-ci mysql -uxcsgen -pxcsgenpass -e "SELECT 1" >/dev/null 2>&1; then
+              echo "MySQL + xcsgen user ready after ${i}s"
               exit 0
             fi
             sleep 1
           done
-          echo "MySQL did not accept authenticated queries within 60s" >&2
+          echo "MySQL did not become ready within 60s" >&2
           docker logs mysql-ci
           exit 1
 
