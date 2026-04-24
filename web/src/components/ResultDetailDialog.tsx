@@ -45,12 +45,13 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
   return (
     <DialogContent
       width="lg"
-      className="p-0 overflow-hidden max-w-[820px]"
+      className="p-0 overflow-hidden max-w-[820px] max-h-[90vh] flex flex-col"
       aria-describedby={undefined}
     >
       <DialogTitle className="sr-only">
         Result #{result.id} · Test #{result.test_id}
       </DialogTitle>
+      <div className="flex-1 overflow-y-auto">
 
       {/* Hero: the photograph on a dark mat, with lab-notebook crop
           marks and a mix-blend slug that stays legible against any
@@ -165,12 +166,28 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
 
       <MetalBar variant="soft" />
 
-      {/* Swatch grid — every detected swatch as its own tile. */}
+      {/* Swatch grid — every detected swatch as its own tile. Capped at
+          45vh with an inner scroll so a 200+ swatch result can't push
+          the rest of the modal off-screen. Tile size shrinks for large
+          grids so more fit per row and the scroll region stays usable. */}
       <div className="px-5 pt-4 pb-5">
         <ChartLabel title={`Swatches (${result.swatches.length})`} />
-        <div className="mt-3 grid gap-1.5 [grid-template-columns:repeat(auto-fill,minmax(72px,1fr))]">
+        <div
+          className={cn(
+            "mt-3 grid gap-1.5 max-h-[45vh] overflow-y-auto pr-1",
+            result.swatches.length > 120
+              ? "[grid-template-columns:repeat(auto-fill,minmax(44px,1fr))]"
+              : result.swatches.length > 60
+                ? "[grid-template-columns:repeat(auto-fill,minmax(56px,1fr))]"
+                : "[grid-template-columns:repeat(auto-fill,minmax(72px,1fr))]",
+          )}
+        >
           {result.swatches.map((s, i) => (
-            <SwatchTile key={`${s.row}-${s.col}-${i}`} swatch={s} />
+            <SwatchTile
+              key={`${s.row}-${s.col}-${i}`}
+              swatch={s}
+              compact={result.swatches.length > 60}
+            />
           ))}
         </div>
       </div>
@@ -186,6 +203,7 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
           </div>
         </>
       )}
+      </div>
     </DialogContent>
   );
 }
@@ -383,25 +401,39 @@ function LuminanceRamp({ swatches }: { swatches: ResultSwatch[] }) {
   );
 }
 
-function SwatchTile({ swatch }: { swatch: ResultSwatch }) {
+function SwatchTile({
+  swatch,
+  compact = false,
+}: {
+  swatch: ResultSwatch;
+  /** Hide the hex+σ footer when the containing grid is packing lots
+   *  of tiles. The per-swatch tooltip (on hover) still surfaces the
+   *  full details. */
+  compact?: boolean;
+}) {
+  const tooltip = `${swatch.hex} · σ ${swatch.sigma.toFixed(2)}`;
   return (
-    <div className="group rounded-[6px] border border-[color:var(--color-border)] overflow-hidden bg-[color:var(--color-surface)]">
+    <div
+      className="group rounded-[4px] border border-[color:var(--color-border)] overflow-hidden bg-[color:var(--color-surface)]"
+      title={tooltip}
+    >
       <div
-        className="aspect-[4/3] w-full"
+        className={compact ? "aspect-square w-full" : "aspect-[4/3] w-full"}
         style={{ background: swatch.hex }}
-        title={`${swatch.hex} · σ ${swatch.sigma.toFixed(2)}`}
       />
-      <div className="px-1.5 py-1 flex items-center justify-between border-t border-[color:var(--color-border)]">
-        <span className="font-mono text-[9.5px] text-[color:var(--color-ink)] truncate">
-          {swatch.hex}
-        </span>
-        <span
-          className="font-mono text-[8.5px] text-[color:var(--color-ink-subtle)] tabular-nums"
-          title="per-swatch ΔE sample deviation"
-        >
-          σ{swatch.sigma.toFixed(1)}
-        </span>
-      </div>
+      {!compact && (
+        <div className="px-1.5 py-1 flex items-center justify-between border-t border-[color:var(--color-border)]">
+          <span className="font-mono text-[9.5px] text-[color:var(--color-ink)] truncate">
+            {swatch.hex}
+          </span>
+          <span
+            className="font-mono text-[8.5px] text-[color:var(--color-ink-subtle)] tabular-nums"
+            title="per-swatch ΔE sample deviation"
+          >
+            σ{swatch.sigma.toFixed(1)}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
