@@ -44,6 +44,7 @@ _VIA_CHECK = "via IN ('desktop','mobile')"
 _API_KEY_LEN = 32        # current keys are 16 chars; 32 gives headroom.
 _NAME_LEN = 64
 _ISO_TS_LEN = 40         # ISO 8601 w/ timezone offset fits in well under 40
+_CHANGE_ID_LEN = 80      # changelog entry ids are "YYYY-MM-DD-slug" — 80 fits generous slugs
 _VISIBILITY_LEN = 16
 _COLOR_HEX_LEN = 16      # "#rrggbb" + headroom
 _STATUS_LEN = 16
@@ -70,6 +71,10 @@ users = Table(
     Column("created_at", String(_ISO_TS_LEN), nullable=False),
     Column("last_seen_at", String(_ISO_TS_LEN), nullable=False),
     Column("mobile_id", String(_API_KEY_LEN), nullable=True),
+    # ID of the most recent changelog entry this user has dismissed.
+    # NULL means "never viewed the changelog" — frontend treats all
+    # current entries as unseen.
+    Column("last_seen_change_id", String(_CHANGE_ID_LEN), nullable=True),
     Index("ix_users_api_key", "api_key", unique=True),
     Index("ix_users_mobile_id", "mobile_id", unique=True),
 )

@@ -55,6 +55,28 @@ from .svg_layers_converter import (
 )
 
 
+def _find_changelog_dir() -> Path | None:
+    """Locate the ``changelog/`` directory. Mirrors the alembic-dir
+    search: env override, cwd, then three levels up from this file
+    (editable-install layout)."""
+    import os
+    override = os.environ.get("XCS_GEN_CHANGELOG_DIR")
+    if override:
+        p = Path(override)
+        if p.is_dir():
+            return p
+    cwd = Path.cwd()
+    if (cwd / "changelog").is_dir():
+        return cwd / "changelog"
+    try:
+        repo_root = Path(__file__).resolve().parents[2]
+    except IndexError:
+        return None
+    if (repo_root / "changelog").is_dir():
+        return repo_root / "changelog"
+    return None
+
+
 def _find_alembic_dir() -> Path | None:
     """Locate the directory containing ``alembic.ini`` + ``alembic/``.
 
@@ -285,6 +307,76 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Exposes mode so the frontend can adapt its UI (e.g. show a
         # user-id header prompt) without a separate discovery endpoint.
         return {"status": "ok", "mode": settings.mode}
+
+    # User repo is referenced by the changelog endpoints below for the
+    # last-seen tracking, so import it before we define them (the
+    # "User onboarding" block below re-binds the same name).
+    from .repositories import users as u_repo
+    from .repositories.users import DuplicateKeyError  # noqa: F401 - re-imported below
+
+    # Changelog ---------------------------------------------------------
+    # Entries live as markdown+frontmatter files under repo-root
+    # changelog/. Re-read on every request so adding a file lands
+    # without a server restart.
+    from . import changelog as _changelog
+
+    changelog_dir = _find_changelog_dir()
+    if changelog_dir is not None:
+        images_dir = changelog_dir / "images"
+        images_dir.mkdir(exist_ok=True)
+        # Mounted before the "/" SPA mount so specific paths win.
+        app.mount(
+            "/changelog-media",
+            StaticFiles(directory=str(images_dir)),
+            name="changelog-media",
+        )
+
+    @app.get("/api/changelog")
+    def changelog_list(
+        user_id: int = Depends(get_current_user),
+    ) -> dict:
+        entries = (
+            _changelog.load_entries(changelog_dir)
+            if changelog_dir is not None else []
+        )
+        latest = _changelog.latest_id(entries)
+        # last_seen is tracked server-side in multi-user mode and
+        # client-side (localStorage) in standalone — the endpoint
+        # always reports the authoritative value it knows about so
+        # the frontend can compute `unseen_count` consistently.
+        last_seen: str | None = None
+        if settings.mode != "standalone":
+            last_seen = u_repo.get_last_seen_change(user_id)
+        unseen = 0
+        if latest is not None:
+            # Count entries strictly newer than last_seen (by id, which
+            # sorts correctly because dates prefix it).
+            if last_seen is None:
+                unseen = len(entries)
+            else:
+                unseen = sum(1 for e in entries if e.id > last_seen)
+        return {
+            "entries": [e.to_api() for e in entries],
+            "latest_id": latest,
+            "last_seen_id": last_seen,
+            "unseen_count": unseen,
+        }
+
+    @app.post("/api/users/me/seen-changelog")
+    def users_me_seen_changelog(
+        body: dict,
+        user_id: int = Depends(get_current_user),
+    ) -> dict:
+        if settings.mode == "standalone":
+            # Standalone has no users row to update; the frontend
+            # tracks last-seen in localStorage and this endpoint is
+            # a no-op for interface parity.
+            return {"ok": True, "persisted": False}
+        entry_id = str(body.get("id", "")).strip()
+        if not entry_id:
+            raise HTTPException(status_code=400, detail="id is required")
+        u_repo.set_last_seen_change(user_id, entry_id)
+        return {"ok": True, "persisted": True}
 
     # User onboarding (alpha bearer-token "auth") ------------------------
     # Registration is the one endpoint that doesn't require a valid key

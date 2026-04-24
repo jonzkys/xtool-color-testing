@@ -41,3 +41,48 @@ button {
   ::-webkit-scrollbar-thumb:hover { background: var(--color-ink-subtle); }
   ::-webkit-scrollbar-track { background: transparent; }
 }
+
+/* Changelog markdown prose — tight, typographic, consistent with the
+ * Workshop Instrument voice. Scoped to .changelog-prose so it doesn't
+ * touch other markdown-adjacent content elsewhere. */
+.changelog-prose {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--color-ink);
+}
+.changelog-prose p { margin: 0.75em 0; }
+.changelog-prose p:first-child { margin-top: 0; }
+.changelog-prose p:last-child { margin-bottom: 0; }
+.changelog-prose h2,
+.changelog-prose h3 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+  margin: 1.4em 0 0.35em;
+}
+.changelog-prose strong { color: var(--color-ink); font-weight: 600; }
+.changelog-prose em { font-style: italic; }
+.changelog-prose ul, .changelog-prose ol {
+  margin: 0.6em 0; padding-left: 1.25em;
+}
+.changelog-prose li { margin: 0.25em 0; }
+.changelog-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.changelog-prose a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.changelog-prose hr {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: 1.2em 0;
+}
