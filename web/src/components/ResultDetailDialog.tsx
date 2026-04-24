@@ -155,12 +155,21 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
           />
           <LabScatter swatches={result.swatches} />
         </div>
-        <div className="bg-[color:var(--color-surface)] px-5 pt-4 pb-4">
-          <ChartLabel
-            title="Luminance ramp · L*"
-            hint="tonal range, darkest → lightest"
-          />
-          <LuminanceRamp swatches={result.swatches} />
+        <div className="bg-[color:var(--color-surface)] px-5 pt-4 pb-4 flex flex-col gap-4">
+          <div>
+            <ChartLabel
+              title="Luminance ramp · L*"
+              hint="tonal range, darkest → lightest"
+            />
+            <LuminanceRamp swatches={result.swatches} />
+          </div>
+          <div>
+            <ChartLabel
+              title="Spectrum · L* vs sweep"
+              hint="colors across the parameter axis"
+            />
+            <SpectrumStrip swatches={result.swatches} />
+          </div>
         </div>
       </div>
 
@@ -399,6 +408,101 @@ function LuminanceRamp({ swatches }: { swatches: ResultSwatch[] }) {
       </div>
     </div>
   );
+}
+
+/**
+ * Dense vertical-stripe view: every swatch painted at its own
+ * ``x_value`` position along the parameter axis. With lots of
+ * swatches the stripes overlap into a continuous spectrum; with few
+ * they show as individual bars. Below the strip, tick labels expose
+ * the x-range and the r² of a simple L*-vs-x linear fit — the same
+ * quick "how linear is this sweep?" read the Spectrum page provides
+ * at full size.
+ */
+function SpectrumStrip({ swatches }: { swatches: ResultSwatch[] }) {
+  const valid = swatches.filter(
+    (s) =>
+      s.lab &&
+      s.lab.length >= 3 &&
+      Number.isFinite(s.x_value),
+  );
+  if (valid.length < 2) {
+    return (
+      <div
+        className="mt-2 rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] h-[64px] flex items-center justify-center text-[11px] text-[color:var(--color-ink-subtle)]"
+      >
+        needs ≥ 2 swatches with x values
+      </div>
+    );
+  }
+  const xs = valid.map((s) => s.x_value);
+  const xMin = Math.min(...xs);
+  const xMax = Math.max(...xs);
+  const range = xMax - xMin || 1;
+  const sorted = [...valid].sort((a, b) => a.x_value - b.x_value);
+  const r2 = linearR2(
+    sorted.map((s) => s.x_value),
+    sorted.map((s) => s.lab[0]),
+  );
+  // Stripe width: keep individual bars visible when swatches are
+  // sparse, let them overlap into a continuous band when dense.
+  // 180 / N caps at 10px (min ~2px) — sweet spot for 10–200 swatches.
+  const stripeWidthPx = Math.max(2, Math.min(10, Math.floor(180 / sorted.length)));
+  return (
+    <div className="mt-2">
+      <div
+        className="relative rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] overflow-hidden"
+        style={{ height: 64 }}
+      >
+        {sorted.map((s, i) => {
+          const left = ((s.x_value - xMin) / range) * 100;
+          return (
+            <div
+              key={i}
+              title={`x ${s.x_value.toFixed(1)} · ${s.hex} · L* ${s.lab[0].toFixed(1)}`}
+              className="absolute top-0 bottom-0"
+              style={{
+                left: `${left}%`,
+                width: `${stripeWidthPx}px`,
+                transform: "translateX(-50%)",
+                background: s.hex,
+              }}
+            />
+          );
+        })}
+      </div>
+      <div className="mt-1 flex justify-between items-baseline font-mono text-[9px] tracking-[0.2em] uppercase text-[color:var(--color-ink-subtle)] tabular-nums">
+        <span>x {xMin.toFixed(0)}</span>
+        <span
+          className="text-[color:var(--color-ink-muted)]"
+          title="r² of a simple L* vs x linear fit — higher means the brightness response tracks the swept parameter linearly"
+        >
+          r² {r2.toFixed(2)}
+        </span>
+        <span>x {xMax.toFixed(0)}</span>
+      </div>
+    </div>
+  );
+}
+
+function linearR2(xs: number[], ys: number[]): number {
+  const n = xs.length;
+  if (n < 2) return 0;
+  const meanX = xs.reduce((a, b) => a + b, 0) / n;
+  const meanY = ys.reduce((a, b) => a + b, 0) / n;
+  let ssxx = 0;
+  let ssyy = 0;
+  let ssxy = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - meanX;
+    const dy = ys[i] - meanY;
+    ssxx += dx * dx;
+    ssyy += dy * dy;
+    ssxy += dx * dy;
+  }
+  if (ssxx === 0 || ssyy === 0) return 0;
+  const r = ssxy / Math.sqrt(ssxx * ssyy);
+  return r * r;
 }
 
 function SwatchTile({
