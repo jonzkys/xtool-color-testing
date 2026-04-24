@@ -15,6 +15,9 @@ import { getHealth } from "./api/users";
 import { hasStoredKey } from "./api/users";
 import { useRoute } from "./router";
 import { MobileUploadPage } from "./pages/MobileUploadPage";
+import { enterDemo } from "./api/userHeader";
+import { useIsDemo } from "./hooks/useIsDemo";
+import { DemoBanner } from "./components/DemoBanner";
 
 export default function App() {
   const [route, navigate] = useRoute();
@@ -25,6 +28,19 @@ export default function App() {
   useEffect(() => {
     if (window.location.hash === "") navigate({ name: "tests" });
   }, [navigate]);
+
+  const isDemo = useIsDemo();
+
+  // ``#/demo`` is a side-effect route — entering demo mode then
+  // bouncing the user to the Tests page. The banner on the main app
+  // will show thereafter.
+  useEffect(() => {
+    if (route.name === "demo") {
+      enterDemo();
+      setGate("ready");
+      navigate({ name: "tests" });
+    }
+  }, [route.name, navigate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,6 +61,19 @@ export default function App() {
     };
   }, []);
 
+  // Re-probe the gate whenever it transitions back to null (e.g. after
+  // a demo exit cleared the stored key, or after an in-tab demo entry
+  // reset the gate). Reuses ``hasStoredKey`` rather than re-hitting
+  // /api/health — by this point we already know the backend mode.
+  useEffect(() => {
+    if (gate !== null) return;
+    if (hasStoredKey()) {
+      setGate("ready");
+    } else {
+      setGate("welcome");
+    }
+  }, [gate]);
+
   if (route.name === "mobile-upload") {
     // Mobile page renders alone — no TopBar, no WelcomeDialog, no
     // multi-user gate. The page authenticates via the mid in the URL
@@ -63,6 +92,7 @@ export default function App() {
     : route.name === "spectrum"   ? "Spectrum"
     : route.name === "spectrum-2d" ? "Spectrum · 2D"
     : route.name === "guide"      ? "Guide"
+    : route.name === "demo"       ? "Demo"
     : "Palette";
 
   return (
@@ -73,6 +103,17 @@ export default function App() {
       >
         Skip to main content
       </a>
+      {isDemo && (
+        <DemoBanner
+          onExit={() => {
+            // Force a re-render so the gate re-evaluates after the
+            // storage slot is cleared (restored prev key → "ready";
+            // no prev → "welcome").
+            setGate(null);
+            navigate({ name: "tests" });
+          }}
+        />
+      )}
       <TopBar title={title} route={route} onNavigate={navigate} />
       <main id="main-content" className="flex-1 min-h-0 overflow-auto">
         {gate === "ready" && route.name === "tests"        && <TestsPage />}

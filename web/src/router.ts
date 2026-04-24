@@ -12,6 +12,7 @@ export type Route =
   | { name: "spectrum-2d"; id?: number }
   | { name: "styleguide" }
   | { name: "guide" }
+  | { name: "demo" }
   | { name: "mobile-upload"; mid: string };
 
 export function parseRoute(hash: string): Route {
@@ -32,6 +33,7 @@ export function parseRoute(hash: string): Route {
   if (ms) return { name: "spectrum", id: Number(ms[1]) };
   if (h === "styleguide") return { name: "styleguide" };
   if (h === "guide") return { name: "guide" };
+  if (h === "demo") return { name: "demo" };
   const mm = h.match(/^m\/([A-Za-z0-9_\-]+)$/);
   if (mm) return { name: "mobile-upload", mid: mm[1] };
   return { name: "tests" };
@@ -50,6 +52,7 @@ export function formatRoute(r: Route): string {
     case "spectrum-2d": return r.id != null ? `#/spectrum-2d/${r.id}` : "#/spectrum-2d";
     case "styleguide":  return "#/styleguide";
     case "guide":       return "#/guide";
+    case "demo":        return "#/demo";
     case "mobile-upload": return `#/m/${r.mid}`;
   }
 }
