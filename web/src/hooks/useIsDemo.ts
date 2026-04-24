@@ -14,7 +14,17 @@ import { isDemoUser } from "../api/userHeader";
 export function useIsDemo(): boolean {
   const [v, setV] = useState<boolean>(isDemoUser);
   useEffect(() => {
-    const handler = () => setV(isDemoUser());
+    // Only react to changes on the keys this hook cares about. A null
+    // ``e.key`` means ``localStorage.clear()`` was called — also re-read.
+    const handler = (e: StorageEvent) => {
+      if (
+        e.key === "xcsgen:userId" ||
+        e.key === "xcsgen:userId:prev" ||
+        e.key === null
+      ) {
+        setV(isDemoUser());
+      }
+    };
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
   }, []);

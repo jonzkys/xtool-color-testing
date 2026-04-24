@@ -55,14 +55,17 @@ export function enterDemo(): void {
 export function exitDemo(): void {
   try {
     const prev = localStorage.getItem(PREV_KEY);
+    // Remove PREV_KEY first — cheap, never throws on quota. If the
+    // setItem below does throw (private mode + quota), we won't be
+    // stuck re-reading the stale backup on the next exit attempt.
+    localStorage.removeItem(PREV_KEY);
     if (prev) {
       localStorage.setItem(STORAGE_KEY, prev);
-      localStorage.removeItem(PREV_KEY);
     } else {
       localStorage.removeItem(STORAGE_KEY);
     }
   } catch {
-    /* ignore */
+    /* PREV_KEY is already cleared; userId slot may still hold DEMO */
   }
 }
 
