@@ -11,6 +11,7 @@ import {
   Badge,
   Button,
   cn,
+  DemoLock,
   EmptyState,
   Field,
   MetalBar,
@@ -82,10 +83,12 @@ export function TestsPage() {
             the palette.
           </p>
         </div>
-        <Button variant="primary" onClick={onNew}>
-          <Plus className="h-4 w-4" />
-          New test
-        </Button>
+        <DemoLock label="Creating tests is disabled in the demo.">
+          <Button variant="primary" onClick={onNew}>
+            <Plus className="h-4 w-4" />
+            New test
+          </Button>
+        </DemoLock>
       </header>
 
       <div className="grid grid-cols-[260px_1fr] gap-6">
@@ -134,10 +137,12 @@ export function TestsPage() {
                     : "Create a test to start burning parameter sweeps on a substrate."
                 }
                 action={
-                  <Button variant="primary" onClick={onNew}>
-                    <Plus className="h-4 w-4" />
-                    New test
-                  </Button>
+                  <DemoLock label="Creating tests is disabled in the demo.">
+                    <Button variant="primary" onClick={onNew}>
+                      <Plus className="h-4 w-4" />
+                      New test
+                    </Button>
+                  </DemoLock>
                 }
               />
             )}

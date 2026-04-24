@@ -70,6 +70,7 @@ export function AccountMenu() {
 
   const signOutAndReload = () => {
     setCurrentUserId(null);
+    localStorage.removeItem("xcsgen:userId:prev");
     window.location.reload();
   };
 

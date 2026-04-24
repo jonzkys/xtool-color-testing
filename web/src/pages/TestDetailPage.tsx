@@ -21,6 +21,7 @@ import {
   Badge,
   Button,
   Card,
+  DemoLock,
   EmptyState,
   Field,
   Input,
@@ -197,52 +198,62 @@ export function TestDetailPage({ testId }: Props) {
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="secondary" onClick={onSave} disabled={saving}>
-            <Save className="h-4 w-4" />
-            {test ? (test.locked ? "Save name" : "Save") : "Create"}
-          </Button>
-          {test && (
-            <Button variant="primary" onClick={onGenerate}>
-              <Download className="h-4 w-4" />
-              Generate .xcs
-              {(test.retest_index ?? 0) > 0 && (
-                <span className="ml-1 font-mono text-[10px] tabular-nums opacity-80">
-                  · retest #{test.retest_index}
-                </span>
-              )}
+          <DemoLock label="Saving test edits is disabled in the demo.">
+            <Button variant="secondary" onClick={onSave} disabled={saving}>
+              <Save className="h-4 w-4" />
+              {test ? (test.locked ? "Save name" : "Save") : "Create"}
             </Button>
+          </DemoLock>
+          {test && (
+            <DemoLock label="Generating .xcs is disabled in the demo.">
+              <Button variant="primary" onClick={onGenerate}>
+                <Download className="h-4 w-4" />
+                Generate .xcs
+                {(test.retest_index ?? 0) > 0 && (
+                  <span className="ml-1 font-mono text-[10px] tabular-nums opacity-80">
+                    · retest #{test.retest_index}
+                  </span>
+                )}
+              </Button>
+            </DemoLock>
           )}
           {test && (
-            <Button
-              variant="ghost"
-              onClick={onRetest}
-              size="sm"
-              title="Bump the retest counter and stamp it into the next Generate"
-            >
-              Retest
-              {(test.retest_index ?? 0) > 0 && (
-                <span className="ml-1 font-mono text-[10px] tabular-nums opacity-70">
-                  #{test.retest_index}
-                </span>
-              )}
-            </Button>
+            <DemoLock label="Retest is disabled in the demo.">
+              <Button
+                variant="ghost"
+                onClick={onRetest}
+                size="sm"
+                title="Bump the retest counter and stamp it into the next Generate"
+              >
+                Retest
+                {(test.retest_index ?? 0) > 0 && (
+                  <span className="ml-1 font-mono text-[10px] tabular-nums opacity-70">
+                    #{test.retest_index}
+                  </span>
+                )}
+              </Button>
+            </DemoLock>
           )}
           {test && (
-            <Button variant="ghost" onClick={onDuplicate} size="sm">
-              <Copy className="h-3.5 w-3.5" />
-              Duplicate
-            </Button>
+            <DemoLock label="Duplicating tests is disabled in the demo.">
+              <Button variant="ghost" onClick={onDuplicate} size="sm">
+                <Copy className="h-3.5 w-3.5" />
+                Duplicate
+              </Button>
+            </DemoLock>
           )}
           {test && (
-            <Button
-              variant="ghost"
-              onClick={onDelete}
-              size="sm"
-              className="text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete
-            </Button>
+            <DemoLock label="Deleting tests is disabled in the demo.">
+              <Button
+                variant="ghost"
+                onClick={onDelete}
+                size="sm"
+                className="text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </Button>
+            </DemoLock>
           )}
         </div>
       </header>

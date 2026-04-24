@@ -17,11 +17,13 @@ import {
 import type { TestRecord } from "../types";
 import { listTests } from "../api/tests";
 import { formatRoute } from "../router";
+import { useIsDemo } from "../hooks/useIsDemo";
 import {
   Badge,
   Button,
   Card,
   cn,
+  DemoLock,
   EmptyState,
   Field,
   NumberField,
@@ -35,6 +37,7 @@ interface Props {
 }
 
 export function LibraryPage({ onMaterialsChange }: Props) {
+  const isDemo = useIsDemo();
   const [materials, setMaterials] = useState<Material[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [activeMaterialId, setActiveMaterialId] = useState<number | null>(null);
@@ -211,10 +214,12 @@ export function LibraryPage({ onMaterialsChange }: Props) {
             tests for the same substrate.
           </p>
         </div>
-        <Button variant="primary" onClick={() => void onAddMaterial()} disabled={loading}>
-          <Plus className="h-4 w-4" />
-          New material
-        </Button>
+        <DemoLock label="Materials are read-only in the demo.">
+          <Button variant="primary" onClick={() => void onAddMaterial()} disabled={loading}>
+            <Plus className="h-4 w-4" />
+            New material
+          </Button>
+        </DemoLock>
       </header>
 
       {error && (
@@ -263,7 +268,8 @@ export function LibraryPage({ onMaterialsChange }: Props) {
                           void onRenameMaterial(m.id);
                         }}
                         className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)] hover:bg-[color:var(--color-surface-elevated)]"
-                        title="Rename"
+                        title={isDemo ? "Materials are read-only in the demo." : "Rename"}
+                        disabled={isDemo}
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
@@ -274,7 +280,8 @@ export function LibraryPage({ onMaterialsChange }: Props) {
                           void onDeleteMaterial(m.id);
                         }}
                         className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
-                        title="Delete"
+                        title={isDemo ? "Materials are read-only in the demo." : "Delete"}
+                        disabled={isDemo}
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -333,15 +340,17 @@ export function LibraryPage({ onMaterialsChange }: Props) {
               title={selectedMaterial.name}
               description={`${materialPresets.length} preset${materialPresets.length === 1 ? "" : "s"}`}
               actions={
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => void onAddPreset()}
-                  disabled={loading}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  New preset
-                </Button>
+                <DemoLock label="Presets are read-only in the demo.">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void onAddPreset()}
+                    disabled={loading}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    New preset
+                  </Button>
+                </DemoLock>
               }
             >
               {materialPresets.length === 0 ? (
@@ -350,10 +359,12 @@ export function LibraryPage({ onMaterialsChange }: Props) {
                     title="No presets yet"
                     description='Presets hold reusable parameter bundles. Click "New preset" to start one — they seed new tests and SVG layers for this material.'
                     action={
-                      <Button variant="primary" onClick={() => void onAddPreset()}>
-                        <Plus className="h-4 w-4" />
-                        New preset
-                      </Button>
+                      <DemoLock label="Presets are read-only in the demo.">
+                        <Button variant="primary" onClick={() => void onAddPreset()}>
+                          <Plus className="h-4 w-4" />
+                          New preset
+                        </Button>
+                      </DemoLock>
                     }
                   />
                 </Card>
@@ -366,6 +377,7 @@ export function LibraryPage({ onMaterialsChange }: Props) {
                       onPatch={(patch) => void onUpdatePreset(p.id, patch)}
                       onSetDefault={() => void onSetDefault(p.id)}
                       onDelete={() => void onDeletePreset(p.id)}
+                      isDemo={isDemo}
                     />
                   ))}
                 </div>
@@ -388,11 +400,13 @@ function PresetCard({
   onPatch,
   onSetDefault,
   onDelete,
+  isDemo,
 }: {
   preset: Preset;
   onPatch: (patch: Partial<Pick<Preset, "name" | "color" | "base_params">>) => void;
   onSetDefault: () => void;
   onDelete: () => void;
+  isDemo?: boolean;
 }) {
   const [draftName, setDraftName] = useState(preset.name);
   const [draftColor, setDraftColor] = useState(preset.color ?? "#888888");
@@ -439,6 +453,8 @@ function PresetCard({
           onKeyDown={(e) => {
             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
           }}
+          disabled={isDemo}
+          title={isDemo ? "Presets are read-only in the demo." : undefined}
           className="flex-1 min-w-0 bg-transparent border-0 border-b border-transparent hover:border-[color:var(--color-border)] focus:outline-none focus:border-[color:var(--color-primary)] text-[14px] font-semibold text-[color:var(--color-ink)] px-0 py-0.5"
         />
         <label
@@ -453,6 +469,8 @@ function PresetCard({
             type="radio"
             checked={preset.is_default}
             onChange={onSetDefault}
+            disabled={isDemo}
+            title={isDemo ? "Presets are read-only in the demo." : undefined}
             className="sr-only"
           />
           {preset.is_default ? "Default" : "Make default"}
@@ -465,6 +483,8 @@ function PresetCard({
           value={draftColor}
           onChange={(e) => setDraftColor(e.target.value)}
           onBlur={commitColor}
+          disabled={isDemo}
+          title={isDemo ? "Presets are read-only in the demo." : undefined}
           aria-label="Preset colour"
           className="h-7 w-10 rounded-[4px] border border-[color:var(--color-border-strong)] bg-[color:var(--color-surface)] cursor-pointer p-0.5"
         />
@@ -475,6 +495,8 @@ function PresetCard({
           <button
             type="button"
             onClick={() => onPatch({ color: undefined })}
+            disabled={isDemo}
+            title={isDemo ? "Presets are read-only in the demo." : undefined}
             className="text-[11px] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]"
           >
             clear
@@ -488,6 +510,7 @@ function PresetCard({
           value={draftParams.power}
           onChange={(v) => setDraftParams((p) => ({ ...p, power: v }))}
           onCommit={(v) => commitParam("power", v)}
+          disabled={isDemo}
         />
         <NumberField
           label="Speed"
@@ -495,6 +518,7 @@ function PresetCard({
           integer
           onChange={(v) => setDraftParams((p) => ({ ...p, speed: v }))}
           onCommit={(v) => commitParam("speed", v)}
+          disabled={isDemo}
         />
         <NumberField
           label="Frequency"
@@ -502,6 +526,7 @@ function PresetCard({
           integer
           onChange={(v) => setDraftParams((p) => ({ ...p, frequency: v }))}
           onCommit={(v) => commitParam("frequency", v)}
+          disabled={isDemo}
         />
         <NumberField
           label="Lines/cm"
@@ -509,6 +534,7 @@ function PresetCard({
           integer
           onChange={(v) => setDraftParams((p) => ({ ...p, density: v }))}
           onCommit={(v) => commitParam("density", v)}
+          disabled={isDemo}
         />
         <NumberField
           label="Passes"
@@ -517,19 +543,23 @@ function PresetCard({
           min={1}
           onChange={(v) => setDraftParams((p) => ({ ...p, passes: v }))}
           onCommit={(v) => commitParam("passes", v)}
+          disabled={isDemo}
         />
         <PulseWidthSelect
           label="Pulse width"
           value={draftParams.pulse_width}
           onChange={(v) => {
-            setDraftParams((p) => ({ ...p, pulse_width: v }));
-            commitParam("pulse_width", v);
+            if (!isDemo) {
+              setDraftParams((p) => ({ ...p, pulse_width: v }));
+              commitParam("pulse_width", v);
+            }
           }}
         />
         <div className="col-span-2">
           <Field label="Laser">
             <Select
               value={draftParams.laser}
+              disabled={isDemo}
               onChange={(e) =>
                 onPatch({
                   base_params: {
@@ -547,15 +577,17 @@ function PresetCard({
       </div>
 
       <div className="px-3 py-2 border-t border-[color:var(--color-border)] flex justify-end">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onDelete}
-          className="text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          Delete preset
-        </Button>
+        <DemoLock label="Presets are read-only in the demo.">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onDelete}
+            className="text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete preset
+          </Button>
+        </DemoLock>
       </div>
     </Card>
   );

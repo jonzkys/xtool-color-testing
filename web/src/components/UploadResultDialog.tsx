@@ -4,6 +4,7 @@ import { preflightUpload, uploadResultAuto, type UploadPreflight } from "../api/
 import { getTest } from "../api/tests";
 import type { ResultRecord, TestRecord } from "../types";
 import { formatRoute } from "../router";
+import { useIsDemo } from "../hooks/useIsDemo";
 import {
   Button,
   cn,
@@ -42,6 +43,7 @@ export function UploadResultDialog({
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
+  const isDemo = useIsDemo();
   const [state, setState] = useState<State>({ kind: "idle" });
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -175,12 +177,14 @@ export function UploadResultDialog({
                 <DropZone
                   dragOver={dragOver}
                   onDragOver={(e) => {
+                    if (isDemo) return;
                     e.preventDefault();
                     setDragOver(true);
                   }}
                   onDragLeave={() => setDragOver(false)}
-                  onDrop={onDrop}
-                  onClick={() => inputRef.current?.click()}
+                  onDrop={isDemo ? (e) => e.preventDefault() : onDrop}
+                  onClick={() => { if (!isDemo) inputRef.current?.click(); }}
+                  disabled={isDemo}
                 />
               )}
 
@@ -228,6 +232,7 @@ export function UploadResultDialog({
                 accept="image/*"
                 className="hidden"
                 onChange={onPick}
+                disabled={isDemo}
               />
             </>
           )}
@@ -247,12 +252,14 @@ function DropZone({
   onDragLeave,
   onDrop,
   onClick,
+  disabled,
 }: {
   dragOver: boolean;
   onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
   onDragLeave: () => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <div
@@ -268,14 +275,18 @@ function DropZone({
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
+      aria-disabled={disabled}
+      title={disabled ? "Uploading photos is disabled in the demo." : undefined}
       className={cn(
         "relative rounded-[12px] border-[1.5px] border-dashed",
-        "px-5 py-9 text-center cursor-pointer",
+        "px-5 py-9 text-center",
         "transition-all duration-200",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
-        dragOver
-          ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary-tint)]"
-          : "border-[color:var(--color-border-strong)] bg-[color:var(--color-surface-elevated)] hover:border-[color:var(--color-primary)]/60 hover:bg-[color:var(--color-primary-tint)]/40",
+        disabled
+          ? "cursor-not-allowed opacity-60 border-[color:var(--color-border-strong)] bg-[color:var(--color-surface-elevated)]"
+          : dragOver
+            ? "cursor-pointer border-[color:var(--color-primary)] bg-[color:var(--color-primary-tint)]"
+            : "cursor-pointer border-[color:var(--color-border-strong)] bg-[color:var(--color-surface-elevated)] hover:border-[color:var(--color-primary)]/60 hover:bg-[color:var(--color-primary-tint)]/40",
       )}
     >
       <div

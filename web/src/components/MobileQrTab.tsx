@@ -7,11 +7,13 @@ import {
   type RecentMobileUpload,
 } from "../api/mobileUpload";
 import { formatRoute } from "../router";
+import { useIsDemo } from "../hooks/useIsDemo";
 
 const POLL_MS = 3000;
 const RECENT_LOOKBACK_S = 600;  // 10 min — covers "I closed and reopened"
 
 export function MobileQrTab() {
+  const isDemo = useIsDemo();
   const [mid, setMid] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recent, setRecent] = useState<RecentMobileUpload[]>([]);
@@ -109,7 +111,9 @@ export function MobileQrTab() {
       <button
         type="button"
         onClick={onRotate}
-        className="text-[11px] underline text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-ink)]"
+        disabled={isDemo}
+        title={isDemo ? "Rotating the QR code is disabled in the demo." : undefined}
+        className="text-[11px] underline text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-ink)] disabled:opacity-50 disabled:cursor-not-allowed"
       >
         rotate code
       </button>

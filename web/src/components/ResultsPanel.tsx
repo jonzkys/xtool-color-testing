@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Camera, Trash2, Upload } from "lucide-react";
 import type { AveragedSwatch, ResultRecord } from "../types";
 import { useAuthedImage } from "../hooks/useAuthedImage";
@@ -11,11 +11,13 @@ import {
   getAveragedSwatches,
   ingestToPalette,
 } from "../api/results";
+import { useIsDemo } from "../hooks/useIsDemo";
 import {
   Badge,
   Button,
   Card,
   cn,
+  DemoLock,
   EmptyState,
   Section,
   Select,
@@ -30,6 +32,8 @@ export function ResultsPanel({
   testId: number;
   locked: boolean;
 }) {
+  const isDemo = useIsDemo();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [results, setResults] = useState<ResultRecord[]>([]);
   const [averaged, setAveragedSwatches] = useState<AveragedSwatch[]>([]);
   const [error, setError] = useState<string>();
@@ -130,32 +134,36 @@ export function ResultsPanel({
     }
   }
 
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    void onUpload(e);
+  }
+
   return (
     <div className="flex flex-col gap-5 p-4">
-      <label
-        className={cn(
-          "inline-flex items-center justify-center gap-2 w-full",
-          "h-10 px-4 rounded-[6px] text-[13px] font-medium",
-          "bg-[color:var(--color-primary)] text-white",
-          "hover:bg-[color:var(--color-primary-hover)]",
-          busy ? "opacity-50 cursor-wait" : "cursor-pointer",
-        )}
-      >
-        {busy ? (
-          <Upload className="h-4 w-4 animate-pulse" />
-        ) : (
-          <Camera className="h-4 w-4" />
-        )}
-        {busy ? "Uploading…" : "Upload photo"}
-        <input
-          type="file"
-          accept="image/*"
-          capture="environment"
+      <DemoLock label="Uploading photos is disabled in the demo.">
+        <Button
+          variant="primary"
+          className="w-full"
           disabled={busy}
-          onChange={onUpload}
-          className="hidden"
-        />
-      </label>
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {busy ? (
+            <Upload className="h-4 w-4 animate-pulse" />
+          ) : (
+            <Camera className="h-4 w-4" />
+          )}
+          {busy ? "Uploading…" : "Upload photo"}
+        </Button>
+      </DemoLock>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        disabled={busy || isDemo}
+        onChange={handleFileChange}
+        className="hidden"
+      />
       {error && (
         <div className="rounded-[6px] border border-[color:var(--color-destructive)]/30 bg-[color:var(--color-destructive-tint)] px-3 py-2 text-[13px] text-[color:var(--color-destructive)]">
           {error}
@@ -231,6 +239,8 @@ export function ResultsPanel({
                     type="checkbox"
                     checked={r.excluded}
                     onChange={(e) => toggleExclude(r.id, e.target.checked)}
+                    disabled={isDemo}
+                    title={isDemo ? "Excluding results is disabled in the demo." : undefined}
                   />
                   exclude
                 </label>
@@ -241,7 +251,8 @@ export function ResultsPanel({
                     onDeleteResult(r.id);
                   }}
                   className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
-                  title="Delete result"
+                  title={isDemo ? "Deleting results is disabled in the demo." : "Delete result"}
+                  disabled={isDemo}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -367,13 +378,15 @@ export function ResultsPanel({
           replace existing palette entries for this test
         </label>
         <div className="flex items-center justify-between gap-3">
-          <Button
-            variant="primary"
-            onClick={doIngest}
-            disabled={indices.length === 0}
-          >
-            Ingest to palette
-          </Button>
+          <DemoLock label="Saving to palette is disabled in the demo.">
+            <Button
+              variant="primary"
+              onClick={doIngest}
+              disabled={indices.length === 0}
+            >
+              Ingest to palette
+            </Button>
+          </DemoLock>
           {indices.length > 0 && (
             <Badge variant="info" size="sm">
               {indices.length} selected

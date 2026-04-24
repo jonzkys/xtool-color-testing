@@ -18,6 +18,7 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
+  DemoLock,
   EmptyState,
   Field,
   Input,
@@ -362,15 +363,17 @@ function BrowseView({ materials }: { materials: Material[] }) {
                 >
                   Open
                 </a>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onDeleteTest(testId)}
-                  className="text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete all ({group.length})
-                </Button>
+                <DemoLock label="Deleting palette entries is disabled in the demo.">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onDeleteTest(testId)}
+                    className="text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete all ({group.length})
+                  </Button>
+                </DemoLock>
               </>
             }
           >
@@ -423,14 +426,16 @@ function EntryCard({
           >
             <Info className="h-3.5 w-3.5" />
           </button>
-          <button
-            type="button"
-            onClick={onDelete}
-            title="Delete swatch"
-            className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          <DemoLock label="Deleting palette entries is disabled in the demo.">
+            <button
+              type="button"
+              onClick={onDelete}
+              title="Delete swatch"
+              className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </DemoLock>
         </div>
       </div>
     </div>

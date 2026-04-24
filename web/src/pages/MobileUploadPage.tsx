@@ -4,6 +4,8 @@ import {
   uploadFromMobile,
   type MobileUploadResponse,
 } from "../api/mobileUpload";
+import { useIsDemo } from "../hooks/useIsDemo";
+import { cn } from "../ui";
 
 interface Props { mid: string }
 
@@ -19,6 +21,7 @@ type State =
   | { kind: "network_error"; displayName: string };
 
 export function MobileUploadPage({ mid }: Props) {
+  const isDemo = useIsDemo();
   const [state, setState] = useState<State>({ kind: "loading" });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -182,7 +185,7 @@ export function MobileUploadPage({ mid }: Props) {
           type="file"
           accept="image/*"
           className="hidden"
-          disabled={uploading}
+          disabled={uploading || isDemo}
           onChange={(e) => {
             const f = e.target.files?.[0];
             if (f) void onPick(f);
@@ -190,12 +193,22 @@ export function MobileUploadPage({ mid }: Props) {
           }}
         />
         <span
-          className="block h-16 rounded-[10px] bg-[color:var(--color-primary)] text-white text-[16px] font-medium flex items-center justify-center"
+          className={cn(
+            "block h-16 rounded-[10px] text-white text-[16px] font-medium flex items-center justify-center",
+            isDemo
+              ? "bg-[color:var(--color-primary)] opacity-50 cursor-not-allowed"
+              : "bg-[color:var(--color-primary)]",
+          )}
           aria-busy={uploading}
         >
           {uploading ? "Uploading…" : "Take or choose photo"}
         </span>
       </label>
+      {isDemo && (
+        <p className="mt-2 text-[12px] text-center text-[color:var(--color-ink-muted)]">
+          Uploading photos is disabled in the demo.
+        </p>
+      )}
     </Layout>
   );
 }
