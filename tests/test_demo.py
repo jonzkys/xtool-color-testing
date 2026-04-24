@@ -131,3 +131,18 @@ def test_get_is_never_blocked_even_with_demo_header():
     client = TestClient(make_app())
     resp = client.get("/api/tests", headers={"X-User-Id": "DEMO"})
     assert resp.status_code == 200
+
+
+def test_lowercase_demo_header_is_not_blocked():
+    # "demo" != "DEMO" — case matters. A user whose real API key
+    # happens to be lowercase "demo" must not be treated as the demo
+    # identity.
+    client = TestClient(make_app())
+    resp = client.post("/api/tests", headers={"X-User-Id": "demo"}, json={})
+    assert resp.status_code == 200
+
+
+def test_mixedcase_demo_header_is_not_blocked():
+    client = TestClient(make_app())
+    resp = client.post("/api/tests", headers={"X-User-Id": "Demo"}, json={})
+    assert resp.status_code == 200
