@@ -159,6 +159,37 @@ export function WelcomeDialog({
             />
           )}
         </div>
+
+        <div className="mt-5 flex items-center gap-3 px-6">
+          <div className="flex-1 h-px bg-[color:var(--metal-bar-soft)]" />
+          <span className="font-mono text-[9.5px] tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)]">
+            or
+          </span>
+          <div className="flex-1 h-px bg-[color:var(--metal-bar-soft)]" />
+        </div>
+        <div className="px-6 pb-6 mt-3">
+          <a
+            href="#/demo"
+            className={cn(
+              "flex items-center justify-between gap-3 w-full",
+              "rounded-[8px] border border-[color:var(--color-border)]",
+              "bg-[color:var(--color-surface-elevated)]",
+              "px-3 py-2.5",
+              "text-left transition-colors",
+              "hover:border-[color:var(--color-border-strong)] hover:bg-[color:var(--color-surface)]",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/40",
+            )}
+          >
+            <div>
+              <div className="text-[13px] font-semibold text-[color:var(--color-ink)]">
+                Just browsing? Try the demo account →
+              </div>
+              <div className="mt-0.5 text-[11px] text-[color:var(--color-ink-subtle)]">
+                Read-only access to a pre-filled workbench.
+              </div>
+            </div>
+          </a>
+        </div>
       </DialogContent>
     </Dialog>
   );
