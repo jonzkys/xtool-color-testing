@@ -146,3 +146,58 @@ def test_mixedcase_demo_header_is_not_blocked():
     client = TestClient(make_app())
     resp = client.post("/api/tests", headers={"X-User-Id": "Demo"}, json={})
     assert resp.status_code == 200
+
+
+# --- End-to-end: demo key resolves to the target user + middleware wires in.
+
+def test_demo_key_resolves_to_target_user_in_deps():
+    """Full create_app wiring: DEMO header returns the target user's
+    data on a GET, and is blocked on a POST to a non-allowlisted route."""
+    from xcs_gen_web.app import create_app
+    from xcs_gen_web.config import Settings
+
+    settings = Settings(
+        mode="multi_user",
+        db_url="sqlite:///:memory:",
+        auto_migrate=True,
+        demo_api_key="DEMO",
+        demo_target_user_id=1,
+    )
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    # GET hits the repo layer. With an empty test DB the target user
+    # has no tests yet — but the call succeeds (200, empty list), which
+    # proves the demo key resolved to an owner_id without 401.
+    resp = client.get("/api/tests", headers={"X-User-Id": "DEMO"})
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+    # Non-allowlisted POST is 403 (middleware).
+    resp = client.post(
+        "/api/tests",
+        headers={"X-User-Id": "DEMO", "Content-Type": "application/json"},
+        json={"name": "should not persist", "spec": {}},
+    )
+    assert resp.status_code == 403
+    assert resp.json() == {"detail": "demo account is read-only"}
+
+
+def test_demo_disabled_when_key_is_empty():
+    """With ``demo_api_key=""`` in settings, sending X-User-Id: DEMO
+    behaves like any unregistered key — 401 from deps, NOT 403."""
+    from xcs_gen_web.app import create_app
+    from xcs_gen_web.config import Settings
+
+    settings = Settings(
+        mode="multi_user",
+        db_url="sqlite:///:memory:",
+        auto_migrate=True,
+        demo_api_key="",
+    )
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    resp = client.get("/api/tests", headers={"X-User-Id": "DEMO"})
+    # DEMO is not a valid base64url 16-char key; deps returns 401.
+    assert resp.status_code == 401

@@ -16,14 +16,15 @@ from .repositories import users as u_repo
 def get_current_user(request: Request) -> int:
     """Resolve the integer owner_id for the current request.
 
-    Standalone mode: always returns ``settings.standalone_user_id``
-    (reserved 0), no validation — ideal for the single-user workflow.
+    Standalone mode: always returns ``settings.standalone_user_id``.
 
-    Multi-user mode: reads the configured header (by default
-    ``X-User-Id``) which carries the caller's api_key, rejects
-    malformed or unregistered keys with 401, and bumps last_seen_at
-    so a future dashboard has a recency signal. Returns the
-    ``users.id`` integer.
+    Multi-user mode: reads the configured header (``X-User-Id`` by
+    default). The literal ``settings.demo_api_key`` (when non-empty) is
+    recognised as a virtual "demo" user and resolves to
+    ``settings.demo_target_user_id`` without a DB lookup. Any other
+    value is validated against the users table; malformed or
+    unregistered keys return 401. Successful multi-user resolution
+    bumps ``last_seen_at``; the demo path does not.
     """
     settings: Settings = request.app.state.settings
     if settings.mode == "standalone":
@@ -37,6 +38,10 @@ def get_current_user(request: Request) -> int:
                 "this server runs in multi_user mode"
             ),
         )
+    # Virtual demo user — recognised before DB validation so the demo
+    # key doesn't have to be a valid-shape api_key.
+    if settings.demo_api_key and raw == settings.demo_api_key:
+        return int(settings.demo_target_user_id)
     if not u_repo.is_valid_api_key(raw):
         raise HTTPException(
             status_code=401,

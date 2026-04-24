@@ -255,6 +255,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_headers=["*"],
         )
 
+    # Demo write-block runs outermost so a disallowed write is 403'd
+    # before any body is read or DB query runs. Disabled when
+    # demo_api_key is empty or mode is standalone (standalone ignores
+    # the header entirely).
+    if settings.mode != "standalone" and settings.demo_api_key:
+        from .demo import DemoReadOnlyMiddleware
+        app.add_middleware(
+            DemoReadOnlyMiddleware,
+            demo_api_key=settings.demo_api_key,
+            user_header=settings.user_header,
+        )
+
     # Registration rate limiter — shared state so all /register calls
     # from the same IP share a bucket.
     register_limiter = RegistrationRateLimiter(
