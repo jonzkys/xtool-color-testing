@@ -25,6 +25,10 @@ const PREV_KEY = "xcsgen:userId:prev";
 /** Literal API-key value that signals "demo account" to the backend. */
 export const DEMO_API_KEY = "DEMO";
 
+/** Custom event dispatched in-tab whenever the stored user id changes.
+ *  ``storage`` only fires cross-tab, so same-tab listeners need this. */
+export const USER_CHANGED_EVENT = "xcsgen:user-changed";
+
 export function isDemoUser(): boolean {
   return getCurrentUserId() === DEMO_API_KEY;
 }
@@ -42,6 +46,7 @@ export function enterDemo(): void {
       localStorage.setItem(PREV_KEY, current);
     }
     localStorage.setItem(STORAGE_KEY, DEMO_API_KEY);
+    window.dispatchEvent(new Event(USER_CHANGED_EVENT));
   } catch {
     /* storage disabled — ignore; app will re-gate on next load */
   }
@@ -64,6 +69,7 @@ export function exitDemo(): void {
     } else {
       localStorage.removeItem(STORAGE_KEY);
     }
+    window.dispatchEvent(new Event(USER_CHANGED_EVENT));
   } catch {
     /* PREV_KEY is already cleared; userId slot may still hold DEMO */
   }

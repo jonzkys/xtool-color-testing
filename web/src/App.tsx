@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TopBar } from "./components/TopBar";
 import { LoomPage } from "./pages/LoomPage";
 import { SvgLayersPage } from "./components/SvgLayersPage";
@@ -24,6 +24,7 @@ export default function App() {
   // In multi-user mode with no stored key, the app is gated behind the
   // welcome modal. `gate` is null while we're still probing /api/health.
   const [gate, setGate] = useState<"ready" | "welcome" | null>(null);
+  const gateMountedRef = useRef(false);
 
   useEffect(() => {
     if (window.location.hash === "") navigate({ name: "tests" });
@@ -47,14 +48,14 @@ export default function App() {
     getHealth()
       .then((h) => {
         if (cancelled) return;
+        gateMountedRef.current = true;
         if (h.mode === "standalone" || hasStoredKey()) setGate("ready");
         else setGate("welcome");
       })
       .catch(() => {
-        // If the backend isn't reachable, fail open to the usual UI —
-        // the app's own error surfaces are better at explaining the
-        // outage than a blank page with no chrome.
-        if (!cancelled) setGate("ready");
+        if (cancelled) return;
+        gateMountedRef.current = true;
+        setGate("ready");
       });
     return () => {
       cancelled = true;
@@ -67,6 +68,7 @@ export default function App() {
   // /api/health — by this point we already know the backend mode.
   useEffect(() => {
     if (gate !== null) return;
+    if (!gateMountedRef.current) return;
     if (hasStoredKey()) {
       setGate("ready");
     } else {

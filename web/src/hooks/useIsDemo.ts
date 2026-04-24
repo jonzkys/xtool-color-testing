@@ -1,32 +1,36 @@
 import { useEffect, useState } from "react";
-import { isDemoUser } from "../api/userHeader";
+import { isDemoUser, USER_CHANGED_EVENT } from "../api/userHeader";
 
 /**
- * Read-only boolean derived from ``localStorage``. Re-checks when the
- * ``storage`` event fires so exiting demo in another tab updates the
- * banner and disabled-button state in this tab.
+ * Read-only boolean derived from ``localStorage``. Two subscriptions:
  *
- * In-tab updates (entering/exiting demo via a button in this same tab)
- * don't fire ``storage`` — callers who need to react inside the tab
- * that mutated storage must also trigger a state update themselves
- * (e.g. a ``navigate`` that re-renders the tree).
+ *   - ``storage`` event — fires in OTHER tabs when this origin writes
+ *     to localStorage. Lets the banner state sync across tabs.
+ *   - ``xcsgen:user-changed`` custom event — dispatched by
+ *     ``enterDemo``/``exitDemo`` (and could be by other user-mutation
+ *     call sites in the future). Catches SAME-TAB updates so the
+ *     banner appears immediately after a ``#/demo`` entry without
+ *     needing a page reload.
  */
 export function useIsDemo(): boolean {
   const [v, setV] = useState<boolean>(isDemoUser);
   useEffect(() => {
-    // Only react to changes on the keys this hook cares about. A null
-    // ``e.key`` means ``localStorage.clear()`` was called — also re-read.
-    const handler = (e: StorageEvent) => {
+    const refresh = () => setV(isDemoUser());
+    const storageHandler = (e: StorageEvent) => {
       if (
         e.key === "xcsgen:userId" ||
         e.key === "xcsgen:userId:prev" ||
         e.key === null
       ) {
-        setV(isDemoUser());
+        refresh();
       }
     };
-    window.addEventListener("storage", handler);
-    return () => window.removeEventListener("storage", handler);
+    window.addEventListener("storage", storageHandler);
+    window.addEventListener(USER_CHANGED_EVENT, refresh);
+    return () => {
+      window.removeEventListener("storage", storageHandler);
+      window.removeEventListener(USER_CHANGED_EVENT, refresh);
+    };
   }, []);
   return v;
 }
