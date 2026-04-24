@@ -48,6 +48,10 @@ def make_app(demo_api_key: str = "DEMO") -> FastAPI:
     def preflight():
         return {"ok": True}
 
+    @app.post("/api/svg-stack")
+    def gen_svg_stack():
+        return {"ok": True}
+
     return app
 
 
@@ -201,3 +205,34 @@ def test_demo_disabled_when_key_is_empty():
     resp = client.get("/api/tests", headers={"X-User-Id": "DEMO"})
     # DEMO is not a valid base64url 16-char key; deps returns 401.
     assert resp.status_code == 401
+
+
+def test_demo_post_to_svg_stack_is_allowed():
+    client = TestClient(make_app())
+    resp = client.post("/api/svg-stack", headers={"X-User-Id": "DEMO"}, json={})
+    assert resp.status_code == 200
+
+
+def test_demo_middleware_not_registered_in_standalone_mode():
+    """In standalone mode the demo middleware is never registered, so
+    a POST with X-User-Id: DEMO passes straight through (standalone
+    ignores the header entirely)."""
+    from xcs_gen_web.app import create_app
+    from xcs_gen_web.config import Settings
+
+    settings = Settings(
+        mode="standalone",
+        demo_api_key="DEMO",
+        demo_target_user_id=1,
+    )
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    resp = client.post(
+        "/api/tests",
+        headers={"X-User-Id": "DEMO"},
+        json={"name": "standalone", "spec": {}},
+    )
+    # Standalone mode must NOT return the demo 403 — the handler (or a
+    # later validation error) must reach it.
+    assert resp.status_code != 403

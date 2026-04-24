@@ -30,6 +30,7 @@ WRITE_METHODS: frozenset[str] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 DEMO_SAFE_WRITES: frozenset[tuple[str, str]] = frozenset({
     ("POST", "/api/svg-layers"),
     ("POST", "/api/svg-preview"),
+    ("POST", "/api/svg-stack"),
     ("POST", "/api/results/preflight"),
 })
 
