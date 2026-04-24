@@ -1,5 +1,3 @@
-import os
-
 import pytest
 
 from xcs_gen_web.config import Settings
