@@ -96,6 +96,13 @@ class Settings:
     s3_region: str | None = None         # None = let boto3 resolve from env
     s3_endpoint_url: str | None = None   # custom endpoint for MinIO/LocalStack
 
+    # Demo account — read-only impersonation of ``demo_target_user_id``.
+    # Set ``demo_api_key`` to the empty string to disable the feature;
+    # the middleware short-circuits on empty keys so standalone deploys
+    # and tests that don't want a demo key see zero overhead.
+    demo_api_key: str = "DEMO"
+    demo_target_user_id: int = 1
+
     @classmethod
     def from_env(cls) -> "Settings":
         mode_raw = os.environ.get("XCS_GEN_MODE", "standalone").strip().lower()
@@ -132,4 +139,8 @@ class Settings:
             s3_prefix=os.environ.get("XCS_GEN_S3_PREFIX", "").strip("/"),
             s3_region=os.environ.get("XCS_GEN_S3_REGION") or None,
             s3_endpoint_url=os.environ.get("XCS_GEN_S3_ENDPOINT_URL") or None,
+            demo_api_key=os.environ.get("XCS_GEN_DEMO_API_KEY", "DEMO"),
+            demo_target_user_id=int(
+                os.environ.get("XCS_GEN_DEMO_TARGET_USER_ID", "1"),
+            ),
         )
