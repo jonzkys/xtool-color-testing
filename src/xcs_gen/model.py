@@ -138,11 +138,26 @@ ANNOTATION_LAYER_COLOR = "#aaaaaa"
 
 @dataclass
 class Device:
-    """Laser device identity."""
+    """Laser device identity. Constructed from the machine registry —
+    see ``Device.from_machine``. The default constructor still produces
+    F2 Ultra because plenty of legacy callers (tests, scripts) build a
+    bare ``Device()`` and the F2 was the only supported machine before
+    multi-machine landed; we keep that fallback so those callers don't
+    break, but the canonical constructor is ``from_machine``."""
 
     ext_id: str = "GS004-CLASS-4"
     ext_name: str = "F2 Ultra"
     power: list[int] = field(default_factory=lambda: [60, 40])
+
+    @classmethod
+    def from_machine(cls, machine_id: str) -> "Device":
+        # Imported lazily to avoid a model→machines→model import cycle.
+        from .machines import device_power, get
+        m = get(machine_id)
+        return cls(
+            ext_id=m.ext_id, ext_name=m.ext_name,
+            power=device_power(machine_id),
+        )
 
 
 @dataclass
