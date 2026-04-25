@@ -47,6 +47,7 @@ import type {
 import { defaultBaseParams } from "../defaults";
 import type { LibraryState } from "../library";
 import { listMaterials, listPresets } from "../api/library";
+import { getCurrentMachineId } from "../state/machine";
 import { MaterialPresetPicker } from "../components/MaterialPresetPicker";
 import { PulseWidthSelect } from "../components/PulseWidthSelect";
 import { HatchPassesEditor } from "../components/HatchPassesEditor";
@@ -249,13 +250,19 @@ function rampValueAt(r: RampState, pos: number): number {
  * ====================================================================== */
 
 export function LoomPage() {
+  // Track the machine that was active when library data was fetched so
+  // the generate guard can detect stale context (machine switch without
+  // a full page reload, which the MachineSwitcher normally enforces).
+  const loadedMachineIdRef = useRef<string>(getCurrentMachineId());
+
   const [library, setLibrary] = useState<LibraryState>({
     materials: [],
     presets: [],
     active_material_id: null,
   });
   useEffect(() => {
-    Promise.all([listMaterials(), listPresets()])
+    loadedMachineIdRef.current = getCurrentMachineId();
+    Promise.all([listMaterials(), listPresets(undefined, getCurrentMachineId())])
       .then(([mats, pres]) => {
         setLibrary({
           materials: mats,
@@ -382,6 +389,17 @@ export function LoomPage() {
 
   const onGenerate = useCallback(async () => {
     if (!silhouette || !materialId) return;
+    // Cross-machine guard: detect if the active machine changed after the
+    // library data was loaded (MachineSwitcher normally forces a reload,
+    // but guard defensively in case of edge cases).
+    const currentMachine = getCurrentMachineId();
+    if (loadedMachineIdRef.current !== currentMachine) {
+      setError(
+        `Cross-machine mix detected (${loadedMachineIdRef.current}, ${currentMachine}). ` +
+        `Switch to a single machine in the TopBar before composing.`,
+      );
+      return;
+    }
     setGenerating(true);
     setError(undefined);
     try {
@@ -1209,7 +1227,7 @@ function ScrubBar({
 const RAMP_PARAMS: { value: HatchRamp["param"]; label: string; unit: string }[] = [
   { value: "power",      label: "Power",      unit: "%" },
   { value: "speed",      label: "Speed",      unit: "mm/s" },
-  { value: "frequency",  label: "Frequency",  unit: "Hz" },
+  { value: "frequency",  label: "Frequency",  unit: "kHz" },
   { value: "density",    label: "Density",    unit: "l/cm" },
   { value: "passes",     label: "Passes",     unit: "×" },
   { value: "pulse_width", label: "Pulse",     unit: "ns" },

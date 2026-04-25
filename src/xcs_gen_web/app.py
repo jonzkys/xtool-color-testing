@@ -304,10 +304,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     @app.get("/api/health")
-    def health() -> dict[str, str]:
+    def health() -> dict[str, object]:
         # Exposes mode so the frontend can adapt its UI (e.g. show a
         # user-id header prompt) without a separate discovery endpoint.
-        return {"status": "ok", "mode": settings.mode}
+        # ``available_machines`` is the cheap-to-fetch list of registry
+        # ids so the bootstrap can render the machine switcher without
+        # a second round-trip; the full registry comes from /api/machines.
+        from xcs_gen.machines import known_ids
+        return {
+            "status": "ok",
+            "mode": settings.mode,
+            "available_machines": list(known_ids()),
+        }
+
+    @app.get("/api/machines")
+    def machines_list() -> dict:
+        """Static registry payload — machines + validation profiles.
+
+        Cacheable indefinitely from the frontend's perspective; add an
+        ETag header here later if the payload size or request volume
+        warrants it. For now, just serialise.
+        """
+        from dataclasses import asdict
+        from xcs_gen.machines import all_machines, PROFILES
+        machines_out: list[dict] = []
+        for m in all_machines():
+            d = asdict(m)
+            d["image"] = f"/static/machines/{d['image']}"
+            machines_out.append(d)
+        return {"machines": machines_out, "profiles": PROFILES}
 
     # User repo is referenced by the changelog endpoints below for the
     # last-seen tracking, so import it before we define them (the
@@ -635,6 +660,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             material_id=body.material_id, hex_=body.hex,
             params=body.params, notes=body.notes,
             owner_id=user_id,
+            machine_id=body.machine_id,
         )
         return PaletteEntryResponse(**e)
 
@@ -643,6 +669,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         material_id: int | None = None,
         favorites_only: bool = False,
         source: str | None = None,
+        machine_id: str | None = None,
         user_id: int = Depends(get_current_user),
     ) -> list[PaletteEntryResponse]:
         return [
@@ -650,16 +677,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             for e in pal_repo.list_all(
                 owner_id=user_id, material_id=material_id,
                 favorites_only=favorites_only, source=source,
+                machine_id=machine_id,
             )
         ]
 
     @app.get("/api/palette/query", response_model=list[PaletteQueryResult])
     def palette_query(
         hex: str, limit: int = 5, material_id: int | None = None,
+        machine_id: str | None = None,
         user_id: int = Depends(get_current_user),
     ) -> list[PaletteQueryResult]:
         results = pal_repo.query_by_hex(
             hex, owner_id=user_id, limit=limit, material_id=material_id,
+            machine_id=machine_id,
         )
         return [
             PaletteQueryResult(
@@ -777,17 +807,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return PresetResponse(**p_repo.create(
             material_id=body.material_id, name=body.name, color=body.color,
             base_params=body.base_params.model_dump(), owner_id=user_id,
+            machine_id=body.machine_id,
         ))
 
     @app.get("/api/presets", response_model=list[PresetResponse])
     def presets_list(
         material_id: int | None = None,
+        machine_id: str | None = None,
         user_id: int = Depends(get_current_user),
     ) -> list[PresetResponse]:
         rows = (
-            p_repo.list_by_material(material_id, owner_id=user_id)
+            p_repo.list_by_material(material_id, owner_id=user_id, machine_id=machine_id)
             if material_id is not None
-            else p_repo.list_all(owner_id=user_id)
+            else p_repo.list_all(owner_id=user_id, machine_id=machine_id)
         )
         return [PresetResponse(**p) for p in rows]
 
@@ -832,6 +864,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .repositories import tests as t_repo
     from .repositories.tests import LockedError
 
+    def _default_mode_for(machine_id: str) -> str:
+        """When a request omits mode, pick the most representative mode for the
+        machine. F2 Ultra's marquee feature is color engrave; everything else
+        defaults to plain engrave."""
+        return "color_engrave" if machine_id == "F2Ultra" else "engrave"
+
     # Tests --------------------------------------------------------------
     @app.post("/api/tests", response_model=TestResponse, status_code=201)
     def tests_create(
@@ -839,10 +877,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> TestResponse:
         if m_repo.get(body.material_id, owner_id=user_id) is None:
             raise HTTPException(status_code=400, detail="unknown material_id")
+        # Validate the test's params against the profile selected by
+        # (machine_id, mode). Mode lookup falls back to the machine's most
+        # representative mode if the spec doesn't carry one — pre-multi-machine
+        # specs predate the mode concept; we pick color_engrave for F2 (its
+        # marquee feature) and engrave for everything else.
+        # NOTE: We strip fields that are not_applicable for the profile
+        # (e.g. pulse_width on STANDARD) before validating so that
+        # legacy base_params, which always carry those fields, still
+        # pass.  Full constraint enforcement is a future tightening pass.
+        from xcs_gen.machines import PROFILES, profile_for, ValidationError as ProfileError
+        spec_dict = body.spec.model_dump()
+        mode = spec_dict.get("base_params", {}).get("mode") or _default_mode_for(body.machine_id)
+        try:
+            profile_id = profile_for(body.machine_id, mode)
+        except KeyError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        try:
+            from xcs_gen.machines import validate_against_profile
+            # Strip not_applicable fields before validation so legacy
+            # base_params (which always carry pulse_width) don't fail on
+            # machines where the field is irrelevant (e.g. F2Ultra STANDARD).
+            profile = PROFILES[profile_id]
+            not_applicable = {
+                k for k, v in profile.items() if v.get("kind") == "not_applicable"
+            }
+            params_to_validate = {
+                k: v for k, v in spec_dict["base_params"].items()
+                if k not in not_applicable
+            }
+            validate_against_profile(profile_id, params_to_validate)
+        except ProfileError as e:
+            raise HTTPException(status_code=422, detail={"field": e.field, "message": e.message})
         t = t_repo.create(
             name=body.name, material_id=body.material_id,
-            spec=body.spec.model_dump(), notes=body.notes,
+            spec=spec_dict, notes=body.notes,
             owner_id=user_id,
+            machine_id=body.machine_id,
         )
         return TestResponse(**t)
 
@@ -850,10 +921,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def tests_list(
         material_id: int | None = None,
         status: str | None = None,
+        machine_id: str | None = None,
         user_id: int = Depends(get_current_user),
     ) -> list[TestResponse]:
         return [TestResponse(**t) for t in t_repo.list_all(
             owner_id=user_id, material_id=material_id, status=status,
+            machine_id=machine_id,
         )]
 
     @app.get("/api/tests/{tid}", response_model=TestResponse)
@@ -911,6 +984,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             test_id=t["id"], name=t["name"],
             material_id=t["material_id"], spec=t["spec"],
             retest_index=t.get("retest_index", 0),
+            machine_id=t.get("machine_id", "F2Ultra"),
         )
         safe_name = xcs_service._safe_project_name(t["name"], fallback=f"test-{t['id']}")
         return Response(
@@ -1165,12 +1239,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "hex": s["hex"], "sigma": s["sigma"],
                 "source": body.mode, "source_result_id": source_result_id,
                 "params": params,
+                "machine_id": t.get("machine_id", "F2Ultra"),
             })
         if body.replace_existing:
             ids = pal_repo.replace_for_test(tid, payload, owner_id=user_id)
         else:
             ids = pal_repo.insert_bulk(payload, owner_id=user_id)
         return {"added": len(ids), "ids": ids}
+
+    # Per-machine product images. Mounted at /static/machines so the
+    # /api/machines payload can return absolute, cache-friendly URLs that
+    # don't collide with the SPA root mount.
+    import os as _os
+    machines_dir = _os.path.join(_os.path.dirname(__file__), "..", "..", "web", "public", "machines")
+    machines_dir = _os.path.abspath(machines_dir)
+    if _os.path.isdir(machines_dir):
+        app.mount(
+            "/static/machines",
+            StaticFiles(directory=machines_dir),
+            name="machine-images",
+        )
 
     # Mount built frontend at / if present (optional in dev / tests)
     web_dist = Path(__file__).parent.parent.parent / "web" / "dist"

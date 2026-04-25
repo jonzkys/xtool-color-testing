@@ -17,6 +17,7 @@ import { ResultsPanel } from "../components/ResultsPanel";
 import { formatRoute } from "../router";
 import { DEFAULT_SPEC } from "../defaults";
 import { normalizeSpec } from "../specUtils";
+import { getCurrentMachineId } from "../state/machine";
 import {
   Badge,
   Button,
@@ -91,6 +92,7 @@ export function TestDetailPage({ testId }: Props) {
           name,
           material_id: materialId,
           spec: normalized,
+          machine_id: getCurrentMachineId(),
         });
         window.location.hash = formatRoute({ name: "test-detail", id: created.id });
       }
@@ -114,6 +116,7 @@ export function TestDetailPage({ testId }: Props) {
       name: `${name} (copy)`,
       material_id: materialId,
       spec: normalizeSpec(spec),
+      machine_id: getCurrentMachineId(),
     });
     window.location.hash = formatRoute({ name: "test-detail", id: copy.id });
   }

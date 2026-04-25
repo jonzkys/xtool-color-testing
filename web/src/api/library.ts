@@ -26,12 +26,16 @@ export async function deleteMaterial(id: number): Promise<void> {
   await j(await fetch(`/api/materials/${id}`, { method: "DELETE" }));
 }
 
-export async function listPresets(materialId?: number): Promise<Preset[]> {
-  const qs = materialId !== undefined ? `?material_id=${materialId}` : "";
-  return j(await fetch(`/api/presets${qs}`));
+export async function listPresets(materialId?: number, machine_id?: string): Promise<Preset[]> {
+  const qs = new URLSearchParams();
+  if (materialId !== undefined) qs.set("material_id", String(materialId));
+  if (machine_id) qs.set("machine_id", machine_id);
+  const tail = qs.toString() ? `?${qs.toString()}` : "";
+  return j(await fetch(`/api/presets${tail}`));
 }
 export async function createPreset(body: {
   material_id: number; name: string; color?: string; base_params: Preset["base_params"];
+  machine_id: string;
 }): Promise<Preset> {
   return j(await fetch("/api/presets", {
     method: "POST",

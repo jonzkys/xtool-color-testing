@@ -3,9 +3,10 @@ import { Beaker, Lock, Plus } from "lucide-react";
 import type { Material, Preset } from "../library";
 import type { BaseParams, ParamName, TestRecord, TestSpec } from "../types";
 import { listTests, createTest } from "../api/tests";
+import { getCurrentMachineId, useCurrentMachine, getValidationProfile } from "../state/machine";
 import { listMaterials, listPresets } from "../api/library";
 import { formatRoute } from "../router";
-import { DEFAULT_SPEC } from "../defaults";
+import { defaultSpec } from "../defaults";
 import { normalizeSpec } from "../specUtils";
 import {
   Badge,
@@ -34,12 +35,14 @@ export function TestsPage() {
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string>();
 
+  const { registry, machineId } = useCurrentMachine();
+
   async function refresh() {
     try {
       const [m, p, t] = await Promise.all([
         listMaterials(),
-        listPresets(),
-        listTests({ material_id: materialId, status: status || undefined }),
+        listPresets(undefined, getCurrentMachineId()),
+        listTests({ material_id: materialId, status: status || undefined, machine_id: getCurrentMachineId() }),
       ]);
       setMaterials(m);
       setPresets(p);
@@ -59,11 +62,21 @@ export function TestsPage() {
     }
     const mid = materialId ?? materials[0].id;
     const preset = presets.find((p) => p.material_id === mid && p.is_default);
+
+    // Resolve a profile so the default spec produces values in-range for this
+    // machine. F1 Ultra has no color_engrave mode, so we fall back to engrave.
+    const defaultMode = machineId === "F2Ultra" ? "color_engrave" : "engrave";
+    const profile = getValidationProfile(registry, machineId, defaultMode) ?? undefined;
+    const baseSpec = defaultSpec(profile);
     const spec = normalizeSpec({
-      ...DEFAULT_SPEC,
-      base_params: preset?.base_params ?? DEFAULT_SPEC.base_params,
+      ...baseSpec,
+      base_params: {
+        ...baseSpec.base_params,
+        ...(preset?.base_params ?? {}),
+        mode: defaultMode,
+      },
     });
-    const t = await createTest({ name: "New test", material_id: mid, spec });
+    const t = await createTest({ name: "New test", material_id: mid, spec, machine_id: getCurrentMachineId() });
     window.location.hash = formatRoute({ name: "test-detail", id: t.id });
   }
 
@@ -487,7 +500,7 @@ function unitForParam(name: string): string | null {
   const map: Record<string, string> = {
     speed: "mm/s",
     power: "%",
-    frequency: "Hz",
+    frequency: "kHz",
     density: "l/cm",
     passes: "×",
     pulse_width: "ns",

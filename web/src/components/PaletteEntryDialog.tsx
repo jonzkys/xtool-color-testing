@@ -8,6 +8,7 @@ import type { BaseParams, PaletteEntry } from "../types";
 import type { Material } from "../library";
 import { defaultBaseParams } from "../defaults";
 import { createManualPaletteEntry, patchPaletteEntry } from "../api/palette";
+import { getCurrentMachineId } from "../state/machine";
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
@@ -67,6 +68,7 @@ export function PaletteEntryDialog({
         saved = await createManualPaletteEntry({
           material_id: Number(materialId),
           hex, params: paramsRecord, notes,
+          machine_id: getCurrentMachineId(),
         });
       }
       onSaved(saved);

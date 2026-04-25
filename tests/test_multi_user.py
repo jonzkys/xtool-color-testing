@@ -47,7 +47,10 @@ def _h(key: str) -> dict[str, str]:
 def test_health_reports_multi_user_mode(mu_client):
     r = mu_client.get("/api/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok", "mode": "multi_user"}
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["mode"] == "multi_user"
+    assert "available_machines" in body
 
 
 def test_missing_user_header_is_401(mu_client):
@@ -138,7 +141,7 @@ def test_tests_are_isolated_per_user(mu_client):
         "angle_mode": "fixed", "unidirectional": False,
         "hide_axis_labels": False,
         "base_params": {
-            "power": 50, "speed": 1000, "frequency": 60000,
+            "power": 50, "speed": 1000, "frequency": 60,
             "density": 200, "passes": 1, "pulse_width": 200,
             "laser": "red",
         },
@@ -189,7 +192,7 @@ def test_material_creation_for_cross_owner_material_rejects(mu_client):
         "angle_mode": "fixed", "unidirectional": False,
         "hide_axis_labels": False,
         "base_params": {
-            "power": 50, "speed": 1000, "frequency": 60000,
+            "power": 50, "speed": 1000, "frequency": 60,
             "density": 200, "passes": 1, "pulse_width": 200,
             "laser": "red",
         },

@@ -15,7 +15,8 @@ def _safe_project_name(name: str, *, fallback: str) -> str:
 
 
 def bytes_for_test(*, test_id: int, name: str, material_id: int,
-                   spec: dict[str, Any], retest_index: int = 0) -> bytes:
+                   spec: dict[str, Any], retest_index: int = 0,
+                   machine_id: str = "F2Ultra") -> bytes:
     # Build a throwaway Project with exactly one placement so the existing
     # converter machinery keeps working. When the frontend project wrapper
     # is removed we'll fold this into a cleaner single-test path.
@@ -42,4 +43,6 @@ def bytes_for_test(*, test_id: int, name: str, material_id: int,
         "focus_mm": 1.5,
         "tests": [placement],
     }
-    return converter.project_to_xcs_bytes(Project.model_validate(project))
+    return converter.project_to_xcs_bytes(
+        Project.model_validate(project), machine_id=machine_id,
+    )

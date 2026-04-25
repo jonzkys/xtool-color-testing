@@ -37,6 +37,7 @@ import {
 } from "../color/variability";
 import { listTests } from "../api/tests";
 import { getAveragedSwatches } from "../api/results";
+import { getCurrentMachineId } from "../state/machine";
 import type { AveragedSwatch, TestRecord } from "../types";
 import { useRoute } from "../router";
 import { StabilityChip } from "../components/StabilityChip";
@@ -161,7 +162,7 @@ export function Spectrum2DPage() {
   const [aboutOpen, setAboutOpen] = useState(false);
 
   useEffect(() => {
-    listTests({ status: "tested" })
+    listTests({ status: "tested", machine_id: getCurrentMachineId() })
       .then((all) => {
         const bi = all.filter((t) => t.spec.y_param != null);
         setTests(bi);

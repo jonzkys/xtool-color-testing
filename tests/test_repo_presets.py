@@ -6,7 +6,7 @@ from xcs_gen_web.repositories import materials as m_repo
 from xcs_gen_web.repositories import presets as repo
 
 BASE = {
-    "power": 50, "speed": 1000, "frequency": 60000,
+    "power": 50, "speed": 1000, "frequency": 60,
     "density": 200, "passes": 1, "pulse_width": 200, "laser": "red",
 }
 
