@@ -17,6 +17,7 @@ import {
 import type { TestRecord } from "../types";
 import { listTests } from "../api/tests";
 import { formatRoute } from "../router";
+import { getCurrentMachineId } from "../state/machine";
 import { useIsDemo } from "../hooks/useIsDemo";
 import {
   Badge,
@@ -135,6 +136,7 @@ export function LibraryPage({ onMaterialsChange }: Props) {
         material_id: selectedMaterialId,
         name: "Untitled preset",
         base_params: { ...seed },
+        machine_id: getCurrentMachineId(),
       });
       await refresh();
     } catch (err) {

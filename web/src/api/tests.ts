@@ -6,11 +6,12 @@ async function j<T>(r: Response): Promise<T> {
 }
 
 export async function listTests(params: {
-  material_id?: number; status?: string;
+  material_id?: number; status?: string; machine_id?: string;
 } = {}): Promise<TestRecord[]> {
   const qs = new URLSearchParams();
   if (params.material_id) qs.set("material_id", String(params.material_id));
   if (params.status) qs.set("status", params.status);
+  if (params.machine_id) qs.set("machine_id", params.machine_id);
   return j(await fetch(`/api/tests?${qs.toString()}`));
 }
 export async function getTest(id: number): Promise<TestRecord> {
@@ -18,6 +19,7 @@ export async function getTest(id: number): Promise<TestRecord> {
 }
 export async function createTest(body: {
   name: string; material_id: number; spec: TestSpec; notes?: string;
+  machine_id: string;
 }): Promise<TestRecord> {
   return j(await fetch("/api/tests", {
     method: "POST",

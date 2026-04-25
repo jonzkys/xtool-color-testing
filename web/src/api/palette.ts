@@ -9,6 +9,7 @@ export interface ListPaletteOptions {
   material_id?: number;
   favorites_only?: boolean;
   source?: "averaged" | "single_result" | "manual";
+  machine_id?: string;
 }
 
 export async function listPaletteEntries(
@@ -20,17 +21,19 @@ export async function listPaletteEntries(
   if (opts.material_id) qs.set("material_id", String(opts.material_id));
   if (opts.favorites_only) qs.set("favorites_only", "true");
   if (opts.source) qs.set("source", opts.source);
+  if (opts.machine_id) qs.set("machine_id", opts.machine_id);
   const tail = qs.toString() ? `?${qs.toString()}` : "";
   return j(await fetch(`/api/palette${tail}`));
 }
 
 export async function queryPalette(
   hex: string,
-  opts: { limit?: number; material_id?: number } = {},
+  opts: { limit?: number; material_id?: number; machine_id?: string } = {},
 ): Promise<PaletteQueryResult[]> {
   const qs = new URLSearchParams({ hex });
   if (opts.limit) qs.set("limit", String(opts.limit));
   if (opts.material_id) qs.set("material_id", String(opts.material_id));
+  if (opts.machine_id) qs.set("machine_id", opts.machine_id);
   return j(await fetch(`/api/palette/query?${qs}`));
 }
 
@@ -65,6 +68,7 @@ export interface CreateManualBody {
   hex: string;
   params: Record<string, string | number>;
   notes: string;
+  machine_id: string;
 }
 
 export async function createManualPaletteEntry(

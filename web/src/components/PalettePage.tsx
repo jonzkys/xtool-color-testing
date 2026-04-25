@@ -14,6 +14,7 @@ import type { Material } from "../library";
 import { listMaterials, listPresets } from "../api/library";
 import { formatRoute } from "../router";
 import { PaletteEntryDialog } from "./PaletteEntryDialog";
+import { getCurrentMachineId } from "../state/machine";
 import { StarToggle } from "./StarToggle";
 import {
   Badge, Button, Card, Dialog, DialogContent, DialogTitle, DemoLock,
@@ -600,6 +601,7 @@ function ManualView({ materials }: { materials: Material[] }) {
         hex: entry.hex,
         params: entry.params,
         notes: entry.notes,
+        machine_id: getCurrentMachineId(),
       });
       await refresh();
     } catch (e) { setError((e as Error).message); }

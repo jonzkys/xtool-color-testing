@@ -3,6 +3,7 @@ import { Beaker, Lock, Plus } from "lucide-react";
 import type { Material, Preset } from "../library";
 import type { BaseParams, ParamName, TestRecord, TestSpec } from "../types";
 import { listTests, createTest } from "../api/tests";
+import { getCurrentMachineId } from "../state/machine";
 import { listMaterials, listPresets } from "../api/library";
 import { formatRoute } from "../router";
 import { DEFAULT_SPEC } from "../defaults";
@@ -63,7 +64,7 @@ export function TestsPage() {
       ...DEFAULT_SPEC,
       base_params: preset?.base_params ?? DEFAULT_SPEC.base_params,
     });
-    const t = await createTest({ name: "New test", material_id: mid, spec });
+    const t = await createTest({ name: "New test", material_id: mid, spec, machine_id: getCurrentMachineId() });
     window.location.hash = formatRoute({ name: "test-detail", id: t.id });
   }
 
