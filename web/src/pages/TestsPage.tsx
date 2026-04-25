@@ -39,8 +39,8 @@ export function TestsPage() {
     try {
       const [m, p, t] = await Promise.all([
         listMaterials(),
-        listPresets(),
-        listTests({ material_id: materialId, status: status || undefined }),
+        listPresets(undefined, getCurrentMachineId()),
+        listTests({ material_id: materialId, status: status || undefined, machine_id: getCurrentMachineId() }),
       ]);
       setMaterials(m);
       setPresets(p);

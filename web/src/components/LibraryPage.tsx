@@ -59,7 +59,7 @@ export function LibraryPage({ onMaterialsChange }: Props) {
 
   async function refresh() {
     try {
-      const [mats, pres] = await Promise.all([listMaterials(), listPresets()]);
+      const [mats, pres] = await Promise.all([listMaterials(), listPresets(undefined, getCurrentMachineId())]);
       setMaterials(mats);
       setPresets(pres);
       onMaterialsChange?.(mats);
@@ -191,7 +191,7 @@ export function LibraryPage({ onMaterialsChange }: Props) {
   async function toggleTests(m: Material) {
     if (!expanded[m.id] && !byMaterial[m.id]) {
       try {
-        const tests = await listTests({ material_id: m.id });
+        const tests = await listTests({ material_id: m.id, machine_id: getCurrentMachineId() });
         setByMaterial((prev) => ({ ...prev, [m.id]: tests }));
       } catch (e) {
         setError((e as Error).message);

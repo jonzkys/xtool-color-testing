@@ -42,6 +42,7 @@ import { listMaterials, listPresets } from "../api/library";
 import { MaterialPresetPicker } from "./MaterialPresetPicker";
 import { StarToggle } from "./StarToggle";
 import { listPaletteEntries, queryPalette, patchPaletteEntry } from "../api/palette";
+import { getCurrentMachineId } from "../state/machine";
 import { deltaE2000, hexToLab, type Lab } from "../color/math";
 import { computePager } from "../svg/favoritesPager";
 import { normalizeColor } from "../svg/color";
@@ -123,7 +124,7 @@ export function SvgLayersPage() {
   });
 
   useEffect(() => {
-    Promise.all([listMaterials(), listPresets()])
+    Promise.all([listMaterials(), listPresets(undefined, getCurrentMachineId())])
       .then(([mats, pres]) => {
         setLibrary({
           materials: mats,
@@ -279,7 +280,7 @@ export function SvgLayersPage() {
       const cacheKey = String(matIdNum);
       let palette = paletteCacheRef.current.get(cacheKey);
       if (!palette) {
-        palette = await listPaletteEntries(matIdNum);
+        palette = await listPaletteEntries({ material_id: matIdNum, machine_id: getCurrentMachineId() });
         paletteCacheRef.current.set(cacheKey, palette);
       }
       const results = request.layers.map((l) => {
@@ -1337,7 +1338,7 @@ function PaletteMatchSection({
     if (!materialId || !/^#[0-9a-fA-F]{6}$/.test(layerColor)) return;
     setLoading(true);
     const matIdNum = materialId ? Number(materialId) : undefined;
-    queryPalette(layerColor, { limit: 10, material_id: matIdNum })
+    queryPalette(layerColor, { limit: 10, material_id: matIdNum, machine_id: getCurrentMachineId() })
       .then((r) => {
         if (!cancelled) setResults(r);
       })
@@ -1581,7 +1582,7 @@ function PaletteFavoritesRow({
     }
     let cancelled = false;
     listPaletteEntries({
-      material_id: Number(materialId), favorites_only: true,
+      material_id: Number(materialId), favorites_only: true, machine_id: getCurrentMachineId(),
     })
       .then((es) => { if (!cancelled) setFavorites(es); })
       .catch(() => { if (!cancelled) setFavorites([]); });

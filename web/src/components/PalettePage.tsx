@@ -29,7 +29,7 @@ export function PalettePage() {
   const [view, setView] = useState<View>("browse");
 
   useEffect(() => {
-    Promise.all([listMaterials(), listPresets()])
+    Promise.all([listMaterials(), listPresets(undefined, getCurrentMachineId())])
       .then(([mats]) => setMaterials(mats))
       .catch((e) => console.error("Failed to load library:", e));
   }, []);
@@ -141,7 +141,7 @@ function QueryView({ materials }: { materials: Material[] }) {
     setLoading(true);
     try {
       const matIdNum = materialId ? Number(materialId) : undefined;
-      const r = await queryPalette(hex, { limit: 5, material_id: matIdNum });
+      const r = await queryPalette(hex, { limit: 5, material_id: matIdNum, machine_id: getCurrentMachineId() });
       setResults(r);
       setSearched(true);
     } catch (e) {
@@ -268,7 +268,7 @@ function BrowseView({ materials }: { materials: Material[] }) {
     setError(undefined);
     try {
       const matIdNum = materialId ? Number(materialId) : undefined;
-      setEntries(await listPaletteEntries(matIdNum));
+      setEntries(await listPaletteEntries({ material_id: matIdNum, machine_id: getCurrentMachineId() }));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -571,6 +571,7 @@ function ManualView({ materials }: { materials: Material[] }) {
       setEntries(await listPaletteEntries({
         material_id: materialId ? Number(materialId) : undefined,
         source: "manual",
+        machine_id: getCurrentMachineId(),
       }));
     } catch (e) {
       setError((e as Error).message);
@@ -708,6 +709,7 @@ function FavoritesView({ materials }: { materials: Material[] }) {
       setEntries(await listPaletteEntries({
         material_id: materialId ? Number(materialId) : undefined,
         favorites_only: true,
+        machine_id: getCurrentMachineId(),
       }));
     } catch (e) { setError((e as Error).message); }
   }

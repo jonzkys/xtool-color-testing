@@ -14,6 +14,7 @@ import {
   type PolyFit,
 } from "../color/math";
 import { listTests } from "../api/tests";
+import { getCurrentMachineId } from "../state/machine";
 import { getAveragedSwatches } from "../api/results";
 import type { AveragedSwatch, TestRecord } from "../types";
 import {
@@ -133,7 +134,7 @@ export function SpectrumPage() {
 
   // Load tests — only single-axis ones make sense here.
   useEffect(() => {
-    listTests({ status: "tested" })
+    listTests({ status: "tested", machine_id: getCurrentMachineId() })
       .then((all) => {
         const mono = all.filter((t) => t.spec.y_param == null);
         setTests(mono);
