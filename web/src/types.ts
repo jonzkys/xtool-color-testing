@@ -199,14 +199,16 @@ export interface AveragedSwatch extends ResultSwatch {
 
 export interface PaletteEntry {
   id: number;
-  test_id: number; material_id: number;
+  test_id: number | null;
+  material_id: number;
   x_value: number | null; y_value: number | null;
   hex: string; lab: number[];
   params: Record<string, string | number>;
   sigma: number;
-  source: "averaged" | "single_result";
+  source: "averaged" | "single_result" | "manual";
   source_result_id: number | null;
   notes: string;
+  favorited: boolean;
   created_at: string;
 }
 

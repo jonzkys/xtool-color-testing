@@ -6,6 +6,7 @@ import {
   EyeOff,
   FileCode2,
   Layers as LayersIcon,
+  Star,
   Upload,
   Wand2,
 } from "lucide-react";
@@ -39,8 +40,10 @@ import { validateLayerSpec } from "../validation";
 import type { LibraryState } from "../library";
 import { listMaterials, listPresets } from "../api/library";
 import { MaterialPresetPicker } from "./MaterialPresetPicker";
-import { listPaletteEntries, queryPalette } from "../api/palette";
+import { StarToggle } from "./StarToggle";
+import { listPaletteEntries, queryPalette, patchPaletteEntry } from "../api/palette";
 import { deltaE2000, hexToLab, type Lab } from "../color/math";
+import { computePager } from "../svg/favoritesPager";
 import { normalizeColor } from "../svg/color";
 import {
   Badge,
@@ -1306,6 +1309,8 @@ function PaletteMatchSection({
   const [selectedId, setSelectedId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  // Bumped each time a swatch is favorited so the favorites row refetches.
+  const [favoritesNonce, setFavoritesNonce] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -1332,6 +1337,33 @@ function PaletteMatchSection({
       cancelled = true;
     };
   }, [layerColor, materialId]);
+
+  // Only ever called with next=true from the matcher: the layer page lets
+  // users add a favorite but never remove one. Removal lives on the Palette
+  // page so a stray click here can't disrupt a focused matching session.
+  async function onFavoriteToggle(entry: PaletteEntry, next: boolean) {
+    if (!next) return;
+    setResults((prev) =>
+      prev.map((r) =>
+        r.entry.id === entry.id
+          ? { ...r, entry: { ...r.entry, favorited: true } }
+          : r,
+      ),
+    );
+    try {
+      await patchPaletteEntry(entry.id, { favorited: true });
+      setFavoritesNonce((n) => n + 1);
+    } catch {
+      // rollback
+      setResults((prev) =>
+        prev.map((r) =>
+          r.entry.id === entry.id
+            ? { ...r, entry: { ...r.entry, favorited: false } }
+            : r,
+        ),
+      );
+    }
+  }
 
   const selected = results.find((r) => String(r.entry.id) === selectedId) ?? results[0];
 
@@ -1378,19 +1410,6 @@ function PaletteMatchSection({
                 ΔE {selected.delta_e.toFixed(2)}
               </div>
             </div>
-            <div className="flex-1" />
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() =>
-                onApply(
-                  paletteParamsToBaseParams(selected.entry.params),
-                  selected.entry.hex,
-                )
-              }
-            >
-              Apply
-            </Button>
           </div>
           {results.length > 1 && (
             <div>
@@ -1399,7 +1418,7 @@ function PaletteMatchSection({
                   {results.length} matches
                 </span>
                 <span className="text-[10.5px] text-[color:var(--color-ink-subtle)]">
-                  click a swatch to preview its params
+                  click a swatch to apply its params
                 </span>
               </div>
               <div className="grid gap-1.5 [grid-template-columns:repeat(auto-fill,minmax(82px,1fr))]">
@@ -1411,9 +1430,12 @@ function PaletteMatchSection({
                     <button
                       key={r.entry.id}
                       type="button"
-                      onClick={() => setSelectedId(String(r.entry.id))}
+                      onClick={() => {
+                        setSelectedId(String(r.entry.id));
+                        onApply(paletteParamsToBaseParams(r.entry.params), r.entry.hex);
+                      }}
                       aria-pressed={isActive}
-                      aria-label={`Select palette match ${r.entry.hex}`}
+                      aria-label={`Apply palette match ${r.entry.hex}`}
                       title={`ΔE ${r.delta_e.toFixed(2)} · ${p.power}% · ${p.speed} mm/s · ${laser}`}
                       className={cn(
                         "group relative rounded-[6px] overflow-hidden border text-left transition-all",
@@ -1424,9 +1446,35 @@ function PaletteMatchSection({
                       )}
                     >
                       <div
-                        className="aspect-[4/3] w-full"
+                        className="aspect-[4/3] w-full relative"
                         style={{ background: r.entry.hex }}
-                      />
+                      >
+                        {r.entry.source === "manual" && (
+                          <span className="absolute top-1 left-1 px-1 py-0.5 rounded-[3px] text-[8px] font-mono font-semibold tracking-[0.08em] uppercase bg-[color:var(--color-accent,#caa14b)] text-black/85">
+                            MAN
+                          </span>
+                        )}
+                        {r.entry.favorited ? (
+                          <span
+                            aria-label="Favorited"
+                            title="Favorited"
+                            className="absolute top-0.5 right-0.5 inline-flex items-center justify-center p-1"
+                          >
+                            <Star
+                              className="h-3.5 w-3.5"
+                              strokeWidth={2}
+                              fill="var(--color-accent, #caa14b)"
+                              color="var(--color-accent, #caa14b)"
+                            />
+                          </span>
+                        ) : (
+                          <StarToggle
+                            favorited={false}
+                            onChange={(next) => { if (next) onFavoriteToggle(r.entry, true); }}
+                            className="absolute top-0.5 right-0.5"
+                          />
+                        )}
+                      </div>
                       <div
                         className={cn(
                           "px-1.5 py-1 border-t leading-tight",
@@ -1460,6 +1508,14 @@ function PaletteMatchSection({
               </div>
             </div>
           )}
+          <PaletteFavoritesRow
+            layerColor={layerColor}
+            materialId={materialId}
+            selectedId={selectedId}
+            onSelect={(id) => setSelectedId(String(id))}
+            onApply={onApply}
+            refreshKey={favoritesNonce}
+          />
           <div className="font-mono text-[11px] text-[color:var(--color-ink-subtle)]">
             {Object.entries(paletteParamsToBaseParams(selected.entry.params))
               .map(([k, v]) => `${k}=${v}`)
@@ -1468,6 +1524,169 @@ function PaletteMatchSection({
         </div>
       )}
     </Card>
+  );
+}
+
+function PaletteFavoritesRow({
+  layerColor,
+  materialId,
+  selectedId,
+  onSelect,
+  onApply,
+  refreshKey,
+}: {
+  layerColor: string;
+  materialId: string;
+  selectedId: string;
+  onSelect: (entryId: number) => void;
+  onApply: (params: Partial<BaseParams>, predictedHex: string) => void;
+  refreshKey: number;
+}) {
+  const [favorites, setFavorites] = useState<PaletteEntry[]>([]);
+  const [page, setPage] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const CHIP_WIDTH = 90; // matches the suggested-grid chip footprint + gap
+
+  useEffect(() => {
+    if (!materialId) {
+      setFavorites([]);
+      return;
+    }
+    let cancelled = false;
+    listPaletteEntries({
+      material_id: Number(materialId), favorites_only: true,
+    })
+      .then((es) => { if (!cancelled) setFavorites(es); })
+      .catch(() => { if (!cancelled) setFavorites([]); });
+    return () => { cancelled = true; };
+  }, [materialId, refreshKey]);
+
+  // Re-attach observer when favorites first arrive — the row returns null
+  // while empty, so the ref doesn't exist on initial mount.
+  const hasFavorites = favorites.length > 0;
+  useEffect(() => {
+    if (!hasFavorites) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) setContainerWidth(e.contentRect.width);
+    });
+    ro.observe(el);
+    setContainerWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, [hasFavorites]);
+
+  const sorted = useMemo(() => {
+    if (!/^#[0-9a-fA-F]{6}$/.test(layerColor)) return favorites;
+    const target = hexToLab(layerColor);
+    return [...favorites].sort((a, b) => {
+      const la = a.lab.length >= 3 ? ([a.lab[0], a.lab[1], a.lab[2]] as Lab) : hexToLab(a.hex);
+      const lb = b.lab.length >= 3 ? ([b.lab[0], b.lab[1], b.lab[2]] as Lab) : hexToLab(b.hex);
+      return deltaE2000(target, la) - deltaE2000(target, lb);
+    });
+  }, [favorites, layerColor]);
+
+  const pager = computePager({
+    totalCount: sorted.length,
+    containerWidth: Math.max(0, containerWidth - 80), // reserve room for prev/next + label
+    chipWidth: CHIP_WIDTH,
+    page,
+  });
+
+  if (favorites.length === 0) return null;
+
+  const slice = sorted.slice(pager.start, pager.end);
+
+  return (
+    <div ref={containerRef} className="mt-3">
+      <div className="flex items-baseline justify-between mb-1.5">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
+          ★ Favorites
+        </span>
+        {pager.totalPages > 1 && (
+          <div className="flex items-center gap-1.5 text-[10.5px] text-[color:var(--color-ink-subtle)]">
+            <button
+              type="button"
+              onClick={() => setPage(Math.max(0, pager.page - 1))}
+              disabled={pager.page === 0}
+              className="px-1.5 py-0.5 rounded border border-[color:var(--color-border)] disabled:opacity-30"
+              aria-label="Previous favorites"
+            >‹</button>
+            <span>{pager.page + 1} / {pager.totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setPage(Math.min(pager.totalPages - 1, pager.page + 1))}
+              disabled={pager.page >= pager.totalPages - 1}
+              className="px-1.5 py-0.5 rounded border border-[color:var(--color-border)] disabled:opacity-30"
+              aria-label="Next favorites"
+            >›</button>
+          </div>
+        )}
+      </div>
+      <div className="grid gap-1.5 [grid-template-columns:repeat(auto-fill,minmax(82px,1fr))]">
+        {slice.map((entry) => {
+          const target = /^#[0-9a-fA-F]{6}$/.test(layerColor) ? hexToLab(layerColor) : null;
+          const lab = entry.lab.length >= 3
+            ? ([entry.lab[0], entry.lab[1], entry.lab[2]] as Lab)
+            : hexToLab(entry.hex);
+          const dE = target ? deltaE2000(target, lab) : 0;
+          const laser = String(entry.params["laser"] ?? "red");
+          const isActive = String(entry.id) === selectedId;
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              onClick={() => {
+                onSelect(entry.id);
+                onApply(paletteParamsToBaseParams(entry.params), entry.hex);
+              }}
+              aria-pressed={isActive}
+              title={`ΔE ${dE.toFixed(2)} · ${entry.params.power}% · ${entry.params.speed} mm/s · ${laser}`}
+              className={cn(
+                "group relative rounded-[6px] overflow-hidden border text-left transition-all",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/50",
+                isActive
+                  ? "border-[color:var(--color-primary)] shadow-[0_0_0_1px_var(--color-primary)_inset]"
+                  : "border-[color:var(--color-border)] hover:border-[color:var(--color-border-strong)]",
+              )}
+            >
+              <div className="aspect-[4/3] w-full relative" style={{ background: entry.hex }}>
+                {entry.source === "manual" && (
+                  <span className="absolute top-1 left-1 px-1 py-0.5 rounded-[3px] text-[8px] font-mono font-semibold tracking-[0.08em] uppercase bg-[color:var(--color-accent,#caa14b)] text-black/85">
+                    MAN
+                  </span>
+                )}
+                {/* No star control here — every chip in this row is by definition
+                    favorited; unfavoriting lives on the Palette page. */}
+              </div>
+              <div className={cn(
+                "px-1.5 py-1 border-t leading-tight",
+                isActive
+                  ? "bg-[color:var(--color-primary-tint)] border-[color:var(--color-primary)]/30"
+                  : "bg-[color:var(--color-surface)] border-[color:var(--color-border)]",
+              )}>
+                <div className="font-mono text-[10px] text-[color:var(--color-ink)] truncate">{entry.hex}</div>
+                <div className="flex items-center justify-between mt-0.5">
+                  <span className="font-mono text-[9.5px] text-[color:var(--color-ink-subtle)]">
+                    ΔE {dE.toFixed(1)}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full shrink-0",
+                      laser === "blue"
+                        ? "bg-[color:var(--color-secondary)]"
+                        : "bg-[color:var(--color-primary)]",
+                    )}
+                  />
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

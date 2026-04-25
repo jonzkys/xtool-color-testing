@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from xcs_gen_web.repositories import palette as repo
 from xcs_gen_web.repositories import materials as m_repo
 
@@ -42,3 +44,137 @@ def test_delete_by_test(fresh_db):
                            source_result_id=None, params={})])
     repo.delete_by_test(7)
     assert repo.list_all() == []
+
+
+def test_list_filters_by_source(fresh_db):
+    mid = _seed_material()
+    repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+             hex="#abcdef", sigma=0.0, source="averaged",
+             source_result_id=None, params={}),
+        dict(test_id=2, material_id=mid, x_value=0, y_value=None,
+             hex="#fedcba", sigma=0.0, source="single_result",
+             source_result_id=None, params={}),
+    ])
+    averaged = repo.list_all(source="averaged")
+    assert [e["hex"] for e in averaged] == ["#abcdef"]
+
+
+def test_list_filters_by_favorites_only(fresh_db):
+    mid = _seed_material()
+    repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+             hex="#000000", sigma=0.0, source="averaged",
+             source_result_id=None, params={}),
+    ])
+    # No favorites yet
+    assert repo.list_all(favorites_only=True) == []
+
+
+def test_create_manual(fresh_db):
+    mid = _seed_material()
+    e = repo.create_manual(
+        material_id=mid, hex_="#abcdef",
+        params={"power": 50, "speed": 1000, "laser": "red"},
+        notes="quick test",
+    )
+    assert e["source"] == "manual"
+    assert e["test_id"] is None
+    assert e["sigma"] == 0.0
+    assert e["favorited"] is False
+    assert e["notes"] == "quick test"
+    # Lab is computed
+    assert len(e["lab"]) == 3
+    # Round-trips via list
+    assert any(x["id"] == e["id"] for x in repo.list_all())
+    # Distinct hexes produce distinct lab values
+    e2 = repo.create_manual(material_id=mid, hex_="#000000", params={}, notes="")
+    assert e["lab"] != e2["lab"]
+
+
+def test_create_manual_owner_scoped(fresh_db):
+    mid = _seed_material()
+    repo.create_manual(material_id=mid, hex_="#abcdef", params={}, notes="", owner_id=1)
+    # Different owner sees nothing
+    assert repo.list_all(owner_id=2) == []
+
+
+def test_update_entry_manual_changes_hex_and_lab(fresh_db):
+    mid = _seed_material()
+    e = repo.create_manual(material_id=mid, hex_="#000000", params={}, notes="")
+    updated = repo.update_entry(e["id"], hex_="#ffffff")
+    assert updated["hex"] == "#ffffff"
+    # Lab should differ from the original (black → white)
+    assert updated["lab"][0] > e["lab"][0]
+
+
+def test_update_entry_manual_partial_patch(fresh_db):
+    mid = _seed_material()
+    e = repo.create_manual(material_id=mid, hex_="#000000", params={"power": 1}, notes="")
+    updated = repo.update_entry(e["id"], notes="renamed")
+    assert updated["notes"] == "renamed"
+    assert updated["hex"] == "#000000"
+    assert updated["params"] == {"power": 1}
+
+
+def test_update_entry_rejects_param_mutation_on_ingested(fresh_db):
+    mid = _seed_material()
+    repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+             hex="#abcdef", sigma=0.0, source="averaged",
+             source_result_id=None, params={"power": 10}),
+    ])
+    eid = repo.list_all()[0]["id"]
+    with pytest.raises(repo.NotMutableError):
+        repo.update_entry(eid, hex_="#ffffff")
+
+
+def test_update_entry_notes_allowed_on_ingested(fresh_db):
+    """Notes are mutable on any source (preserves today's behavior)."""
+    mid = _seed_material()
+    repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+             hex="#abcdef", sigma=0.0, source="averaged",
+             source_result_id=None, params={}),
+    ])
+    eid = repo.list_all()[0]["id"]
+    updated = repo.update_entry(eid, notes="ok to rename")
+    assert updated["notes"] == "ok to rename"
+
+
+def test_update_entry_missing_returns_none(fresh_db):
+    assert repo.update_entry(99999, notes="x") is None
+
+
+def test_set_favorited_toggle(fresh_db):
+    mid = _seed_material()
+    e = repo.create_manual(material_id=mid, hex_="#000000", params={}, notes="")
+    on = repo.set_favorited(e["id"], True)
+    assert on["favorited"] is True
+    off = repo.set_favorited(e["id"], False)
+    assert off["favorited"] is False
+
+
+def test_set_favorited_idempotent(fresh_db):
+    mid = _seed_material()
+    e = repo.create_manual(material_id=mid, hex_="#000000", params={}, notes="")
+    repo.set_favorited(e["id"], True)
+    again = repo.set_favorited(e["id"], True)
+    assert again["favorited"] is True
+
+
+def test_set_favorited_works_on_any_source(fresh_db):
+    """Stars are a personal pin — works on ingested rows too."""
+    mid = _seed_material()
+    repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+             hex="#abcdef", sigma=0.0, source="averaged",
+             source_result_id=None, params={}),
+    ])
+    eid = repo.list_all()[0]["id"]
+    out = repo.set_favorited(eid, True)
+    assert out["favorited"] is True
+
+
+def test_set_favorited_missing_returns_none(fresh_db):
+    assert repo.set_favorited(99999, True) is None

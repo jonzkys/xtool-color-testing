@@ -20,6 +20,10 @@ from ..models import palette_entries
 from ..palette import delta_e_2000, hex_to_lab
 
 
+class NotMutableError(Exception):
+    """Raised when callers try to mutate hex/material_id/params on a non-manual row."""
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -41,11 +45,12 @@ def _row_to_entry(r) -> dict[str, Any]:
         "created_at": r.created_at,
         "owner_id": r.owner_id,
         "visibility": r.visibility,
+        "favorited": bool(r.favorited),
     }
 
 
 def _build_row(
-    e: dict[str, Any], now: str, owner_id: str, visibility: str,
+    e: dict[str, Any], now: str, owner_id: int, visibility: str,
 ) -> dict[str, Any]:
     """Build a DB row dict from an entry dict. Used by insert_bulk and replace_for_test."""
     L, a, b = hex_to_lab(e["hex"])
@@ -107,7 +112,10 @@ def replace_for_test(
 
 
 def list_all(
-    *, owner_id: int = STANDALONE_USER_ID, material_id: int | None = None,
+    *, owner_id: int = STANDALONE_USER_ID,
+    material_id: int | None = None,
+    favorites_only: bool = False,
+    source: str | None = None,
 ) -> list[dict[str, Any]]:
     with session_scope() as s:
         q = select(palette_entries).where(
@@ -115,6 +123,10 @@ def list_all(
         )
         if material_id is not None:
             q = q.where(palette_entries.c.material_id == material_id)
+        if favorites_only:
+            q = q.where(palette_entries.c.favorited == True)  # noqa: E712
+        if source is not None:
+            q = q.where(palette_entries.c.source == source)
         q = q.order_by(palette_entries.c.created_at.desc())
         return [_row_to_entry(r) for r in s.execute(q).all()]
 
@@ -159,18 +171,32 @@ def delete_by_test(test_id: int, *, owner_id: int = STANDALONE_USER_ID) -> int:
         return res.rowcount
 
 
-def update_notes(eid: int, notes: str, *, owner_id: int = STANDALONE_USER_ID) -> dict[str, Any] | None:
+def get_source(eid: int, *, owner_id: int = STANDALONE_USER_ID) -> str | None:
+    """Return the entry's `source` ('averaged', 'single_result', or 'manual'),
+    or None if it doesn't exist / wrong owner. Used by the API layer to gate
+    PATCH requests before any write happens."""
     with session_scope() as s:
-        s.execute(
-            palette_entries.update()
-            .where(
+        row = s.execute(
+            select(palette_entries.c.source).where(
                 and_(
                     palette_entries.c.id == eid,
                     palette_entries.c.owner_id == owner_id,
                 ),
             )
-            .values(notes=notes)
-        )
+        ).one_or_none()
+        return row.source if row else None
+
+
+def update_entry(
+    eid: int,
+    *,
+    hex_: str | None = None,
+    material_id: int | None = None,
+    params: dict[str, Any] | None = None,
+    notes: str | None = None,
+    owner_id: int = STANDALONE_USER_ID,
+) -> dict[str, Any] | None:
+    with session_scope() as s:
         row = s.execute(
             select(palette_entries).where(
                 and_(
@@ -179,4 +205,98 @@ def update_notes(eid: int, notes: str, *, owner_id: int = STANDALONE_USER_ID) ->
                 ),
             )
         ).one_or_none()
-        return _row_to_entry(row) if row else None
+        if row is None:
+            return None
+        is_manual = row.source == "manual"
+        wants_recipe_change = (
+            hex_ is not None or material_id is not None or params is not None
+        )
+        if wants_recipe_change and not is_manual:
+            raise NotMutableError(
+                "cannot mutate hex/material_id/params on ingested swatch",
+            )
+        values: dict[str, Any] = {}
+        if hex_ is not None:
+            L, a, b = hex_to_lab(hex_)
+            values["hex"] = hex_
+            values["lab_l"] = L
+            values["lab_a"] = a
+            values["lab_b"] = b
+        if material_id is not None:
+            values["material_id"] = material_id
+        if params is not None:
+            values["params_json"] = json.dumps(params, separators=(",", ":"))
+        if notes is not None:
+            values["notes"] = notes
+        if values:
+            s.execute(
+                palette_entries.update()
+                .where(
+                    and_(
+                        palette_entries.c.id == eid,
+                        palette_entries.c.owner_id == owner_id,
+                    ),
+                )
+                .values(**values)
+            )
+        out = s.execute(
+            select(palette_entries).where(palette_entries.c.id == eid),
+        ).one()
+        return _row_to_entry(out)
+
+
+def set_favorited(
+    eid: int, value: bool, *, owner_id: int = STANDALONE_USER_ID,
+) -> dict[str, Any] | None:
+    with session_scope() as s:
+        res = s.execute(
+            palette_entries.update()
+            .where(
+                and_(
+                    palette_entries.c.id == eid,
+                    palette_entries.c.owner_id == owner_id,
+                ),
+            )
+            .values(favorited=value)
+        )
+        if res.rowcount == 0:
+            return None
+        row = s.execute(
+            select(palette_entries).where(palette_entries.c.id == eid),
+        ).one()
+        return _row_to_entry(row)
+
+
+def create_manual(
+    *,
+    material_id: int,
+    hex_: str,
+    params: dict[str, Any],
+    notes: str,
+    owner_id: int = STANDALONE_USER_ID,
+    visibility: str = DEFAULT_VISIBILITY,
+) -> dict[str, Any]:
+    now = _now()
+    base = _build_row(
+        {
+            "test_id": None,
+            "material_id": material_id,
+            "x_value": None,
+            "y_value": None,
+            "hex": hex_,
+            "params": params,
+            "sigma": 0.0,
+            "source": "manual",
+            "source_result_id": None,
+            "notes": notes,
+        },
+        now, owner_id, visibility,
+    )
+    row = {**base, "favorited": False}
+    with session_scope() as s:
+        res = s.execute(palette_entries.insert().values(**row))
+        new_id = res.inserted_primary_key[0]
+        out = s.execute(
+            select(palette_entries).where(palette_entries.c.id == new_id),
+        ).one()
+    return _row_to_entry(out)

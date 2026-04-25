@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -132,3 +134,89 @@ def test_query_filters_by_material_id(client, fresh_db):
     ).json()
     assert len(results) == 1
     assert results[0]["entry"]["material_id"] == m2
+
+
+def test_create_manual_success(client, mid):
+    body = {
+        "material_id": mid,
+        "hex": "#abcdef",
+        "params": {"power": 50, "speed": 1000, "laser": "red"},
+        "notes": "first manual",
+    }
+    resp = client.post("/api/palette/manual", json=body)
+    assert resp.status_code == 201
+    e = resp.json()
+    assert e["source"] == "manual"
+    assert e["test_id"] is None
+    assert e["favorited"] is False
+    assert re.fullmatch(r"#[0-9a-fA-F]{6}", e["hex"])
+
+
+def test_create_manual_invalid_hex(client, mid):
+    resp = client.post("/api/palette/manual", json={
+        "material_id": mid, "hex": "blue", "params": {}, "notes": "",
+    })
+    assert resp.status_code == 422
+
+
+def test_create_manual_missing_material(client, fresh_db):
+    resp = client.post("/api/palette/manual", json={
+        "hex": "#abcdef", "params": {}, "notes": "",
+    })
+    assert resp.status_code == 422
+
+
+def test_patch_favorited(client, mid):
+    ids = _seed_entries(mid)
+    eid = ids[0]
+    resp = client.patch(f"/api/palette/{eid}", json={"favorited": True})
+    assert resp.status_code == 200
+    assert resp.json()["favorited"] is True
+    listed = next(e for e in client.get("/api/palette").json() if e["id"] == eid)
+    assert listed["favorited"] is True
+
+
+def test_patch_recipe_on_manual_succeeds(client, mid):
+    body = {"material_id": mid, "hex": "#000000", "params": {"power": 1}, "notes": "x"}
+    e = client.post("/api/palette/manual", json=body).json()
+    resp = client.patch(f"/api/palette/{e['id']}", json={"hex": "#ffffff"})
+    assert resp.status_code == 200
+    assert resp.json()["hex"] == "#ffffff"
+
+
+def test_patch_recipe_on_ingested_409(client, mid):
+    ids = _seed_entries(mid)
+    resp = client.patch(f"/api/palette/{ids[0]}", json={"hex": "#ffffff"})
+    assert resp.status_code == 409
+
+
+def test_list_filters_favorites_only(client, mid):
+    ids = _seed_entries(mid)
+    client.patch(f"/api/palette/{ids[0]}", json={"favorited": True})
+    favs = client.get("/api/palette", params={"favorites_only": "true"}).json()
+    assert len(favs) == 1
+    assert favs[0]["id"] == ids[0]
+
+
+def test_list_filters_by_source(client, mid):
+    _seed_entries(mid)  # 'averaged'
+    client.post("/api/palette/manual", json={
+        "material_id": mid, "hex": "#cafefe", "params": {}, "notes": "",
+    })
+    manual = client.get("/api/palette", params={"source": "manual"}).json()
+    assert len(manual) == 1
+    assert manual[0]["source"] == "manual"
+
+
+def test_patch_favorited_plus_recipe_on_ingested_is_atomic(client, mid):
+    """Combining favorited + recipe-mutation on an ingested row must be all-or-nothing.
+    Without the pre-flight, set_favorited runs first and partially commits."""
+    ids = _seed_entries(mid)
+    eid = ids[0]
+    resp = client.patch(
+        f"/api/palette/{eid}",
+        json={"favorited": True, "hex": "#ffffff"},
+    )
+    assert resp.status_code == 409
+    listed = next(e for e in client.get("/api/palette").json() if e["id"] == eid)
+    assert listed["favorited"] is False  # No partial application
