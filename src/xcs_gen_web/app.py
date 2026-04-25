@@ -864,6 +864,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .repositories import tests as t_repo
     from .repositories.tests import LockedError
 
+    def _default_mode_for(machine_id: str) -> str:
+        """When a request omits mode, pick the most representative mode for the
+        machine. F2 Ultra's marquee feature is color engrave; everything else
+        defaults to plain engrave."""
+        return "color_engrave" if machine_id == "F2Ultra" else "engrave"
+
     # Tests --------------------------------------------------------------
     @app.post("/api/tests", response_model=TestResponse, status_code=201)
     def tests_create(
@@ -872,16 +878,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if m_repo.get(body.material_id, owner_id=user_id) is None:
             raise HTTPException(status_code=400, detail="unknown material_id")
         # Validate the test's params against the profile selected by
-        # (machine_id, mode). Mode lookup falls back to "engrave" if the
-        # spec doesn't carry one — pre-multi-machine specs predate the
-        # mode concept and behave like STANDARD on F2.
+        # (machine_id, mode). Mode lookup falls back to the machine's most
+        # representative mode if the spec doesn't carry one — pre-multi-machine
+        # specs predate the mode concept; we pick color_engrave for F2 (its
+        # marquee feature) and engrave for everything else.
         # NOTE: We strip fields that are not_applicable for the profile
         # (e.g. pulse_width on STANDARD) before validating so that
         # legacy base_params, which always carry those fields, still
         # pass.  Full constraint enforcement is a future tightening pass.
         from xcs_gen.machines import PROFILES, profile_for, ValidationError as ProfileError
         spec_dict = body.spec.model_dump()
-        mode = spec_dict.get("base_params", {}).get("mode", "engrave")
+        mode = spec_dict.get("base_params", {}).get("mode") or _default_mode_for(body.machine_id)
         try:
             profile_id = profile_for(body.machine_id, mode)
         except KeyError as e:

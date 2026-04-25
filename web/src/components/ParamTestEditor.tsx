@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { ParamName, RegistrationMode, TestSpec } from "../types";
+import type { ModeId, ParamName, RegistrationMode, TestSpec } from "../types";
 import { PARAM_NAMES } from "../types";
 import { squareCellHeight } from "../specUtils";
 import { Field, NumberField, Section, Select } from "../ui";
@@ -9,6 +9,8 @@ import {
   allowedPulseWidthsInRange,
   snapPulseWidth,
 } from "../laser/pulseWidths";
+import { DynamicParamForm } from "./dynamic-form/DynamicParamForm";
+import { useCurrentMachine, getValidationProfile } from "../state/machine";
 
 interface Props {
   spec: TestSpec;
@@ -17,14 +19,39 @@ interface Props {
   issues?: { field: string; message: string; severity: "error" | "warning" }[];
 }
 
+/** Default mode when none is stored — picks the most representative mode
+ *  for the machine (color_engrave for F2 Ultra, engrave for everything else). */
+function defaultModeFor(machineId: string): ModeId {
+  return machineId === "F2Ultra" ? "color_engrave" : "engrave";
+}
+
 export function ParamTestEditor({ spec, onChange, locked, issues = [] }: Props) {
   const t = spec;
+
+  // Machine-aware validation profile — used to show/hide base param fields.
+  const { registry, machineId, machine } = useCurrentMachine();
+
+  // Derive the active mode from the stored spec, falling back to the
+  // machine's representative default. Validated against the machine's
+  // supported modes so loading an F2 test on F1 gracefully collapses.
+  const storedMode = t.base_params.mode;
+  const supportedModes = machine?.modes.map((m) => m.id) ?? [];
+  const currentMode: ModeId = (
+    storedMode && (supportedModes.length === 0 || supportedModes.includes(storedMode as ModeId))
+      ? storedMode as ModeId
+      : defaultModeFor(machineId)
+  );
+
+  const profile = getValidationProfile(registry, machineId, currentMode);
 
   function updateSpec(patch: Partial<TestSpec>) {
     onChange({ ...spec, ...patch });
   }
   function updateBase(patch: Partial<TestSpec["base_params"]>) {
     onChange({ ...spec, base_params: { ...spec.base_params, ...patch } });
+  }
+  function setMode(id: ModeId) {
+    updateBase({ mode: id });
   }
 
   useEffect(() => {
@@ -240,68 +267,117 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [] }: Props) 
       </Section>
 
       <Section title="Base parameters (fixed)">
-        <div className="grid grid-cols-2 gap-3">
-          <NumberField
-            label="Power %"
-            value={t.base_params.power}
-            onChange={(v) => updateBase({ power: v })}
-          />
-          <NumberField
-            label="Speed (mm/s)"
-            value={t.base_params.speed}
-            integer
-            onChange={(v) => updateBase({ speed: v })}
-          />
-          <NumberField
-            label="Frequency (Hz)"
-            value={t.base_params.frequency}
-            integer
-            onChange={(v) => updateBase({ frequency: v })}
-          />
-          <NumberField
-            label="Lines/cm"
-            value={t.base_params.density}
-            integer
-            onChange={(v) => updateBase({ density: v })}
-          />
-          <NumberField
-            label={t.angle_mode === "crosshatch" ? "Passes (use even values)" : "Passes"}
-            value={t.base_params.passes}
-            integer
-            min={t.angle_mode === "crosshatch" ? 2 : 1}
-            step={t.angle_mode === "crosshatch" ? 2 : 1}
-            onChange={(v) => updateBase({ passes: v })}
-            help={
-              t.angle_mode === "crosshatch"
-                ? "In crosshatch mode each 'pass' is one burn at scan angle and one at +90°. Use even numbers so the total burns match what you enter."
-                : undefined
-            }
-          />
-          <PulseWidthSelect
-            value={t.base_params.pulse_width}
-            onChange={(v) => updateBase({ pulse_width: v })}
-          />
-          <Field label="Laser">
+        {/* Mode selector — shown whenever the machine registry is loaded.
+            Switching mode re-derives the profile, which live-updates
+            the fields below (e.g. pulse_width appears/disappears). */}
+        {machine && (
+          <Field label="Mode">
             <Select
-              value={t.base_params.laser}
-              onChange={(e) =>
-                updateBase({ laser: e.target.value as "red" | "blue" })
-              }
+              value={currentMode}
+              disabled={locked}
+              onChange={(e) => setMode(e.target.value as ModeId)}
             >
-              <option value="red">Red (MOPA)</option>
-              <option value="blue">Blue (diode)</option>
+              {machine.modes.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.id.replace(/_/g, " ")}
+                </option>
+              ))}
             </Select>
           </Field>
-          <NumberField
-            label="Scan angle (°)"
-            value={t.base_params.scan_angle ?? 90}
-            onChange={(v) => updateBase({ scan_angle: v })}
-            min={0}
-            max={360}
-            step={5}
-            help="Starting scan-line angle. 90 = vertical (default), 0 = horizontal. For crosshatch, the second pass runs at this + 90°; for incremental, XCS rotates from this angle across passes."
-          />
-        </div>
+        )}
+        {profile ? (
+          <>
+            <DynamicParamForm
+              profile={profile}
+              value={t.base_params as unknown as Record<string, number | string>}
+              onChange={(next) =>
+                updateBase(next as Partial<TestSpec["base_params"]>)
+              }
+            />
+            {/* Crosshatch pass hint — only shown when angle_mode warrants it */}
+            {t.angle_mode === "crosshatch" && (
+              <p className="text-[11.5px] text-[color:var(--color-ink-muted)] leading-relaxed">
+                In crosshatch mode each pass is one burn at scan angle and one
+                at +90°. Use even pass counts so the total burns match what you
+                enter.
+              </p>
+            )}
+            {/* Scan angle — always shown regardless of profile */}
+            <NumberField
+              label="Scan angle (°)"
+              value={t.base_params.scan_angle ?? 90}
+              onChange={(v) => updateBase({ scan_angle: v })}
+              min={0}
+              max={360}
+              step={5}
+              help="Starting scan-line angle. 90 = vertical (default), 0 = horizontal. For crosshatch, the second pass runs at this + 90°; for incremental, XCS rotates from this angle across passes."
+            />
+          </>
+        ) : (
+          // Profile not yet loaded — render the static fallback form.
+          <div className="flex flex-col gap-3">
+            <p className="text-[12px] text-[color:var(--color-ink-subtle)] font-mono tracking-[0.04em]">
+              Loading constraints…
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <NumberField
+                label="Power %"
+                value={t.base_params.power}
+                onChange={(v) => updateBase({ power: v })}
+              />
+              <NumberField
+                label="Speed (mm/s)"
+                value={t.base_params.speed}
+                integer
+                onChange={(v) => updateBase({ speed: v })}
+              />
+              <NumberField
+                label="Frequency (Hz)"
+                value={t.base_params.frequency}
+                integer
+                onChange={(v) => updateBase({ frequency: v })}
+              />
+              <NumberField
+                label="Lines/cm"
+                value={t.base_params.density}
+                integer
+                onChange={(v) => updateBase({ density: v })}
+              />
+              <NumberField
+                label={t.angle_mode === "crosshatch" ? "Passes (use even values)" : "Passes"}
+                value={t.base_params.passes}
+                integer
+                min={t.angle_mode === "crosshatch" ? 2 : 1}
+                step={t.angle_mode === "crosshatch" ? 2 : 1}
+                onChange={(v) => updateBase({ passes: v })}
+              />
+              <PulseWidthSelect
+                value={t.base_params.pulse_width}
+                onChange={(v) => updateBase({ pulse_width: v })}
+              />
+              <Field label="Laser">
+                <Select
+                  value={t.base_params.laser}
+                  onChange={(e) =>
+                    updateBase({ laser: e.target.value as "red" | "blue" })
+                  }
+                >
+                  <option value="red">Red (MOPA)</option>
+                  <option value="blue">Blue (diode)</option>
+                </Select>
+              </Field>
+              <NumberField
+                label="Scan angle (°)"
+                value={t.base_params.scan_angle ?? 90}
+                onChange={(v) => updateBase({ scan_angle: v })}
+                min={0}
+                max={360}
+                step={5}
+                help="Starting scan-line angle. 90 = vertical (default), 0 = horizontal."
+              />
+            </div>
+          </div>
+        )}
       </Section>
 
       <Section title="Engraving direction">

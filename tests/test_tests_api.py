@@ -107,3 +107,88 @@ def test_patch_material_rejects_unknown_id(fresh_db):
     r = c.patch(f"/api/tests/{tid}", json={"material_id": 99999})
     assert r.status_code == 400
     assert "unknown material_id" in r.json()["detail"]
+
+
+# ── Default-mode resolution ──────────────────────────────────────────────────
+
+# COLOR_ENGRAVE allows frequency up to 500 000 Hz; STANDARD caps at 60 000.
+# If F2Ultra silently defaults to color_engrave when mode is absent, a
+# request with frequency=400_000 should succeed (201). If it defaulted to
+# engrave/STANDARD instead it would 422.
+_BASE_CE = {
+    "power": 50,
+    "speed": 1000,
+    "frequency": 400_000,   # valid for COLOR_ENGRAVE, out-of-range for STANDARD
+    "density": 200,
+    "passes": 1,
+    "pulse_width": 200,
+    "laser": "red",
+}
+
+_SPEC_CE = {
+    "x_param": "speed", "x_min": 500, "x_max": 3000, "x_steps": 5,
+    "rows": 1, "width_mm": 50, "height_mm": 10, "gap_mm": 0.5,
+    "cell_shape": "rect", "square_cells": False, "angle_mode": "fixed",
+    "unidirectional": False, "base_params": _BASE_CE,
+    "registration": {"mode": "off"},
+}
+
+
+def test_tests_create_defaults_mode_color_engrave_for_f2(fresh_db):
+    """F2Ultra with no mode in base_params defaults to color_engrave.
+
+    A frequency of 400 000 Hz is within color_engrave's [60 000, 500 000]
+    range but above the STANDARD cap of 60 000. If the backend were
+    wrongly defaulting to STANDARD (engrave) the request would 422.
+    """
+    c = TestClient(create_app())
+    mid = m_repo.create(name="Stainless")["id"]
+    r = c.post("/api/tests", json={
+        "name": "CE-default",
+        "material_id": mid,
+        "machine_id": "F2Ultra",
+        "spec": _SPEC_CE,
+    })
+    assert r.status_code == 201, r.json()
+    # The stored spec should round-trip cleanly (mode field may be None
+    # in the response — what matters is the 201, not the persisted mode value).
+    body = r.json()
+    assert body["machine_id"] == "F2Ultra"
+
+
+def test_tests_create_explicit_mode_color_engrave_for_f2(fresh_db):
+    """Explicitly passing mode=color_engrave also succeeds for F2Ultra."""
+    c = TestClient(create_app())
+    mid = m_repo.create(name="Stainless")["id"]
+    spec_with_mode = dict(_SPEC_CE)
+    spec_with_mode["base_params"] = {**_BASE_CE, "mode": "color_engrave"}
+    r = c.post("/api/tests", json={
+        "name": "CE-explicit",
+        "material_id": mid,
+        "machine_id": "F2Ultra",
+        "spec": spec_with_mode,
+    })
+    assert r.status_code == 201, r.json()
+
+
+def test_tests_create_f1_defaults_engrave_rejects_high_frequency(fresh_db):
+    """F1Ultra with no mode defaults to engrave (STANDARD, max 60 000 Hz).
+
+    frequency=400 000 should be rejected with 422 because the default
+    mode on F1Ultra is engrave → STANDARD profile → max 60 000 Hz.
+    """
+    c = TestClient(create_app())
+    mid = m_repo.create(name="Aluminium")["id"]
+    # Use base params with high frequency (invalid for STANDARD)
+    base_f1 = dict(_BASE_CE)   # frequency=400_000, pulse_width=200
+    # Strip pulse_width — it's not_applicable on STANDARD and is stripped
+    # server-side already, but include a frequency that breaks STANDARD.
+    spec_f1 = dict(_SPEC_CE)
+    spec_f1["base_params"] = base_f1
+    r = c.post("/api/tests", json={
+        "name": "F1-bad-freq",
+        "material_id": mid,
+        "machine_id": "F1Ultra",
+        "spec": spec_f1,
+    })
+    assert r.status_code == 422, r.json()

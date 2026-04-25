@@ -26,6 +26,11 @@ export interface BaseParams {
   laser: Laser;
   /** Starting scan angle in degrees. 90 = vertical (default); 0 = horizontal. */
   scan_angle: number;
+  /** Mode the user picked when creating this test. Determines which
+   *  validation profile applies. Optional for backwards compat — pre-
+   *  multi-machine rows lack the field; the API handler infers a
+   *  sensible default from machine_id when it's missing. */
+  mode?: ModeId;
 }
 
 export interface ValidationIssue {

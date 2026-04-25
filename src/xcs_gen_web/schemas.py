@@ -41,6 +41,12 @@ class BaseParams(BaseModel):
     # this angle and this+90°.
     scan_angle: float = Field(default=90, ge=0, le=360)
 
+    # Mode the user picked when creating this test. Determines which
+    # validation profile applies. Optional for backwards compat — pre-
+    # multi-machine rows lack the field; the API handler infers a
+    # sensible default from machine_id when it's missing.
+    mode: Literal["engrave", "score", "cut", "color_engrave"] | None = None
+
 
 class RegistrationConfig(BaseModel):
     """Photo-ingest registration: QR top-left + 3 ArUcos at other corners."""
