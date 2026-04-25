@@ -1,6 +1,7 @@
 ---
 id: 2026-04-25-multi-machine-support
 date: 2026-04-25
+created_at: 2026-04-25T16:30:00Z
 level: major
 title: Multi-machine support — F1 Ultra joins the workbench
 summary: Pick a machine in the TopBar; tests, palette, and library scope to it automatically.

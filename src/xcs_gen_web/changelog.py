@@ -63,6 +63,11 @@ class ChangelogEntry:
     summary: str = ""
     body_md: str = ""         # raw markdown body; empty for minors
     images: list[ChangelogImage] = field(default_factory=list)
+    # Optional fine-grained timestamp used to break ties when two entries
+    # share the same ``date``. ISO 8601 string; entries that omit it
+    # default to the date itself, so existing entries keep behaving the
+    # same. Sort order is (date, created_at, id) descending.
+    created_at: str = ""
 
     def to_api(self) -> dict:
         return {
@@ -130,14 +135,16 @@ def _parse_entry(path: Path) -> ChangelogEntry | None:
                 caption=str(entry.get("caption", "")),
             ))
 
+    date_str = str(meta["date"]).strip()
     return ChangelogEntry(
         id=str(meta["id"]).strip(),
-        date=str(meta["date"]).strip(),
+        date=date_str,
         level=level,
         title=str(meta["title"]).strip(),
         summary=str(meta.get("summary", "")).strip(),
         body_md=body if level == "major" else "",
         images=images,
+        created_at=str(meta.get("created_at", date_str)).strip(),
     )
 
 
@@ -159,8 +166,10 @@ def load_entries(changelog_dir: Path) -> list[ChangelogEntry]:
             continue
         seen_ids.add(entry.id)
         entries.append(entry)
-    # Sort by (date desc, id desc) so ties break on a consistent key.
-    entries.sort(key=lambda e: (e.date, e.id), reverse=True)
+    # Sort by (date desc, created_at desc, id desc) so same-day entries
+    # break by their explicit timestamp first, then by id as a final
+    # consistent fallback.
+    entries.sort(key=lambda e: (e.date, e.created_at, e.id), reverse=True)
     return entries
 
 

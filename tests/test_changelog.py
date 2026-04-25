@@ -59,6 +59,19 @@ def test_sorts_newest_first(tmp_path: Path) -> None:
     assert [e.date for e in entries] == ["2026-04-03", "2026-04-02", "2026-04-01"]
 
 
+def test_same_day_created_at_breaks_tie(tmp_path: Path) -> None:
+    """When two entries share a date, ``created_at`` decides who's first."""
+    _write(tmp_path, "a.md",
+        "---\nid: 2026-04-25-aaaa\ndate: 2026-04-25\nlevel: minor\ntitle: A\n---\n")
+    _write(tmp_path, "z.md",
+        "---\nid: 2026-04-25-zzzz\ndate: 2026-04-25\n"
+        "created_at: 2026-04-25T10:00:00Z\nlevel: minor\ntitle: Z\n---\n")
+    entries = load_entries(tmp_path)
+    # Without created_at A would win the alphabetical tiebreaker; the
+    # explicit timestamp on Z bumps it ahead.
+    assert [e.id for e in entries] == ["2026-04-25-zzzz", "2026-04-25-aaaa"]
+
+
 @pytest.mark.parametrize("missing", ["id", "date", "level", "title"])
 def test_skips_entries_missing_required_fields(tmp_path: Path, missing: str, caplog) -> None:
     meta = {"id": "x", "date": "2026-04-01", "level": "minor", "title": "T"}
