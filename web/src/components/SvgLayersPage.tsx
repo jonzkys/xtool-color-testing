@@ -1537,7 +1537,7 @@ function PaletteMatchSection({
           <PaletteFavoritesRow
             layerColor={layerColor}
             materialId={materialId}
-            selectedId={selectedId}
+            appliedHex={appliedHex}
             onApply={onApply}
             refreshKey={favoritesNonce}
           />
@@ -1555,13 +1555,16 @@ function PaletteMatchSection({
 function PaletteFavoritesRow({
   layerColor,
   materialId,
-  selectedId,
+  appliedHex,
   onApply,
   refreshKey,
 }: {
   layerColor: string;
   materialId: string;
-  selectedId: string;
+  /** Hex of the recipe currently applied to the parent layer. The active
+   *  chip is derived against this row's own favourites list — so a
+   *  favourited chip outside the matcher's top-N still highlights here. */
+  appliedHex?: string;
   onApply: (params: Partial<BaseParams>, predictedHex: string) => void;
   refreshKey: number;
 }) {
@@ -1655,7 +1658,7 @@ function PaletteFavoritesRow({
             : hexToLab(entry.hex);
           const dE = target ? deltaE2000(target, lab) : 0;
           const laser = String(entry.params["laser"] ?? "red");
-          const isActive = String(entry.id) === selectedId;
+          const isActive = !!appliedHex && entry.hex.toLowerCase() === appliedHex.toLowerCase();
           return (
             <button
               key={entry.id}
