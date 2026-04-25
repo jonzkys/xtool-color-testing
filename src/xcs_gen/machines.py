@@ -12,7 +12,7 @@ keep the public dataclasses JSON-friendly (no callables, no Enums).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 LaserKind = Literal["fiber", "blue"]
@@ -136,3 +136,131 @@ def device_power(machine_id: str) -> list[int]:
     fiber = next(laser for laser in m.lasers if laser.kind == "fiber")
     blue  = next(laser for laser in m.lasers if laser.kind == "blue")
     return [fiber.wattage, blue.wattage]
+
+
+# ── Validation profiles ──────────────────────────────────────────────────────
+
+from .pulse_width import ALLOWED_PULSE_WIDTHS, snap_pulse_width  # noqa: E402
+
+# Stepped LPC values for the STANDARD profile (lines per cm).
+# 10..100 step 10, then 100..200 step 20. The duplicated 100 is kept
+# only on the lower segment.
+_STANDARD_DENSITY = tuple(
+    list(range(10, 101, 10)) + list(range(120, 201, 20))
+)
+
+# Per-profile constraint dicts. Shape mirrors what /api/machines returns.
+PROFILES: dict[str, dict[str, dict]] = {
+    "STANDARD": {
+        "power":       {"kind": "range",   "min": 1,  "max": 100, "step": 1},
+        "density":     {"kind": "stepped", "values": list(_STANDARD_DENSITY)},
+        "frequency":   {"kind": "range",   "min": 30, "max": 60},
+        "speed":       {"kind": "range",   "min": 2,  "max": 10000},
+        "passes":      {"kind": "range",   "min": 1,  "max": 99},
+        "pulse_width": {"kind": "not_applicable"},
+        "laser":       {"kind": "enum",    "values": ["red", "blue"]},
+    },
+    "COLOR_ENGRAVE": {
+        "power":       {"kind": "range",   "min": 1,  "max": 100, "step": 1},
+        "density":     {"kind": "range",   "min": 1,  "max": 5000},
+        "frequency":   {"kind": "range",   "min": 60, "max": 500},
+        "speed":       {"kind": "range",   "min": 2,  "max": 15000},
+        "passes":      {"kind": "range",   "min": 1,  "max": 99},
+        "pulse_width": {"kind": "stepped", "values": list(ALLOWED_PULSE_WIDTHS)},
+        "laser":       {"kind": "enum",    "values": ["red", "blue"]},
+    },
+}
+
+
+class ValidationError(ValueError):
+    """Raised when a parameter fails its profile constraint.
+
+    ``field`` is the offending field name; ``message`` carries the human
+    explanation. The web layer maps these to HTTP 422.
+    """
+
+    def __init__(self, field: str, message: str) -> None:
+        super().__init__(f"{field}: {message}")
+        self.field = field
+        self.message = message
+
+
+@dataclass
+class ValidationResult:
+    """Result of running params through a profile.
+
+    ``values`` is the post-snap dict (callers should persist this, not
+    the original input). ``snapped`` records ``field -> (original, new)``
+    for any field that was coerced; useful for log-warning the user.
+    """
+
+    values: dict
+    snapped: dict[str, tuple[float, float]] = field(default_factory=dict)
+
+
+def _nearest_in(values: list, v: float) -> float:
+    return min(values, key=lambda x: abs(x - v))
+
+
+def validate_against_profile(
+    profile_id: str, params: dict,
+) -> ValidationResult:
+    """Validate ``params`` against the profile.
+
+    - ``stepped``: snap to nearest legal value (record the swap).
+    - ``range``: reject if out of bounds (raises ValidationError).
+    - ``not_applicable``: reject if the field is present in ``params``.
+    - ``enum``: reject if the value isn't in the allowed set.
+
+    Fields the profile doesn't mention are passed through untouched.
+    """
+    if profile_id not in PROFILES:
+        raise KeyError(f"unknown profile_id: {profile_id!r}")
+    profile = PROFILES[profile_id]
+    out = dict(params)
+    snapped: dict[str, tuple[float, float]] = {}
+
+    for field_name, constraint in profile.items():
+        kind = constraint["kind"]
+        if kind == "not_applicable":
+            if field_name in params:
+                raise ValidationError(
+                    field_name,
+                    f"not applicable on this machine/mode (got {params[field_name]!r})",
+                )
+            continue
+        if field_name not in params:
+            # Range/stepped/enum fields are required; absence is the
+            # caller's bug (Pydantic will catch it before we run, but be
+            # explicit here for direct callers).
+            continue
+        v = params[field_name]
+        if kind == "range":
+            lo, hi = constraint["min"], constraint["max"]
+            if not (lo <= v <= hi):
+                raise ValidationError(
+                    field_name,
+                    f"value {v!r} out of range [{lo}, {hi}]",
+                )
+        elif kind == "stepped":
+            allowed = constraint["values"]
+            if v not in allowed:
+                # Reuse the existing pulse_width snapper for that one
+                # field (it's the only one with a non-uniform step) so
+                # behaviour is bit-identical to the legacy validator.
+                if field_name == "pulse_width":
+                    new = snap_pulse_width(float(v))
+                else:
+                    new = _nearest_in(allowed, float(v))
+                snapped[field_name] = (v, new)
+                out[field_name] = new
+        elif kind == "enum":
+            if v not in constraint["values"]:
+                raise ValidationError(
+                    field_name,
+                    f"value {v!r} not one of {constraint['values']!r}",
+                )
+        else:
+            raise RuntimeError(f"unknown constraint kind: {kind!r}")
+
+    return ValidationResult(values=out, snapped=snapped)
