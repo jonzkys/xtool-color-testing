@@ -67,3 +67,31 @@ def test_list_filters_by_favorites_only(fresh_db):
     ])
     # No favorites yet
     assert repo.list_all(favorites_only=True) == []
+
+
+def test_create_manual(fresh_db):
+    mid = _seed_material()
+    e = repo.create_manual(
+        material_id=mid, hex_="#abcdef",
+        params={"power": 50, "speed": 1000, "laser": "red"},
+        notes="quick test",
+    )
+    assert e["source"] == "manual"
+    assert e["test_id"] is None
+    assert e["sigma"] == 0.0
+    assert e["favorited"] is False
+    assert e["notes"] == "quick test"
+    # Lab is computed
+    assert len(e["lab"]) == 3
+    # Round-trips via list
+    assert any(x["id"] == e["id"] for x in repo.list_all())
+    # Distinct hexes produce distinct lab values
+    e2 = repo.create_manual(material_id=mid, hex_="#000000", params={}, notes="")
+    assert e["lab"] != e2["lab"]
+
+
+def test_create_manual_owner_scoped(fresh_db):
+    mid = _seed_material()
+    repo.create_manual(material_id=mid, hex_="#abcdef", params={}, notes="", owner_id=1)
+    # Different owner sees nothing
+    assert repo.list_all(owner_id=2) == []

@@ -46,7 +46,7 @@ def _row_to_entry(r) -> dict[str, Any]:
 
 
 def _build_row(
-    e: dict[str, Any], now: str, owner_id: str, visibility: str,
+    e: dict[str, Any], now: str, owner_id: int, visibility: str,
 ) -> dict[str, Any]:
     """Build a DB row dict from an entry dict. Used by insert_bulk and replace_for_test."""
     L, a, b = hex_to_lab(e["hex"])
@@ -188,3 +188,38 @@ def update_notes(eid: int, notes: str, *, owner_id: int = STANDALONE_USER_ID) ->
             )
         ).one_or_none()
         return _row_to_entry(row) if row else None
+
+
+def create_manual(
+    *,
+    material_id: int,
+    hex_: str,
+    params: dict[str, Any],
+    notes: str,
+    owner_id: int = STANDALONE_USER_ID,
+    visibility: str = DEFAULT_VISIBILITY,
+) -> dict[str, Any]:
+    now = _now()
+    base = _build_row(
+        {
+            "test_id": None,
+            "material_id": material_id,
+            "x_value": None,
+            "y_value": None,
+            "hex": hex_,
+            "params": params,
+            "sigma": 0.0,
+            "source": "manual",
+            "source_result_id": None,
+            "notes": notes,
+        },
+        now, owner_id, visibility,
+    )
+    row = {**base, "favorited": False}
+    with session_scope() as s:
+        res = s.execute(palette_entries.insert().values(**row))
+        new_id = res.inserted_primary_key[0]
+        out = s.execute(
+            select(palette_entries).where(palette_entries.c.id == new_id),
+        ).one()
+    return _row_to_entry(out)
