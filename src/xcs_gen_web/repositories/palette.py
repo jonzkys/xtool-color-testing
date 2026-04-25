@@ -234,6 +234,28 @@ def update_notes(eid: int, notes: str, *, owner_id: int = STANDALONE_USER_ID) ->
     return update_entry(eid, notes=notes, owner_id=owner_id)
 
 
+def set_favorited(
+    eid: int, value: bool, *, owner_id: int = STANDALONE_USER_ID,
+) -> dict[str, Any] | None:
+    with session_scope() as s:
+        res = s.execute(
+            palette_entries.update()
+            .where(
+                and_(
+                    palette_entries.c.id == eid,
+                    palette_entries.c.owner_id == owner_id,
+                ),
+            )
+            .values(favorited=value)
+        )
+        if res.rowcount == 0:
+            return None
+        row = s.execute(
+            select(palette_entries).where(palette_entries.c.id == eid),
+        ).one()
+        return _row_to_entry(row)
+
+
 def create_manual(
     *,
     material_id: int,

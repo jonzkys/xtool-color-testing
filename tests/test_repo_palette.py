@@ -144,3 +144,37 @@ def test_update_entry_notes_allowed_on_ingested(fresh_db):
 
 def test_update_entry_missing_returns_none(fresh_db):
     assert repo.update_entry(99999, notes="x") is None
+
+
+def test_set_favorited_toggle(fresh_db):
+    mid = _seed_material()
+    e = repo.create_manual(material_id=mid, hex_="#000000", params={}, notes="")
+    on = repo.set_favorited(e["id"], True)
+    assert on["favorited"] is True
+    off = repo.set_favorited(e["id"], False)
+    assert off["favorited"] is False
+
+
+def test_set_favorited_idempotent(fresh_db):
+    mid = _seed_material()
+    e = repo.create_manual(material_id=mid, hex_="#000000", params={}, notes="")
+    repo.set_favorited(e["id"], True)
+    again = repo.set_favorited(e["id"], True)
+    assert again["favorited"] is True
+
+
+def test_set_favorited_works_on_any_source(fresh_db):
+    """Stars are a personal pin — works on ingested rows too."""
+    mid = _seed_material()
+    repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+             hex="#abcdef", sigma=0.0, source="averaged",
+             source_result_id=None, params={}),
+    ])
+    eid = repo.list_all()[0]["id"]
+    out = repo.set_favorited(eid, True)
+    assert out["favorited"] is True
+
+
+def test_set_favorited_missing_returns_none(fresh_db):
+    assert repo.set_favorited(99999, True) is None
