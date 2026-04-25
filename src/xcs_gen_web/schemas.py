@@ -323,7 +323,7 @@ class SvgPreviewResponse(BaseModel):
 
 class PaletteEntryResponse(BaseModel):
     id: int
-    test_id: int
+    test_id: int | None = None
     material_id: int
     source: str
     hex: str
@@ -332,6 +332,7 @@ class PaletteEntryResponse(BaseModel):
     sigma: float
     notes: str
     created_at: str
+    favorited: bool = False
     x_value: float | None = None
     y_value: float | None = None
     source_result_id: int | None = None
@@ -345,7 +346,21 @@ class PaletteQueryResult(BaseModel):
 
 
 class PaletteEntryPatch(BaseModel):
-    notes: str
+    """All fields optional. Backend rejects hex/material_id/params changes
+    on non-manual rows with 409 Conflict (see app.py:palette_patch)."""
+
+    hex: str | None = None
+    material_id: int | None = None
+    params: dict | None = None
+    notes: str | None = None
+    favorited: bool | None = None
+
+
+class PaletteEntryCreateManual(BaseModel):
+    material_id: int
+    hex: str
+    params: dict
+    notes: str = ""
 
 
 class MaterialCreate(BaseModel):
