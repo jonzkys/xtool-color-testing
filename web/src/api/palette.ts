@@ -5,28 +5,80 @@ async function j<T>(r: Response): Promise<T> {
   return (r.status === 204 ? undefined : r.json()) as Promise<T>;
 }
 
-export async function listPaletteEntries(materialId?: number): Promise<PaletteEntry[]> {
-  const qs = materialId ? `?material_id=${materialId}` : "";
-  return j(await fetch(`/api/palette${qs}`));
+export interface ListPaletteOptions {
+  material_id?: number;
+  favorites_only?: boolean;
+  source?: "averaged" | "single_result" | "manual";
 }
-export async function queryPalette(hex: string, opts: {
-  limit?: number; material_id?: number;
-} = {}): Promise<PaletteQueryResult[]> {
+
+export async function listPaletteEntries(
+  arg?: number | ListPaletteOptions,
+): Promise<PaletteEntry[]> {
+  const opts: ListPaletteOptions =
+    typeof arg === "number" ? { material_id: arg } : (arg ?? {});
+  const qs = new URLSearchParams();
+  if (opts.material_id) qs.set("material_id", String(opts.material_id));
+  if (opts.favorites_only) qs.set("favorites_only", "true");
+  if (opts.source) qs.set("source", opts.source);
+  const tail = qs.toString() ? `?${qs.toString()}` : "";
+  return j(await fetch(`/api/palette${tail}`));
+}
+
+export async function queryPalette(
+  hex: string,
+  opts: { limit?: number; material_id?: number } = {},
+): Promise<PaletteQueryResult[]> {
   const qs = new URLSearchParams({ hex });
   if (opts.limit) qs.set("limit", String(opts.limit));
   if (opts.material_id) qs.set("material_id", String(opts.material_id));
   return j(await fetch(`/api/palette/query?${qs}`));
 }
+
 export async function deletePaletteEntry(id: number): Promise<void> {
   await j(await fetch(`/api/palette/${id}`, { method: "DELETE" }));
 }
+
 export async function deletePaletteByTest(testId: number): Promise<void> {
   await j(await fetch(`/api/palette/by-test/${testId}`, { method: "DELETE" }));
 }
-export async function patchPaletteNotes(id: number, notes: string): Promise<PaletteEntry> {
+
+export interface PaletteEntryPatch {
+  hex?: string;
+  material_id?: number;
+  params?: Record<string, string | number>;
+  notes?: string;
+  favorited?: boolean;
+}
+
+export async function patchPaletteEntry(
+  id: number, patch: PaletteEntryPatch,
+): Promise<PaletteEntry> {
   return j(await fetch(`/api/palette/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ notes }),
+    body: JSON.stringify(patch),
   }));
+}
+
+export interface CreateManualBody {
+  material_id: number;
+  hex: string;
+  params: Record<string, string | number>;
+  notes: string;
+}
+
+export async function createManualPaletteEntry(
+  body: CreateManualBody,
+): Promise<PaletteEntry> {
+  return j(await fetch(`/api/palette/manual`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }));
+}
+
+// Backwards-compat alias for the single existing call site that imports
+// `patchPaletteNotes` (will be removed once PalettePage migrates).
+export async function patchPaletteNotes(id: number, notes: string): Promise<PaletteEntry> {
+  return patchPaletteEntry(id, { notes });
 }
