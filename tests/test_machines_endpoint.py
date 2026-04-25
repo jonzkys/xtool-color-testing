@@ -34,7 +34,7 @@ def test_machines_endpoint_includes_image_url(fresh_db):
     r = _client(fresh_db).get("/api/machines")
     body = r.json()
     f1 = next(m for m in body["machines"] if m["id"] == "F1Ultra")
-    assert f1["image"].startswith("/static/machines/")
+    assert f1["image"].startswith("/machines/")
     assert f1["image"].endswith(".png")
 
 

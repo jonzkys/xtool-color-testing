@@ -6,7 +6,7 @@ const REGISTRY: MachinesPayload = {
   machines: [
     {
       id: "F1Ultra", display_name: "F1 Ultra", ext_id: "F1Ultra", ext_name: "F1 Ultra",
-      image: "/static/machines/f1ultra.png",
+      image: "/machines/f1ultra.png",
       lasers: [
         { kind: "fiber", wattage: 20, spot_mm: [0.03, 0.03] },
         { kind: "blue",  wattage: 20, spot_mm: [0.08, 0.10] },
@@ -19,7 +19,7 @@ const REGISTRY: MachinesPayload = {
     },
     {
       id: "F2Ultra", display_name: "F2 Ultra", ext_id: "GS004-CLASS-4", ext_name: "F2 Ultra",
-      image: "/static/machines/f2ultra.png",
+      image: "/machines/f2ultra.png",
       lasers: [
         { kind: "fiber", wattage: 60, spot_mm: [0.03, 0.03] },
         { kind: "blue",  wattage: 40, spot_mm: [0.08, 0.10] },
