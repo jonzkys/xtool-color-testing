@@ -689,6 +689,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         entry_id: int, patch: PaletteEntryPatch,
         user_id: int = Depends(get_current_user),
     ) -> PaletteEntryResponse:
+        wants_recipe_change = (
+            patch.hex is not None or patch.material_id is not None or patch.params is not None
+        )
+        if wants_recipe_change:
+            src = pal_repo.get_source(entry_id, owner_id=user_id)
+            if src is None:
+                raise HTTPException(status_code=404, detail="entry not found")
+            if src != "manual":
+                raise HTTPException(
+                    status_code=409,
+                    detail="cannot mutate hex/material_id/params on ingested swatch",
+                )
         if patch.favorited is not None:
             fav_result = pal_repo.set_favorited(
                 entry_id, patch.favorited, owner_id=user_id,
@@ -703,6 +715,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 owner_id=user_id,
             )
         except pal_repo.NotMutableError as exc:
+            # Should be unreachable after the pre-flight, but kept as defense
+            # in depth in case a future patch field bypasses the gate.
             raise HTTPException(status_code=409, detail=str(exc))
         if result is None:
             raise HTTPException(status_code=404, detail="entry not found")

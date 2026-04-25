@@ -171,6 +171,22 @@ def delete_by_test(test_id: int, *, owner_id: int = STANDALONE_USER_ID) -> int:
         return res.rowcount
 
 
+def get_source(eid: int, *, owner_id: int = STANDALONE_USER_ID) -> str | None:
+    """Return the entry's `source` ('averaged', 'single_result', or 'manual'),
+    or None if it doesn't exist / wrong owner. Used by the API layer to gate
+    PATCH requests before any write happens."""
+    with session_scope() as s:
+        row = s.execute(
+            select(palette_entries.c.source).where(
+                and_(
+                    palette_entries.c.id == eid,
+                    palette_entries.c.owner_id == owner_id,
+                ),
+            )
+        ).one_or_none()
+        return row.source if row else None
+
+
 def update_entry(
     eid: int,
     *,

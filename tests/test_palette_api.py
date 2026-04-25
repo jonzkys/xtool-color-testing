@@ -206,3 +206,17 @@ def test_list_filters_by_source(client, mid):
     manual = client.get("/api/palette", params={"source": "manual"}).json()
     assert len(manual) == 1
     assert manual[0]["source"] == "manual"
+
+
+def test_patch_favorited_plus_recipe_on_ingested_is_atomic(client, mid):
+    """Combining favorited + recipe-mutation on an ingested row must be all-or-nothing.
+    Without the pre-flight, set_favorited runs first and partially commits."""
+    ids = _seed_entries(mid)
+    eid = ids[0]
+    resp = client.patch(
+        f"/api/palette/{eid}",
+        json={"favorited": True, "hex": "#ffffff"},
+    )
+    assert resp.status_code == 409
+    listed = next(e for e in client.get("/api/palette").json() if e["id"] == eid)
+    assert listed["favorited"] is False  # No partial application
