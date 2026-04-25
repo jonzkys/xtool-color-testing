@@ -49,6 +49,7 @@ _CHANGE_ID_LEN = 80      # changelog entry ids are "YYYY-MM-DD-slug" — 80 fits
 _VISIBILITY_LEN = 16
 _COLOR_HEX_LEN = 16      # "#rrggbb" + headroom
 _STATUS_LEN = 16
+_MACHINE_ID_LEN = 32     # registry ids are short ASCII (e.g. "F2Ultra"); 32 = headroom
 
 
 # Users table. Alpha-level "bearer-token is the identity" auth.
@@ -105,9 +106,11 @@ presets = Table(
     Column("updated_at", String(_ISO_TS_LEN), nullable=False),
     Column("owner_id", Integer, nullable=False),
     Column("visibility", String(_VISIBILITY_LEN), nullable=False, server_default="private"),
+    Column("machine_id", String(_MACHINE_ID_LEN), nullable=False, server_default="F2Ultra"),
     CheckConstraint(_VISIBILITY_CHECK, name="presets_visibility_chk"),
     Index("ix_presets_material_id", "material_id"),
     Index("ix_presets_owner", "owner_id"),
+    Index("ix_presets_owner_machine", "owner_id", "machine_id"),
 )
 
 tests = Table(
@@ -127,11 +130,13 @@ tests = Table(
     # current value is stamped into the generated XCS's QR payload so
     # each burn carries a label; ingest copies it onto the result row.
     Column("retest_index", Integer, nullable=False, server_default="0"),
+    Column("machine_id", String(_MACHINE_ID_LEN), nullable=False, server_default="F2Ultra"),
     CheckConstraint("status IN ('created','tested','deleted')", name="tests_status_chk"),
     CheckConstraint(_VISIBILITY_CHECK, name="tests_visibility_chk"),
     Index("ix_tests_material_id", "material_id"),
     Index("ix_tests_status", "status"),
     Index("ix_tests_owner", "owner_id"),
+    Index("ix_tests_owner_machine", "owner_id", "machine_id"),
 )
 
 results = Table(
@@ -179,6 +184,7 @@ palette_entries = Table(
     Column("owner_id", Integer, nullable=False),
     Column("visibility", String(_VISIBILITY_LEN), nullable=False, server_default="private"),
     Column("favorited", Boolean, nullable=False, server_default="0"),
+    Column("machine_id", String(_MACHINE_ID_LEN), nullable=False, server_default="F2Ultra"),
     CheckConstraint(
         "source IN ('averaged','single_result','manual')",
         name="palette_entries_source_chk",
@@ -187,4 +193,5 @@ palette_entries = Table(
     Index("ix_palette_entries_material_id", "material_id"),
     Index("ix_palette_entries_test_id", "test_id"),
     Index("ix_palette_entries_owner", "owner_id"),
+    Index("ix_palette_entries_owner_machine", "owner_id", "machine_id"),
 )
