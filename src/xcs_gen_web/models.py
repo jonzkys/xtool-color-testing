@@ -20,6 +20,7 @@ unlimited on both dialects).
 from __future__ import annotations
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     Float,
@@ -161,7 +162,7 @@ results = Table(
 palette_entries = Table(
     "palette_entries", metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("test_id", Integer, ForeignKey("tests.id"), nullable=False),
+    Column("test_id", Integer, ForeignKey("tests.id"), nullable=True),
     Column("material_id", Integer, ForeignKey("materials.id"), nullable=False),
     Column("x_value", Float),
     Column("y_value", Float),
@@ -177,8 +178,9 @@ palette_entries = Table(
     Column("created_at", String(_ISO_TS_LEN), nullable=False),
     Column("owner_id", Integer, nullable=False),
     Column("visibility", String(_VISIBILITY_LEN), nullable=False, server_default="private"),
+    Column("favorited", Boolean, nullable=False, server_default="0"),
     CheckConstraint(
-        "source IN ('averaged','single_result')",
+        "source IN ('averaged','single_result','manual')",
         name="palette_entries_source_chk",
     ),
     CheckConstraint(_VISIBILITY_CHECK, name="palette_entries_visibility_chk"),
