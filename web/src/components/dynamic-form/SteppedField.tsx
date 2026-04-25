@@ -207,11 +207,10 @@ function SteppedSlider({
               disabled:opacity-50 disabled:bg-[color:var(--color-bg)]
             "
           />
-          {unit && (
-            <span className="text-[11px] font-mono text-[color:var(--color-ink-subtle)] w-[28px]">
-              {unit}
-            </span>
-          )}
+          {/* Always reserve the unit slot so adjacent rows column-align. */}
+          <span className="text-[11px] font-mono text-[color:var(--color-ink-subtle)] w-[34px] shrink-0">
+            {unit || " "}
+          </span>
         </div>
       </div>
 

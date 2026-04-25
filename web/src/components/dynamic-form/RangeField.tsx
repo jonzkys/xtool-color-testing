@@ -165,11 +165,12 @@ export function RangeField({
               disabled:opacity-50 disabled:bg-[color:var(--color-bg)]
             "
           />
-          {unit && (
-            <span className="text-[11px] font-mono text-[color:var(--color-ink-subtle)] w-[28px]">
-              {unit}
-            </span>
-          )}
+          {/* Always render the unit slot — empty fields get a NBSP so
+              the span keeps its 34px even when unit is "". This keeps
+              every row's slider/input column-aligned across the form. */}
+          <span className="text-[11px] font-mono text-[color:var(--color-ink-subtle)] w-[34px] shrink-0">
+            {unit || " "}
+          </span>
         </div>
       </div>
       {/* tick-mark min/max legend */}
