@@ -429,7 +429,9 @@ function EntryCard({
 }: {
   entry: PaletteEntry;
   materials: Material[];
-  onDelete: () => void;
+  /** When omitted, the trash affordance is hidden (used by FavoritesView,
+   *  where the only valid swatch action is unfavoriting via the star). */
+  onDelete?: () => void;
   onInfo: () => void;
   onEdit?: (entry: PaletteEntry) => void;
   onCopy?: (entry: PaletteEntry, toMaterialId: number) => void;
@@ -505,16 +507,18 @@ function EntryCard({
               <Copy className="h-3.5 w-3.5" />
             </button>
           )}
-          <DemoLock label="Deleting palette entries is disabled in the demo.">
-            <button
-              type="button"
-              onClick={onDelete}
-              title="Delete swatch"
-              className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </DemoLock>
+          {onDelete && (
+            <DemoLock label="Deleting palette entries is disabled in the demo.">
+              <button
+                type="button"
+                onClick={onDelete}
+                title="Delete swatch"
+                className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </DemoLock>
+          )}
         </div>
       </div>
       {copyOpen && isManual && onCopy && (
@@ -654,7 +658,7 @@ function ManualView({ materials }: { materials: Material[] }) {
               </span>
             }
           >
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2.5">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2.5">
               {group.map((e) => (
                 <EntryCard
                   key={e.id}
@@ -716,13 +720,6 @@ function FavoritesView({ materials }: { materials: Material[] }) {
       await refresh();
     }
   }
-  async function onDelete(id: number) {
-    if (!confirm("Delete this swatch?")) return;
-    try {
-      await deletePaletteEntry(id);
-      await refresh();
-    } catch (e) { setError((e as Error).message); }
-  }
 
   const byMaterial: Record<number, PaletteEntry[]> = {};
   entries.forEach((e) => { (byMaterial[e.material_id] ??= []).push(e); });
@@ -772,7 +769,6 @@ function FavoritesView({ materials }: { materials: Material[] }) {
                   key={e.id}
                   entry={e}
                   materials={materials}
-                  onDelete={() => onDelete(e.id)}
                   onInfo={() => setInfoId(e.id)}
                   onFavoriteToggle={(entry, next) => {
                     if (!next) void onUnfavorite(entry);
