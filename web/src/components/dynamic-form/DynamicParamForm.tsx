@@ -27,13 +27,14 @@ const FIELD_META: Record<string, { label: string; unit?: string }> = {
 };
 
 /**
- * Fields that get their own full row (not placed in the 2-col grid).
- * Power spans full-width because it's the most-edited and benefits from
- * a longer slider. Density also spans full-width since it behaves very
- * differently across profiles (stepped vs wide range).
- * Laser and pulse_width are source/mode-specific — full row.
+ * All param fields render full-width on their own row. The earlier
+ * 2-col grid for frequency+speed saved a small amount of vertical
+ * space at the cost of visual rhythm; user feedback was that it
+ * wasn't worth the gap.
  */
-const FULL_WIDTH_FIELDS = new Set(["power", "density", "laser", "pulse_width"]);
+const FULL_WIDTH_FIELDS = new Set([
+  "power", "density", "frequency", "speed", "passes", "laser", "pulse_width",
+]);
 
 export interface DynamicParamFormProps {
   profile: ValidationProfile;

@@ -659,14 +659,16 @@ function ModeSegmentedControl({
             aria-checked={active}
             onClick={() => !disabled && onChange(m.id)}
             disabled={disabled}
-            className="flex-1 rounded-[6px] font-mono font-semibold tracking-[0.06em] transition-all focus:outline-none focus-visible:ring-2 disabled:opacity-50 disabled:cursor-default"
+            className="flex-1 rounded-[6px] font-mono font-semibold transition-all focus:outline-none focus-visible:ring-2 disabled:opacity-50 disabled:cursor-default whitespace-nowrap px-1"
             style={{
-              fontSize: "10.5px",
+              fontSize: "10px",
               height: "28px",
               background: active ? "var(--color-primary)" : "transparent",
               color: active ? "#fff" : "var(--color-ink-muted)",
               boxShadow: active ? "0 1px 3px rgba(0,0,0,0.18)" : "none",
-              letterSpacing: "0.06em",
+              // Letterspacing tightened from 0.06em so "COLOR ENGRAVE"
+              // fits on one line in the equal-share pill.
+              letterSpacing: "0.04em",
               textTransform: "uppercase",
               border: "none",
             }}
