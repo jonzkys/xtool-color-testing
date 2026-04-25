@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, field_validator, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from xcs_gen.pulse_width import ALLOWED_PULSE_WIDTHS, snap_pulse_width
 

@@ -229,11 +229,6 @@ def update_entry(
         return _row_to_entry(out)
 
 
-def update_notes(eid: int, notes: str, *, owner_id: int = STANDALONE_USER_ID) -> dict[str, Any] | None:
-    """Deprecated shim — replaced by update_entry. Removed in Task 9."""
-    return update_entry(eid, notes=notes, owner_id=owner_id)
-
-
 def set_favorited(
     eid: int, value: bool, *, owner_id: int = STANDALONE_USER_ID,
 ) -> dict[str, Any] | None:
