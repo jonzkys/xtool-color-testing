@@ -42,6 +42,7 @@ import { MaterialPresetPicker } from "./MaterialPresetPicker";
 import { StarToggle } from "./StarToggle";
 import { listPaletteEntries, queryPalette, patchPaletteEntry } from "../api/palette";
 import { deltaE2000, hexToLab, type Lab } from "../color/math";
+import { computePager } from "../svg/favoritesPager";
 import { normalizeColor } from "../svg/color";
 import {
   Badge,
@@ -1494,6 +1495,15 @@ function PaletteMatchSection({
               </div>
             </div>
           )}
+          <PaletteFavoritesRow
+            layerColor={layerColor}
+            materialId={materialId}
+            selectedId={selectedId}
+            onSelect={(id) => setSelectedId(String(id))}
+            onApply={onApply}
+            onFavoriteToggle={onFavoriteToggle}
+            refreshKey={results.length}
+          />
           <div className="font-mono text-[11px] text-[color:var(--color-ink-subtle)]">
             {Object.entries(paletteParamsToBaseParams(selected.entry.params))
               .map(([k, v]) => `${k}=${v}`)
@@ -1502,6 +1512,170 @@ function PaletteMatchSection({
         </div>
       )}
     </Card>
+  );
+}
+
+function PaletteFavoritesRow({
+  layerColor,
+  materialId,
+  selectedId,
+  onSelect,
+  onApply,
+  onFavoriteToggle,
+  refreshKey,
+}: {
+  layerColor: string;
+  materialId: string;
+  selectedId: string;
+  onSelect: (entryId: number) => void;
+  onApply: (params: Partial<BaseParams>, predictedHex: string) => void;
+  onFavoriteToggle: (entry: PaletteEntry, next: boolean) => void;
+  refreshKey: number;
+}) {
+  const [favorites, setFavorites] = useState<PaletteEntry[]>([]);
+  const [page, setPage] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const CHIP_WIDTH = 90; // matches the suggested-grid chip footprint + gap
+
+  useEffect(() => {
+    if (!materialId) {
+      setFavorites([]);
+      return;
+    }
+    let cancelled = false;
+    listPaletteEntries({
+      material_id: Number(materialId), favorites_only: true,
+    })
+      .then((es) => { if (!cancelled) setFavorites(es); })
+      .catch(() => { if (!cancelled) setFavorites([]); });
+    return () => { cancelled = true; };
+  }, [materialId, refreshKey]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) setContainerWidth(e.contentRect.width);
+    });
+    ro.observe(el);
+    setContainerWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+
+  const sorted = useMemo(() => {
+    if (!/^#[0-9a-fA-F]{6}$/.test(layerColor)) return favorites;
+    const target = hexToLab(layerColor);
+    return [...favorites].sort((a, b) => {
+      const la = a.lab.length >= 3 ? ([a.lab[0], a.lab[1], a.lab[2]] as Lab) : hexToLab(a.hex);
+      const lb = b.lab.length >= 3 ? ([b.lab[0], b.lab[1], b.lab[2]] as Lab) : hexToLab(b.hex);
+      return deltaE2000(target, la) - deltaE2000(target, lb);
+    });
+  }, [favorites, layerColor]);
+
+  const pager = computePager({
+    totalCount: sorted.length,
+    containerWidth: Math.max(0, containerWidth - 80), // reserve room for prev/next + label
+    chipWidth: CHIP_WIDTH,
+    page,
+  });
+
+  if (favorites.length === 0) return null;
+
+  const slice = sorted.slice(pager.start, pager.end);
+
+  return (
+    <div ref={containerRef} className="mt-3">
+      <div className="flex items-baseline justify-between mb-1.5">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
+          ★ Favorites
+        </span>
+        {pager.totalPages > 1 && (
+          <div className="flex items-center gap-1.5 text-[10.5px] text-[color:var(--color-ink-subtle)]">
+            <button
+              type="button"
+              onClick={() => setPage(Math.max(0, pager.page - 1))}
+              disabled={pager.page === 0}
+              className="px-1.5 py-0.5 rounded border border-[color:var(--color-border)] disabled:opacity-30"
+              aria-label="Previous favorites"
+            >‹</button>
+            <span>{pager.page + 1} / {pager.totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setPage(Math.min(pager.totalPages - 1, pager.page + 1))}
+              disabled={pager.page >= pager.totalPages - 1}
+              className="px-1.5 py-0.5 rounded border border-[color:var(--color-border)] disabled:opacity-30"
+              aria-label="Next favorites"
+            >›</button>
+          </div>
+        )}
+      </div>
+      <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${pager.pageSize}, minmax(0, 1fr))` }}>
+        {slice.map((entry) => {
+          const target = /^#[0-9a-fA-F]{6}$/.test(layerColor) ? hexToLab(layerColor) : null;
+          const lab = entry.lab.length >= 3
+            ? ([entry.lab[0], entry.lab[1], entry.lab[2]] as Lab)
+            : hexToLab(entry.hex);
+          const dE = target ? deltaE2000(target, lab) : 0;
+          const laser = String(entry.params["laser"] ?? "red");
+          const isActive = String(entry.id) === selectedId;
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              onClick={() => {
+                onSelect(entry.id);
+                onApply(paletteParamsToBaseParams(entry.params), entry.hex);
+              }}
+              aria-pressed={isActive}
+              title={`ΔE ${dE.toFixed(2)} · ${entry.params.power}% · ${entry.params.speed} mm/s · ${laser}`}
+              className={cn(
+                "group relative rounded-[6px] overflow-hidden border text-left transition-all",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/50",
+                isActive
+                  ? "border-[color:var(--color-primary)] shadow-[0_0_0_1px_var(--color-primary)_inset]"
+                  : "border-[color:var(--color-border)] hover:border-[color:var(--color-border-strong)]",
+              )}
+            >
+              <div className="aspect-[4/3] w-full relative" style={{ background: entry.hex }}>
+                {entry.source === "manual" && (
+                  <span className="absolute top-1 left-1 px-1 py-0.5 rounded-[3px] text-[8px] font-mono font-semibold tracking-[0.08em] uppercase bg-[color:var(--color-accent,#caa14b)] text-black/85">
+                    MAN
+                  </span>
+                )}
+                <StarToggle
+                  favorited={entry.favorited}
+                  onChange={(next) => onFavoriteToggle(entry, next)}
+                  className="absolute top-0.5 right-0.5"
+                />
+              </div>
+              <div className={cn(
+                "px-1.5 py-1 border-t leading-tight",
+                isActive
+                  ? "bg-[color:var(--color-primary-tint)] border-[color:var(--color-primary)]/30"
+                  : "bg-[color:var(--color-surface)] border-[color:var(--color-border)]",
+              )}>
+                <div className="font-mono text-[10px] text-[color:var(--color-ink)] truncate">{entry.hex}</div>
+                <div className="flex items-center justify-between mt-0.5">
+                  <span className="font-mono text-[9.5px] text-[color:var(--color-ink-subtle)]">
+                    ΔE {dE.toFixed(1)}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full shrink-0",
+                      laser === "blue"
+                        ? "bg-[color:var(--color-secondary)]"
+                        : "bg-[color:var(--color-primary)]",
+                    )}
+                  />
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
