@@ -62,7 +62,7 @@ def test_color_engrave_density_is_continuous_range():
 
 def test_stepped_density_snaps_to_nearest():
     res = validate_against_profile("STANDARD", {
-        "power": 50, "speed": 1000, "frequency": 45,
+        "power": 50, "speed": 1000, "frequency": 45_000,
         "density": 113,                    # nearest legal: 120
         "passes": 1, "laser": "red",
     })
@@ -72,7 +72,7 @@ def test_stepped_density_snaps_to_nearest():
 
 def test_stepped_density_passes_through_legal_value():
     res = validate_against_profile("STANDARD", {
-        "power": 50, "speed": 1000, "frequency": 45,
+        "power": 50, "speed": 1000, "frequency": 45_000,
         "density": 100, "passes": 1, "laser": "red",
     })
     assert "density" not in res.snapped
@@ -81,7 +81,7 @@ def test_stepped_density_passes_through_legal_value():
 
 def test_stepped_density_clamps_above_max():
     res = validate_against_profile("STANDARD", {
-        "power": 50, "speed": 1000, "frequency": 45,
+        "power": 50, "speed": 1000, "frequency": 45_000,
         "density": 9999, "passes": 1, "laser": "red",
     })
     # Snaps to the largest legal value (200).
@@ -93,7 +93,7 @@ def test_stepped_density_clamps_above_max():
 def test_range_frequency_rejects_above_max():
     with pytest.raises(ValidationError) as exc:
         validate_against_profile("STANDARD", {
-            "power": 50, "speed": 1000, "frequency": 999,    # over 60
+            "power": 50, "speed": 1000, "frequency": 999_000,    # over 60_000
             "density": 100, "passes": 1, "laser": "red",
         })
     assert exc.value.field == "frequency"
@@ -102,7 +102,7 @@ def test_range_frequency_rejects_above_max():
 def test_range_frequency_rejects_below_min():
     with pytest.raises(ValidationError) as exc:
         validate_against_profile("STANDARD", {
-            "power": 50, "speed": 1000, "frequency": 5,     # below 30
+            "power": 50, "speed": 1000, "frequency": 5_000,     # below 30_000
             "density": 100, "passes": 1, "laser": "red",
         })
     assert exc.value.field == "frequency"
@@ -111,7 +111,7 @@ def test_range_frequency_rejects_below_min():
 def test_range_speed_accepts_boundaries():
     for v in (2, 10000):
         res = validate_against_profile("STANDARD", {
-            "power": 50, "speed": v, "frequency": 45,
+            "power": 50, "speed": v, "frequency": 45_000,
             "density": 100, "passes": 1, "laser": "red",
         })
         assert res.values["speed"] == v
@@ -122,7 +122,7 @@ def test_range_speed_accepts_boundaries():
 def test_pulse_width_rejected_on_standard_when_present():
     with pytest.raises(ValidationError) as exc:
         validate_against_profile("STANDARD", {
-            "power": 50, "speed": 1000, "frequency": 45,
+            "power": 50, "speed": 1000, "frequency": 45_000,
             "density": 100, "passes": 1, "laser": "red",
             "pulse_width": 200,
         })
@@ -131,7 +131,7 @@ def test_pulse_width_rejected_on_standard_when_present():
 
 def test_pulse_width_accepted_on_color_engrave_after_snap():
     res = validate_against_profile("COLOR_ENGRAVE", {
-        "power": 50, "speed": 1000, "frequency": 200,
+        "power": 50, "speed": 1000, "frequency": 200_000,
         "density": 100, "passes": 1, "laser": "red",
         "pulse_width": 47,                 # nearest legal: 45
     })
@@ -144,7 +144,7 @@ def test_pulse_width_accepted_on_color_engrave_after_snap():
 def test_unknown_laser_rejected():
     with pytest.raises(ValidationError) as exc:
         validate_against_profile("STANDARD", {
-            "power": 50, "speed": 1000, "frequency": 45,
+            "power": 50, "speed": 1000, "frequency": 45_000,
             "density": 100, "passes": 1, "laser": "green",
         })
     assert exc.value.field == "laser"
@@ -155,10 +155,10 @@ def test_unknown_laser_rejected():
 def test_profile_for_machine_round_trip():
     profile_id = machines.profile_for("F1Ultra", "engrave")
     res = validate_against_profile(profile_id, {
-        "power": 50, "speed": 1000, "frequency": 45,
+        "power": 50, "speed": 1000, "frequency": 45_000,
         "density": 100, "passes": 1, "laser": "red",
     })
-    assert res.values["frequency"] == 45
+    assert res.values["frequency"] == 45_000
 
 
 # -- Evaluator: missing required field ---------------------------------------
@@ -166,7 +166,7 @@ def test_profile_for_machine_round_trip():
 def test_missing_required_field_raises():
     with pytest.raises(ValidationError) as exc:
         validate_against_profile("STANDARD", {
-            "speed": 1000, "frequency": 45,
+            "speed": 1000, "frequency": 45_000,
             "density": 100, "passes": 1, "laser": "red",
             # power omitted
         })

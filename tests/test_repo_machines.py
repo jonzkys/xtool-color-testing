@@ -11,7 +11,7 @@ from xcs_gen_web.repositories import tests as t_repo
 
 
 BASE_PARAMS = {
-    "power": 50, "speed": 1000, "frequency": 45,
+    "power": 50, "speed": 1000, "frequency": 45_000,
     "density": 100, "passes": 1, "pulse_width": 200, "laser": "red",
 }
 SPEC = {"x_param": "power", "x_min": 10, "x_max": 90, "x_steps": 5,

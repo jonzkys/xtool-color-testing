@@ -879,7 +879,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # (e.g. pulse_width on STANDARD) before validating so that
         # legacy base_params, which always carry those fields, still
         # pass.  Full constraint enforcement is a future tightening pass.
-        import logging as _logging
         from xcs_gen.machines import PROFILES, profile_for, ValidationError as ProfileError
         spec_dict = body.spec.model_dump()
         mode = spec_dict.get("base_params", {}).get("mode", "engrave")
@@ -902,10 +901,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             }
             validate_against_profile(profile_id, params_to_validate)
         except ProfileError as e:
-            _logging.getLogger(__name__).warning(
-                "profile validation skipped (unit mismatch): %s=%s — %s",
-                e.field, spec_dict["base_params"].get(e.field), e.message,
-            )
+            raise HTTPException(status_code=422, detail={"field": e.field, "message": e.message})
         t = t_repo.create(
             name=body.name, material_id=body.material_id,
             spec=spec_dict, notes=body.notes,

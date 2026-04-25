@@ -154,7 +154,8 @@ PROFILES: dict[str, dict[str, dict]] = {
     "STANDARD": {
         "power":       {"kind": "range",   "min": 1,  "max": 100, "step": 1},
         "density":     {"kind": "stepped", "values": list(_STANDARD_DENSITY)},
-        "frequency":   {"kind": "range",   "min": 30, "max": 60},
+        # F1 / F2 standard fiber laser: 30-60 kHz (stored on the wire as Hz).
+        "frequency":   {"kind": "range",   "min": 30_000, "max": 60_000},
         "speed":       {"kind": "range",   "min": 2,  "max": 10000},
         "passes":      {"kind": "range",   "min": 1,  "max": 99},
         "pulse_width": {"kind": "not_applicable"},
@@ -163,7 +164,8 @@ PROFILES: dict[str, dict[str, dict]] = {
     "COLOR_ENGRAVE": {
         "power":       {"kind": "range",   "min": 1,  "max": 100, "step": 1},
         "density":     {"kind": "range",   "min": 1,  "max": 5000},
-        "frequency":   {"kind": "range",   "min": 60, "max": 500},
+        # F2 MOPA color engrave: 60-500 kHz (stored on the wire as Hz).
+        "frequency":   {"kind": "range",   "min": 60_000, "max": 500_000},
         "speed":       {"kind": "range",   "min": 2,  "max": 15000},
         "passes":      {"kind": "range",   "min": 1,  "max": 99},
         "pulse_width": {"kind": "stepped", "values": list(ALLOWED_PULSE_WIDTHS)},
