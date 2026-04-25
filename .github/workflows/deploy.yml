@@ -80,6 +80,7 @@ jobs:
               - 'pyproject.toml'
               - 'Dockerfile'
               - '.dockerignore'
+              - 'changelog/**'
             frontend:
               - 'web/**'
 

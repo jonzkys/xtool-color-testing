@@ -59,6 +59,10 @@ WORKDIR /app
 COPY src ./src
 COPY alembic ./alembic
 COPY alembic.ini ./
+# changelog/ is read at request time by /api/changelog. Without this
+# COPY the prod container has no entries to serve regardless of which
+# .md files are in the repo.
+COPY changelog ./changelog
 
 # Non-root execution. The image should have no reason to escalate.
 RUN useradd --create-home --shell /bin/bash --uid 10001 xcsgen \
