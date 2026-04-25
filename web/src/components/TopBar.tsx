@@ -4,6 +4,7 @@ import { formatRoute, type Route } from "../router";
 import { cn, MetalBar, PageContainer, ThemeToggle } from "../ui";
 import { UploadResultDialog } from "./UploadResultDialog";
 import { AccountMenu } from "./AccountMenu";
+import { MachineSwitcher } from "./MachineSwitcher";
 import { getChangelog } from "../api/changelog";
 
 interface Props {
@@ -87,6 +88,7 @@ export function TopBar({ title, route, onNavigate }: Props) {
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <span className="text-[12.5px] text-[color:var(--color-ink-muted)]">{title}</span>
+            <MachineSwitcher />
             {mode === "multi_user" && <AccountMenu />}
             <span
               aria-hidden="true"
