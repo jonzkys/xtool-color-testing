@@ -139,7 +139,11 @@ export function SvgLayersPage() {
   const [rawDetected, setRawDetected] = useState<DetectedLayer[]>([]);
   const [originalSvgContent, setOriginalSvgContent] = useState<string | null>(null);
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
-  const [collapseIdenticalLayers, setCollapseIdenticalLayers] = useState(true);
+  // Default off: at first detection every layer carries the same default
+  // params, so a default-on collapse silently fuses visually distinct
+  // colours into one engrave stage and the "X→1" badge surprises users
+  // who haven't picked params yet. Users who want this can opt in.
+  const [collapseIdenticalLayers, setCollapseIdenticalLayers] = useState(false);
   const [filename, setFilename] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [isolateSelected, setIsolateSelected] = useState(false);
