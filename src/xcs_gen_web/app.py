@@ -330,7 +330,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         machines_out: list[dict] = []
         for m in all_machines():
             d = asdict(m)
-            d["image"] = f"/static/machines/{d['image']}"
+            # Image lives under web/public/machines/. Vite copies it
+            # to web/dist/machines/ at build time, where it's served
+            # both from the dev backend's SPA mount at "/" and from
+            # S3+CloudFront in prod (the deploy syncs web/dist/ → S3).
+            # No "/static/" prefix — that path doesn't exist on S3.
+            d["image"] = f"/machines/{d['image']}"
             machines_out.append(d)
         return {"machines": machines_out, "profiles": PROFILES}
 
@@ -1247,18 +1252,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ids = pal_repo.insert_bulk(payload, owner_id=user_id)
         return {"added": len(ids), "ids": ids}
 
-    # Per-machine product images. Mounted at /static/machines so the
-    # /api/machines payload can return absolute, cache-friendly URLs that
-    # don't collide with the SPA root mount.
-    import os as _os
-    machines_dir = _os.path.join(_os.path.dirname(__file__), "..", "..", "web", "public", "machines")
-    machines_dir = _os.path.abspath(machines_dir)
-    if _os.path.isdir(machines_dir):
-        app.mount(
-            "/static/machines",
-            StaticFiles(directory=machines_dir),
-            name="machine-images",
-        )
+    # Per-machine product images live under web/public/machines/. Vite
+    # copies them to web/dist/machines/ at build time, so they're served
+    # by the dev backend's SPA mount at "/" and by S3+CloudFront in
+    # prod (the deploy syncs web/dist/ → S3). No backend-side static
+    # mount needed; the URL contract from /api/machines is
+    # /machines/<file>.png.
 
     # Mount built frontend at / if present (optional in dev / tests)
     web_dist = Path(__file__).parent.parent.parent / "web" / "dist"
