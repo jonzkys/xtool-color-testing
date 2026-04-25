@@ -39,7 +39,8 @@ import { validateLayerSpec } from "../validation";
 import type { LibraryState } from "../library";
 import { listMaterials, listPresets } from "../api/library";
 import { MaterialPresetPicker } from "./MaterialPresetPicker";
-import { listPaletteEntries, queryPalette } from "../api/palette";
+import { StarToggle } from "./StarToggle";
+import { listPaletteEntries, queryPalette, patchPaletteEntry } from "../api/palette";
 import { deltaE2000, hexToLab, type Lab } from "../color/math";
 import { normalizeColor } from "../svg/color";
 import {
@@ -1333,6 +1334,28 @@ function PaletteMatchSection({
     };
   }, [layerColor, materialId]);
 
+  async function onFavoriteToggle(entry: PaletteEntry, next: boolean) {
+    setResults((prev) =>
+      prev.map((r) =>
+        r.entry.id === entry.id
+          ? { ...r, entry: { ...r.entry, favorited: next } }
+          : r,
+      ),
+    );
+    try {
+      await patchPaletteEntry(entry.id, { favorited: next });
+    } catch {
+      // rollback
+      setResults((prev) =>
+        prev.map((r) =>
+          r.entry.id === entry.id
+            ? { ...r, entry: { ...r.entry, favorited: !next } }
+            : r,
+        ),
+      );
+    }
+  }
+
   const selected = results.find((r) => String(r.entry.id) === selectedId) ?? results[0];
 
   if (!materialId) {
@@ -1424,9 +1447,20 @@ function PaletteMatchSection({
                       )}
                     >
                       <div
-                        className="aspect-[4/3] w-full"
+                        className="aspect-[4/3] w-full relative"
                         style={{ background: r.entry.hex }}
-                      />
+                      >
+                        {r.entry.source === "manual" && (
+                          <span className="absolute top-1 left-1 px-1 py-0.5 rounded-[3px] text-[8px] font-mono font-semibold tracking-[0.08em] uppercase bg-[color:var(--color-accent,#caa14b)] text-black/85">
+                            MAN
+                          </span>
+                        )}
+                        <StarToggle
+                          favorited={r.entry.favorited}
+                          onChange={(next) => onFavoriteToggle(r.entry, next)}
+                          className="absolute top-0.5 right-0.5"
+                        />
+                      </div>
                       <div
                         className={cn(
                           "px-1.5 py-1 border-t leading-tight",
