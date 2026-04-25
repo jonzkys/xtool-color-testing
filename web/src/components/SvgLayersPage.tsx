@@ -1402,19 +1402,6 @@ function PaletteMatchSection({
                 ΔE {selected.delta_e.toFixed(2)}
               </div>
             </div>
-            <div className="flex-1" />
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() =>
-                onApply(
-                  paletteParamsToBaseParams(selected.entry.params),
-                  selected.entry.hex,
-                )
-              }
-            >
-              Apply
-            </Button>
           </div>
           {results.length > 1 && (
             <div>
@@ -1423,7 +1410,7 @@ function PaletteMatchSection({
                   {results.length} matches
                 </span>
                 <span className="text-[10.5px] text-[color:var(--color-ink-subtle)]">
-                  click a swatch to preview its params
+                  click a swatch to apply its params
                 </span>
               </div>
               <div className="grid gap-1.5 [grid-template-columns:repeat(auto-fill,minmax(82px,1fr))]">
@@ -1435,9 +1422,12 @@ function PaletteMatchSection({
                     <button
                       key={r.entry.id}
                       type="button"
-                      onClick={() => setSelectedId(String(r.entry.id))}
+                      onClick={() => {
+                        setSelectedId(String(r.entry.id));
+                        onApply(paletteParamsToBaseParams(r.entry.params), r.entry.hex);
+                      }}
                       aria-pressed={isActive}
-                      aria-label={`Select palette match ${r.entry.hex}`}
+                      aria-label={`Apply palette match ${r.entry.hex}`}
                       title={`ΔE ${r.delta_e.toFixed(2)} · ${p.power}% · ${p.speed} mm/s · ${laser}`}
                       className={cn(
                         "group relative rounded-[6px] overflow-hidden border text-left transition-all",
@@ -1552,7 +1542,11 @@ function PaletteFavoritesRow({
     return () => { cancelled = true; };
   }, [materialId, refreshKey]);
 
+  // Re-attach observer when favorites first arrive — the row returns null
+  // while empty, so the ref doesn't exist on initial mount.
+  const hasFavorites = favorites.length > 0;
   useEffect(() => {
+    if (!hasFavorites) return;
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
@@ -1561,7 +1555,7 @@ function PaletteFavoritesRow({
     ro.observe(el);
     setContainerWidth(el.clientWidth);
     return () => ro.disconnect();
-  }, []);
+  }, [hasFavorites]);
 
   const sorted = useMemo(() => {
     if (!/^#[0-9a-fA-F]{6}$/.test(layerColor)) return favorites;
@@ -1610,7 +1604,7 @@ function PaletteFavoritesRow({
           </div>
         )}
       </div>
-      <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${pager.pageSize}, minmax(0, 1fr))` }}>
+      <div className="grid gap-1.5 [grid-template-columns:repeat(auto-fill,minmax(82px,1fr))]">
         {slice.map((entry) => {
           const target = /^#[0-9a-fA-F]{6}$/.test(layerColor) ? hexToLab(layerColor) : null;
           const lab = entry.lab.length >= 3
