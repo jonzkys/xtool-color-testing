@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, Copy, Info, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { DialogClose } from "@radix-ui/react-dialog";
 import {
@@ -326,6 +326,8 @@ function BrowseView({ materials }: { materials: Material[] }) {
     [infoId, entries],
   );
 
+  const visibleCount = entries.filter((e) => e.test_id !== null).length;
+
   return (
     <div className="grid gap-6">
       <div className="flex flex-wrap items-center gap-3">
@@ -336,7 +338,7 @@ function BrowseView({ materials }: { materials: Material[] }) {
           label="Material"
         />
         <div className="text-[12.5px] text-[color:var(--color-ink-muted)]">
-          {entries.length} {entries.length === 1 ? "entry" : "entries"}
+          {visibleCount} {visibleCount === 1 ? "entry" : "entries"}
           {materialId && ` · ${materials.find((m) => String(m.id) === materialId)?.name ?? ""}`}
         </div>
       </div>
@@ -436,6 +438,25 @@ function EntryCard({
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyTo, setCopyTo] = useState<string>("");
   const isManual = entry.source === "manual";
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!copyOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setCopyOpen(false);
+    }
+    function onDown(e: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setCopyOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown);
+    };
+  }, [copyOpen]);
   return (
     <div className="group relative rounded-[10px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-hidden shadow-[var(--shadow-card)]">
       <div
@@ -477,7 +498,7 @@ function EntryCard({
           {isManual && onCopy && (
             <button
               type="button"
-              onClick={() => setCopyOpen((v) => !v)}
+              onClick={(e) => { e.stopPropagation(); setCopyOpen((v) => !v); }}
               title="Copy to another material"
               className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-secondary)] hover:bg-[color:var(--color-surface-elevated)]"
             >
@@ -497,7 +518,10 @@ function EntryCard({
         </div>
       </div>
       {copyOpen && isManual && onCopy && (
-        <div className="absolute right-2 top-12 z-10 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] shadow-[var(--shadow-card)] p-2 flex items-center gap-2">
+        <div
+          ref={popoverRef}
+          className="absolute right-2 top-12 z-10 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] shadow-[var(--shadow-card)] p-2 flex items-center gap-2"
+        >
           <Select
             value={copyTo}
             onChange={(e) => setCopyTo(e.target.value)}
