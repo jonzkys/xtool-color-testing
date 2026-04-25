@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from xcs_gen_web.repositories import palette as repo
 from xcs_gen_web.repositories import materials as m_repo
 
@@ -95,3 +97,50 @@ def test_create_manual_owner_scoped(fresh_db):
     repo.create_manual(material_id=mid, hex_="#abcdef", params={}, notes="", owner_id=1)
     # Different owner sees nothing
     assert repo.list_all(owner_id=2) == []
+
+
+def test_update_entry_manual_changes_hex_and_lab(fresh_db):
+    mid = _seed_material()
+    e = repo.create_manual(material_id=mid, hex_="#000000", params={}, notes="")
+    updated = repo.update_entry(e["id"], hex_="#ffffff")
+    assert updated["hex"] == "#ffffff"
+    # Lab should differ from the original (black → white)
+    assert updated["lab"][0] > e["lab"][0]
+
+
+def test_update_entry_manual_partial_patch(fresh_db):
+    mid = _seed_material()
+    e = repo.create_manual(material_id=mid, hex_="#000000", params={"power": 1}, notes="")
+    updated = repo.update_entry(e["id"], notes="renamed")
+    assert updated["notes"] == "renamed"
+    assert updated["hex"] == "#000000"
+    assert updated["params"] == {"power": 1}
+
+
+def test_update_entry_rejects_param_mutation_on_ingested(fresh_db):
+    mid = _seed_material()
+    repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+             hex="#abcdef", sigma=0.0, source="averaged",
+             source_result_id=None, params={"power": 10}),
+    ])
+    eid = repo.list_all()[0]["id"]
+    with pytest.raises(repo.NotMutableError):
+        repo.update_entry(eid, hex_="#ffffff")
+
+
+def test_update_entry_notes_allowed_on_ingested(fresh_db):
+    """Notes are mutable on any source (preserves today's behavior)."""
+    mid = _seed_material()
+    repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+             hex="#abcdef", sigma=0.0, source="averaged",
+             source_result_id=None, params={}),
+    ])
+    eid = repo.list_all()[0]["id"]
+    updated = repo.update_entry(eid, notes="ok to rename")
+    assert updated["notes"] == "ok to rename"
+
+
+def test_update_entry_missing_returns_none(fresh_db):
+    assert repo.update_entry(99999, notes="x") is None

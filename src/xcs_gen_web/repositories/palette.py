@@ -20,6 +20,10 @@ from ..models import palette_entries
 from ..palette import delta_e_2000, hex_to_lab
 
 
+class NotMutableError(Exception):
+    """Raised when callers try to mutate hex/material_id/params on a non-manual row."""
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -167,18 +171,16 @@ def delete_by_test(test_id: int, *, owner_id: int = STANDALONE_USER_ID) -> int:
         return res.rowcount
 
 
-def update_notes(eid: int, notes: str, *, owner_id: int = STANDALONE_USER_ID) -> dict[str, Any] | None:
+def update_entry(
+    eid: int,
+    *,
+    hex_: str | None = None,
+    material_id: int | None = None,
+    params: dict[str, Any] | None = None,
+    notes: str | None = None,
+    owner_id: int = STANDALONE_USER_ID,
+) -> dict[str, Any] | None:
     with session_scope() as s:
-        s.execute(
-            palette_entries.update()
-            .where(
-                and_(
-                    palette_entries.c.id == eid,
-                    palette_entries.c.owner_id == owner_id,
-                ),
-            )
-            .values(notes=notes)
-        )
         row = s.execute(
             select(palette_entries).where(
                 and_(
@@ -187,7 +189,49 @@ def update_notes(eid: int, notes: str, *, owner_id: int = STANDALONE_USER_ID) ->
                 ),
             )
         ).one_or_none()
-        return _row_to_entry(row) if row else None
+        if row is None:
+            return None
+        is_manual = row.source == "manual"
+        wants_recipe_change = (
+            hex_ is not None or material_id is not None or params is not None
+        )
+        if wants_recipe_change and not is_manual:
+            raise NotMutableError(
+                "cannot mutate hex/material_id/params on ingested swatch",
+            )
+        values: dict[str, Any] = {}
+        if hex_ is not None:
+            L, a, b = hex_to_lab(hex_)
+            values["hex"] = hex_
+            values["lab_l"] = L
+            values["lab_a"] = a
+            values["lab_b"] = b
+        if material_id is not None:
+            values["material_id"] = material_id
+        if params is not None:
+            values["params_json"] = json.dumps(params, separators=(",", ":"))
+        if notes is not None:
+            values["notes"] = notes
+        if values:
+            s.execute(
+                palette_entries.update()
+                .where(
+                    and_(
+                        palette_entries.c.id == eid,
+                        palette_entries.c.owner_id == owner_id,
+                    ),
+                )
+                .values(**values)
+            )
+        out = s.execute(
+            select(palette_entries).where(palette_entries.c.id == eid),
+        ).one()
+        return _row_to_entry(out)
+
+
+def update_notes(eid: int, notes: str, *, owner_id: int = STANDALONE_USER_ID) -> dict[str, Any] | None:
+    """Deprecated shim — replaced by update_entry. Removed in Task 9."""
+    return update_entry(eid, notes=notes, owner_id=owner_id)
 
 
 def create_manual(
