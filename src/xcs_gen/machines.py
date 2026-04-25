@@ -230,10 +230,9 @@ def validate_against_profile(
                 )
             continue
         if field_name not in params:
-            # Range/stepped/enum fields are required; absence is the
-            # caller's bug (Pydantic will catch it before we run, but be
-            # explicit here for direct callers).
-            continue
+            raise ValidationError(
+                field_name, "required field is missing",
+            )
         v = params[field_name]
         if kind == "range":
             lo, hi = constraint["min"], constraint["max"]

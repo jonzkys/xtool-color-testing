@@ -159,3 +159,15 @@ def test_profile_for_machine_round_trip():
         "density": 100, "passes": 1, "laser": "red",
     })
     assert res.values["frequency"] == 45
+
+
+# -- Evaluator: missing required field ---------------------------------------
+
+def test_missing_required_field_raises():
+    with pytest.raises(ValidationError) as exc:
+        validate_against_profile("STANDARD", {
+            "speed": 1000, "frequency": 45,
+            "density": 100, "passes": 1, "laser": "red",
+            # power omitted
+        })
+    assert exc.value.field == "power"
