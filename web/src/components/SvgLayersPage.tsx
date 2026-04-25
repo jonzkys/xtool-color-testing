@@ -6,6 +6,7 @@ import {
   EyeOff,
   FileCode2,
   Layers as LayersIcon,
+  Star,
   Upload,
   Wand2,
 } from "lucide-react";
@@ -1308,6 +1309,8 @@ function PaletteMatchSection({
   const [selectedId, setSelectedId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  // Bumped each time a swatch is favorited so the favorites row refetches.
+  const [favoritesNonce, setFavoritesNonce] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -1335,22 +1338,27 @@ function PaletteMatchSection({
     };
   }, [layerColor, materialId]);
 
+  // Only ever called with next=true from the matcher: the layer page lets
+  // users add a favorite but never remove one. Removal lives on the Palette
+  // page so a stray click here can't disrupt a focused matching session.
   async function onFavoriteToggle(entry: PaletteEntry, next: boolean) {
+    if (!next) return;
     setResults((prev) =>
       prev.map((r) =>
         r.entry.id === entry.id
-          ? { ...r, entry: { ...r.entry, favorited: next } }
+          ? { ...r, entry: { ...r.entry, favorited: true } }
           : r,
       ),
     );
     try {
-      await patchPaletteEntry(entry.id, { favorited: next });
+      await patchPaletteEntry(entry.id, { favorited: true });
+      setFavoritesNonce((n) => n + 1);
     } catch {
       // rollback
       setResults((prev) =>
         prev.map((r) =>
           r.entry.id === entry.id
-            ? { ...r, entry: { ...r.entry, favorited: !next } }
+            ? { ...r, entry: { ...r.entry, favorited: false } }
             : r,
         ),
       );
@@ -1446,11 +1454,26 @@ function PaletteMatchSection({
                             MAN
                           </span>
                         )}
-                        <StarToggle
-                          favorited={r.entry.favorited}
-                          onChange={(next) => onFavoriteToggle(r.entry, next)}
-                          className="absolute top-0.5 right-0.5"
-                        />
+                        {r.entry.favorited ? (
+                          <span
+                            aria-label="Favorited"
+                            title="Favorited"
+                            className="absolute top-0.5 right-0.5 inline-flex items-center justify-center p-1"
+                          >
+                            <Star
+                              className="h-3.5 w-3.5"
+                              strokeWidth={2}
+                              fill="var(--color-accent, #caa14b)"
+                              color="var(--color-accent, #caa14b)"
+                            />
+                          </span>
+                        ) : (
+                          <StarToggle
+                            favorited={false}
+                            onChange={(next) => { if (next) onFavoriteToggle(r.entry, true); }}
+                            className="absolute top-0.5 right-0.5"
+                          />
+                        )}
                       </div>
                       <div
                         className={cn(
@@ -1491,8 +1514,7 @@ function PaletteMatchSection({
             selectedId={selectedId}
             onSelect={(id) => setSelectedId(String(id))}
             onApply={onApply}
-            onFavoriteToggle={onFavoriteToggle}
-            refreshKey={results.length}
+            refreshKey={favoritesNonce}
           />
           <div className="font-mono text-[11px] text-[color:var(--color-ink-subtle)]">
             {Object.entries(paletteParamsToBaseParams(selected.entry.params))
@@ -1511,7 +1533,6 @@ function PaletteFavoritesRow({
   selectedId,
   onSelect,
   onApply,
-  onFavoriteToggle,
   refreshKey,
 }: {
   layerColor: string;
@@ -1519,7 +1540,6 @@ function PaletteFavoritesRow({
   selectedId: string;
   onSelect: (entryId: number) => void;
   onApply: (params: Partial<BaseParams>, predictedHex: string) => void;
-  onFavoriteToggle: (entry: PaletteEntry, next: boolean) => void;
   refreshKey: number;
 }) {
   const [favorites, setFavorites] = useState<PaletteEntry[]>([]);
@@ -1637,11 +1657,8 @@ function PaletteFavoritesRow({
                     MAN
                   </span>
                 )}
-                <StarToggle
-                  favorited={entry.favorited}
-                  onChange={(next) => onFavoriteToggle(entry, next)}
-                  className="absolute top-0.5 right-0.5"
-                />
+                {/* No star control here — every chip in this row is by definition
+                    favorited; unfavoriting lives on the Palette page. */}
               </div>
               <div className={cn(
                 "px-1.5 py-1 border-t leading-tight",
