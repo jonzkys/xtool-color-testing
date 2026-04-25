@@ -24,6 +24,10 @@ class NotMutableError(Exception):
     """Raised when callers try to mutate hex/material_id/params on a non-manual row."""
 
 
+class MachineMismatchError(Exception):
+    """A palette entry's machine_id doesn't match its referenced test."""
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -46,6 +50,7 @@ def _row_to_entry(r) -> dict[str, Any]:
         "owner_id": r.owner_id,
         "visibility": r.visibility,
         "favorited": bool(r.favorited),
+        "machine_id": r.machine_id,
     }
 
 
@@ -69,18 +74,41 @@ def _build_row(
         "created_at": now,
         "owner_id": owner_id,
         "visibility": e.get("visibility", visibility),
+        "machine_id": e.get("machine_id", "F2Ultra"),
     }
+
+
+def _check_machine_matches_test(s, e: dict[str, Any]) -> None:
+    """Raise MachineMismatchError if e's machine_id doesn't match its test's machine_id."""
+    if e.get("test_id") is None:
+        return
+    from ..models import tests as tests_table
+    row = s.execute(
+        select(tests_table.c.machine_id).where(tests_table.c.id == e["test_id"])
+    ).one_or_none()
+    if row is None:
+        return  # test deletion is allowed; the FK handles dangling refs
+    test_machine = row.machine_id
+    entry_machine = e.get("machine_id", "F2Ultra")
+    if test_machine != entry_machine:
+        raise MachineMismatchError(
+            f"palette entry machine_id {entry_machine!r} does not match "
+            f"test {e['test_id']} machine_id {test_machine!r}",
+        )
 
 
 def insert_bulk(
     entries: Iterable[dict[str, Any]], *, owner_id: int = STANDALONE_USER_ID,
     visibility: str = DEFAULT_VISIBILITY,
 ) -> list[int]:
+    entries = list(entries)
     now = _now()
     rows = [_build_row(e, now, owner_id, visibility) for e in entries]
     if not rows:
         return []
     with session_scope() as s:
+        for e in entries:
+            _check_machine_matches_test(s, e)
         ids: list[int] = []
         for row in rows:
             res = s.execute(palette_entries.insert().values(**row))
@@ -93,9 +121,12 @@ def replace_for_test(
     *, owner_id: int = STANDALONE_USER_ID, visibility: str = DEFAULT_VISIBILITY,
 ) -> list[int]:
     """Delete all palette entries for test_id (owner-scoped) then insert new ones atomically."""
+    entries = list(entries)
     now = _now()
     rows = [_build_row(e, now, owner_id, visibility) for e in entries]
     with session_scope() as s:
+        for e in entries:
+            _check_machine_matches_test(s, e)
         s.execute(
             palette_entries.delete().where(
                 and_(
@@ -116,6 +147,7 @@ def list_all(
     material_id: int | None = None,
     favorites_only: bool = False,
     source: str | None = None,
+    machine_id: str | None = None,
 ) -> list[dict[str, Any]]:
     with session_scope() as s:
         q = select(palette_entries).where(
@@ -123,6 +155,8 @@ def list_all(
         )
         if material_id is not None:
             q = q.where(palette_entries.c.material_id == material_id)
+        if machine_id is not None:
+            q = q.where(palette_entries.c.machine_id == machine_id)
         if favorites_only:
             q = q.where(palette_entries.c.favorited == True)  # noqa: E712
         if source is not None:

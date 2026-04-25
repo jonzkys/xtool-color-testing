@@ -18,6 +18,10 @@ from ..db import session_scope
 from ..models import presets
 
 
+class MachineImmutableError(Exception):
+    """machine_id changes attempted post-creation."""
+
+
 def _row_to_dict(r) -> dict[str, Any]:
     return {
         "id": r.id,
@@ -30,6 +34,7 @@ def _row_to_dict(r) -> dict[str, Any]:
         "updated_at": r.updated_at,
         "owner_id": r.owner_id,
         "visibility": r.visibility,
+        "machine_id": getattr(r, "machine_id", "F2Ultra"),
     }
 
 
@@ -41,6 +46,7 @@ def create(
     *, material_id: int, name: str, color: str | None,
     base_params: dict[str, Any], owner_id: int = STANDALONE_USER_ID,
     visibility: str = DEFAULT_VISIBILITY,
+    machine_id: str = "F2Ultra",
 ) -> dict[str, Any]:
     ts = _now()
     with session_scope() as s:
@@ -59,6 +65,7 @@ def create(
             base_params_json=json.dumps(base_params, separators=(",", ":")),
             created_at=ts, updated_at=ts,
             owner_id=owner_id, visibility=visibility,
+            machine_id=machine_id,
         ))
         pid = res.inserted_primary_key[0]
     return get(pid, owner_id=owner_id)  # type: ignore[return-value]
@@ -74,9 +81,12 @@ def get(pid: int, *, owner_id: int = STANDALONE_USER_ID) -> dict[str, Any] | Non
         return _row_to_dict(row) if row else None
 
 
-def list_by_material(mid: int, *, owner_id: int = STANDALONE_USER_ID) -> list[dict[str, Any]]:
+def list_by_material(
+    mid: int, *, owner_id: int = STANDALONE_USER_ID,
+    machine_id: str | None = None,
+) -> list[dict[str, Any]]:
     with session_scope() as s:
-        rows = s.execute(
+        q = (
             select(presets)
             .where(
                 and_(
@@ -85,17 +95,26 @@ def list_by_material(mid: int, *, owner_id: int = STANDALONE_USER_ID) -> list[di
                 ),
             )
             .order_by(presets.c.created_at)
-        ).all()
+        )
+        if machine_id is not None:
+            q = q.where(presets.c.machine_id == machine_id)
+        rows = s.execute(q).all()
         return [_row_to_dict(r) for r in rows]
 
 
-def list_all(*, owner_id: int = STANDALONE_USER_ID) -> list[dict[str, Any]]:
+def list_all(
+    *, owner_id: int = STANDALONE_USER_ID,
+    machine_id: str | None = None,
+) -> list[dict[str, Any]]:
     with session_scope() as s:
-        rows = s.execute(
+        q = (
             select(presets)
             .where(presets.c.owner_id == owner_id)
             .order_by(presets.c.created_at)
-        ).all()
+        )
+        if machine_id is not None:
+            q = q.where(presets.c.machine_id == machine_id)
+        rows = s.execute(q).all()
         return [_row_to_dict(r) for r in rows]
 
 
@@ -104,7 +123,16 @@ def update(
     name: str | None = None, color: str | None = None,
     base_params: dict[str, Any] | None = None,
     visibility: str | None = None,
+    machine_id: str | None = None,
 ) -> dict[str, Any] | None:
+    cur = get(pid, owner_id=owner_id)
+    if cur is None:
+        return None
+    if machine_id is not None and machine_id != cur["machine_id"]:
+        raise MachineImmutableError(
+            f"preset {pid}: machine_id is immutable "
+            f"(current {cur['machine_id']!r}, requested {machine_id!r})",
+        )
     values: dict[str, Any] = {"updated_at": _now()}
     if name is not None:
         values["name"] = name

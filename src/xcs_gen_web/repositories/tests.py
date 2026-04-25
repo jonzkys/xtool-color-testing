@@ -22,6 +22,10 @@ class LockedError(Exception):
     """spec_json edits attempted on a locked test."""
 
 
+class MachineImmutableError(Exception):
+    """machine_id changes attempted post-creation."""
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -43,6 +47,7 @@ def _row(r) -> dict[str, Any]:
         # tests that use older DB snapshots working. New reads always
         # carry an int.
         "retest_index": int(getattr(r, "retest_index", 0) or 0),
+        "machine_id": getattr(r, "machine_id", "F2Ultra"),
     }
 
 
@@ -50,11 +55,13 @@ def create(
     *, name: str, material_id: int, spec: dict[str, Any],
     notes: str = "", owner_id: int = STANDALONE_USER_ID,
     visibility: str = DEFAULT_VISIBILITY,
+    machine_id: str = "F2Ultra",
 ) -> dict[str, Any]:
     ts = _now()
     with session_scope() as s:
         res = s.execute(tests.insert().values(
             name=name, material_id=material_id,
+            machine_id=machine_id,
             status="created",
             spec_json=json.dumps(spec, separators=(",", ":")),
             notes=notes, created_at=ts, updated_at=ts, locked=0,
@@ -78,11 +85,14 @@ def list_all(
     *, owner_id: int = STANDALONE_USER_ID,
     material_id: int | None = None,
     status: str | None = None,
+    machine_id: str | None = None,
 ) -> list[dict[str, Any]]:
     with session_scope() as s:
         q = select(tests).where(tests.c.owner_id == owner_id)
         if material_id is not None:
             q = q.where(tests.c.material_id == material_id)
+        if machine_id is not None:
+            q = q.where(tests.c.machine_id == machine_id)
         if status is not None:
             q = q.where(tests.c.status == status)
         else:
@@ -97,10 +107,16 @@ def update(
     spec: dict[str, Any] | None = None,
     material_id: int | None = None,
     visibility: str | None = None,
+    machine_id: str | None = None,
 ) -> dict[str, Any] | None:
     cur = get(tid, owner_id=owner_id)
     if cur is None:
         return None
+    if machine_id is not None and machine_id != cur["machine_id"]:
+        raise MachineImmutableError(
+            f"test {tid}: machine_id is immutable "
+            f"(current {cur['machine_id']!r}, requested {machine_id!r})",
+        )
     values: dict[str, Any] = {"updated_at": _now()}
     if name is not None:
         values["name"] = name
