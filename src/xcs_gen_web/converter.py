@@ -7,7 +7,7 @@ import math
 from xcs_gen.builder import build_xcs
 from xcs_gen.capture.layout import registration_reservation_mm
 from xcs_gen.generators import generate_gradient
-from xcs_gen.model import ProcessingParams, XCSProject
+from xcs_gen.model import Device, ProcessingParams, XCSProject
 from xcs_gen.text import text_height
 
 from .schemas import BaseParams, ParamTest, Project
@@ -194,7 +194,7 @@ def _compute_grid_offsets(project: Project) -> dict[str, tuple[float, float]]:
     return offsets
 
 
-def project_to_xcs(project: Project) -> XCSProject:
+def project_to_xcs(project: Project, *, machine_id: str = "F2Ultra") -> XCSProject:
     """Convert a Project into a single merged XCSProject.
 
     Raises:
@@ -209,7 +209,7 @@ def project_to_xcs(project: Project) -> XCSProject:
     # Generate each test with its computed offset, merging all under a single canvas_id.
     # The builder requires one canvas_id per XCSProject; extra_device_entries
     # reference display UUIDs (not canvas_id), so the merge is safe.
-    merged = XCSProject()
+    merged = XCSProject(device=Device.from_machine(machine_id))
     merged.thickness_mm = project.focus_mm
     for i, placement in enumerate(project.tests):
         t = placement.test
@@ -264,8 +264,8 @@ def project_to_xcs(project: Project) -> XCSProject:
     return merged
 
 
-def project_to_xcs_bytes(project: Project) -> bytes:
+def project_to_xcs_bytes(project: Project, *, machine_id: str = "F2Ultra") -> bytes:
     """Convert a Project to .xcs file bytes."""
-    xcs = project_to_xcs(project)
+    xcs = project_to_xcs(project, machine_id=machine_id)
     data = build_xcs(xcs)
     return json.dumps(data, separators=(",", ":")).encode("utf-8")
