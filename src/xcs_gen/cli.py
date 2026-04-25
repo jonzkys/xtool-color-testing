@@ -10,7 +10,8 @@ from .builder import write_xcs
 from .generators import generate_from_image, generate_gradient
 from .model import ProcessingParams
 
-# F2 Ultra MOPA spot size: 0.03mm (30 microns)
+# Default beam spot — F2/F1 fiber lasers are both 30µm. Per-machine
+# values live in xcs_gen.machines.
 DEFAULT_BEAM_WIDTH = 0.03
 
 

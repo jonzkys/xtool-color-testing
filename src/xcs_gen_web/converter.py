@@ -12,8 +12,23 @@ from xcs_gen.text import text_height
 
 from .schemas import BaseParams, ParamTest, Project
 
-# F2 Ultra MOPA beam spot size. Mirrors web/src/validation.ts BEAM_WIDTH_MM.
-BEAM_WIDTH_MM = 0.03
+def beam_width_for_machine(machine_id: str, *, laser: str = "red") -> float:
+    """Smallest spot dimension of the named laser on ``machine_id``.
+
+    Used to warn when an element is narrower than what the laser can
+    resolve — adjacent thin elements would merge in the burn. Defaults
+    to the fiber laser ("red") because that's what color engraving uses
+    and what the legacy single-machine code assumed.
+    """
+    from xcs_gen.machines import get, laser_for
+    spec = laser_for(get(machine_id), laser)  # type: ignore[arg-type]
+    return min(spec.spot_mm)
+
+
+# Backwards-compat alias — F2 fiber spot is 0.03mm. Use beam_width_for_machine
+# when the active machine is known; the frontend mirror in
+# web/src/validation.ts is updated separately.
+BEAM_WIDTH_MM: float = 0.03
 
 # Offset from canvas (0,0) where the composition starts. Leaves margin from
 # the edge of the XCS canvas so tests aren't flush against the origin.
@@ -103,20 +118,21 @@ def validate_placements(project: Project) -> None:
             occupied[cell] = placement.test.name
 
 
-def validate_beam_widths(project: Project) -> None:
+def validate_beam_widths(project: Project, *, machine_id: str = "F2Ultra") -> None:
     """Raise ValueError if any test has element width below the beam spot size.
 
     Sub-beam-width elements will merge into each other when engraved, producing
     no visible gradient. This is a hard block: the generated file would be wrong.
     """
+    beam_w = beam_width_for_machine(machine_id)
     for placement in project.tests:
         t = placement.test
         per_row = math.ceil(t.x_steps / t.rows)
         elem_w = (t.width_mm - max(0, per_row - 1) * t.gap_mm) / per_row
-        if elem_w > 0 and elem_w < BEAM_WIDTH_MM:
+        if elem_w > 0 and elem_w < beam_w:
             raise ValueError(
                 f"Test '{t.name}': element width {elem_w:.4f}mm is below beam "
-                f"spot {BEAM_WIDTH_MM}mm - adjacent elements will merge. "
+                f"spot {beam_w}mm - adjacent elements will merge. "
                 f"Reduce steps or increase width."
             )
 
@@ -202,7 +218,7 @@ def project_to_xcs(project: Project, *, machine_id: str = "F2Ultra") -> XCSProje
             is below the beam spot size.
     """
     validate_placements(project)
-    validate_beam_widths(project)
+    validate_beam_widths(project, machine_id=machine_id)
 
     offsets = _compute_grid_offsets(project)
 
