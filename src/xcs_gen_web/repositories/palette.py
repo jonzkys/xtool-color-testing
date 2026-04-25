@@ -41,6 +41,7 @@ def _row_to_entry(r) -> dict[str, Any]:
         "created_at": r.created_at,
         "owner_id": r.owner_id,
         "visibility": r.visibility,
+        "favorited": bool(r.favorited),
     }
 
 
@@ -107,7 +108,10 @@ def replace_for_test(
 
 
 def list_all(
-    *, owner_id: int = STANDALONE_USER_ID, material_id: int | None = None,
+    *, owner_id: int = STANDALONE_USER_ID,
+    material_id: int | None = None,
+    favorites_only: bool = False,
+    source: str | None = None,
 ) -> list[dict[str, Any]]:
     with session_scope() as s:
         q = select(palette_entries).where(
@@ -115,6 +119,10 @@ def list_all(
         )
         if material_id is not None:
             q = q.where(palette_entries.c.material_id == material_id)
+        if favorites_only:
+            q = q.where(palette_entries.c.favorited == True)  # noqa: E712
+        if source is not None:
+            q = q.where(palette_entries.c.source == source)
         q = q.order_by(palette_entries.c.created_at.desc())
         return [_row_to_entry(r) for r in s.execute(q).all()]
 

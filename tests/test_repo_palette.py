@@ -42,3 +42,28 @@ def test_delete_by_test(fresh_db):
                            source_result_id=None, params={})])
     repo.delete_by_test(7)
     assert repo.list_all() == []
+
+
+def test_list_filters_by_source(fresh_db):
+    mid = _seed_material()
+    repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+             hex="#abcdef", sigma=0.0, source="averaged",
+             source_result_id=None, params={}),
+        dict(test_id=2, material_id=mid, x_value=0, y_value=None,
+             hex="#fedcba", sigma=0.0, source="single_result",
+             source_result_id=None, params={}),
+    ])
+    averaged = repo.list_all(source="averaged")
+    assert [e["hex"] for e in averaged] == ["#abcdef"]
+
+
+def test_list_filters_by_favorites_only(fresh_db):
+    mid = _seed_material()
+    repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+             hex="#000000", sigma=0.0, source="averaged",
+             source_result_id=None, params={}),
+    ])
+    # No favorites yet
+    assert repo.list_all(favorites_only=True) == []
