@@ -27,10 +27,17 @@ export function SteppedField({
   disabled,
 }: Props) {
   if (values.length <= 16) {
+    // If the stored value isn't in the allowed list (legacy data), prepend a
+    // synthetic option so the select displays the as-stored value rather than
+    // silently falling back to the first legal option.  onChange still snaps to
+    // a legal value — only the initial display is preserved.
+    const strValue = String(value);
+    const inList = values.some((v) => String(v) === strValue);
+
     return (
       <Field label={label}>
         <Select
-          value={String(value)}
+          value={strValue}
           disabled={disabled}
           onChange={(e) => {
             const raw = e.target.value;
@@ -42,6 +49,12 @@ export function SteppedField({
             }
           }}
         >
+          {!inList && (
+            <option key="__legacy__" value={strValue}>
+              {strValue}
+              {unit ? ` ${unit}` : ""} (legacy)
+            </option>
+          )}
           {values.map((v) => (
             <option key={String(v)} value={String(v)}>
               {String(v)}

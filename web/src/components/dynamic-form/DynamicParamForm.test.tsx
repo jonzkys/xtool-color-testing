@@ -199,6 +199,60 @@ describe("DynamicParamForm", () => {
     expect(screen.queryByText(/pulse width/i)).toBeNull();
   });
 
+  // ---------------------------------------------------------------------------
+  // Legacy off-list value handling (backwards-compat)
+  // ---------------------------------------------------------------------------
+
+  it("select stepped field displays a legacy off-list value rather than going blank", () => {
+    // density=150 is NOT in STANDARD_PROFILE's stepped values list
+    // [10,20,30,40,50,60,70,80,90,100,120,140,160,180,200].
+    // The select must still show "150" (as a legacy option) rather than
+    // falling back silently to the first legal option.
+    render(
+      <DynamicParamForm
+        profile={STANDARD_PROFILE}
+        value={{ ...DEFAULT_VALUE, density: 150 }}
+        onChange={() => {}}
+      />,
+    );
+    const selects = screen.getAllByRole("combobox");
+    // Find the density select — its selected option should show "150".
+    const densitySelect = selects.find(
+      (s) => (s as HTMLSelectElement).value === "150",
+    );
+    expect(densitySelect).toBeTruthy();
+    expect((densitySelect as HTMLSelectElement).value).toBe("150");
+  });
+
+  it("slider stepped field text input shows raw off-list value, not snapped to list start", () => {
+    // Construct a profile where density has > 16 stepped values so the
+    // slider path is used.  density=150 is not among them.
+    const MANY_VALUES = Array.from({ length: 20 }, (_, i) => (i + 1) * 100);
+    const SLIDER_PROFILE: ValidationProfile = {
+      power:       { kind: "not_applicable" },
+      density:     { kind: "stepped", values: MANY_VALUES },
+      frequency:   { kind: "not_applicable" },
+      speed:       { kind: "not_applicable" },
+      passes:      { kind: "not_applicable" },
+      pulse_width: { kind: "not_applicable" },
+      laser:       { kind: "not_applicable" },
+    };
+    render(
+      <DynamicParamForm
+        profile={SLIDER_PROFILE}
+        value={{ ...DEFAULT_VALUE, density: 150 }}
+        onChange={() => {}}
+      />,
+    );
+    // The numeric text input next to the slider must display the raw stored value.
+    const textInputs = screen.getAllByRole("textbox");
+    const densityInput = textInputs.find(
+      (inp) => (inp as HTMLInputElement).value === "150",
+    );
+    expect(densityInput).toBeTruthy();
+    expect((densityInput as HTMLInputElement).value).toBe("150");
+  });
+
   it("renders nothing for a fully not_applicable profile", () => {
     const profile: ValidationProfile = {
       power:       { kind: "not_applicable" },

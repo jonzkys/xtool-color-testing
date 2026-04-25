@@ -95,6 +95,15 @@ def test_palette_machine_must_match_test(fresh_db):
         pal_repo.insert_bulk([bad])
 
 
+def test_legacy_off_list_density_passes_through_repo(fresh_db):
+    """Existing rows with off-list density values still load — validation
+    only runs at the API boundary, not on read."""
+    mid = m_repo.create(name="Stainless")["id"]
+    spec = {**SPEC, "base_params": {**BASE_PARAMS, "density": 150}}
+    t = t_repo.create(name="legacy", material_id=mid, spec=spec, machine_id="F2Ultra")
+    assert t["spec"]["base_params"]["density"] == 150
+
+
 def test_palette_ingest_inherits_test_machine(fresh_db, monkeypatch, tmp_path):
     """Swatches ingested into the palette inherit the test's machine_id."""
     monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
