@@ -19,6 +19,13 @@ function snapToStep(v: number, step: number, min: number): number {
   return min + Math.round((v - min) / step) * step;
 }
 
+/** Format a numeric value for the value badge — at most 1 decimal place,
+ *  trailing zero stripped (so 10.0 → "10", 14.6 → "14.6", 14.65 → "14.7"). */
+function formatValue(v: number): string {
+  if (!Number.isFinite(v)) return String(v);
+  return parseFloat(v.toFixed(1)).toString();
+}
+
 /**
  * Redesigned range field: a compact "instrument readout" tile.
  *
@@ -126,7 +133,7 @@ export function RangeField({
               display: editing ? "none" : undefined,
             }}
           >
-            {value}
+            {formatValue(value)}
           </button>
 
           {/* Numeric input — always in DOM for data-testid; visually shown only when editing */}
