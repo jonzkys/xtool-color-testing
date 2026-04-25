@@ -28,6 +28,7 @@ from .schemas import (
     MobileIdResponse,
     MobileUploadResponse,
     RecentMobileUpload,
+    PaletteEntryCreateManual,
     PaletteEntryPatch,
     PaletteEntryResponse,
     PaletteQueryResult,
@@ -623,6 +624,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .repositories.materials import InUseError
 
     # Palette ------------------------------------------------------------
+    @app.post("/api/palette/manual", response_model=PaletteEntryResponse, status_code=201)
+    def palette_create_manual(
+        body: PaletteEntryCreateManual,
+        user_id: int = Depends(get_current_user),
+    ) -> PaletteEntryResponse:
+        # Material ownership is enforced indirectly: list_all filters by
+        # owner_id, and any read of this entry will be owner-scoped.
+        e = pal_repo.create_manual(
+            material_id=body.material_id, hex_=body.hex,
+            params=body.params, notes=body.notes,
+            owner_id=user_id,
+        )
+        return PaletteEntryResponse(**e)
+
     @app.get("/api/palette", response_model=list[PaletteEntryResponse])
     def palette_list(
         material_id: int | None = None,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, field_validator, Field, field_validator, model_validator
 
 from xcs_gen.pulse_width import ALLOWED_PULSE_WIDTHS, snap_pulse_width
 
@@ -361,6 +361,14 @@ class PaletteEntryCreateManual(BaseModel):
     hex: str
     params: dict
     notes: str = ""
+
+    @field_validator("hex")
+    @classmethod
+    def _hex_must_match(cls, v: str) -> str:
+        import re as _re
+        if not _re.fullmatch(r"#[0-9a-fA-F]{6}", v):
+            raise ValueError("hex must match #RRGGBB")
+        return v.lower()
 
 
 class MaterialCreate(BaseModel):

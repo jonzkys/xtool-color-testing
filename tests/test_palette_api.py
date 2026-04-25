@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -132,3 +134,33 @@ def test_query_filters_by_material_id(client, fresh_db):
     ).json()
     assert len(results) == 1
     assert results[0]["entry"]["material_id"] == m2
+
+
+def test_create_manual_success(client, mid):
+    body = {
+        "material_id": mid,
+        "hex": "#abcdef",
+        "params": {"power": 50, "speed": 1000, "laser": "red"},
+        "notes": "first manual",
+    }
+    resp = client.post("/api/palette/manual", json=body)
+    assert resp.status_code == 201
+    e = resp.json()
+    assert e["source"] == "manual"
+    assert e["test_id"] is None
+    assert e["favorited"] is False
+    assert re.fullmatch(r"#[0-9a-fA-F]{6}", e["hex"])
+
+
+def test_create_manual_invalid_hex(client, mid):
+    resp = client.post("/api/palette/manual", json={
+        "material_id": mid, "hex": "blue", "params": {}, "notes": "",
+    })
+    assert resp.status_code == 422
+
+
+def test_create_manual_missing_material(client, fresh_db):
+    resp = client.post("/api/palette/manual", json={
+        "hex": "#abcdef", "params": {}, "notes": "",
+    })
+    assert resp.status_code == 422
