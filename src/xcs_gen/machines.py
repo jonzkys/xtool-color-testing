@@ -12,7 +12,7 @@ keep the public dataclasses JSON-friendly (no callables, no Enums).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 LaserKind = Literal["fiber", "blue"]
@@ -124,15 +124,15 @@ def profile_for(machine_id: str, mode: str) -> ProfileId:
 def laser_for(machine: MachineSpec, laser_name: LaserName) -> LaserSpec:
     """Resolve the LaserSpec referenced by an .xcs ``processingLightSource`` value."""
     kind = _LASER_NAME_TO_KIND[laser_name]
-    for l in machine.lasers:
-        if l.kind == kind:
-            return l
+    for laser in machine.lasers:
+        if laser.kind == kind:
+            return laser
     raise KeyError(f"machine {machine.id!r} has no {kind!r} laser")
 
 
 def device_power(machine_id: str) -> list[int]:
     """``device.power`` list as written to .xcs files: [fiber_w, blue_w]."""
     m = get(machine_id)
-    fiber = next(l for l in m.lasers if l.kind == "fiber")
-    blue  = next(l for l in m.lasers if l.kind == "blue")
+    fiber = next(laser for laser in m.lasers if laser.kind == "fiber")
+    blue  = next(laser for laser in m.lasers if laser.kind == "blue")
     return [fiber.wattage, blue.wattage]

@@ -16,16 +16,18 @@ def test_f2_ultra_identity():
     m = machines.get("F2Ultra")
     assert m.ext_id == "GS004-CLASS-4"
     assert m.ext_name == "F2 Ultra"
-    assert [l.wattage for l in m.lasers] == [60, 40]
-    assert {l.kind for l in m.lasers} == {"fiber", "blue"}
+    wattages = {laser.kind: laser.wattage for laser in m.lasers}
+    assert wattages == {"fiber": 60, "blue": 40}
+    assert {laser.kind for laser in m.lasers} == {"fiber", "blue"}
 
 
 def test_f1_ultra_identity():
     m = machines.get("F1Ultra")
     assert m.ext_id == "F1Ultra"
     assert m.ext_name == "F1 Ultra"
-    assert [l.wattage for l in m.lasers] == [20, 20]
-    assert {l.kind for l in m.lasers} == {"fiber", "blue"}
+    wattages = {laser.kind: laser.wattage for laser in m.lasers}
+    assert wattages == {"fiber": 20, "blue": 20}
+    assert {laser.kind for laser in m.lasers} == {"fiber", "blue"}
 
 
 def test_f1_does_not_have_color_engrave():
@@ -59,13 +61,13 @@ def test_profile_for_unsupported_pair_raises():
 
 def test_blue_laser_is_rectangular_on_both():
     for mid in ("F1Ultra", "F2Ultra"):
-        blue = next(l for l in machines.get(mid).lasers if l.kind == "blue")
+        blue = next(laser for laser in machines.get(mid).lasers if laser.kind == "blue")
         assert blue.spot_mm == (0.08, 0.10)
 
 
 def test_fiber_laser_is_square_on_both():
     for mid in ("F1Ultra", "F2Ultra"):
-        fiber = next(l for l in machines.get(mid).lasers if l.kind == "fiber")
+        fiber = next(laser for laser in machines.get(mid).lasers if laser.kind == "fiber")
         assert fiber.spot_mm == (0.03, 0.03)
 
 
