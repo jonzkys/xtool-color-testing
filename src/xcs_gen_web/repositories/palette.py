@@ -168,9 +168,10 @@ def list_all(
 def query_by_hex(
     hex_: str, *, owner_id: int = STANDALONE_USER_ID, limit: int = 5,
     material_id: int | None = None,
+    machine_id: str | None = None,
 ) -> list[dict[str, Any]]:
     target = hex_to_lab(hex_)
-    rows = list_all(owner_id=owner_id, material_id=material_id)
+    rows = list_all(owner_id=owner_id, material_id=material_id, machine_id=machine_id)
     scored = []
     for r in rows:
         de = delta_e_2000(target, tuple(r["lab"]))
@@ -309,6 +310,7 @@ def create_manual(
     notes: str,
     owner_id: int = STANDALONE_USER_ID,
     visibility: str = DEFAULT_VISIBILITY,
+    machine_id: str = "F2Ultra",
 ) -> dict[str, Any]:
     now = _now()
     base = _build_row(
@@ -323,6 +325,7 @@ def create_manual(
             "source": "manual",
             "source_result_id": None,
             "notes": notes,
+            "machine_id": machine_id,
         },
         now, owner_id, visibility,
     )

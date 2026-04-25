@@ -338,6 +338,7 @@ class PaletteEntryResponse(BaseModel):
     source_result_id: int | None = None
     owner_id: int
     visibility: str
+    machine_id: str
 
 
 class PaletteQueryResult(BaseModel):
@@ -361,6 +362,7 @@ class PaletteEntryCreateManual(BaseModel):
     hex: str
     params: dict
     notes: str = ""
+    machine_id: str = Field(default="F2Ultra", min_length=1, max_length=32)
 
     @field_validator("hex")
     @classmethod
@@ -369,6 +371,14 @@ class PaletteEntryCreateManual(BaseModel):
         if not _re.fullmatch(r"#[0-9a-fA-F]{6}", v):
             raise ValueError("hex must match #RRGGBB")
         return v.lower()
+
+    @field_validator("machine_id")
+    @classmethod
+    def _machine_id_known(cls, v: str) -> str:
+        from xcs_gen.machines import known_ids
+        if v not in known_ids():
+            raise ValueError(f"unknown machine_id: {v!r}")
+        return v
 
 
 class MaterialCreate(BaseModel):
@@ -413,6 +423,15 @@ class PresetCreate(BaseModel):
     name: str
     color: str | None = None
     base_params: BaseParams
+    machine_id: str = Field(default="F2Ultra", min_length=1, max_length=32)
+
+    @field_validator("machine_id")
+    @classmethod
+    def _machine_id_known(cls, v: str) -> str:
+        from xcs_gen.machines import known_ids
+        if v not in known_ids():
+            raise ValueError(f"unknown machine_id: {v!r}")
+        return v
 
 
 class PresetUpdate(BaseModel):
@@ -432,6 +451,7 @@ class PresetResponse(BaseModel):
     updated_at: str
     owner_id: int
     visibility: str
+    machine_id: str
 
 
 class TestSpec(BaseModel):
@@ -463,6 +483,15 @@ class TestCreate(BaseModel):
     material_id: int
     spec: TestSpec
     notes: str = ""
+    machine_id: str = Field(default="F2Ultra", min_length=1, max_length=32)
+
+    @field_validator("machine_id")
+    @classmethod
+    def _machine_id_known(cls, v: str) -> str:
+        from xcs_gen.machines import known_ids
+        if v not in known_ids():
+            raise ValueError(f"unknown machine_id: {v!r}")
+        return v
 
 
 class TestUpdate(BaseModel):
@@ -487,6 +516,7 @@ class TestResponse(BaseModel):
     locked: bool
     owner_id: int
     visibility: str
+    machine_id: str
     # Monotonic counter — each POST /api/tests/{id}/retest bumps by 1.
     retest_index: int = 0
 
