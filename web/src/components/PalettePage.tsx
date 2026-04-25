@@ -1,39 +1,27 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Check, Copy, Info, Search, Trash2, X } from "lucide-react";
+import { Check, Copy, Info, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { DialogClose } from "@radix-ui/react-dialog";
 import {
   listPaletteEntries,
   queryPalette,
   deletePaletteEntry,
   deletePaletteByTest,
+  createManualPaletteEntry,
+  patchPaletteEntry,
 } from "../api/palette";
 import type { PaletteEntry, PaletteQueryResult } from "../types";
 import type { Material } from "../library";
 import { listMaterials, listPresets } from "../api/library";
 import { formatRoute } from "../router";
+import { PaletteEntryDialog } from "./PaletteEntryDialog";
+import { StarToggle } from "./StarToggle";
 import {
-  Badge,
-  Button,
-  Card,
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DemoLock,
-  EmptyState,
-  Field,
-  Input,
-  MetalBar,
-  PageContainer,
-  Section,
-  Select,
-  Tab,
-  TabList,
-  TabPanel,
-  Tabs,
-  cn,
+  Badge, Button, Card, Dialog, DialogContent, DialogTitle, DemoLock,
+  EmptyState, Field, Input, MetalBar, PageContainer, Section, Select,
+  Tab, TabList, TabPanel, Tabs, cn,
 } from "../ui";
 
-type View = "query" | "browse";
+type View = "browse" | "manual" | "favorites" | "query";
 
 export function PalettePage() {
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -73,19 +61,27 @@ export function PalettePage() {
           Colour swatches per material
         </h1>
         <p className="mt-1 text-[13px] text-[color:var(--color-ink-muted)] max-w-[68ch]">
-          Browse every swatch harvested from burn results, or query by hex
-          to find the closest match. All entries are scoped by material so
-          different substrates never mix.
+          Browse every swatch harvested from burn results, hand-author your
+          own, or query by hex. Star any swatch to keep it on hand. All entries
+          are scoped by material so different substrates never mix.
         </p>
       </header>
 
       <Tabs value={view} onValueChange={(v) => setView(v as View)}>
         <TabList>
           <Tab value="browse">Browse</Tab>
+          <Tab value="manual">Manual</Tab>
+          <Tab value="favorites">Favorites</Tab>
           <Tab value="query">Query</Tab>
         </TabList>
         <TabPanel value="browse">
           <BrowseView materials={materials} />
+        </TabPanel>
+        <TabPanel value="manual">
+          <ManualView materials={materials} />
+        </TabPanel>
+        <TabPanel value="favorites">
+          <FavoritesView materials={materials} />
         </TabPanel>
         <TabPanel value="query">
           <QueryView materials={materials} />
@@ -249,12 +245,14 @@ function ResultRow({
       <div className="font-mono text-[11px] text-[color:var(--color-ink-muted)] tabular-nums">
         P={p.power}% · S={p.speed} · F={p.frequency} · D={p.density} · ×{p.passes} · PW={p.pulse_width} · {p.laser}
       </div>
-      <a
-        href={formatRoute({ name: "test-detail", id: result.entry.test_id })}
-        className="ml-auto text-[12px] text-[color:var(--color-secondary)] hover:underline"
-      >
-        View test #{result.entry.test_id}
-      </a>
+      {result.entry.test_id !== null && (
+        <a
+          href={formatRoute({ name: "test-detail", id: result.entry.test_id })}
+          className="ml-auto text-[12px] text-[color:var(--color-secondary)] hover:underline"
+        >
+          View test #{result.entry.test_id}
+        </a>
+      )}
     </div>
   );
 }
@@ -300,9 +298,25 @@ function BrowseView({ materials }: { materials: Material[] }) {
       setError((e as Error).message);
     }
   }
+  async function onFavoriteToggle(entry: PaletteEntry, next: boolean) {
+    // Optimistic
+    setEntries((prev) =>
+      prev.map((e) => (e.id === entry.id ? { ...e, favorited: next } : e)),
+    );
+    try {
+      await patchPaletteEntry(entry.id, { favorited: next });
+    } catch (e) {
+      setError((e as Error).message);
+      // rollback
+      setEntries((prev) =>
+        prev.map((x) => (x.id === entry.id ? { ...x, favorited: !next } : x)),
+      );
+    }
+  }
 
   const byTest: Record<number, PaletteEntry[]> = {};
   entries.forEach((e) => {
+    if (e.test_id === null) return;  // manual entries — shown on the Manual tab, not here
     (byTest[e.test_id] = byTest[e.test_id] ?? []).push(e);
   });
   const testIds = Object.keys(byTest).map(Number).sort((a, b) => b - a);
@@ -382,8 +396,10 @@ function BrowseView({ materials }: { materials: Material[] }) {
                 <EntryCard
                   key={e.id}
                   entry={e}
+                  materials={materials}
                   onDelete={() => onDelete(e.id)}
                   onInfo={() => setInfoId(e.id)}
+                  onFavoriteToggle={(entry, next) => onFavoriteToggle(entry, next)}
                 />
               ))}
             </div>
@@ -402,19 +418,41 @@ function BrowseView({ materials }: { materials: Material[] }) {
 
 function EntryCard({
   entry,
+  materials,
   onDelete,
   onInfo,
+  onEdit,
+  onCopy,
+  onFavoriteToggle,
 }: {
   entry: PaletteEntry;
+  materials: Material[];
   onDelete: () => void;
   onInfo: () => void;
+  onEdit?: (entry: PaletteEntry) => void;
+  onCopy?: (entry: PaletteEntry, toMaterialId: number) => void;
+  onFavoriteToggle: (entry: PaletteEntry, next: boolean) => void;
 }) {
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyTo, setCopyTo] = useState<string>("");
+  const isManual = entry.source === "manual";
   return (
     <div className="group relative rounded-[10px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-hidden shadow-[var(--shadow-card)]">
       <div
-        className="aspect-[4/3] w-full border-b border-[color:var(--color-border)]"
+        className="aspect-[4/3] w-full border-b border-[color:var(--color-border)] relative"
         style={{ background: entry.hex }}
-      />
+      >
+        {isManual && (
+          <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-[4px] text-[9px] font-mono font-semibold tracking-[0.08em] uppercase bg-[color:var(--color-accent,#caa14b)] text-black/85">
+            MAN
+          </span>
+        )}
+        <StarToggle
+          favorited={entry.favorited}
+          onChange={(next) => onFavoriteToggle(entry, next)}
+          className="absolute top-1 right-1"
+        />
+      </div>
       <div className="px-2 py-1.5 flex items-center justify-between gap-2">
         <div className="font-mono text-[11px] text-[color:var(--color-ink)]">{entry.hex}</div>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -426,6 +464,26 @@ function EntryCard({
           >
             <Info className="h-3.5 w-3.5" />
           </button>
+          {isManual && onEdit && (
+            <button
+              type="button"
+              onClick={() => onEdit(entry)}
+              title="Edit swatch"
+              className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-secondary)] hover:bg-[color:var(--color-surface-elevated)]"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {isManual && onCopy && (
+            <button
+              type="button"
+              onClick={() => setCopyOpen((v) => !v)}
+              title="Copy to another material"
+              className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-secondary)] hover:bg-[color:var(--color-surface-elevated)]"
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </button>
+          )}
           <DemoLock label="Deleting palette entries is disabled in the demo.">
             <button
               type="button"
@@ -438,6 +496,275 @@ function EntryCard({
           </DemoLock>
         </div>
       </div>
+      {copyOpen && isManual && onCopy && (
+        <div className="absolute right-2 top-12 z-10 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] shadow-[var(--shadow-card)] p-2 flex items-center gap-2">
+          <Select
+            value={copyTo}
+            onChange={(e) => setCopyTo(e.target.value)}
+            className="text-[11px] py-1"
+          >
+            <option value="">Copy to…</option>
+            {materials
+              .filter((m) => m.id !== entry.material_id)
+              .map((m) => (
+                <option key={m.id} value={String(m.id)}>{m.name}</option>
+              ))}
+          </Select>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={copyTo === ""}
+            onClick={() => {
+              onCopy(entry, Number(copyTo));
+              setCopyTo("");
+              setCopyOpen(false);
+            }}
+          >
+            Copy
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ManualView({ materials }: { materials: Material[] }) {
+  const [entries, setEntries] = useState<PaletteEntry[]>([]);
+  const [materialId, setMaterialId] = useState<string>("");
+  const [error, setError] = useState<string | undefined>();
+  const [infoId, setInfoId] = useState<number | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<PaletteEntry | null>(null);
+
+  async function refresh() {
+    setError(undefined);
+    try {
+      setEntries(await listPaletteEntries({
+        material_id: materialId ? Number(materialId) : undefined,
+        source: "manual",
+      }));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  useEffect(() => { void refresh(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [materialId]);
+
+  async function onDelete(id: number) {
+    if (!confirm("Delete this manual swatch?")) return;
+    try {
+      await deletePaletteEntry(id);
+      await refresh();
+    } catch (e) { setError((e as Error).message); }
+  }
+  async function onFavoriteToggle(entry: PaletteEntry, next: boolean) {
+    setEntries((prev) => prev.map((e) => (e.id === entry.id ? { ...e, favorited: next } : e)));
+    try {
+      await patchPaletteEntry(entry.id, { favorited: next });
+    } catch (e) {
+      setError((e as Error).message);
+      setEntries((prev) => prev.map((x) => (x.id === entry.id ? { ...x, favorited: !next } : x)));
+    }
+  }
+  async function onCopy(entry: PaletteEntry, toMaterialId: number) {
+    try {
+      await createManualPaletteEntry({
+        material_id: toMaterialId,
+        hex: entry.hex,
+        params: entry.params,
+        notes: entry.notes,
+      });
+      await refresh();
+    } catch (e) { setError((e as Error).message); }
+  }
+
+  const byMaterial: Record<number, PaletteEntry[]> = {};
+  entries.forEach((e) => { (byMaterial[e.material_id] ??= []).push(e); });
+  const matIds = Object.keys(byMaterial).map(Number);
+
+  const infoEntry = useMemo(
+    () => (infoId !== null ? entries.find((e) => e.id === infoId) ?? null : null),
+    [infoId, entries],
+  );
+
+  return (
+    <div className="grid gap-6">
+      <div className="flex flex-wrap items-center gap-3">
+        <MaterialSelect
+          materials={materials}
+          value={materialId}
+          onChange={setMaterialId}
+          label="Material"
+        />
+        <div className="text-[12.5px] text-[color:var(--color-ink-muted)]">
+          {entries.length} {entries.length === 1 ? "manual swatch" : "manual swatches"}
+        </div>
+        <div className="ml-auto">
+          <Button
+            variant="primary"
+            onClick={() => { setEditing(null); setDialogOpen(true); }}
+          >
+            <Plus className="h-4 w-4" />
+            Add manual entry
+          </Button>
+        </div>
+      </div>
+      {error && <p className="text-[13px] text-[color:var(--color-destructive)]">{error}</p>}
+      {entries.length === 0 && !error && (
+        <EmptyState
+          title="No manual entries yet"
+          description={materialId
+            ? "Click + to capture a recipe you've dialled in by hand."
+            : "Pick a material above, then click + to add a manual swatch."}
+        />
+      )}
+      {matIds.map((mid) => {
+        const group = byMaterial[mid];
+        const materialName = materials.find((m) => m.id === mid)?.name ?? "(unknown)";
+        return (
+          <Section
+            key={mid}
+            title={
+              <span className="flex items-baseline gap-2">
+                <span>{materialName}</span>
+                <Badge variant="info" size="sm">{group.length}</Badge>
+              </span>
+            }
+          >
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2.5">
+              {group.map((e) => (
+                <EntryCard
+                  key={e.id}
+                  entry={e}
+                  materials={materials}
+                  onDelete={() => onDelete(e.id)}
+                  onInfo={() => setInfoId(e.id)}
+                  onEdit={(en) => { setEditing(en); setDialogOpen(true); }}
+                  onCopy={(en, toId) => void onCopy(en, toId)}
+                  onFavoriteToggle={(entry, next) => void onFavoriteToggle(entry, next)}
+                />
+              ))}
+            </div>
+          </Section>
+        );
+      })}
+
+      <PaletteEntryDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        materials={materials}
+        entry={editing}
+        defaultMaterialId={materialId || undefined}
+        onSaved={() => { void refresh(); }}
+      />
+
+      <Dialog open={infoEntry !== null} onOpenChange={(o) => !o && setInfoId(null)}>
+        {infoEntry && (
+          <InfoModalContent entry={infoEntry} materials={materials} />
+        )}
+      </Dialog>
+    </div>
+  );
+}
+
+function FavoritesView({ materials }: { materials: Material[] }) {
+  const [entries, setEntries] = useState<PaletteEntry[]>([]);
+  const [materialId, setMaterialId] = useState<string>("");
+  const [error, setError] = useState<string | undefined>();
+  const [infoId, setInfoId] = useState<number | null>(null);
+
+  async function refresh() {
+    setError(undefined);
+    try {
+      setEntries(await listPaletteEntries({
+        material_id: materialId ? Number(materialId) : undefined,
+        favorites_only: true,
+      }));
+    } catch (e) { setError((e as Error).message); }
+  }
+  useEffect(() => { void refresh(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [materialId]);
+
+  async function onUnfavorite(entry: PaletteEntry) {
+    setEntries((prev) => prev.filter((e) => e.id !== entry.id));
+    try {
+      await patchPaletteEntry(entry.id, { favorited: false });
+    } catch (e) {
+      setError((e as Error).message);
+      await refresh();
+    }
+  }
+  async function onDelete(id: number) {
+    if (!confirm("Delete this swatch?")) return;
+    try {
+      await deletePaletteEntry(id);
+      await refresh();
+    } catch (e) { setError((e as Error).message); }
+  }
+
+  const byMaterial: Record<number, PaletteEntry[]> = {};
+  entries.forEach((e) => { (byMaterial[e.material_id] ??= []).push(e); });
+  const matIds = Object.keys(byMaterial).map(Number);
+
+  const infoEntry = useMemo(
+    () => (infoId !== null ? entries.find((e) => e.id === infoId) ?? null : null),
+    [infoId, entries],
+  );
+
+  return (
+    <div className="grid gap-6">
+      <div className="flex flex-wrap items-center gap-3">
+        <MaterialSelect
+          materials={materials}
+          value={materialId}
+          onChange={setMaterialId}
+          label="Material"
+        />
+        <div className="text-[12.5px] text-[color:var(--color-ink-muted)]">
+          {entries.length} {entries.length === 1 ? "favorite" : "favorites"}
+        </div>
+      </div>
+      {error && <p className="text-[13px] text-[color:var(--color-destructive)]">{error}</p>}
+      {entries.length === 0 && !error && (
+        <EmptyState
+          title="No favorites yet"
+          description="Click the star on any swatch (Browse, Manual, or the SVG matcher) to pin it here."
+        />
+      )}
+      {matIds.map((mid) => {
+        const group = byMaterial[mid];
+        const materialName = materials.find((m) => m.id === mid)?.name ?? "(unknown)";
+        return (
+          <Section
+            key={mid}
+            title={
+              <span className="flex items-baseline gap-2">
+                <span>{materialName}</span>
+                <Badge variant="info" size="sm">{group.length}</Badge>
+              </span>
+            }
+          >
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2.5">
+              {group.map((e) => (
+                <EntryCard
+                  key={e.id}
+                  entry={e}
+                  materials={materials}
+                  onDelete={() => onDelete(e.id)}
+                  onInfo={() => setInfoId(e.id)}
+                  onFavoriteToggle={(entry, next) => {
+                    if (!next) void onUnfavorite(entry);
+                  }}
+                />
+              ))}
+            </div>
+          </Section>
+        );
+      })}
+
+      <Dialog open={infoEntry !== null} onOpenChange={(o) => !o && setInfoId(null)}>
+        {infoEntry && (
+          <InfoModalContent entry={infoEntry} materials={materials} />
+        )}
+      </Dialog>
     </div>
   );
 }
@@ -705,11 +1032,13 @@ function FactValue({
 }
 
 function SourceBadge({ source }: { source: PaletteEntry["source"] }) {
-  const label = source === "averaged" ? "averaged" : "single result";
+  const label = source === "averaged" ? "averaged" : source === "manual" ? "manual" : "single result";
   const dotClass =
     source === "averaged"
       ? "bg-[color:var(--color-primary)]"
-      : "bg-[color:var(--color-secondary)]";
+      : source === "manual"
+        ? "bg-[color:var(--color-accent,#caa14b)]"
+        : "bg-[color:var(--color-secondary)]";
   return (
     <span className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface)] font-mono text-[11px] tracking-[0.04em] text-[color:var(--color-ink-muted)]">
       <span className={cn("h-1.5 w-1.5 rounded-full", dotClass)} aria-hidden />
