@@ -35,6 +35,18 @@ export function RangeField({
     if (!focusedRef.current) setText(String(value));
   }, [value]);
 
+  // Clamp the parent value once when it falls outside [min, max].
+  // This fires when min/max change (e.g. mode switch) or on mount with a
+  // stale stored value. We intentionally omit onChange from deps to avoid
+  // a re-fire loop if the parent re-creates the callback each render.
+  useEffect(() => {
+    const num = Number(value);
+    const clamped = Math.max(min, Math.min(max, num));
+    if (!isNaN(num) && clamped !== num) {
+      onChange(clamped);
+    }
+  }, [value, min, max]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function handleTextChange(raw: string) {
     setText(raw);
     const n = parseFloat(raw);

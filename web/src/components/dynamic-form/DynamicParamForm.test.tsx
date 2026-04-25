@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { DynamicParamForm } from "./DynamicParamForm";
 import type { ValidationProfile } from "../../types";
 
@@ -272,5 +272,31 @@ describe("DynamicParamForm", () => {
     );
     // The wrapper div is present but no interactive controls.
     expect(container.querySelectorAll("input, select")).toHaveLength(0);
+  });
+
+  it("RangeField calls onChange exactly once with clamped value when mounted with out-of-range value", async () => {
+    // frequency=125 is far below STANDARD_PROFILE's min of 30_000.
+    // The RangeField clamping useEffect should fire once and call onChange
+    // with the clamped midpoint value.
+    const handleChange = vi.fn();
+    await act(async () => {
+      render(
+        <DynamicParamForm
+          profile={STANDARD_PROFILE}
+          value={{ ...DEFAULT_VALUE, frequency: 125 }}
+          onChange={handleChange}
+        />,
+      );
+    });
+    // onChange must have been called at least once for the out-of-range field.
+    expect(handleChange).toHaveBeenCalled();
+    // All calls should pass a frequency that's within [30000, 60000].
+    for (const call of handleChange.mock.calls) {
+      const v = call[0] as Record<string, number | string>;
+      if (typeof v.frequency === "number") {
+        expect(v.frequency).toBeGreaterThanOrEqual(30_000);
+        expect(v.frequency).toBeLessThanOrEqual(60_000);
+      }
+    }
   });
 });
