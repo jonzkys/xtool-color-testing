@@ -164,3 +164,45 @@ def test_create_manual_missing_material(client, fresh_db):
         "hex": "#abcdef", "params": {}, "notes": "",
     })
     assert resp.status_code == 422
+
+
+def test_patch_favorited(client, mid):
+    ids = _seed_entries(mid)
+    eid = ids[0]
+    resp = client.patch(f"/api/palette/{eid}", json={"favorited": True})
+    assert resp.status_code == 200
+    assert resp.json()["favorited"] is True
+    listed = next(e for e in client.get("/api/palette").json() if e["id"] == eid)
+    assert listed["favorited"] is True
+
+
+def test_patch_recipe_on_manual_succeeds(client, mid):
+    body = {"material_id": mid, "hex": "#000000", "params": {"power": 1}, "notes": "x"}
+    e = client.post("/api/palette/manual", json=body).json()
+    resp = client.patch(f"/api/palette/{e['id']}", json={"hex": "#ffffff"})
+    assert resp.status_code == 200
+    assert resp.json()["hex"] == "#ffffff"
+
+
+def test_patch_recipe_on_ingested_409(client, mid):
+    ids = _seed_entries(mid)
+    resp = client.patch(f"/api/palette/{ids[0]}", json={"hex": "#ffffff"})
+    assert resp.status_code == 409
+
+
+def test_list_filters_favorites_only(client, mid):
+    ids = _seed_entries(mid)
+    client.patch(f"/api/palette/{ids[0]}", json={"favorited": True})
+    favs = client.get("/api/palette", params={"favorites_only": "true"}).json()
+    assert len(favs) == 1
+    assert favs[0]["id"] == ids[0]
+
+
+def test_list_filters_by_source(client, mid):
+    _seed_entries(mid)  # 'averaged'
+    client.post("/api/palette/manual", json={
+        "material_id": mid, "hex": "#cafefe", "params": {}, "notes": "",
+    })
+    manual = client.get("/api/palette", params={"source": "manual"}).json()
+    assert len(manual) == 1
+    assert manual[0]["source"] == "manual"

@@ -641,11 +641,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/palette", response_model=list[PaletteEntryResponse])
     def palette_list(
         material_id: int | None = None,
+        favorites_only: bool = False,
+        source: str | None = None,
         user_id: int = Depends(get_current_user),
     ) -> list[PaletteEntryResponse]:
         return [
             PaletteEntryResponse(**e)
-            for e in pal_repo.list_all(owner_id=user_id, material_id=material_id)
+            for e in pal_repo.list_all(
+                owner_id=user_id, material_id=material_id,
+                favorites_only=favorites_only, source=source,
+            )
         ]
 
     @app.get("/api/palette/query", response_model=list[PaletteQueryResult])
@@ -684,7 +689,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         entry_id: int, patch: PaletteEntryPatch,
         user_id: int = Depends(get_current_user),
     ) -> PaletteEntryResponse:
-        result = pal_repo.update_notes(entry_id, patch.notes, owner_id=user_id)
+        if patch.favorited is not None:
+            fav_result = pal_repo.set_favorited(
+                entry_id, patch.favorited, owner_id=user_id,
+            )
+            if fav_result is None:
+                raise HTTPException(status_code=404, detail="entry not found")
+        try:
+            result = pal_repo.update_entry(
+                entry_id,
+                hex_=patch.hex, material_id=patch.material_id,
+                params=patch.params, notes=patch.notes,
+                owner_id=user_id,
+            )
+        except pal_repo.NotMutableError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
         if result is None:
             raise HTTPException(status_code=404, detail="entry not found")
         return PaletteEntryResponse(**result)
