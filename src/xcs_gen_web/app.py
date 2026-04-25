@@ -304,10 +304,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     @app.get("/api/health")
-    def health() -> dict[str, str]:
+    def health() -> dict[str, object]:
         # Exposes mode so the frontend can adapt its UI (e.g. show a
         # user-id header prompt) without a separate discovery endpoint.
-        return {"status": "ok", "mode": settings.mode}
+        # ``available_machines`` is the cheap-to-fetch list of registry
+        # ids so the bootstrap can render the machine switcher without
+        # a second round-trip; the full registry comes from /api/machines.
+        from xcs_gen.machines import known_ids
+        return {
+            "status": "ok",
+            "mode": settings.mode,
+            "available_machines": list(known_ids()),
+        }
+
+    @app.get("/api/machines")
+    def machines_list() -> dict:
+        """Static registry payload — machines + validation profiles.
+
+        Cacheable indefinitely from the frontend's perspective; add an
+        ETag header here later if the payload size or request volume
+        warrants it. For now, just serialise.
+        """
+        from dataclasses import asdict
+        from xcs_gen.machines import all_machines, PROFILES
+        machines_out: list[dict] = []
+        for m in all_machines():
+            d = asdict(m)
+            d["image"] = f"/static/machines/{d['image']}"
+            machines_out.append(d)
+        return {"machines": machines_out, "profiles": PROFILES}
 
     # User repo is referenced by the changelog endpoints below for the
     # last-seen tracking, so import it before we define them (the
@@ -1172,6 +1197,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         else:
             ids = pal_repo.insert_bulk(payload, owner_id=user_id)
         return {"added": len(ids), "ids": ids}
+
+    # Per-machine product images. Mounted at /static/machines so the
+    # /api/machines payload can return absolute, cache-friendly URLs that
+    # don't collide with the SPA root mount.
+    import os as _os
+    machines_dir = _os.path.join(_os.path.dirname(__file__), "..", "..", "web", "public", "machines")
+    machines_dir = _os.path.abspath(machines_dir)
+    if _os.path.isdir(machines_dir):
+        app.mount(
+            "/static/machines",
+            StaticFiles(directory=machines_dir),
+            name="machine-images",
+        )
 
     # Mount built frontend at / if present (optional in dev / tests)
     web_dist = Path(__file__).parent.parent.parent / "web" / "dist"

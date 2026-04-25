@@ -47,7 +47,10 @@ def _h(key: str) -> dict[str, str]:
 def test_health_reports_multi_user_mode(mu_client):
     r = mu_client.get("/api/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok", "mode": "multi_user"}
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["mode"] == "multi_user"
+    assert "available_machines" in body
 
 
 def test_missing_user_header_is_401(mu_client):
