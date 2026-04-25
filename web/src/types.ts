@@ -152,6 +152,7 @@ export interface TestSpec {
 
 export interface TestRecord {
   id: number;
+  machine_id: string;
   name: string;
   material_id: number;
   status: "created" | "tested" | "deleted";
@@ -199,6 +200,7 @@ export interface AveragedSwatch extends ResultSwatch {
 
 export interface PaletteEntry {
   id: number;
+  machine_id: string;
   test_id: number | null;
   material_id: number;
   x_value: number | null; y_value: number | null;
@@ -215,4 +217,45 @@ export interface PaletteEntry {
 export interface PaletteQueryResult {
   entry: PaletteEntry;
   delta_e: number;
+}
+
+// ── Machine registry (mirrors xcs_gen.machines.MACHINES + PROFILES) ──────────
+
+export type LaserKind = "fiber" | "blue";
+export type LaserName = "red" | "blue";   // wire format used inside .xcs files
+export type ModeId = "engrave" | "score" | "cut" | "color_engrave";
+export type ProfileId = "STANDARD" | "COLOR_ENGRAVE";
+
+export interface MachineLaser {
+  kind: LaserKind;
+  wattage: number;
+  spot_mm: [number, number];   // [width, height]
+}
+
+export interface MachineMode {
+  id: ModeId;
+  profile: ProfileId;
+}
+
+export interface Machine {
+  id: string;                  // e.g. "F2Ultra"
+  display_name: string;
+  ext_id: string;
+  ext_name: string;
+  image: string;               // absolute URL beginning /static/machines/
+  lasers: MachineLaser[];
+  modes: MachineMode[];
+}
+
+export type FieldConstraint =
+  | { kind: "range"; min: number; max: number; step?: number }
+  | { kind: "stepped"; values: (number | string)[] }
+  | { kind: "not_applicable" }
+  | { kind: "enum"; values: (number | string)[] };
+
+export type ValidationProfile = Record<string, FieldConstraint>;
+
+export interface MachinesPayload {
+  machines: Machine[];
+  profiles: Record<ProfileId, ValidationProfile>;
 }
