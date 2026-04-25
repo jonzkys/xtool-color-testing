@@ -34,7 +34,11 @@ export function useCurrentMachine() {
   const setMachineId = useCallback((id: string) => {
     try { localStorage.setItem(LS_KEY, id); } catch { /* private mode */ }
     setMachineIdState(id);
-    // Hard refresh: data scope changes wholesale.
+    // Switching machines wholesale-changes the data scope. Send the
+    // user back to the Tests homepage before reloading so we can never
+    // land on a detail/edit route owned by the previous machine
+    // (e.g. /tests/14 belongs to F1; that id may not exist on F2).
+    window.location.hash = "#/tests";
     window.location.reload();
   }, []);
 
