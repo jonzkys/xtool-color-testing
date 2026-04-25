@@ -83,6 +83,7 @@ jobs:
               - 'changelog/**'
             frontend:
               - 'web/**'
+              - 'changelog/images/**'
 
   backend-deploy:
     needs: changes
@@ -267,6 +268,18 @@ jobs:
         run: |
           npm ci
           npm run build
+
+      - name: Bundle changelog images into the frontend
+        # CloudFront only routes /api/* to the backend, so the backend's
+        # /changelog-media static mount is unreachable in prod. Copy the
+        # PNGs into dist/changelog-media/ so S3 serves them under the
+        # same path the changelog markdown references.
+        working-directory: ${{ github.workspace }}
+        run: |
+          mkdir -p web/dist/changelog-media
+          if [ -d changelog/images ] && compgen -G "changelog/images/*" > /dev/null; then
+            cp -r changelog/images/. web/dist/changelog-media/
+          fi
 
       - name: Deploy to S3
         # --delete removes files in the bucket that no longer exist in the
