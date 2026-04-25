@@ -63,4 +63,4 @@ def test_profiles_payload_matches_registry(fresh_db):
     assert standard["pulse_width"]["kind"] == "not_applicable"
     assert standard["density"]["kind"] == "stepped"
     assert 200 in standard["density"]["values"]
-    assert standard["frequency"] == {"kind": "range", "min": 30_000, "max": 60_000}
+    assert standard["frequency"] == {"kind": "range", "min": 30, "max": 60, "step": 1}

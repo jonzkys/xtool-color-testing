@@ -1118,9 +1118,9 @@ function unitForParam(name: string): string | null {
   const map: Record<string, string> = {
     speed: "mm/s",
     power: "%",
-    frequency: "Hz",
-    freq: "Hz",
-    mopa_frequency: "Hz",
+    frequency: "kHz",
+    freq: "kHz",
+    mopa_frequency: "kHz",
     density: "l/cm",
     passes: "×",
     repeat: "×",

@@ -9,7 +9,7 @@ from xcs_gen_web.repositories import tests as t_repo
 from xcs_gen_web.services import capture as cap
 
 
-BASE = {"power": 50, "speed": 1000, "frequency": 60000,
+BASE = {"power": 50, "speed": 1000, "frequency": 60,
         "density": 200, "passes": 1, "pulse_width": 200, "laser": "red"}
 SPEC = {
     "x_param": "speed", "x_min": 500, "x_max": 3000, "x_steps": 3,

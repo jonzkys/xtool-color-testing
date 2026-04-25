@@ -500,7 +500,7 @@ function unitForParam(name: string): string | null {
   const map: Record<string, string> = {
     speed: "mm/s",
     power: "%",
-    frequency: "Hz",
+    frequency: "kHz",
     density: "l/cm",
     passes: "×",
     pulse_width: "ns",

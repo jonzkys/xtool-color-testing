@@ -332,7 +332,7 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [] }: Props) 
                 onChange={(v) => updateBase({ speed: v })}
               />
               <NumberField
-                label="Frequency (Hz)"
+                label="Frequency (kHz)"
                 value={t.base_params.frequency}
                 integer
                 onChange={(v) => updateBase({ frequency: v })}

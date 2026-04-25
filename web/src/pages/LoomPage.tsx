@@ -1227,7 +1227,7 @@ function ScrubBar({
 const RAMP_PARAMS: { value: HatchRamp["param"]; label: string; unit: string }[] = [
   { value: "power",      label: "Power",      unit: "%" },
   { value: "speed",      label: "Speed",      unit: "mm/s" },
-  { value: "frequency",  label: "Frequency",  unit: "Hz" },
+  { value: "frequency",  label: "Frequency",  unit: "kHz" },
   { value: "density",    label: "Density",    unit: "l/cm" },
   { value: "passes",     label: "Passes",     unit: "×" },
   { value: "pulse_width", label: "Pulse",     unit: "ns" },

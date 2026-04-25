@@ -7,7 +7,7 @@ from xcs_gen_web.repositories import materials as m_repo
 from xcs_gen_web.repositories import tests as t_repo
 
 
-BASE = {"power": 50, "speed": 1000, "frequency": 60000,
+BASE = {"power": 50, "speed": 1000, "frequency": 60,
         "density": 200, "passes": 1, "pulse_width": 200, "laser": "red"}
 
 SPEC = {
@@ -111,14 +111,14 @@ def test_patch_material_rejects_unknown_id(fresh_db):
 
 # ── Default-mode resolution ──────────────────────────────────────────────────
 
-# COLOR_ENGRAVE allows frequency up to 500 000 Hz; STANDARD caps at 60 000.
+# COLOR_ENGRAVE allows frequency up to 500 kHz; STANDARD caps at 60 kHz.
 # If F2Ultra silently defaults to color_engrave when mode is absent, a
-# request with frequency=400_000 should succeed (201). If it defaulted to
+# request with frequency=400 should succeed (201). If it defaulted to
 # engrave/STANDARD instead it would 422.
 _BASE_CE = {
     "power": 50,
     "speed": 1000,
-    "frequency": 400_000,   # valid for COLOR_ENGRAVE, out-of-range for STANDARD
+    "frequency": 400,   # valid for COLOR_ENGRAVE (60-500 kHz), out-of-range for STANDARD (30-60 kHz)
     "density": 200,
     "passes": 1,
     "pulse_width": 200,
@@ -137,8 +137,8 @@ _SPEC_CE = {
 def test_tests_create_defaults_mode_color_engrave_for_f2(fresh_db):
     """F2Ultra with no mode in base_params defaults to color_engrave.
 
-    A frequency of 400 000 Hz is within color_engrave's [60 000, 500 000]
-    range but above the STANDARD cap of 60 000. If the backend were
+    A frequency of 400 kHz is within color_engrave's [60, 500] kHz
+    range but above the STANDARD cap of 60 kHz. If the backend were
     wrongly defaulting to STANDARD (engrave) the request would 422.
     """
     c = TestClient(create_app())
@@ -172,10 +172,10 @@ def test_tests_create_explicit_mode_color_engrave_for_f2(fresh_db):
 
 
 def test_tests_create_f1_defaults_engrave_rejects_high_frequency(fresh_db):
-    """F1Ultra with no mode defaults to engrave (STANDARD, max 60 000 Hz).
+    """F1Ultra with no mode defaults to engrave (STANDARD, max 60 kHz).
 
-    frequency=400 000 should be rejected with 422 because the default
-    mode on F1Ultra is engrave → STANDARD profile → max 60 000 Hz.
+    frequency=400 kHz should be rejected with 422 because the default
+    mode on F1Ultra is engrave → STANDARD profile → max 60 kHz.
     """
     c = TestClient(create_app())
     mid = m_repo.create(name="Aluminium")["id"]

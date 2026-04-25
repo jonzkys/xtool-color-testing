@@ -24,7 +24,7 @@ const FIELD_META: Record<
 > = {
   power:       { label: "Power",     unit: "%"    },
   density:     { label: "Lines/cm"               },
-  frequency:   { label: "Frequency", unit: "Hz"  },
+  frequency:   { label: "Frequency", unit: "kHz" },
   speed:       { label: "Speed",     unit: "mm/s" },
   passes:      { label: "Passes"                 },
   pulse_width: { label: "Pulse width (ns)"       },

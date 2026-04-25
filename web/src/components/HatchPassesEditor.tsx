@@ -22,7 +22,7 @@ import {
 const RAMP_PARAMS: { value: HatchRampParam; label: string }[] = [
   { value: "power", label: "Power %" },
   { value: "speed", label: "Speed mm/s" },
-  { value: "frequency", label: "Frequency Hz" },
+  { value: "frequency", label: "Frequency kHz" },
   { value: "density", label: "Density (lines/cm)" },
   { value: "passes", label: "Passes" },
   { value: "pulse_width", label: "Pulse width" },

@@ -24,7 +24,7 @@ def test_delete_blocked_when_preset_references_material(fresh_db):
     from xcs_gen_web.repositories import presets as p_repo
     p_repo.create(
         material_id=m["id"], name="Default", color=None,
-        base_params={"power": 50, "speed": 1000, "frequency": 60000,
+        base_params={"power": 50, "speed": 1000, "frequency": 60,
                      "density": 200, "passes": 1, "pulse_width": 200, "laser": "red"},
     )
     with pytest.raises(repo.InUseError):

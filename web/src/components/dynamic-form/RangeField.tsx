@@ -12,11 +12,25 @@ interface Props {
   disabled?: boolean;
 }
 
+/** Snap `v` to the nearest step increment from `min`.
+ *
+ * Used to enforce integer-domain fields (passes, speed, frequency, …)
+ * when the profile constraint carries `step >= 1`.
+ */
+function snapToStep(v: number, step: number, min: number): number {
+  if (step <= 0) return v;
+  return min + Math.round((v - min) / step) * step;
+}
+
 /** Continuous slider + numeric text input pair.
  *
  * Both controls are kept in sync: dragging the slider updates the number
  * input live; typing in the number input moves the thumb. Clamp-on-blur
  * matches the NumberField semantics used elsewhere in the Workbench.
+ *
+ * When `step >= 1` the component snaps every emitted value to the nearest
+ * integer step so fractional positions from drag arithmetic never escape
+ * into the stored state.
  */
 export function RangeField({
   label,
@@ -31,26 +45,32 @@ export function RangeField({
   const [text, setText] = useState(String(value));
   const focusedRef = useRef(false);
 
+  /** Coerce a raw number to a valid stepped+clamped value. */
+  function coerce(n: number): number {
+    const snapped = step && step >= 1 ? snapToStep(n, step, min) : n;
+    return Math.max(min, Math.min(max, snapped));
+  }
+
   useEffect(() => {
     if (!focusedRef.current) setText(String(value));
   }, [value]);
 
-  // Clamp the parent value once when it falls outside [min, max].
+  // Clamp (and snap) the parent value once when it falls outside [min, max].
   // This fires when min/max change (e.g. mode switch) or on mount with a
   // stale stored value. We intentionally omit onChange from deps to avoid
   // a re-fire loop if the parent re-creates the callback each render.
   useEffect(() => {
     const num = Number(value);
-    const clamped = Math.max(min, Math.min(max, num));
-    if (!isNaN(num) && clamped !== num) {
-      onChange(clamped);
+    const fixed = coerce(num);
+    if (!isNaN(num) && fixed !== num) {
+      onChange(fixed);
     }
-  }, [value, min, max]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [value, min, max, step]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleTextChange(raw: string) {
     setText(raw);
     const n = parseFloat(raw);
-    if (Number.isFinite(n)) onChange(Math.min(max, Math.max(min, n)));
+    if (Number.isFinite(n)) onChange(coerce(n));
   }
 
   function handleBlur() {
@@ -60,9 +80,9 @@ export function RangeField({
       setText(String(value));
       return;
     }
-    const clamped = Math.min(max, Math.max(min, n));
-    setText(String(clamped));
-    if (clamped !== value) onChange(clamped);
+    const fixed = coerce(n);
+    setText(String(fixed));
+    if (fixed !== value) onChange(fixed);
   }
 
   // Fraction along the range — used to draw the filled track.
@@ -96,7 +116,7 @@ export function RangeField({
             disabled={disabled}
             onChange={(e) => {
               const n = parseFloat(e.target.value);
-              if (Number.isFinite(n)) onChange(n);
+              if (Number.isFinite(n)) onChange(coerce(n));
             }}
             className="relative w-full appearance-none bg-transparent cursor-pointer disabled:opacity-50 disabled:cursor-default
               [&::-webkit-slider-thumb]:appearance-none

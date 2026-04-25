@@ -32,7 +32,7 @@ export function defaultBaseParams(profile?: ValidationProfile): BaseParams {
   const legacyBase: BaseParams = {
     power: 14.6,
     speed: 1000,
-    frequency: 125,
+    frequency: 125,        // legacy; profile-aware defaults override this (unit: kHz)
     density: 5000,
     passes: 1,
     pulse_width: 200,

@@ -9,7 +9,7 @@ def _client():
     return TestClient(create_app())
 
 
-BASE = {"power": 50, "speed": 1000, "frequency": 60000,
+BASE = {"power": 50, "speed": 1000, "frequency": 60,
         "density": 200, "passes": 1, "pulse_width": 200, "laser": "red"}
 
 

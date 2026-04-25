@@ -141,7 +141,7 @@ def test_tests_are_isolated_per_user(mu_client):
         "angle_mode": "fixed", "unidirectional": False,
         "hide_axis_labels": False,
         "base_params": {
-            "power": 50, "speed": 1000, "frequency": 60000,
+            "power": 50, "speed": 1000, "frequency": 60,
             "density": 200, "passes": 1, "pulse_width": 200,
             "laser": "red",
         },
@@ -192,7 +192,7 @@ def test_material_creation_for_cross_owner_material_rejects(mu_client):
         "angle_mode": "fixed", "unidirectional": False,
         "hide_axis_labels": False,
         "base_params": {
-            "power": 50, "speed": 1000, "frequency": 60000,
+            "power": 50, "speed": 1000, "frequency": 60,
             "density": 200, "passes": 1, "pulse_width": 200,
             "laser": "red",
         },

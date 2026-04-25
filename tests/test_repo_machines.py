@@ -15,7 +15,7 @@ from xcs_gen_web.services import capture as cap
 
 
 BASE_PARAMS = {
-    "power": 50, "speed": 1000, "frequency": 45_000,
+    "power": 50, "speed": 1000, "frequency": 45,
     "density": 100, "passes": 1, "pulse_width": 200, "laser": "red",
 }
 SPEC = {"x_param": "power", "x_min": 10, "x_max": 90, "x_steps": 5,

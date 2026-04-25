@@ -12,7 +12,7 @@ SPEC = {
     "rows": 1, "width_mm": 50, "height_mm": 10, "gap_mm": 0.5,
     "cell_shape": "rect", "square_cells": True, "angle_mode": "fixed",
     "unidirectional": False,
-    "base_params": {"power": 50, "speed": 1000, "frequency": 60000,
+    "base_params": {"power": 50, "speed": 1000, "frequency": 60,
                     "density": 200, "passes": 1, "pulse_width": 200, "laser": "red"},
     "registration": {"mode": "on", "qr_size_mm": None, "aruco_size_mm": None},
 }

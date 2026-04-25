@@ -152,22 +152,22 @@ _STANDARD_DENSITY = tuple(
 # Per-profile constraint dicts. Shape mirrors what /api/machines returns.
 PROFILES: dict[str, dict[str, dict]] = {
     "STANDARD": {
-        "power":       {"kind": "range",   "min": 1,  "max": 100, "step": 1},
+        "power":       {"kind": "range",   "min": 1,  "max": 100,  "step": 1},
         "density":     {"kind": "stepped", "values": list(_STANDARD_DENSITY)},
-        # F1 / F2 standard fiber laser: 30-60 kHz (stored on the wire as Hz).
-        "frequency":   {"kind": "range",   "min": 30_000, "max": 60_000},
-        "speed":       {"kind": "range",   "min": 2,  "max": 10000},
-        "passes":      {"kind": "range",   "min": 1,  "max": 99},
+        # F1 / F2 standard fiber laser: 30–60 kHz (canonical unit: kHz).
+        "frequency":   {"kind": "range",   "min": 30, "max": 60,   "step": 1},
+        "speed":       {"kind": "range",   "min": 2,  "max": 10000, "step": 1},
+        "passes":      {"kind": "range",   "min": 1,  "max": 99,   "step": 1},
         "pulse_width": {"kind": "not_applicable"},
         "laser":       {"kind": "enum",    "values": ["red", "blue"]},
     },
     "COLOR_ENGRAVE": {
-        "power":       {"kind": "range",   "min": 1,  "max": 100, "step": 1},
-        "density":     {"kind": "range",   "min": 1,  "max": 5000},
-        # F2 MOPA color engrave: 60-500 kHz (stored on the wire as Hz).
-        "frequency":   {"kind": "range",   "min": 60_000, "max": 500_000},
-        "speed":       {"kind": "range",   "min": 2,  "max": 15000},
-        "passes":      {"kind": "range",   "min": 1,  "max": 99},
+        "power":       {"kind": "range",   "min": 1,   "max": 100,   "step": 1},
+        "density":     {"kind": "range",   "min": 1,   "max": 5000,  "step": 1},
+        # F2 MOPA color engrave: 60–500 kHz (canonical unit: kHz).
+        "frequency":   {"kind": "range",   "min": 60,  "max": 500,   "step": 1},
+        "speed":       {"kind": "range",   "min": 2,   "max": 15000, "step": 1},
+        "passes":      {"kind": "range",   "min": 1,   "max": 99,    "step": 1},
         "pulse_width": {"kind": "stepped", "values": list(ALLOWED_PULSE_WIDTHS)},
         "laser":       {"kind": "enum",    "values": ["red", "blue"]},
     },
