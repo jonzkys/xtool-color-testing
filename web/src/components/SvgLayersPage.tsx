@@ -888,6 +888,7 @@ export function SvgLayersPage() {
                 onPaletteApply={(params, hex) =>
                   applyPaletteMatch(selected.color, params, hex)
                 }
+                appliedHex={predictedByColor[selected.color]}
               />
             ) : (
               <EmptyState
@@ -999,6 +1000,7 @@ function LayerEditor({
   onPatch,
   onBasePatch,
   onPaletteApply,
+  appliedHex,
 }: {
   layer: LayerSpec;
   layerIdx: number;
@@ -1010,6 +1012,11 @@ function LayerEditor({
     params: Partial<LayerSpec["base_params"]>,
     predictedHex: string,
   ) => void;
+  /** Hex of whichever palette entry's params are currently applied to
+   *  this layer, or undefined if none. Drives the active-chip highlight
+   *  in the matcher so it tracks the layer's actual state — switching
+   *  layers no longer falsely highlights the closest match. */
+  appliedHex?: string;
 }) {
   const hatchIssues = validateLayerSpec(layer, layerIdx);
 
@@ -1036,6 +1043,7 @@ function LayerEditor({
           layerColor={layer.color}
           materialId={projectMaterialId}
           onApply={onPaletteApply}
+          appliedHex={appliedHex}
         />
       )}
 
@@ -1304,13 +1312,19 @@ function PaletteMatchSection({
   layerColor,
   materialId,
   onApply,
+  appliedHex,
 }: {
   layerColor: string;
   materialId: string;
   onApply: (params: Partial<BaseParams>, predictedHex: string) => void;
+  /** Hex of the palette entry whose params are currently applied to the
+   *  parent layer. Drives the active-chip highlight, so switching layers
+   *  shows the chip whose recipe is actually live (rather than the
+   *  closest match, which was the source of the previous mis-highlight
+   *  bug). Undefined → no chip highlighted. */
+  appliedHex?: string;
 }) {
   const [results, setResults] = useState<PaletteQueryResult[]>([]);
-  const [selectedId, setSelectedId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
   // Bumped each time a swatch is favorited so the favorites row refetches.
@@ -1319,17 +1333,13 @@ function PaletteMatchSection({
   useEffect(() => {
     let cancelled = false;
     setResults([]);
-    setSelectedId("");
     setError(undefined);
     if (!materialId || !/^#[0-9a-fA-F]{6}$/.test(layerColor)) return;
     setLoading(true);
     const matIdNum = materialId ? Number(materialId) : undefined;
     queryPalette(layerColor, { limit: 10, material_id: matIdNum })
       .then((r) => {
-        if (!cancelled) {
-          setResults(r);
-          setSelectedId(r[0]?.entry.id !== undefined ? String(r[0].entry.id) : "");
-        }
+        if (!cancelled) setResults(r);
       })
       .catch((e) => {
         if (!cancelled) setError((e as Error).message);
@@ -1341,6 +1351,16 @@ function PaletteMatchSection({
       cancelled = true;
     };
   }, [layerColor, materialId]);
+
+  // Highlight tracks what's actually applied to the parent layer.
+  // Empty string ⇒ no chip highlighted (initial state, or applied entry
+  // not in the current top-N matches — e.g., a manual entry beyond limit).
+  const selectedId = useMemo(() => {
+    if (!appliedHex) return "";
+    const want = appliedHex.toLowerCase();
+    const hit = results.find((r) => r.entry.hex.toLowerCase() === want);
+    return hit ? String(hit.entry.id) : "";
+  }, [appliedHex, results]);
 
   // Only ever called with next=true from the matcher: the layer page lets
   // users add a favorite but never remove one. Removal lives on the Palette
@@ -1435,7 +1455,9 @@ function PaletteMatchSection({
                       key={r.entry.id}
                       type="button"
                       onClick={() => {
-                        setSelectedId(String(r.entry.id));
+                        // Apply propagates a new appliedHex up to the
+                        // parent → re-render → derived selectedId picks
+                        // up the new chip. No local highlight state.
                         onApply(paletteParamsToBaseParams(r.entry.params), r.entry.hex);
                       }}
                       aria-pressed={isActive}
@@ -1516,7 +1538,6 @@ function PaletteMatchSection({
             layerColor={layerColor}
             materialId={materialId}
             selectedId={selectedId}
-            onSelect={(id) => setSelectedId(String(id))}
             onApply={onApply}
             refreshKey={favoritesNonce}
           />
@@ -1535,14 +1556,12 @@ function PaletteFavoritesRow({
   layerColor,
   materialId,
   selectedId,
-  onSelect,
   onApply,
   refreshKey,
 }: {
   layerColor: string;
   materialId: string;
   selectedId: string;
-  onSelect: (entryId: number) => void;
   onApply: (params: Partial<BaseParams>, predictedHex: string) => void;
   refreshKey: number;
 }) {
@@ -1641,10 +1660,7 @@ function PaletteFavoritesRow({
             <button
               key={entry.id}
               type="button"
-              onClick={() => {
-                onSelect(entry.id);
-                onApply(paletteParamsToBaseParams(entry.params), entry.hex);
-              }}
+              onClick={() => onApply(paletteParamsToBaseParams(entry.params), entry.hex)}
               aria-pressed={isActive}
               title={`ΔE ${dE.toFixed(2)} · ${entry.params.power}% · ${entry.params.speed} mm/s · ${laser}`}
               className={cn(
