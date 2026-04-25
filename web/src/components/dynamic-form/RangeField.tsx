@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Field } from "../../ui";
 
 interface Props {
   label: string;
@@ -10,27 +9,26 @@ interface Props {
   value: number;
   onChange: (v: number) => void;
   disabled?: boolean;
+  /** When true, renders at slightly larger scale (power field treatment). */
+  prominent?: boolean;
 }
 
-/** Snap `v` to the nearest step increment from `min`.
- *
- * Used to enforce integer-domain fields (passes, speed, frequency, …)
- * when the profile constraint carries `step >= 1`.
- */
+/** Snap `v` to the nearest step increment from `min`. */
 function snapToStep(v: number, step: number, min: number): number {
   if (step <= 0) return v;
   return min + Math.round((v - min) / step) * step;
 }
 
-/** Continuous slider + numeric text input pair.
+/**
+ * Redesigned range field: a compact "instrument readout" tile.
  *
- * Both controls are kept in sync: dragging the slider updates the number
- * input live; typing in the number input moves the thumb. Clamp-on-blur
- * matches the NumberField semantics used elsewhere in the Workbench.
+ * Layout: label row (name | value badge + unit) above a fat slider track.
+ * Min/max appear as tick annotations at track ends.
  *
- * When `step >= 1` the component snaps every emitted value to the nearest
- * integer step so fractional positions from drag arithmetic never escape
- * into the stored state.
+ * The value badge is a click-to-edit button. When editing, it becomes
+ * an inline number input. The input is always rendered in the DOM
+ * (with data-testid="range-number") so tests and screen readers can
+ * reach it; visually it is hidden until the edit state is active.
  */
 export function RangeField({
   label,
@@ -41,11 +39,13 @@ export function RangeField({
   value,
   onChange,
   disabled,
+  prominent,
 }: Props) {
   const [text, setText] = useState(String(value));
+  const [editing, setEditing] = useState(false);
   const focusedRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  /** Coerce a raw number to a valid stepped+clamped value. */
   function coerce(n: number): number {
     const snapped = step && step >= 1 ? snapToStep(n, step, min) : n;
     return Math.max(min, Math.min(max, snapped));
@@ -55,10 +55,7 @@ export function RangeField({
     if (!focusedRef.current) setText(String(value));
   }, [value]);
 
-  // Clamp (and snap) the parent value once when it falls outside [min, max].
-  // This fires when min/max change (e.g. mode switch) or on mount with a
-  // stale stored value. We intentionally omit onChange from deps to avoid
-  // a re-fire loop if the parent re-creates the callback each render.
+  // Clamp on mount / min-max change.
   useEffect(() => {
     const num = Number(value);
     const fixed = coerce(num);
@@ -75,6 +72,7 @@ export function RangeField({
 
   function handleBlur() {
     focusedRef.current = false;
+    setEditing(false);
     const n = parseFloat(text);
     if (!Number.isFinite(n)) {
       setText(String(value));
@@ -85,63 +83,55 @@ export function RangeField({
     if (fixed !== value) onChange(fixed);
   }
 
-  // Fraction along the range — used to draw the filled track.
   const pct = max > min ? ((value - min) / (max - min)) * 100 : 0;
+  const valueFontSize = prominent ? "13px" : "12px";
 
   return (
-    <Field label={label}>
-      <div className="flex items-center gap-2">
-        {/* Slider track */}
-        <div className="relative flex-1 h-5 flex items-center">
-          {/* Unfilled track */}
-          <div
-            className="absolute inset-x-0 h-[3px] rounded-full"
-            style={{ background: "var(--color-border-strong)" }}
-          />
-          {/* Filled track — primary accent colour */}
-          <div
-            className="absolute left-0 h-[3px] rounded-full"
-            style={{
-              width: `${pct}%`,
-              background: "var(--color-primary)",
-            }}
-          />
-          <input
-            data-testid="range-slider"
-            type="range"
-            min={min}
-            max={max}
-            step={step ?? "any"}
-            value={value}
-            disabled={disabled}
-            onChange={(e) => {
-              const n = parseFloat(e.target.value);
-              if (Number.isFinite(n)) onChange(coerce(n));
-            }}
-            className="relative w-full appearance-none bg-transparent cursor-pointer disabled:opacity-50 disabled:cursor-default
-              [&::-webkit-slider-thumb]:appearance-none
-              [&::-webkit-slider-thumb]:w-[14px]
-              [&::-webkit-slider-thumb]:h-[14px]
-              [&::-webkit-slider-thumb]:rounded-full
-              [&::-webkit-slider-thumb]:bg-[color:var(--color-surface)]
-              [&::-webkit-slider-thumb]:border-2
-              [&::-webkit-slider-thumb]:border-[color:var(--color-primary)]
-              [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgba(0,0,0,0.20)]
-              [&::-webkit-slider-thumb]:transition-transform
-              [&::-webkit-slider-thumb:hover]:scale-110
-              [&::-moz-range-thumb]:w-[14px]
-              [&::-moz-range-thumb]:h-[14px]
-              [&::-moz-range-thumb]:rounded-full
-              [&::-moz-range-thumb]:bg-[color:var(--color-surface)]
-              [&::-moz-range-thumb]:border-2
-              [&::-moz-range-thumb]:border-[color:var(--color-primary)]
-            "
-          />
-        </div>
+    <div
+      className="flex flex-col gap-1"
+      style={{ opacity: disabled ? 0.5 : 1 }}
+    >
+      {/* Label + value row */}
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className="font-mono font-semibold uppercase tracking-[0.1em] shrink-0"
+          style={{ fontSize: "9.5px", color: "var(--color-ink-subtle)" }}
+        >
+          {label}
+        </span>
 
-        {/* Numeric text input */}
-        <div className="flex items-center gap-1 shrink-0">
+        {/* Value display + edit area */}
+        <div className="flex items-baseline gap-1 min-w-0">
+          {/* Display button — hidden when editing */}
+          <button
+            type="button"
+            onClick={() => {
+              if (!disabled) {
+                setEditing(true);
+                setTimeout(() => {
+                  inputRef.current?.select();
+                  inputRef.current?.focus();
+                }, 0);
+              }
+            }}
+            disabled={disabled}
+            title="Click to edit value"
+            aria-hidden={editing}
+            className="font-mono tabular-nums rounded-[3px] px-1 text-right hover:opacity-70 transition-opacity focus:outline-none focus-visible:ring-1 shrink-0"
+            style={{
+              fontSize: valueFontSize,
+              height: "20px",
+              color: "var(--color-ink)",
+              minWidth: "30px",
+              display: editing ? "none" : undefined,
+            }}
+          >
+            {value}
+          </button>
+
+          {/* Numeric input — always in DOM for data-testid; visually shown only when editing */}
           <input
+            ref={inputRef}
             data-testid="range-number"
             type="number"
             min={min}
@@ -153,35 +143,103 @@ export function RangeField({
             onChange={(e) => handleTextChange(e.target.value)}
             onBlur={handleBlur}
             onKeyDown={(e) => {
-              if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+              if (e.key === "Enter" || e.key === "Escape") {
+                (e.currentTarget as HTMLInputElement).blur();
+              }
             }}
-            className="
-              w-[68px] h-8 rounded-[5px] px-2 text-[12px] font-mono tabular-nums text-right
-              bg-[color:var(--color-surface)] text-[color:var(--color-ink)]
-              border border-[color:var(--color-border-strong)]
-              hover:border-[color:var(--color-ink-subtle)]
-              focus:outline-none focus:border-[color:var(--color-primary)]
-              focus:ring-2 focus:ring-[color:var(--color-primary-tint)]
-              disabled:opacity-50 disabled:bg-[color:var(--color-bg)]
-            "
+            className="rounded-[3px] px-1 text-right font-mono tabular-nums focus:outline-none border"
+            style={{
+              fontSize: valueFontSize,
+              height: "20px",
+              width: editing ? "60px" : "1px",
+              opacity: editing ? 1 : 0,
+              pointerEvents: editing ? "auto" : "none",
+              position: editing ? "static" : "absolute",
+              background: "var(--color-surface)",
+              color: "var(--color-ink)",
+              borderColor: "var(--color-primary)",
+              border: editing ? undefined : "none",
+              overflow: "hidden",
+            }}
           />
-          {/* Always render the unit slot — empty fields get a NBSP so
-              the span keeps its 34px even when unit is "". This keeps
-              every row's slider/input column-aligned across the form. */}
-          <span className="text-[11px] font-mono text-[color:var(--color-ink-subtle)] w-[34px] shrink-0">
-            {unit || " "}
-          </span>
+
+          {unit && (
+            <span
+              className="font-mono uppercase tracking-[0.06em] shrink-0"
+              style={{ fontSize: "9px", color: "var(--color-ink-subtle)" }}
+            >
+              {unit}
+            </span>
+          )}
         </div>
       </div>
-      {/* tick-mark min/max legend */}
-      <div className="flex justify-between mt-0.5 px-0">
-        <span className="text-[10px] font-mono text-[color:var(--color-ink-subtle)] tabular-nums">
+
+      {/* Slider track */}
+      <div className="relative flex items-center" style={{ height: "18px" }}>
+        {/* Unfilled track */}
+        <div
+          className="absolute inset-x-0 rounded-full pointer-events-none"
+          style={{ height: "4px", background: "var(--color-border-strong)" }}
+        />
+        {/* Filled track */}
+        <div
+          className="absolute left-0 rounded-full pointer-events-none"
+          style={{
+            height: "4px",
+            width: `${pct}%`,
+            background: "var(--color-primary)",
+            transition: "width 0ms",
+          }}
+        />
+        <input
+          data-testid="range-slider"
+          type="range"
+          min={min}
+          max={max}
+          step={step ?? "any"}
+          value={value}
+          disabled={disabled}
+          onChange={(e) => {
+            const n = parseFloat(e.target.value);
+            if (Number.isFinite(n)) onChange(coerce(n));
+          }}
+          className="relative w-full appearance-none bg-transparent cursor-pointer disabled:cursor-default
+            [&::-webkit-slider-thumb]:appearance-none
+            [&::-webkit-slider-thumb]:w-[15px]
+            [&::-webkit-slider-thumb]:h-[15px]
+            [&::-webkit-slider-thumb]:rounded-full
+            [&::-webkit-slider-thumb]:bg-[color:var(--color-surface)]
+            [&::-webkit-slider-thumb]:border-[2.5px]
+            [&::-webkit-slider-thumb]:border-[color:var(--color-primary)]
+            [&::-webkit-slider-thumb]:shadow-[0_1px_4px_rgba(0,0,0,0.22)]
+            [&::-webkit-slider-thumb]:transition-transform
+            [&::-webkit-slider-thumb:hover]:scale-110
+            [&::-moz-range-thumb]:w-[15px]
+            [&::-moz-range-thumb]:h-[15px]
+            [&::-moz-range-thumb]:rounded-full
+            [&::-moz-range-thumb]:bg-[color:var(--color-surface)]
+            [&::-moz-range-thumb]:border-[2.5px]
+            [&::-moz-range-thumb]:border-[color:var(--color-primary)]
+            [&::-moz-range-thumb]:shadow-[0_1px_4px_rgba(0,0,0,0.22)]
+          "
+        />
+      </div>
+
+      {/* Min/max tick annotations */}
+      <div className="flex justify-between">
+        <span
+          className="font-mono tabular-nums"
+          style={{ fontSize: "9px", color: "var(--color-ink-subtle)", opacity: 0.7 }}
+        >
           {min}
         </span>
-        <span className="text-[10px] font-mono text-[color:var(--color-ink-subtle)] tabular-nums">
+        <span
+          className="font-mono tabular-nums"
+          style={{ fontSize: "9px", color: "var(--color-ink-subtle)", opacity: 0.7 }}
+        >
           {max}
         </span>
       </div>
-    </Field>
+    </div>
   );
 }

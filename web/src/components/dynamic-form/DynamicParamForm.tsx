@@ -1,9 +1,7 @@
 import type { ValidationProfile } from "../../types";
 import { RangeField } from "./RangeField";
 import { SteppedField } from "./SteppedField";
-import { EnumField } from "./EnumField";
 import { PulseWidthSelect } from "../PulseWidthSelect";
-import { Field, Select } from "../../ui";
 
 /** Canonical render order for base parameters. Fields absent from
  *  the profile — or marked `not_applicable` — are silently skipped. */
@@ -18,18 +16,24 @@ const FIELD_ORDER = [
 ] as const;
 
 /** Human-readable labels and optional unit strings for each field. */
-const FIELD_META: Record<
-  string,
-  { label: string; unit?: string }
-> = {
-  power:       { label: "Power",     unit: "%"    },
-  density:     { label: "Lines/cm"               },
-  frequency:   { label: "Frequency", unit: "kHz" },
-  speed:       { label: "Speed",     unit: "mm/s" },
-  passes:      { label: "Passes"                 },
-  pulse_width: { label: "Pulse width (ns)"       },
-  laser:       { label: "Laser"                  },
+const FIELD_META: Record<string, { label: string; unit?: string }> = {
+  power:       { label: "Power",       unit: "%"    },
+  density:     { label: "Lines/cm"                  },
+  frequency:   { label: "Frequency",   unit: "kHz"  },
+  speed:       { label: "Speed",       unit: "mm/s" },
+  passes:      { label: "Passes"                    },
+  pulse_width: { label: "Pulse width", unit: "ns"   },
+  laser:       { label: "Laser"                     },
 };
+
+/**
+ * Fields that get their own full row (not placed in the 2-col grid).
+ * Power spans full-width because it's the most-edited and benefits from
+ * a longer slider. Density also spans full-width since it behaves very
+ * differently across profiles (stepped vs wide range).
+ * Laser and pulse_width are source/mode-specific — full row.
+ */
+const FULL_WIDTH_FIELDS = new Set(["power", "density", "laser", "pulse_width"]);
 
 export interface DynamicParamFormProps {
   profile: ValidationProfile;
@@ -44,12 +48,13 @@ export interface DynamicParamFormProps {
  * Iterates `FIELD_ORDER`, skips `not_applicable` fields entirely, and
  * renders the appropriate control based on the constraint kind:
  *
- *   range   → RangeField (slider + numeric input)
+ *   range   → RangeField (slider + click-to-edit numeric badge)
  *   stepped → SteppedField (select for ≤16 values, discrete slider for more)
- *   enum    → EnumField (select) / PulseWidthSelect for pulse_width
+ *   enum    → LaserField (two-button toggle for laser, EnumField fallback)
  *
- * `onChange` is called with the full value dict on every change —
- * unchanged fields are preserved.
+ * Layout: a 2-column grid for "recipe" fields (frequency, speed, passes),
+ * with power, density, laser and pulse_width spanning full width.
+ * `onChange` is called with the full value dict on every change.
  */
 export function DynamicParamForm({
   profile,
@@ -61,93 +66,147 @@ export function DynamicParamForm({
     onChange({ ...value, [field]: next });
   }
 
+  // Separate full-width and grid-column fields for layout.
+  const rendered: { field: string; node: React.ReactNode; fullWidth: boolean }[] = [];
+
+  for (const field of FIELD_ORDER) {
+    const constraint = profile[field];
+    if (!constraint || constraint.kind === "not_applicable") continue;
+
+    const meta = FIELD_META[field] ?? { label: field };
+    const current = value[field] ?? 0;
+    const isFullWidth = FULL_WIDTH_FIELDS.has(field);
+
+    let node: React.ReactNode = null;
+
+    if (constraint.kind === "range") {
+      node = (
+        <RangeField
+          label={meta.label}
+          unit={meta.unit}
+          min={constraint.min}
+          max={constraint.max}
+          step={constraint.step}
+          value={typeof current === "number" ? current : Number(current)}
+          onChange={(v) => patch(field, v)}
+          disabled={disabled}
+          prominent={field === "power"}
+        />
+      );
+    } else if (constraint.kind === "stepped") {
+      if (field === "pulse_width") {
+        node = (
+          <PulseWidthSelect
+            value={typeof current === "number" ? current : Number(current)}
+            onChange={(v) => patch(field, v)}
+            disabled={disabled}
+          />
+        );
+      } else {
+        node = (
+          <SteppedField
+            label={meta.label}
+            unit={meta.unit}
+            values={constraint.values}
+            value={current}
+            onChange={(v) => patch(field, v)}
+            disabled={disabled}
+          />
+        );
+      }
+    } else if (constraint.kind === "enum") {
+      if (field === "laser") {
+        node = (
+          <LaserToggle
+            value={String(current)}
+            values={constraint.values as string[]}
+            onChange={(v) => patch(field, v)}
+            disabled={disabled}
+          />
+        );
+      } else {
+        node = (
+          <GenericEnumRow
+            label={meta.label}
+            values={constraint.values}
+            value={current}
+            onChange={(v) => patch(field, v)}
+            disabled={disabled}
+          />
+        );
+      }
+    }
+
+    if (node) rendered.push({ field, node, fullWidth: isFullWidth });
+  }
+
+  if (rendered.length === 0) return null;
+
+  // Split into sections for layout: full-width fields interspersed,
+  // grid-eligible fields are batched into 2-column pairs.
   return (
     <div className="flex flex-col gap-3">
-      {FIELD_ORDER.map((field) => {
-        const constraint = profile[field];
-        // Profile doesn't mention this field, or explicitly not applicable.
-        if (!constraint || constraint.kind === "not_applicable") return null;
-
-        const meta = FIELD_META[field] ?? { label: field };
-        const current = value[field] ?? 0;
-
-        if (constraint.kind === "range") {
-          return (
-            <RangeField
-              key={field}
-              label={meta.label}
-              unit={meta.unit}
-              min={constraint.min}
-              max={constraint.max}
-              step={constraint.step}
-              value={typeof current === "number" ? current : Number(current)}
-              onChange={(v) => patch(field, v)}
-              disabled={disabled}
-            />
-          );
-        }
-
-        if (constraint.kind === "stepped") {
-          // pulse_width gets the dedicated PulseWidthSelect which handles
-          // the legacy snap-and-warn behaviour.
-          if (field === "pulse_width") {
-            return (
-              <PulseWidthSelect
-                key={field}
-                value={typeof current === "number" ? current : Number(current)}
-                onChange={(v) => patch(field, v)}
-                disabled={disabled}
-              />
-            );
-          }
-
-          return (
-            <SteppedField
-              key={field}
-              label={meta.label}
-              unit={meta.unit}
-              values={constraint.values}
-              value={current}
-              onChange={(v) => patch(field, v)}
-              disabled={disabled}
-            />
-          );
-        }
-
-        if (constraint.kind === "enum") {
-          // Laser field gets a styled option set with human-readable names.
-          if (field === "laser") {
-            return (
-              <LaserField
-                key={field}
-                value={String(current)}
-                values={constraint.values as string[]}
-                onChange={(v) => patch(field, v)}
-                disabled={disabled}
-              />
-            );
-          }
-
-          return (
-            <EnumField
-              key={field}
-              label={meta.label}
-              values={constraint.values}
-              value={current}
-              onChange={(v) => patch(field, v)}
-              disabled={disabled}
-            />
-          );
-        }
-
-        return null;
-      })}
+      {renderWithGrid(rendered, disabled)}
     </div>
   );
 }
 
-/** Laser selector — maps "red"/"blue" wire values to readable labels. */
-function LaserField({
+/** Render the field list, batching adjacent non-full-width fields into
+ *  2-column grid rows, and full-width fields as solo rows. */
+function renderWithGrid(
+  fields: { field: string; node: React.ReactNode; fullWidth: boolean }[],
+  _disabled?: boolean,
+) {
+  const result: React.ReactNode[] = [];
+  let i = 0;
+
+  while (i < fields.length) {
+    const current = fields[i];
+
+    if (current.fullWidth) {
+      result.push(
+        <div key={current.field}>{current.node}</div>,
+      );
+      i++;
+    } else {
+      // Collect a run of non-full-width fields to place in the grid.
+      const gridBatch: typeof fields = [];
+      while (i < fields.length && !fields[i].fullWidth) {
+        gridBatch.push(fields[i]);
+        i++;
+      }
+
+      if (gridBatch.length === 1) {
+        // Lone field — still render full-width for visual consistency.
+        result.push(
+          <div key={gridBatch[0].field}>{gridBatch[0].node}</div>,
+        );
+      } else {
+        result.push(
+          <div
+            key={gridBatch.map((f) => f.field).join("-")}
+            className="grid grid-cols-2 gap-x-4 gap-y-3"
+          >
+            {gridBatch.map((f) => (
+              <div key={f.field}>{f.node}</div>
+            ))}
+          </div>,
+        );
+      }
+    }
+  }
+
+  return result;
+}
+
+// ── Laser toggle — two pill buttons ─────────────────────────────────────────
+
+const LASER_LABELS: Record<string, string> = {
+  red:  "Red · MOPA",
+  blue: "Blue · Diode",
+};
+
+function LaserToggle({
   value,
   values,
   onChange,
@@ -158,24 +217,94 @@ function LaserField({
   onChange: (v: string) => void;
   disabled?: boolean;
 }) {
-  const LASER_LABELS: Record<string, string> = {
-    red:  "Red (MOPA)",
-    blue: "Blue (diode)",
-  };
-
   return (
-    <Field label="Laser">
-      <Select
-        value={value}
+    <div className="flex flex-col gap-1">
+      <span
+        className="font-mono font-semibold uppercase tracking-[0.1em]"
+        style={{ fontSize: "9.5px", color: "var(--color-ink-subtle)" }}
+      >
+        Laser
+      </span>
+      <div
+        className="flex gap-1 p-[3px] rounded-[7px]"
+        style={{
+          background: "var(--color-border)",
+        }}
+      >
+        {values.map((v) => {
+          const active = v === value;
+          return (
+            <button
+              key={v}
+              type="button"
+              onClick={() => !disabled && onChange(v)}
+              disabled={disabled}
+              className="flex-1 rounded-[5px] font-mono font-semibold tracking-[0.06em] transition-all focus:outline-none focus-visible:ring-2 disabled:opacity-50 disabled:cursor-default"
+              style={{
+                fontSize: "11px",
+                height: "28px",
+                background: active ? "var(--color-surface)" : "transparent",
+                color: active ? "var(--color-primary)" : "var(--color-ink-muted)",
+                boxShadow: active ? "0 1px 3px rgba(0,0,0,0.12)" : "none",
+                border: active ? "1px solid var(--color-border-strong)" : "1px solid transparent",
+              }}
+            >
+              {LASER_LABELS[v] ?? v}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Generic enum row (fallback for non-laser enum fields) ────────────────────
+
+function GenericEnumRow({
+  label,
+  values,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  values: (number | string)[];
+  value: number | string;
+  onChange: (v: number | string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1" style={{ opacity: disabled ? 0.5 : 1 }}>
+      <span
+        className="font-mono font-semibold uppercase tracking-[0.1em]"
+        style={{ fontSize: "9.5px", color: "var(--color-ink-subtle)" }}
+      >
+        {label}
+      </span>
+      <select
+        value={String(value)}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          const raw = e.target.value;
+          if (values.length > 0 && typeof values[0] === "number") {
+            onChange(Number(raw));
+          } else {
+            onChange(raw);
+          }
+        }}
+        className="w-full h-8 rounded-[5px] px-2 font-mono text-[12px] appearance-none cursor-pointer focus:outline-none border"
+        style={{
+          background: "var(--color-surface)",
+          color: "var(--color-ink)",
+          borderColor: "var(--color-border-strong)",
+        }}
       >
         {values.map((v) => (
-          <option key={v} value={v}>
-            {LASER_LABELS[v] ?? v}
+          <option key={String(v)} value={String(v)}>
+            {String(v)}
           </option>
         ))}
-      </Select>
-    </Field>
+      </select>
+    </div>
   );
 }
