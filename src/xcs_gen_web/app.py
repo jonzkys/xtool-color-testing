@@ -1232,6 +1232,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "hex": s["hex"], "sigma": s["sigma"],
                 "source": body.mode, "source_result_id": source_result_id,
                 "params": params,
+                "machine_id": t.get("machine_id", "F2Ultra"),
             })
         if body.replace_existing:
             ids = pal_repo.replace_for_test(tid, payload, owner_id=user_id)

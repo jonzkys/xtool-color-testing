@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
+from fastapi.testclient import TestClient
 
+from xcs_gen_web.app import create_app
 from xcs_gen_web.repositories import materials as m_repo
 from xcs_gen_web.repositories import palette as pal_repo
 from xcs_gen_web.repositories import presets as p_repo
 from xcs_gen_web.repositories import tests as t_repo
+from xcs_gen_web.services import capture as cap
 
 
 BASE_PARAMS = {
@@ -89,3 +93,44 @@ def test_palette_machine_must_match_test(fresh_db):
     }
     with pytest.raises(pal_repo.MachineMismatchError):
         pal_repo.insert_bulk([bad])
+
+
+def test_palette_ingest_inherits_test_machine(fresh_db, monkeypatch, tmp_path):
+    """Swatches ingested into the palette inherit the test's machine_id."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+
+    def _fake_cap(*, image_bytes, test_id, spec):
+        return cap.CaptureResult(
+            swatches=[
+                {"row": 0, "col": 0, "x_value": 10, "y_value": None,
+                 "hex": "#ff0000", "lab": [50.0, 60.0, 40.0], "sigma": 0.5},
+            ],
+            warped_image_bgr=np.zeros((10, 10, 3), dtype=np.uint8),
+        )
+
+    monkeypatch.setattr(cap, "run_capture", _fake_cap)
+    client = TestClient(create_app())
+
+    mid = m_repo.create(name="Stainless")["id"]
+    tid = t_repo.create(name="t", material_id=mid, spec=SPEC, machine_id="F1Ultra")["id"]
+
+    # Upload a result so there's a swatch to ingest.
+    rid = client.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    ).json()["id"]
+
+    # Ingest via the API handler.
+    resp = client.post(
+        f"/api/tests/{tid}/ingest-to-palette",
+        json={"swatch_indices": [0], "mode": "single_result", "result_id": rid},
+    )
+    assert resp.status_code == 200
+
+    # The resulting palette entry must carry F1Ultra, not the default F2Ultra.
+    entries = pal_repo.list_all(machine_id="F1Ultra")
+    assert any(e["test_id"] == tid for e in entries), (
+        "Expected a palette entry for the F1Ultra test after ingest"
+    )
+    f1_entry = next(e for e in entries if e["test_id"] == tid)
+    assert f1_entry["machine_id"] == "F1Ultra"
