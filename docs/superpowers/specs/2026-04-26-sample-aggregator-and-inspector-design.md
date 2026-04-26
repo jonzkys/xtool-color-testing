@@ -70,8 +70,9 @@ The "central region fraction" depends on shape:
 | `cell_shape` | Sampling region | Mask construction |
 |---|---|---|
 | `circle` | 50% of cell width as a circular mask | `mask = (X-cx)² + (Y-cy)² ≤ (w_px*0.5/2)²` |
-| `square` | 50% of cell width as a square mask | `mask = abs(X-cx) ≤ w_px*0.25 ∧ abs(Y-cy) ≤ h_px*0.25` |
-| `rect`, `line` | 60% of cell as a rectangle (current behavior) | All pixels inside the 60% rect |
+| `rect` | 60% of cell as a rectangle (current behavior) | All pixels inside the 60% rect |
+
+(The codebase exposes only `rect` and `circle` as `cell_shape` values today — verified in `web/src/types.ts:147` and `ParamTestEditor.tsx:242-244`. A future "square" shape can opt into a 50% inscribed-square mask without changing this spec's contract.)
 
 Implementation: build the bounding box of the largest dimension at the
 appropriate fraction, then apply the mask in NumPy. The pixel count drops
@@ -132,8 +133,8 @@ on the fly.
 UI: a new dropdown on the test create/edit page, in the same row as
 `cell_shape`. The default for new tests is:
 
-- `cell_shape ∈ {circle, square}` → `median`
-- `cell_shape ∈ {line, rect}` → `saturation_median` (current MOPA behavior)
+- `cell_shape == "circle"` → `median`
+- `cell_shape == "rect"` → `saturation_median` (current MOPA behavior)
 
 Defaults are picked by the form when the user changes `cell_shape`, but
 they can override.
