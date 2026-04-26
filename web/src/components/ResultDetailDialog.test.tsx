@@ -2,6 +2,14 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ResultDetailDialog } from "./ResultDetailDialog";
 
+// Stub the authed-image hook so the test doesn't drive the photo
+// fetch — that path produces a Blob whose .stream() method isn't
+// reliably available on CI's Node, and the photo isn't what we're
+// testing here.
+vi.mock("../hooks/useAuthedImage", () => ({
+  useAuthedImage: () => null,
+}));
+
 beforeEach(() => {
   vi.restoreAllMocks();
 });
@@ -54,10 +62,6 @@ describe("ResultDetailDialog aggregator dropdown", () => {
           JSON.stringify({ status: "ok", mode: "standalone" }),
           { status: 200, headers: { "content-type": "application/json" } },
         ));
-      }
-      // Image fetch — return empty blob to avoid errors.
-      if (u.includes("/api/results/1/image")) {
-        return Promise.resolve(new Response(new Blob(), { status: 200 }));
       }
       return Promise.reject(new Error("unexpected " + u));
     }) as typeof fetch);
