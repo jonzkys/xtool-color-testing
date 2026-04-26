@@ -338,15 +338,19 @@ def inspect_cell(
             f"y_steps={y_steps} x_steps={x_steps}",
         )
 
-    # Cell centre in burn-space mm.
-    cell_w_mm = grid_w / x_steps
+    # Cell centre + dimensions in burn-space mm. The wrapped-1D path
+    # divides x_steps into `per_row` cells per physical row, so cell
+    # width is grid_w / per_row, NOT grid_w / x_steps. Mirroring the
+    # math in sample_grid keeps the inspect crop aligned with the
+    # actual sampled region.
     if spec.get("y_param") is None and rows_total > 1:
-        # Wrapped 1D path
         per_row = math.ceil(x_steps / rows_total)
-        cx_mm = grid_origin_mm[0] + (col + 0.5) * (grid_w / per_row)
-        cy_mm = grid_origin_mm[1] + row * row_stride_mm + row_height_mm / 2
+        cell_w_mm = grid_w / per_row
         cell_h_mm = row_height_mm
+        cx_mm = grid_origin_mm[0] + (col + 0.5) * cell_w_mm
+        cy_mm = grid_origin_mm[1] + row * row_stride_mm + row_height_mm / 2
     else:
+        cell_w_mm = grid_w / x_steps
         cell_h_mm = grid_h / (y_steps or 1)
         cx_mm = grid_origin_mm[0] + (col + 0.5) * cell_w_mm
         cy_mm = grid_origin_mm[1] + (row + 0.5) * cell_h_mm

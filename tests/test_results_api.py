@@ -441,3 +441,49 @@ def test_inspect_cell_out_of_bounds_returns_400(fresh_db, monkeypatch, tmp_path)
     r = c.get(f"/api/results/{rid}/inspect/0/99")
     assert r.status_code == 400
     assert "out of bounds" in r.json()["detail"].lower()
+
+
+def test_inspect_cell_wrapped_1d_uses_per_row_cell_width(fresh_db, monkeypatch, tmp_path):
+    """Wrapped-1D tests (rows>1, y_param=None) divide x_steps across
+    `per_row` cells per physical row. inspect_cell must compute
+    cell_w_mm = grid_w / per_row, NOT grid_w / x_steps — otherwise the
+    cropped region is too narrow and the sample box collapses to a few
+    pixels."""
+    import numpy as np
+    from fastapi.testclient import TestClient
+    from xcs_gen_web.app import create_app
+    from xcs_gen_web.services import capture as cap
+
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture_large)
+
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    # 12-step sweep wrapped onto 4 rows × 3 cells per row, each 6mm wide.
+    # If the bug returns, cell_w_mm would compute as grid_w/12 = 1.5mm,
+    # and the sample box would be only a few pixels wide.
+    wrapped_spec = {
+        **SPEC,
+        "x_steps": 12,
+        "rows": 4,
+        "width_mm": 18,
+        "height_mm": 6,
+        "y_param": None,
+    }
+    tid = t_repo.create(name="W", material_id=mid, spec=wrapped_spec)["id"]
+    upload = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    rid = upload.json()["id"]
+    r = c.get(f"/api/results/{rid}/inspect/0/0")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    region = body["sampling_region"]
+    # Per-row cell width = 18mm / 3 = 6mm = 60 px @ px_per_mm=10.
+    # Sample box half-width = 60 * 0.3 / 2 = 9 px → full sample box >= 12 px.
+    # If the bug returns, half_w_px would be ~2 px (cell_w_mm collapsed).
+    assert region["half_w_px"] >= 5.0, (
+        f"sample box too narrow ({region['half_w_px']}); "
+        f"wrapped-1D cell width should use per_row, not x_steps"
+    )
