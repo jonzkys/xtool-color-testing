@@ -38,6 +38,8 @@ from .schemas import (
     ResultPatch,
     ResultResponse,
     ResultSwatch,
+    InspectCellResponse,
+    SwatchPreviewResponse,
     SvgLayersRequest,
     SvgPreviewRequest,
     SvgPreviewResponse,
@@ -1117,6 +1119,100 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Owner check passed in r_repo.get; row should still exist.
             raise HTTPException(status_code=500, detail="reingest write failed")
         return _result_to_response(refreshed)
+
+    @app.get(
+        "/api/results/{rid}/swatches/preview",
+        response_model=SwatchPreviewResponse,
+    )
+    def results_swatches_preview(
+        rid: int, aggregator: str,
+        user_id: int = Depends(get_current_user),
+    ) -> SwatchPreviewResponse:
+        """Re-aggregate the saved photo with the requested aggregator and
+        return the resulting swatches. Does NOT write to the DB. Used by
+        the result-detail dialog's aggregator dropdown for live preview.
+        """
+        from xcs_gen.sampling_aggregators import LEGAL_AGGREGATORS
+        if aggregator not in LEGAL_AGGREGATORS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown aggregator: {aggregator!r}; "
+                       f"legal values: {list(LEGAL_AGGREGATORS)}",
+            )
+        r = r_repo.get(rid, owner_id=user_id)
+        if r is None:
+            raise HTTPException(status_code=404, detail="result not found")
+        t = t_repo.get(r["test_id"], owner_id=user_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        try:
+            data = images.read(r["image_path"])
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=410,
+                detail="source image no longer available — cannot preview",
+            )
+        # Re-run the full pipeline with the requested aggregator. We do
+        # the full pipeline (decode + detect + warp + sample) rather than
+        # just re-aggregating because the warped image isn't persisted.
+        # Future optimisation: cache the warped image per result.
+        try:
+            cap_result = capture_service.run_capture(
+                image_bytes=data, test_id=r["test_id"],
+                spec={**t["spec"], "sample_aggregator": aggregator},
+            )
+        except capture_service.CaptureError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except ValueError as e:
+            # aggregate() raises ValueError for unknown aggregator —
+            # convert to 400 for the caller.
+            raise HTTPException(status_code=400, detail=str(e))
+
+        return SwatchPreviewResponse(
+            aggregator=aggregator,
+            swatches=[ResultSwatch(**s) for s in cap_result.swatches],
+        )
+
+    @app.get(
+        "/api/results/{rid}/inspect/{row}/{col}",
+        response_model=InspectCellResponse,
+    )
+    def results_inspect_cell(
+        rid: int, row: int, col: int,
+        user_id: int = Depends(get_current_user),
+    ) -> InspectCellResponse:
+        """Return per-cell inspection data: the warped cell crop,
+        the sampling-region descriptor, and all 5 aggregators applied
+        to that cell. Powers the InspectMatchDialog.
+        """
+        r = r_repo.get(rid, owner_id=user_id)
+        if r is None:
+            raise HTTPException(status_code=404, detail="result not found")
+        t = t_repo.get(r["test_id"], owner_id=user_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        try:
+            data = images.read(r["image_path"])
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=410,
+                detail="source image no longer available — cannot inspect",
+            )
+        try:
+            cap_result = capture_service.run_capture(
+                image_bytes=data, test_id=r["test_id"], spec=t["spec"],
+            )
+        except capture_service.CaptureError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        try:
+            payload = capture_service.inspect_cell(
+                warped=cap_result.warped_image_bgr,
+                spec=t["spec"], row=row, col=col,
+            )
+        except capture_service.CaptureError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return InspectCellResponse(**payload)
 
     @app.post("/api/tests/{tid}/results", response_model=ResultResponse, status_code=201)
     async def results_upload(
