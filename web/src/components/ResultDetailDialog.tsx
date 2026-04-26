@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, X } from "lucide-react";
 import { DialogClose } from "@radix-ui/react-dialog";
 import {
   Dialog,
@@ -400,22 +400,40 @@ function AggregatorControlBar({
     )}>
       <div className="h-px bg-[color:var(--color-border)]" aria-hidden />
       <div className="flex items-stretch divide-x divide-[color:var(--color-border)]">
-        <div className="flex-1 px-3 py-2.5">
-          <div className="font-mono text-[9.5px] tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)] mb-1">
-            Aggregator
+        <label
+          className={cn(
+            "flex-1 relative px-3 py-2.5 group",
+            "cursor-pointer transition-colors duration-100",
+            "hover:bg-[color:var(--color-primary-tint)]/40",
+            "focus-within:bg-[color:var(--color-primary-tint)]/40",
+            isSaving && "cursor-not-allowed opacity-40",
+          )}
+        >
+          <div className="flex items-baseline justify-between mb-1">
+            <span className="font-mono text-[9.5px] tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)]">
+              Aggregator
+            </span>
+            <span className="font-mono text-[8.5px] tracking-[0.16em] uppercase text-[color:var(--color-ink-subtle)] opacity-0 group-hover:opacity-100 transition-opacity duration-100">
+              click to change
+            </span>
           </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-[12px] tabular-nums text-[color:var(--color-ink)] group-hover:text-[color:var(--color-primary)] transition-colors duration-100">
+              {AGGREGATOR_LABELS[currentAggregator]}
+            </span>
+            <ChevronDown
+              className="h-3.5 w-3.5 shrink-0 text-[color:var(--color-ink-muted)] group-hover:text-[color:var(--color-primary)] transition-colors duration-100"
+              strokeWidth={2}
+            />
+          </div>
+          {/* Native select layered on top, fully transparent — provides the
+              real interaction. The styled markup above is purely visual. */}
           <select
             aria-label="Aggregator"
             value={currentAggregator}
             disabled={isSaving}
             onChange={(e) => onAggregatorChange(e.target.value as SampleAggregator)}
-            className={cn(
-              "w-full font-mono text-[11.5px] tabular-nums",
-              "text-[color:var(--color-ink)]",
-              "bg-transparent border-0 outline-none appearance-none",
-              "cursor-pointer",
-              "disabled:opacity-40 disabled:cursor-not-allowed",
-            )}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
           >
             <option value="median">Median</option>
             <option value="mean">Mean</option>
@@ -423,7 +441,7 @@ function AggregatorControlBar({
             <option value="trimmed_mean">Trimmed mean</option>
             <option value="kmeans_dominant">K-means dominant</option>
           </select>
-        </div>
+        </label>
         <div className="flex items-center gap-2.5 px-3 py-2.5 shrink-0">
           <div
             aria-hidden

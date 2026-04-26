@@ -12,7 +12,12 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-_CENTRAL_REGION_FRACTION = 0.6
+# Sample window — central N% of the cell pitch each side. 30% keeps the
+# window strictly inside the burned area even when the burn doesn't fill
+# the full cell (low-power corners, small dot tests). Bumped down from
+# 0.6 because at the larger window edge pixels were leaking substrate
+# colour into the captured swatches.
+_CENTRAL_REGION_FRACTION = 0.3
 
 # Parameters whose values are integer-valued laser settings. Any other swept
 # param (currently only "power") is rounded to 1 decimal place instead — the

@@ -367,9 +367,11 @@ def inspect_cell(
     if crop.size == 0:
         raise CaptureError(f"cell ({row}, {col}) is empty after cropping")
 
-    # Sample-region pixels (the same mask used by _sample_cell).
-    half_sample_w = cell_w_px * 0.6 / 2
-    half_sample_h = cell_h_px * 0.6 / 2
+    # Sample-region pixels (the same mask used by _sample_cell — import
+    # the constant so this stays in sync if the fraction is retuned).
+    from xcs_gen_web.capture_sampling import _CENTRAL_REGION_FRACTION
+    half_sample_w = cell_w_px * _CENTRAL_REGION_FRACTION / 2
+    half_sample_h = cell_h_px * _CENTRAL_REGION_FRACTION / 2
     sx0 = max(0, int(round(cx_px - half_sample_w)))
     sy0 = max(0, int(round(cy_px - half_sample_h)))
     sx1 = min(warped.shape[1], int(round(cx_px + half_sample_w)))

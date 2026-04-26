@@ -106,19 +106,22 @@ def test_sample_cell_circle_excludes_corner_pixels():
     assert r < 100, f"expected near-50 median, got {hex_}"
 
 
-def test_sample_cell_rect_keeps_60pct_rectangle():
-    """Regression: cell_shape='rect' uses the existing 60% rectangle."""
+def test_sample_cell_rect_uses_central_region():
+    """Regression: cell_shape='rect' samples a centred window of size
+    w_px * _CENTRAL_REGION_FRACTION, ignoring pixels outside it."""
     import numpy as np
-    from xcs_gen_web.capture_sampling import _sample_cell
+    from xcs_gen_web.capture_sampling import _sample_cell, _CENTRAL_REGION_FRACTION
 
     img = np.full((100, 100, 3), 200, dtype=np.uint8)
-    # Pixels inside the 60% rect (centred 60x60 area) all set to 50.
-    img[20:80, 20:80] = 50
+    # Carve a centred dark patch wide enough to fully cover the sampling
+    # window regardless of the chosen fraction.
+    half = int(round(100 * _CENTRAL_REGION_FRACTION / 2))
+    img[50 - half : 50 + half, 50 - half : 50 + half] = 50
     hex_, _ = _sample_cell(
         img, cx_px=50, cy_px=50, w_px=100, h_px=100,
         cell_shape="rect", aggregator="median",
     )
-    # Median over the 60% window should be 50.
+    # All pixels inside the central window are 50, so median should be 0x32.
     assert hex_ == "#323232"
 
 
