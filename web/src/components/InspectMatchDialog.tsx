@@ -343,8 +343,12 @@ function SamplingOverlay({
   const cx = region.center_px[0];
   const cy = region.center_px[1];
 
-  const stroke = "var(--color-warning)";
-  const strokeWidth = Math.max(w, h) * 0.012; // scales with crop size
+  // White stroke + mix-blend-mode: difference auto-inverts the iris
+  // against whatever's underneath — readable on dark substrate, light
+  // burns, and any hue in between. Same trick the corner crop marks
+  // use elsewhere in the codebase.
+  const stroke = "white";
+  const strokeWidth = Math.max(w, h) * 0.012;
   const dash = `${strokeWidth * 4} ${strokeWidth * 3}`;
 
   return (
@@ -354,54 +358,56 @@ function SamplingOverlay({
       className="absolute inset-0 w-full h-full"
       aria-hidden
     >
-      {region.shape === "circle" && region.radius_px != null && (
-        <>
-          <circle
-            cx={cx}
-            cy={cy}
-            r={region.radius_px}
-            fill="none"
-            stroke={stroke}
-            strokeWidth={strokeWidth}
-            strokeDasharray={dash}
-            vectorEffect="non-scaling-stroke"
-          />
-          {/* Crosshair through the iris centre — gives the eye a focal anchor */}
-          <line
-            x1={cx - region.radius_px * 0.3}
-            y1={cy}
-            x2={cx + region.radius_px * 0.3}
-            y2={cy}
-            stroke={stroke}
-            strokeWidth={strokeWidth * 0.6}
-            vectorEffect="non-scaling-stroke"
-          />
-          <line
-            x1={cx}
-            y1={cy - region.radius_px * 0.3}
-            x2={cx}
-            y2={cy + region.radius_px * 0.3}
-            stroke={stroke}
-            strokeWidth={strokeWidth * 0.6}
-            vectorEffect="non-scaling-stroke"
-          />
-        </>
-      )}
-      {region.shape === "rect" &&
-        region.half_w_px != null &&
-        region.half_h_px != null && (
-          <rect
-            x={cx - region.half_w_px}
-            y={cy - region.half_h_px}
-            width={region.half_w_px * 2}
-            height={region.half_h_px * 2}
-            fill="none"
-            stroke={stroke}
-            strokeWidth={strokeWidth}
-            strokeDasharray={dash}
-            vectorEffect="non-scaling-stroke"
-          />
+      <g style={{ mixBlendMode: "difference" }}>
+        {region.shape === "circle" && region.radius_px != null && (
+          <>
+            <circle
+              cx={cx}
+              cy={cy}
+              r={region.radius_px}
+              fill="none"
+              stroke={stroke}
+              strokeWidth={strokeWidth}
+              strokeDasharray={dash}
+              vectorEffect="non-scaling-stroke"
+            />
+            {/* Crosshair through the iris centre — gives the eye a focal anchor */}
+            <line
+              x1={cx - region.radius_px * 0.3}
+              y1={cy}
+              x2={cx + region.radius_px * 0.3}
+              y2={cy}
+              stroke={stroke}
+              strokeWidth={strokeWidth * 0.6}
+              vectorEffect="non-scaling-stroke"
+            />
+            <line
+              x1={cx}
+              y1={cy - region.radius_px * 0.3}
+              x2={cx}
+              y2={cy + region.radius_px * 0.3}
+              stroke={stroke}
+              strokeWidth={strokeWidth * 0.6}
+              vectorEffect="non-scaling-stroke"
+            />
+          </>
         )}
+        {region.shape === "rect" &&
+          region.half_w_px != null &&
+          region.half_h_px != null && (
+            <rect
+              x={cx - region.half_w_px}
+              y={cy - region.half_h_px}
+              width={region.half_w_px * 2}
+              height={region.half_h_px * 2}
+              fill="none"
+              stroke={stroke}
+              strokeWidth={strokeWidth}
+              strokeDasharray={dash}
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+      </g>
       {/* Cell-shape + sampling-fraction annotation in the upper-left of
           the iris area. White fill + thin dark outline (paintOrder so
           the stroke renders behind the fill) keeps it legible against
