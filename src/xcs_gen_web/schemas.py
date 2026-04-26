@@ -504,9 +504,10 @@ class TestUpdate(BaseModel):
     name: str | None = None
     notes: str | None = None
     spec: TestSpec | None = None
-    # material_id only accepted while the test is unlocked (no results
-    # uploaded yet). Once locked, changing the substrate would orphan
-    # the palette entries harvested against the old material.
+    # material_id is editable even on locked tests: tests are commonly
+    # created against the wrong substrate and need relabelling. Any
+    # palette entries already harvested from the test cascade to the
+    # new material in the same transaction.
     material_id: int | None = None
 
 

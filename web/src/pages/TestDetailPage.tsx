@@ -77,13 +77,12 @@ export function TestDetailPage({ testId }: Props) {
       const normalized = normalizeSpec(spec);
       if (normalized !== spec) setSpec(normalized);
       if (test) {
-        // When the test is unlocked (no uploaded results) we persist
-        // everything that could have changed — name, spec, and also
-        // material_id if the user switched substrate. Once locked,
-        // the backend rejects spec + material_id changes anyway, so
-        // we send only the name.
+        // Spec is frozen once a result has been uploaded, but name and
+        // material can still change — the backend cascades a material
+        // reassignment to any palette entries harvested from this test
+        // so a wrong-substrate burn can be relabelled in place.
         const patch = test.locked
-          ? { name }
+          ? { name, material_id: materialId }
           : { name, spec: normalized, material_id: materialId };
         const updated = await updateTest(test.id, patch);
         setTest(updated);
@@ -204,7 +203,7 @@ export function TestDetailPage({ testId }: Props) {
           <DemoLock label="Saving test edits is disabled in the demo.">
             <Button variant="secondary" onClick={onSave} disabled={saving}>
               <Save className="h-4 w-4" />
-              {test ? (test.locked ? "Save name" : "Save") : "Create"}
+              {test ? "Save" : "Create"}
             </Button>
           </DemoLock>
           {test && (
@@ -274,10 +273,10 @@ export function TestDetailPage({ testId }: Props) {
             <Field label="Material">
               <Select
                 value={materialId ?? ""}
-                // Locked only matches the backend's lock (set when a
-                // result is uploaded). Before that, the material is
-                // freely swappable; the saved spec follows the test.
-                disabled={test?.locked ?? false}
+                // Material stays editable on locked tests so a burn
+                // ingested under the wrong substrate can be relabelled
+                // — the backend cascades the change to harvested
+                // palette entries.
                 onChange={(e) => setMaterialId(Number(e.target.value))}
               >
                 {materials.map((m) => (

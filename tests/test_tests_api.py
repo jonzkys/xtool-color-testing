@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from xcs_gen_web.app import create_app
 from xcs_gen_web.repositories import materials as m_repo
+from xcs_gen_web.repositories import palette as pal_repo
 from xcs_gen_web.repositories import tests as t_repo
 
 
@@ -82,21 +83,28 @@ def test_patch_material_allowed_when_unlocked(fresh_db):
     assert r.json()["material_id"] == mid2
 
 
-def test_patch_material_blocked_when_locked(fresh_db):
-    """Once locked (a result has been ingested) the material is frozen
-    — palette entries are keyed to the old material_id and would be
-    orphaned by a reassignment."""
+def test_patch_material_allowed_when_locked_and_cascades_palette(fresh_db):
+    """Material is editable on locked tests so a wrong-material burn
+    can be relabelled. Any palette entries already harvested from the
+    test cascade to the new material in the same transaction."""
     c, mid1 = _client_and_material(fresh_db)
     mid2 = m_repo.create(name="Brass")["id"]
     tid = c.post(
         "/api/tests", json={"name": "T", "material_id": mid1, "spec": SPEC},
     ).json()["id"]
     t_repo.mark_tested_and_lock(tid)
+    [eid] = pal_repo.insert_bulk([{
+        "test_id": tid, "material_id": mid1, "hex": "#aabbcc",
+        "sigma": 1.0, "source": "single_result",
+    }])
 
     r = c.patch(f"/api/tests/{tid}", json={"material_id": mid2})
-    assert r.status_code == 409
-    # Unchanged after the rejection.
-    assert c.get(f"/api/tests/{tid}").json()["material_id"] == mid1
+    assert r.status_code == 200
+    assert r.json()["material_id"] == mid2
+    # Palette entry harvested under the old material was reassigned.
+    [entry] = pal_repo.list_all(material_id=mid2)
+    assert entry["id"] == eid
+    assert pal_repo.list_all(material_id=mid1) == []
 
 
 def test_patch_material_rejects_unknown_id(fresh_db):
