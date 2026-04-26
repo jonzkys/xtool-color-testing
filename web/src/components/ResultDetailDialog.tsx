@@ -1,4 +1,5 @@
-import { AlertTriangle, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, ChevronDown, X } from "lucide-react";
 import { DialogClose } from "@radix-ui/react-dialog";
 import {
   Dialog,
@@ -7,9 +8,11 @@ import {
   MetalBar,
   cn,
 } from "../ui";
-import type { ResultRecord, ResultSwatch } from "../types";
+import type { ResultRecord, ResultSwatch, SampleAggregator, TestSpec } from "../types";
 import { useAuthedImage } from "../hooks/useAuthedImage";
+import { useIsDemo } from "../hooks/useIsDemo";
 import { formatMissingCorners } from "./captureWarnings";
+import { InspectMatchDialog } from "./InspectMatchDialog";
 
 export interface ResultDetailDialogProps {
   open: boolean;
@@ -40,7 +43,73 @@ export function ResultDetailDialog({
 
 function ResultDetailBody({ result }: { result: ResultRecord }) {
   const blobUrl = useAuthedImage(result.image_url);
-  const stats = swatchStats(result.swatches);
+  const isDemo = useIsDemo();
+  const [previewAggregator, setPreviewAggregator] = useState<SampleAggregator | null>(null);
+  const [previewSwatchesData, setPreviewSwatchesData] = useState<ResultSwatch[] | null>(null);
+  const [savingDefault, setSavingDefault] = useState(false);
+  const [inspectingCell, setInspectingCell] = useState<{ row: number; col: number } | null>(null);
+  const [testSpec, setTestSpec] = useState<TestSpec | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getTest } = await import("../api/tests");
+        const test = await getTest(result.test_id);
+        if (!cancelled) setTestSpec(test.spec);
+      } catch (err) {
+        console.error("Failed to fetch test spec:", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [result.test_id]);
+
+  const storedAggregator: SampleAggregator =
+    testSpec?.sample_aggregator ?? "saturation_median";
+  const cellShape = (testSpec?.cell_shape ?? "rect") as "rect" | "circle";
+  const currentAggregator = previewAggregator ?? storedAggregator;
+  const displayedSwatches = previewSwatchesData ?? result.swatches;
+  const isPreviewing = previewAggregator !== null && previewAggregator !== storedAggregator;
+
+  async function onAggregatorChange(agg: SampleAggregator) {
+    setPreviewAggregator(agg);
+    if (agg === storedAggregator) {
+      setPreviewSwatchesData(null);
+      return;
+    }
+    try {
+      const { previewSwatches } = await import("../api/results");
+      const resp = await previewSwatches(result.id, agg);
+      setPreviewSwatchesData(resp.swatches);
+    } catch (err) {
+      console.error("Preview failed:", err);
+      setPreviewAggregator(null);
+      setPreviewSwatchesData(null);
+    }
+  }
+
+  async function onSaveAsDefault() {
+    if (!previewAggregator || !testSpec) return;
+    setSavingDefault(true);
+    try {
+      const { updateTest } = await import("../api/tests");
+      await updateTest(result.test_id, {
+        spec: { ...testSpec, sample_aggregator: previewAggregator },
+      });
+      const { reingestResult } = await import("../api/results");
+      await reingestResult(result.id);
+      window.dispatchEvent(new CustomEvent("result:refetch"));
+      setTestSpec((prev) => prev ? { ...prev, sample_aggregator: previewAggregator } : prev);
+      setPreviewAggregator(null);
+      setPreviewSwatchesData(null);
+    } catch (err) {
+      console.error("Save failed:", err);
+    } finally {
+      setSavingDefault(false);
+    }
+  }
+
+  const stats = swatchStats(displayedSwatches);
   const captured = formatCaptured(result.uploaded_at);
 
   return (
@@ -132,7 +201,7 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
       {/* Instrument panel — four readout cells across the top, same
           cadence as the palette modal's HEX/RGB/Lab/HSL strip. */}
       <div className="grid grid-cols-4 divide-x divide-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]">
-        <ReadoutCell label="Swatches" value={String(result.swatches.length)} />
+        <ReadoutCell label="Swatches" value={String(displayedSwatches.length)} />
         <ReadoutCell
           label="avg σ"
           value={stats.avgSigma == null ? "—" : stats.avgSigma.toFixed(2)}
@@ -154,7 +223,7 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
             title="Lab plane · a*/b*"
             hint="how far the palette strays from neutral"
           />
-          <LabScatter swatches={result.swatches} />
+          <LabScatter swatches={displayedSwatches} />
         </div>
         <div className="bg-[color:var(--color-surface)] px-5 pt-4 pb-4 flex flex-col gap-4">
           <div>
@@ -162,14 +231,14 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
               title="Luminance ramp · L*"
               hint="tonal range, darkest → lightest"
             />
-            <LuminanceRamp swatches={result.swatches} />
+            <LuminanceRamp swatches={displayedSwatches} />
           </div>
           <div>
             <ChartLabel
               title="Spectrum · L* vs sweep"
               hint="colors across the parameter axis"
             />
-            <SpectrumStrip swatches={result.swatches} />
+            <SpectrumStrip swatches={displayedSwatches} />
           </div>
         </div>
       </div>
@@ -181,7 +250,16 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
           the rest of the modal off-screen. Tile size shrinks for large
           grids so more fit per row and the scroll region stays usable. */}
       <div className="px-5 pt-4 pb-5">
-        <ChartLabel title={`Swatches (${result.swatches.length})`} />
+        <AggregatorControlBar
+          currentAggregator={currentAggregator}
+          cellShape={cellShape}
+          isPreviewing={isPreviewing}
+          onAggregatorChange={onAggregatorChange}
+          onSaveAsDefault={onSaveAsDefault}
+          isDemo={isDemo}
+          isSaving={savingDefault}
+        />
+        <ChartLabel title={`Swatches (${displayedSwatches.length})`} />
         {(result.missing_markers?.length ?? 0) > 0 && (
           <div
             role="status"
@@ -205,18 +283,19 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
         <div
           className={cn(
             "mt-3 grid gap-1.5 max-h-[45vh] overflow-y-auto pr-1",
-            result.swatches.length > 120
+            displayedSwatches.length > 120
               ? "[grid-template-columns:repeat(auto-fill,minmax(44px,1fr))]"
-              : result.swatches.length > 60
+              : displayedSwatches.length > 60
                 ? "[grid-template-columns:repeat(auto-fill,minmax(56px,1fr))]"
                 : "[grid-template-columns:repeat(auto-fill,minmax(72px,1fr))]",
           )}
         >
-          {result.swatches.map((s, i) => (
+          {displayedSwatches.map((s, i) => (
             <SwatchTile
               key={`${s.row}-${s.col}-${i}`}
               swatch={s}
-              compact={result.swatches.length > 60}
+              compact={displayedSwatches.length > 60}
+              onClick={() => setInspectingCell({ row: s.row, col: s.col })}
             />
           ))}
         </div>
@@ -234,6 +313,20 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
         </>
       )}
       </div>
+      {inspectingCell && (
+        <InspectMatchDialog
+          open={true}
+          onOpenChange={(o) => { if (!o) setInspectingCell(null); }}
+          rid={result.id}
+          row={inspectingCell.row}
+          col={inspectingCell.col}
+          currentAggregator={currentAggregator}
+          onAggregatorPicked={(agg) => {
+            setInspectingCell(null);
+            void onAggregatorChange(agg);
+          }}
+        />
+      )}
     </DialogContent>
   );
 }
@@ -262,6 +355,133 @@ function ChartLabel({ title, hint }: { title: string; hint?: string }) {
           {hint}
         </span>
       )}
+    </div>
+  );
+}
+
+const AGGREGATOR_LABELS: Record<SampleAggregator, string> = {
+  median:             "Median",
+  mean:               "Mean",
+  saturation_median:  "Sat. median",
+  trimmed_mean:       "Trimmed mean",
+  kmeans_dominant:    "K-means dominant",
+};
+
+const CELL_SHAPE_LABELS: Record<"rect" | "circle", string> = {
+  rect:   "inscribed rect",
+  circle: "50% circle",
+};
+
+function AggregatorControlBar({
+  currentAggregator,
+  cellShape,
+  isPreviewing,
+  onAggregatorChange,
+  onSaveAsDefault,
+  isDemo,
+  isSaving,
+}: {
+  currentAggregator: SampleAggregator;
+  cellShape: "rect" | "circle";
+  isPreviewing: boolean;
+  onAggregatorChange: (agg: SampleAggregator) => void;
+  onSaveAsDefault: () => void;
+  isDemo: boolean;
+  isSaving: boolean;
+}) {
+  const saveDisabled = !isPreviewing || isDemo || isSaving;
+  const samplingCaption = `Sampling · ${CELL_SHAPE_LABELS[cellShape]}, ${AGGREGATOR_LABELS[currentAggregator].toLowerCase()}`;
+
+  return (
+    <div className={cn(
+      "mb-4 rounded-[5px] border border-[color:var(--color-border)]",
+      "bg-[color:var(--color-surface-elevated)] overflow-hidden",
+    )}>
+      <div className="h-px bg-[color:var(--color-border)]" aria-hidden />
+      <div className="flex items-stretch divide-x divide-[color:var(--color-border)]">
+        <label
+          className={cn(
+            "flex-1 relative px-3 py-2.5 group",
+            "cursor-pointer transition-colors duration-100",
+            "hover:bg-[color:var(--color-primary-tint)]/40",
+            "focus-within:bg-[color:var(--color-primary-tint)]/40",
+            isSaving && "cursor-not-allowed opacity-40",
+          )}
+        >
+          <div className="flex items-baseline justify-between mb-1">
+            <span className="font-mono text-[9.5px] tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)]">
+              Aggregator
+            </span>
+            <span className="font-mono text-[8.5px] tracking-[0.16em] uppercase text-[color:var(--color-ink-subtle)] opacity-0 group-hover:opacity-100 transition-opacity duration-100">
+              click to change
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-[12px] tabular-nums text-[color:var(--color-ink)] group-hover:text-[color:var(--color-primary)] transition-colors duration-100">
+              {AGGREGATOR_LABELS[currentAggregator]}
+            </span>
+            <ChevronDown
+              className="h-3.5 w-3.5 shrink-0 text-[color:var(--color-ink-muted)] group-hover:text-[color:var(--color-primary)] transition-colors duration-100"
+              strokeWidth={2}
+            />
+          </div>
+          {/* Native select layered on top, fully transparent — provides the
+              real interaction. The styled markup above is purely visual. */}
+          <select
+            aria-label="Aggregator"
+            value={currentAggregator}
+            disabled={isSaving}
+            onChange={(e) => onAggregatorChange(e.target.value as SampleAggregator)}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+          >
+            <option value="median">Median</option>
+            <option value="mean">Mean</option>
+            <option value="saturation_median">Sat. median</option>
+            <option value="trimmed_mean">Trimmed mean</option>
+            <option value="kmeans_dominant">K-means dominant</option>
+          </select>
+        </label>
+        <div className="flex items-center gap-2.5 px-3 py-2.5 shrink-0">
+          <div
+            aria-hidden
+            className={cn(
+              "h-[6px] w-[6px] rounded-full shrink-0 transition-colors duration-200",
+              isPreviewing
+                ? "bg-[color:var(--color-warning)]"
+                : "bg-[color:var(--color-border-strong)]",
+            )}
+          />
+          <button
+            type="button"
+            disabled={saveDisabled}
+            onClick={onSaveAsDefault}
+            title={
+              isDemo
+                ? "Not available in demo mode"
+                : !isPreviewing
+                  ? "Select a different aggregator to preview before saving"
+                  : isSaving
+                    ? "Saving…"
+                    : "Write this aggregator as the test's stored default and reingest"
+            }
+            className={cn(
+              "font-mono text-[9.5px] tracking-[0.18em] uppercase font-semibold",
+              "px-2.5 py-1 rounded-[3px]",
+              "border transition-colors duration-150",
+              saveDisabled
+                ? "border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)] opacity-40 cursor-not-allowed"
+                : "border-[color:var(--color-primary)]/60 text-[color:var(--color-primary)] hover:bg-[color:var(--color-primary)]/8 cursor-pointer",
+            )}
+          >
+            {isSaving ? "Saving…" : "Save as default"}
+          </button>
+        </div>
+      </div>
+      <div className="border-t border-[color:var(--color-border)] px-3 py-1.5">
+        <span className="font-mono text-[9px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
+          {samplingCaption}
+        </span>
+      </div>
     </div>
   );
 }
@@ -529,18 +749,23 @@ function linearR2(xs: number[], ys: number[]): number {
 function SwatchTile({
   swatch,
   compact = false,
+  onClick,
 }: {
   swatch: ResultSwatch;
   /** Hide the hex+σ footer when the containing grid is packing lots
    *  of tiles. The per-swatch tooltip (on hover) still surfaces the
    *  full details. */
   compact?: boolean;
+  onClick?: () => void;
 }) {
-  const tooltip = `${swatch.hex} · σ ${swatch.sigma.toFixed(2)}`;
+  const tooltip = `${swatch.hex} · σ ${swatch.sigma.toFixed(2)} · click to inspect`;
   return (
-    <div
-      className="group rounded-[4px] border border-[color:var(--color-border)] overflow-hidden bg-[color:var(--color-surface)]"
+    <button
+      type="button"
+      onClick={onClick}
+      className="group text-left rounded-[4px] border border-[color:var(--color-border)] overflow-hidden bg-[color:var(--color-surface)] cursor-pointer hover:border-[color:var(--color-primary)]/60 hover:ring-2 hover:ring-[color:var(--color-primary)]/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60 transition-[border-color,box-shadow] duration-100"
       title={tooltip}
+      aria-label={`Inspect cell row ${swatch.row} col ${swatch.col} (${swatch.hex})`}
     >
       <div
         className={compact ? "aspect-square w-full" : "aspect-[4/3] w-full"}
@@ -559,7 +784,7 @@ function SwatchTile({
           </span>
         </div>
       )}
-    </div>
+    </button>
   );
 }
 

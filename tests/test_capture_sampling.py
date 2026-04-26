@@ -82,3 +82,66 @@ def test_swatch_is_dataclass_with_expected_fields():
     assert s.row == 1
     assert s.col == 2
     assert s.hex == "#abcdef"
+
+
+def test_sample_cell_circle_excludes_corner_pixels():
+    """For a 'circle' cell, corner pixels of the bounding rect should NOT
+    be sampled. Setup: a 60x60 image with bright corners and a dark
+    centre. The captured median should be near the centre value."""
+    import numpy as np
+    from xcs_gen_web.capture_sampling import _sample_cell
+
+    img = np.full((60, 60, 3), 200, dtype=np.uint8)  # bright everywhere
+    # Carve a 30px-diameter dark disc in the centre.
+    yy, xx = np.ogrid[:60, :60]
+    inside = (xx - 30) ** 2 + (yy - 30) ** 2 < 15 ** 2
+    img[inside] = 50
+    hex_, sigma = _sample_cell(
+        img, cx_px=30, cy_px=30, w_px=60, h_px=60,
+        cell_shape="circle", aggregator="median",
+    )
+    # Inscribed-circle 50% diameter = 30 px, fully inside the dark disc.
+    # Median should be ~50, not ~200.
+    r = int(hex_[1:3], 16)
+    assert r < 100, f"expected near-50 median, got {hex_}"
+
+
+def test_sample_cell_rect_uses_central_region():
+    """Regression: cell_shape='rect' samples a centred window of size
+    w_px * _CENTRAL_REGION_FRACTION, ignoring pixels outside it."""
+    import numpy as np
+    from xcs_gen_web.capture_sampling import _sample_cell, _CENTRAL_REGION_FRACTION
+
+    img = np.full((100, 100, 3), 200, dtype=np.uint8)
+    # Carve a centred dark patch wide enough to fully cover the sampling
+    # window regardless of the chosen fraction.
+    half = int(round(100 * _CENTRAL_REGION_FRACTION / 2))
+    img[50 - half : 50 + half, 50 - half : 50 + half] = 50
+    hex_, _ = _sample_cell(
+        img, cx_px=50, cy_px=50, w_px=100, h_px=100,
+        cell_shape="rect", aggregator="median",
+    )
+    # All pixels inside the central window are 50, so median should be 0x32.
+    assert hex_ == "#323232"
+
+
+def test_sample_cell_dispatches_aggregator():
+    """The aggregator name routes to the correct pure function."""
+    import numpy as np
+    from xcs_gen_web.capture_sampling import _sample_cell
+
+    img = np.full((40, 40, 3), 100, dtype=np.uint8)
+    img[10:30, 10:30] = 200
+    hex_median, _ = _sample_cell(
+        img, cx_px=20, cy_px=20, w_px=40, h_px=40,
+        cell_shape="rect", aggregator="median",
+    )
+    hex_mean, _ = _sample_cell(
+        img, cx_px=20, cy_px=20, w_px=40, h_px=40,
+        cell_shape="rect", aggregator="mean",
+    )
+    # In a region with mixed values, median != mean (in general).
+    assert hex_median == "#c8c8c8"  # 200 dominates the inner 60%
+    # Mean might equal it here too if region is uniform; the key thing
+    # is both calls succeed and return valid hex strings.
+    assert hex_mean.startswith("#") and len(hex_mean) == 7

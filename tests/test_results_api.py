@@ -285,3 +285,246 @@ def test_reingest_returns_404_for_unknown_rid(fresh_db, monkeypatch, tmp_path):
     c = TestClient(create_app())
     r = c.post("/api/results/9999/reingest")
     assert r.status_code == 404
+
+
+def test_swatch_preview_with_alternate_aggregator(fresh_db, monkeypatch, tmp_path):
+    """The preview endpoint re-runs aggregation with a different method
+    and returns the result without writing to DB. The original
+    swatches_json on the row stays unchanged."""
+    import numpy as np
+    from fastapi.testclient import TestClient
+    from xcs_gen_web.app import create_app
+    from xcs_gen_web.services import capture as cap
+
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    upload = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    rid = upload.json()["id"]
+    original_swatches = upload.json()["swatches"]
+
+    # Mock decode + warp + detect for the preview path: aggregate_warped
+    # is what the endpoint calls, so we monkeypatch THAT to return a
+    # known list.
+    from xcs_gen_web.services import capture
+    monkeypatch.setattr(capture, "decode_image_bytes",
+                        lambda _: np.zeros((50, 50, 3), dtype=np.uint8))
+    monkeypatch.setattr(capture, "detect_fiducials",
+                        lambda _: (1, 0, {0: (0.0, 0.0), 4: (0.0, 10.0),
+                                          5: (10.0, 10.0), 6: (10.0, 0.0),
+                                          1: (30.0, 0.0), 2: (0.0, 30.0),
+                                          3: (30.0, 30.0)}))
+    monkeypatch.setattr(capture, "warp_to_burn_space",
+                        lambda *a, **kw: np.full((100, 100, 3), 200, dtype=np.uint8))
+
+    r = c.get(f"/api/results/{rid}/swatches/preview?aggregator=mean")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["aggregator"] == "mean"
+    assert isinstance(body["swatches"], list)
+
+    # Confirm the row was NOT modified.
+    list_after = c.get(f"/api/tests/{tid}/results").json()
+    refreshed = next(x for x in list_after if x["id"] == rid)
+    assert refreshed["swatches"] == original_swatches
+
+
+def test_swatch_preview_unknown_aggregator_returns_400(fresh_db, monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from xcs_gen_web.app import create_app
+    from xcs_gen_web.services import capture as cap
+
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    upload = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    rid = upload.json()["id"]
+    r = c.get(f"/api/results/{rid}/swatches/preview?aggregator=not_real")
+    assert r.status_code == 400
+    assert "unknown aggregator" in r.json()["detail"].lower()
+
+
+def test_swatch_preview_missing_aggregator_returns_422(fresh_db, monkeypatch, tmp_path):
+    """The aggregator query param is required; absence is a 422 from FastAPI."""
+    from fastapi.testclient import TestClient
+    from xcs_gen_web.app import create_app
+    from xcs_gen_web.services import capture as cap
+
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    upload = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    rid = upload.json()["id"]
+    r = c.get(f"/api/results/{rid}/swatches/preview")
+    assert r.status_code == 422
+
+
+def _fake_capture_large(*, image_bytes, test_id, spec):
+    """Like _fake_capture but returns a 200x200 warped image so inspect_cell
+    has enough pixels to crop a valid cell region."""
+    return cap.CaptureResult(
+        swatches=[
+            {"row": 0, "col": 0, "x_value": 500, "y_value": None,
+             "hex": "#ff0000", "lab": [0, 0, 0], "sigma": 1.0},
+            {"row": 0, "col": 1, "x_value": 1000, "y_value": None,
+             "hex": "#00ff00", "lab": [0, 0, 0], "sigma": 1.2},
+        ],
+        warped_image_bgr=np.full((200, 200, 3), 100, dtype=np.uint8),
+    )
+
+
+def test_inspect_cell_returns_image_and_aggregator_results(fresh_db, monkeypatch, tmp_path):
+    """Inspect endpoint returns the cell crop as base64 PNG and runs all
+    5 aggregators on the cell, returning their hex outputs."""
+    from fastapi.testclient import TestClient
+    from xcs_gen_web.app import create_app
+    from xcs_gen_web.services import capture as cap
+
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture_large)
+
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    upload = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    rid = upload.json()["id"]
+
+    r = c.get(f"/api/results/{rid}/inspect/0/0")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["row"] == 0 and body["col"] == 0
+    assert "cell_image_b64" in body and len(body["cell_image_b64"]) > 0
+    assert "sampling_region" in body
+    assert set(body["aggregator_results"].keys()) == {
+        "median", "mean", "saturation_median", "trimmed_mean", "kmeans_dominant",
+    }
+    for hex_value in body["aggregator_results"].values():
+        assert hex_value.startswith("#") and len(hex_value) == 7
+
+
+def test_inspect_cell_out_of_bounds_returns_400(fresh_db, monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from xcs_gen_web.app import create_app
+    from xcs_gen_web.services import capture as cap
+
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture_large)
+
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    upload = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    rid = upload.json()["id"]
+    # SPEC has x_steps=3, y_steps=None, rows=1 → grid is 1×3. Col 99 is OOB.
+    r = c.get(f"/api/results/{rid}/inspect/0/99")
+    assert r.status_code == 400
+    assert "out of bounds" in r.json()["detail"].lower()
+
+
+def test_inspect_cell_wrapped_1d_accepts_non_row_zero(fresh_db, monkeypatch, tmp_path):
+    """Wrapped 1D tests have y_param=None but multiple physical rows.
+    The bounds check used to fail on any non-row-0 click because it
+    used y_steps=1 as the row limit. Real bound is rows_total."""
+    from fastapi.testclient import TestClient
+    from xcs_gen_web.app import create_app
+    from xcs_gen_web.services import capture as cap
+
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture_large)
+
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    wrapped_spec = {
+        **SPEC,
+        "x_steps": 12,
+        "rows": 4,
+        "width_mm": 18,
+        "height_mm": 6,
+        "y_param": None,
+    }
+    tid = t_repo.create(name="W", material_id=mid, spec=wrapped_spec)["id"]
+    upload = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    rid = upload.json()["id"]
+    # row 1 (second physical row) MUST be accepted — there are 4 rows.
+    r = c.get(f"/api/results/{rid}/inspect/1/0")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["row"] == 1
+    # And row 4 (>= rows_total) MUST be rejected.
+    r = c.get(f"/api/results/{rid}/inspect/4/0")
+    assert r.status_code == 400
+    assert "out of bounds" in r.json()["detail"].lower()
+    # And col >= per_row (12/4=3) MUST be rejected.
+    r = c.get(f"/api/results/{rid}/inspect/0/3")
+    assert r.status_code == 400
+
+
+def test_inspect_cell_wrapped_1d_uses_per_row_cell_width(fresh_db, monkeypatch, tmp_path):
+    """Wrapped-1D tests (rows>1, y_param=None) divide x_steps across
+    `per_row` cells per physical row. inspect_cell must compute
+    cell_w_mm = grid_w / per_row, NOT grid_w / x_steps — otherwise the
+    cropped region is too narrow and the sample box collapses to a few
+    pixels."""
+    import numpy as np
+    from fastapi.testclient import TestClient
+    from xcs_gen_web.app import create_app
+    from xcs_gen_web.services import capture as cap
+
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture_large)
+
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    # 12-step sweep wrapped onto 4 rows × 3 cells per row, each 6mm wide.
+    # If the bug returns, cell_w_mm would compute as grid_w/12 = 1.5mm,
+    # and the sample box would be only a few pixels wide.
+    wrapped_spec = {
+        **SPEC,
+        "x_steps": 12,
+        "rows": 4,
+        "width_mm": 18,
+        "height_mm": 6,
+        "y_param": None,
+    }
+    tid = t_repo.create(name="W", material_id=mid, spec=wrapped_spec)["id"]
+    upload = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    rid = upload.json()["id"]
+    r = c.get(f"/api/results/{rid}/inspect/0/0")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    region = body["sampling_region"]
+    # Per-row cell width = 18mm / 3 = 6mm = 60 px @ px_per_mm=10.
+    # Sample box half-width = 60 * 0.3 / 2 = 9 px → full sample box >= 12 px.
+    # If the bug returns, half_w_px would be ~2 px (cell_w_mm collapsed).
+    assert region["half_w_px"] >= 5.0, (
+        f"sample box too narrow ({region['half_w_px']}); "
+        f"wrapped-1D cell width should use per_row, not x_steps"
+    )

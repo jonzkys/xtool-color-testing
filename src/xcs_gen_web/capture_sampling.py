@@ -12,7 +12,12 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-_CENTRAL_REGION_FRACTION = 0.6
+# Sample window — central N% of the cell pitch each side. 30% keeps the
+# window strictly inside the burned area even when the burn doesn't fill
+# the full cell (low-power corners, small dot tests). Bumped down from
+# 0.6 because at the larger window edge pixels were leaking substrate
+# colour into the captured swatches.
+_CENTRAL_REGION_FRACTION = 0.3
 
 # Parameters whose values are integer-valued laser settings. Any other swept
 # param (currently only "power") is rounded to 1 decimal place instead — the
@@ -51,52 +56,70 @@ def _bgr_to_lab(bgr_pixels: np.ndarray) -> np.ndarray:
     return lab
 
 
-def _sample_rect(
+def _sample_cell(
     img: np.ndarray,
     cx_px: float, cy_px: float,
     w_px: float, h_px: float,
+    *,
+    cell_shape: str,
+    aggregator: str,
 ) -> tuple[str, float]:
-    """Sample the central 60% of a rect; return (hex, sigma_lab).
+    """Sample a region of pixels around (cx_px, cy_px) using the mask
+    appropriate for ``cell_shape`` and the requested ``aggregator``.
 
-    The hex is the median of the most-saturated half of pixels in the sample
-    region (HSV S channel). This biases the result toward vivid "peak" bands
-    within a cell — e.g. a MOPA gradient strip where the characteristic
-    colour sits in a thin horizontal band and the rest of the cell is muted
-    background. A plain median would wash that peak out; filtering to the
-    top-50% saturated pixels keeps it.
+    Returns ``(hex, sigma_lab)``.
 
-    Sigma is still computed across ALL pixels in the region (Lab stdev) so
-    it remains a useful "how uniform is this cell" warning signal.
+    Mask:
+      * ``cell_shape == "circle"``: inscribed circle of diameter
+        ``min(w_px, h_px) * 0.5``. Corners of the bounding box are
+        excluded.
+      * Any other ``cell_shape``: 60% rectangle (legacy behaviour).
+
+    Sigma is always computed over ALL pixels in the bounding rect, not
+    just the masked region — keeps the "how uniform is this cell"
+    signal comparable across shapes.
     """
+    from xcs_gen.sampling_aggregators import aggregate
+
+    # Bounding-rect halves for sigma + circle-mask coordinates.
     half_w = w_px * _CENTRAL_REGION_FRACTION / 2
     half_h = h_px * _CENTRAL_REGION_FRACTION / 2
-    x0 = max(0, int(round(cx_px - half_w)))
-    y0 = max(0, int(round(cy_px - half_h)))
-    x1 = min(img.shape[1], int(round(cx_px + half_w)))
-    y1 = min(img.shape[0], int(round(cy_px + half_h)))
-    region = img[y0:y1, x0:x1]
-    if region.size == 0:
+    rx0 = max(0, int(round(cx_px - half_w)))
+    ry0 = max(0, int(round(cy_px - half_h)))
+    rx1 = min(img.shape[1], int(round(cx_px + half_w)))
+    ry1 = min(img.shape[0], int(round(cy_px + half_h)))
+    bbox = img[ry0:ry1, rx0:rx1]
+    if bbox.size == 0:
         return "#000000", 0.0
+    bbox_pixels = bbox.reshape(-1, 3)
 
-    pixels = region.reshape(-1, 3)
-
-    # Saturation-biased median: drop the bottom half (least-saturated)
-    # pixels, then median-aggregate only the vivid remainder.
-    hsv = cv2.cvtColor(pixels.reshape(-1, 1, 3).astype(np.uint8), cv2.COLOR_BGR2HSV)
-    sats = hsv.reshape(-1, 3)[:, 1]
-    if sats.size >= 4:
-        threshold = float(np.median(sats))
-        mask = sats >= threshold
-        vivid = pixels[mask] if mask.any() else pixels
+    if cell_shape == "circle":
+        # Build an inscribed-circle mask (50% of cell width).
+        radius_px = min(w_px, h_px) * 0.5 / 2
+        sx0 = max(0, int(round(cx_px - radius_px)))
+        sy0 = max(0, int(round(cy_px - radius_px)))
+        sx1 = min(img.shape[1], int(round(cx_px + radius_px)))
+        sy1 = min(img.shape[0], int(round(cy_px + radius_px)))
+        sample_box = img[sy0:sy1, sx0:sx1]
+        if sample_box.size == 0:
+            return "#000000", 0.0
+        h_, w_ = sample_box.shape[:2]
+        yy, xx = np.ogrid[:h_, :w_]
+        cy_local = (cy_px - sy0)
+        cx_local = (cx_px - sx0)
+        inside = (xx - cx_local) ** 2 + (yy - cy_local) ** 2 <= radius_px ** 2
+        masked = sample_box[inside]
+        if masked.size == 0:
+            return "#000000", 0.0
+        b, g, r = aggregate(aggregator, masked)
     else:
-        vivid = pixels
+        # rect (or any non-circle today) — 60% bounding rect, no mask.
+        b, g, r = aggregate(aggregator, bbox_pixels)
 
-    median_bgr = np.median(vivid, axis=0).astype(np.uint8)
-    b, g, r = int(median_bgr[0]), int(median_bgr[1]), int(median_bgr[2])
     hex_ = f"#{r:02x}{g:02x}{b:02x}"
 
-    # Sigma is full-cell Lab stdev — unchanged semantics.
-    lab = _bgr_to_lab(pixels)
+    # Sigma over the full bounding rect — unchanged semantics.
+    lab = _bgr_to_lab(bbox_pixels)
     sigma = float(np.sqrt(np.sum(np.var(lab, axis=0))))
     return hex_, sigma
 
@@ -119,6 +142,8 @@ def sample_grid(
     y_min: float = 0.0, y_max: float = 0.0, y_steps: int = 1,
     rows: int = 1,
     row_stride_mm: float | None = None,
+    cell_shape: str = "rect",
+    aggregator: str = "saturation_median",
 ) -> list[Swatch]:
     """Sample every cell of a rectangular grid test.
 
@@ -155,7 +180,10 @@ def sample_grid(
             c = i % per_row
             cx_px = (ox + (c + 0.5) * cell_w_mm) * px_per_mm
             cy_px = (oy + r * stride_mm + row_h_mm / 2) * px_per_mm
-            hex_, sigma = _sample_rect(warped, cx_px, cy_px, cell_w_px, cell_h_px)
+            hex_, sigma = _sample_cell(
+                warped, cx_px, cy_px, cell_w_px, cell_h_px,
+                cell_shape=cell_shape, aggregator=aggregator,
+            )
             swatches.append(Swatch(
                 row=r, col=c,
                 x_value=x_values[i],
@@ -183,7 +211,10 @@ def sample_grid(
         for xi in range(x_steps):
             cx_px = (ox + (xi + 0.5) * cell_w_mm) * px_per_mm
             cy_px = (oy + (yi + 0.5) * cell_h_mm) * px_per_mm
-            hex_, sigma = _sample_rect(warped, cx_px, cy_px, cell_w_px, cell_h_px)
+            hex_, sigma = _sample_cell(
+                warped, cx_px, cy_px, cell_w_px, cell_h_px,
+                cell_shape=cell_shape, aggregator=aggregator,
+            )
             swatches.append(Swatch(
                 row=yi, col=xi,
                 x_value=x_values[xi],
@@ -215,7 +246,10 @@ def sample_gradient(
     swatches: list[Swatch] = []
     for i in range(n_samples):
         cx_px = (ox + (i + 0.5) * cell_w_mm) * px_per_mm
-        hex_, sigma = _sample_rect(warped, cx_px, cy_px, cell_w_px, cell_h_px)
+        hex_, sigma = _sample_cell(
+            warped, cx_px, cy_px, cell_w_px, cell_h_px,
+            cell_shape="rect", aggregator="saturation_median",
+        )
         swatches.append(Swatch(
             row=0, col=i,
             x_value=x_values[i],

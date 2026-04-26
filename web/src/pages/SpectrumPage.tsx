@@ -16,7 +16,28 @@ import {
 import { listTests } from "../api/tests";
 import { getCurrentMachineId } from "../state/machine";
 import { getAveragedSwatches } from "../api/results";
-import type { AveragedSwatch, TestRecord } from "../types";
+import type { AveragedSwatch, SampleAggregator, TestRecord } from "../types";
+
+/** Human-readable summary of the test's sampling shape + aggregator,
+ *  e.g. "median · 50% inscribed circle". Mirrors the caption used in
+ *  the result-detail dialog and the test editor so users see one
+ *  consistent vocabulary across the app. */
+function samplingDescription(
+  cell_shape: string,
+  aggregator: SampleAggregator | undefined,
+): string {
+  const labels: Record<SampleAggregator, string> = {
+    median: "median",
+    mean: "mean",
+    saturation_median: "saturation-biased median",
+    trimmed_mean: "trimmed mean (10%)",
+    kmeans_dominant: "K-means dominant cluster",
+  };
+  const region =
+    cell_shape === "circle" ? "50% inscribed circle" : "central rect";
+  const agg = aggregator ?? "saturation_median";
+  return `${labels[agg]} · ${region}`;
+}
 import {
   computeCellSpread,
   computeGridStability,
@@ -279,6 +300,23 @@ export function SpectrumPage() {
               ))}
             </Select>
           </Field>
+          {selected && (
+            <p className="mt-1.5 font-mono text-[10px] tracking-[0.06em] text-[color:var(--color-ink-subtle)]">
+              Sampling ·{" "}
+              <span className="text-[color:var(--color-ink-muted)]">
+                {samplingDescription(
+                  selected.spec.cell_shape,
+                  selected.spec.sample_aggregator,
+                )}
+              </span>
+              <span
+                className="ml-1 text-[color:var(--color-ink-subtle)]"
+                title="The averaged spectrum reflects each result's stored swatches. If you change the aggregator, reingest the affected results to refresh the average."
+              >
+                ⓘ
+              </span>
+            </p>
+          )}
         </div>
       </header>
 

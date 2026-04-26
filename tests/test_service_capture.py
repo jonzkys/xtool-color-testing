@@ -165,3 +165,94 @@ def test_run_capture_missing_markers_empty_when_all_detected(monkeypatch):
 
     result = cap.run_capture(image_bytes=b"fake", test_id=42, spec=spec)
     assert result.missing_markers == []
+
+
+def test_run_capture_uses_spec_sample_aggregator(monkeypatch):
+    """When the test spec sets sample_aggregator, run_capture should pass
+    it through to sample_grid so the captured swatches reflect that
+    method. We verify by checking that swatches differ when the
+    aggregator is changed."""
+    import numpy as np
+    from xcs_gen_web.services import capture as cap
+    from xcs_gen.capture.layout import (
+        QR_SIZE_DEFAULT_MM, ARUCO_SIZE_DEFAULT_MM, MARKER_MARGIN_MM,
+    )
+
+    # Build a warped image large enough to contain the burn space for the
+    # spec below. Default layout: grid origin at ~(8mm, 8mm); with a
+    # 10×10 mm grid and default markers the burn space is ~21.5×21.5 mm.
+    # At 10 px/mm that is 215×215 px. Cell centres land at y≈105 and y≈155.
+    # A dark→bright stripe boundary at y=100 puts the top row of cells in a
+    # 1/3 dark + 2/3 bright mix — median snaps to 220, mean averages to ~163.
+    SIZE_PX = 215
+    warped = np.full((SIZE_PX, SIZE_PX, 3), 50, dtype=np.uint8)
+    warped[100:, :] = 220   # bright stripe starts at y=100
+
+    fake_corners = {
+        0: (0.0, 0.0), 4: (0.0, 10.0), 5: (10.0, 10.0), 6: (10.0, 0.0),
+        1: (30.0, 0.0), 2: (0.0, 30.0), 3: (30.0, 30.0),
+    }
+    monkeypatch.setattr(cap, "decode_image_bytes",
+                        lambda _: np.zeros((50, 50, 3), dtype=np.uint8))
+    monkeypatch.setattr(cap, "detect_fiducials",
+                        lambda _: (1, 0, fake_corners))
+    monkeypatch.setattr(cap, "warp_to_burn_space",
+                        lambda *a, **kw: warped)
+
+    spec_base = {
+        "x_param": "frequency", "x_min": 50.0, "x_max": 100.0, "x_steps": 2,
+        "y_param": "pulse_width", "y_min": 2.0, "y_max": 10.0, "y_steps": 2,
+        "rows": 1, "width_mm": 10.0, "height_mm": 10.0,
+        "cell_shape": "rect",
+        "registration": {"mode": "on", "qr_size_mm": None, "aruco_size_mm": None},
+    }
+    median_result = cap.run_capture(
+        image_bytes=b"fake", test_id=1,
+        spec={**spec_base, "sample_aggregator": "median"},
+    )
+    mean_result = cap.run_capture(
+        image_bytes=b"fake", test_id=1,
+        spec={**spec_base, "sample_aggregator": "mean"},
+    )
+
+    # In the bright/dark cells, mean will pull toward the average; median
+    # will snap to one side. The hex strings should differ.
+    median_hexes = sorted(s["hex"] for s in median_result.swatches)
+    mean_hexes = sorted(s["hex"] for s in mean_result.swatches)
+    assert median_hexes != mean_hexes, (
+        f"aggregator should change captured colours; "
+        f"median={median_hexes} vs mean={mean_hexes}"
+    )
+
+
+def test_run_capture_default_aggregator_is_saturation_median(monkeypatch):
+    """When sample_aggregator is absent from the spec, run_capture should
+    behave exactly like before (saturation_median) — back-compat for
+    existing tests."""
+    import numpy as np
+    from xcs_gen_web.services import capture as cap
+
+    # Large enough to cover the default burn-space layout (~21.5 mm × 21.5 mm
+    # at 10 px/mm = 215×215 px), so at least one cell lands inside the image.
+    warped = np.full((215, 215, 3), 100, dtype=np.uint8)
+    fake_corners = {
+        0: (0.0, 0.0), 4: (0.0, 10.0), 5: (10.0, 10.0), 6: (10.0, 0.0),
+        1: (30.0, 0.0), 2: (0.0, 30.0), 3: (30.0, 30.0),
+    }
+    monkeypatch.setattr(cap, "decode_image_bytes",
+                        lambda _: np.zeros((50, 50, 3), dtype=np.uint8))
+    monkeypatch.setattr(cap, "detect_fiducials",
+                        lambda _: (1, 0, fake_corners))
+    monkeypatch.setattr(cap, "warp_to_burn_space",
+                        lambda *a, **kw: warped)
+
+    spec = {
+        "x_param": "frequency", "x_min": 50.0, "x_max": 100.0, "x_steps": 1,
+        "y_param": None,
+        "rows": 1, "width_mm": 10.0, "height_mm": 10.0,
+        "cell_shape": "rect",
+        "registration": {"mode": "on", "qr_size_mm": None, "aruco_size_mm": None},
+    }
+    # Should not raise — the missing field defaults to saturation_median.
+    result = cap.run_capture(image_bytes=b"fake", test_id=1, spec=spec)
+    assert len(result.swatches) >= 1

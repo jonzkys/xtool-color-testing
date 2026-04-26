@@ -137,6 +137,13 @@ export interface DetectedLayer {
 
 // ── Server-authoritative types (Tasks 23+) ────────────────────────────────────
 
+export type SampleAggregator =
+  | "median"
+  | "mean"
+  | "saturation_median"
+  | "trimmed_mean"
+  | "kmeans_dominant";
+
 export interface TestSpec {
   x_param: ParamName;
   x_min: number; x_max: number; x_steps: number;
@@ -145,6 +152,10 @@ export interface TestSpec {
   rows: number;
   width_mm: number; height_mm: number; gap_mm: number;
   cell_shape: "rect" | "circle";
+  /** Aggregator name from xcs_gen.sampling_aggregators.LEGAL_AGGREGATORS.
+   * When undefined, the backend treats it as "saturation_median" for
+   * back-compat with tests created before this field existed. */
+  sample_aggregator?: SampleAggregator;
   square_cells: boolean;
   angle_mode: "fixed" | "crosshatch" | "incremental";
   unidirectional: boolean;
@@ -268,4 +279,32 @@ export type ValidationProfile = Record<string, FieldConstraint>;
 export interface MachinesPayload {
   machines: Machine[];
   profiles: Record<ProfileId, ValidationProfile>;
+}
+
+export interface SwatchPreviewResponse {
+  aggregator: SampleAggregator;
+  swatches: ResultSwatch[];
+}
+
+export interface InspectSamplingRegion {
+  shape: "circle" | "rect";
+  radius_px?: number;
+  half_w_px?: number;
+  half_h_px?: number;
+  center_px: [number, number];
+  /** Human-readable label of the sampling fraction (e.g. "30%" for the
+   *  rect mask, "50% Ø" for the inscribed circle). Travels with the
+   *  data so the UI annotation can't drift from the backend constant. */
+  fraction_label: string;
+}
+
+export interface InspectCellResponse {
+  row: number;
+  col: number;
+  x_value: number;
+  y_value: number | null;
+  sigma: number;
+  cell_image_b64: string;
+  sampling_region: InspectSamplingRegion;
+  aggregator_results: Record<SampleAggregator, string>;
 }

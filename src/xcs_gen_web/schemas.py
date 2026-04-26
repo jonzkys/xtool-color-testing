@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -474,6 +474,10 @@ class TestSpec(BaseModel):
     height_mm: float
     gap_mm: float = 0.5
     cell_shape: str = "rect"              # "rect" | "circle"
+    # Aggregator name from xcs_gen.sampling_aggregators.LEGAL_AGGREGATORS.
+    # When None or absent, capture uses "saturation_median" for back-compat
+    # with tests created before this field existed.
+    sample_aggregator: str | None = None
     square_cells: bool = False
     angle_mode: str = "fixed"             # "fixed" | "crosshatch" | "incremental"
     unidirectional: bool = False
@@ -560,6 +564,22 @@ class ResultResponse(BaseModel):
 class ResultPatch(BaseModel):
     excluded: bool | None = None
     notes: str | None = None
+
+
+class SwatchPreviewResponse(BaseModel):
+    aggregator: str
+    swatches: list[ResultSwatch]
+
+
+class InspectCellResponse(BaseModel):
+    row: int
+    col: int
+    x_value: float
+    y_value: float | None
+    sigma: float
+    cell_image_b64: str
+    sampling_region: dict[str, Any]
+    aggregator_results: dict[str, str]
 
 
 class AveragedSwatch(BaseModel):

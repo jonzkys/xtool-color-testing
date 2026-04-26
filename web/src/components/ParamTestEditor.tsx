@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { Machine, ModeId, ParamName, RegistrationMode, TestSpec, ValidationProfile } from "../types";
+import type { Machine, ModeId, ParamName, RegistrationMode, SampleAggregator, TestSpec, ValidationProfile } from "../types";
 import { PARAM_NAMES } from "../types";
 import { squareCellHeight } from "../specUtils";
 import { Field, NumberField, Section, Select } from "../ui";
@@ -11,6 +11,26 @@ import {
 } from "../laser/pulseWidths";
 import { DynamicParamForm } from "./dynamic-form/DynamicParamForm";
 import { useCurrentMachine, getValidationProfile } from "../state/machine";
+
+function defaultAggregatorFor(cell_shape: string): SampleAggregator {
+  return cell_shape === "circle" ? "median" : "saturation_median";
+}
+
+const AGGREGATOR_LABELS: Record<SampleAggregator, string> = {
+  median: "median",
+  mean: "mean",
+  saturation_median: "saturation-biased median",
+  trimmed_mean: "trimmed mean (10%)",
+  kmeans_dominant: "K-Means dominant cluster",
+};
+
+function samplingDescription(cell_shape: string, aggregator?: SampleAggregator): string {
+  const region = cell_shape === "circle"
+    ? "50% inscribed circle"
+    : "60% central rectangle";
+  const agg = aggregator ?? defaultAggregatorFor(cell_shape);
+  return `${region}, ${AGGREGATOR_LABELS[agg]}`;
+}
 
 interface Props {
   spec: TestSpec;
@@ -250,6 +270,24 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [] }: Props) 
             palette sampler may pick up that background.
           </div>
         )}
+        <Field label="Aggregator">
+          <Select
+            value={t.sample_aggregator ?? defaultAggregatorFor(t.cell_shape)}
+            disabled={locked}
+            onChange={(e) =>
+              updateSpec({ sample_aggregator: e.target.value as SampleAggregator })
+            }
+          >
+            <option value="median">Median</option>
+            <option value="mean">Mean</option>
+            <option value="saturation_median">Saturation-biased median</option>
+            <option value="trimmed_mean">Trimmed mean (10%)</option>
+            <option value="kmeans_dominant">K-Means dominant cluster</option>
+          </Select>
+          <p className="mt-1 text-[11px] text-[color:var(--color-ink-subtle)]">
+            Sampling: {samplingDescription(t.cell_shape, t.sample_aggregator)}
+          </p>
+        </Field>
         <label className="flex items-start gap-2 text-[12.5px] text-[color:var(--color-ink-muted)]">
           <input
             type="checkbox"
