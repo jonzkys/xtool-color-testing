@@ -107,3 +107,61 @@ def test_run_capture_wrapped_1d_samples_each_row(monkeypatch):
                 f"row {r} sampled {hex_}, expected {expected_hex} — "
                 "sampler likely hit the wrong physical row"
             )
+
+
+def test_run_capture_populates_missing_markers(monkeypatch):
+    """When detect_fiducials returns ArUcos {2, 3} but not 1, the
+    CaptureResult.missing_markers should list [1]. This is the signal
+    the UI uses to warn that colours near the TR corner may be
+    inaccurate."""
+    import numpy as np
+    from xcs_gen_web.services import capture as cap
+
+    fake_img = np.zeros((50, 50, 3), dtype=np.uint8)
+    warped = np.zeros((100, 100, 3), dtype=np.uint8)
+
+    # corners_px keyed only by QR (0,4,5,6) + ArUcos {2, 3} — ID 1 is missing.
+    corners = {
+        0: (0.0, 0.0), 4: (0.0, 10.0), 5: (10.0, 10.0), 6: (10.0, 0.0),
+        2: (0.0, 30.0), 3: (30.0, 30.0),
+    }
+    monkeypatch.setattr(cap, "decode_image_bytes", lambda _: fake_img)
+    monkeypatch.setattr(cap, "detect_fiducials", lambda _: (42, 0, corners))
+    monkeypatch.setattr(cap, "warp_to_burn_space", lambda *a, **kw: warped)
+
+    spec = {
+        "x_param": "frequency", "x_min": 50.0, "x_max": 200.0, "x_steps": 9,
+        "y_param": "pulse_width", "y_min": 2.0, "y_max": 60.0, "y_steps": 9,
+        "rows": 1, "width_mm": 23.0, "height_mm": 23.0,
+        "registration": {"mode": "on", "qr_size_mm": None, "aruco_size_mm": None},
+    }
+
+    result = cap.run_capture(image_bytes=b"fake", test_id=42, spec=spec)
+    assert result.missing_markers == [1]
+
+
+def test_run_capture_missing_markers_empty_when_all_detected(monkeypatch):
+    """When detect_fiducials returns all three ArUco IDs, missing_markers
+    must be the empty list — no false positives from the set arithmetic."""
+    import numpy as np
+    from xcs_gen_web.services import capture as cap
+
+    fake_img = np.zeros((50, 50, 3), dtype=np.uint8)
+    warped = np.zeros((100, 100, 3), dtype=np.uint8)
+    corners = {
+        0: (0.0, 0.0), 4: (0.0, 10.0), 5: (10.0, 10.0), 6: (10.0, 0.0),
+        1: (30.0, 0.0), 2: (0.0, 30.0), 3: (30.0, 30.0),
+    }
+    monkeypatch.setattr(cap, "decode_image_bytes", lambda _: fake_img)
+    monkeypatch.setattr(cap, "detect_fiducials", lambda _: (42, 0, corners))
+    monkeypatch.setattr(cap, "warp_to_burn_space", lambda *a, **kw: warped)
+
+    spec = {
+        "x_param": "frequency", "x_min": 50.0, "x_max": 200.0, "x_steps": 9,
+        "y_param": "pulse_width", "y_min": 2.0, "y_max": 60.0, "y_steps": 9,
+        "rows": 1, "width_mm": 23.0, "height_mm": 23.0,
+        "registration": {"mode": "on", "qr_size_mm": None, "aruco_size_mm": None},
+    }
+
+    result = cap.run_capture(image_bytes=b"fake", test_id=42, spec=spec)
+    assert result.missing_markers == []

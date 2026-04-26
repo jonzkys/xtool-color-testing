@@ -87,3 +87,74 @@ def test_averaged_swatches_ignores_excluded(fresh_db):
     avg = repo.averaged_swatches(tid)
     assert avg[0]["hex"].lower() == "#ff0000"
     assert avg[0]["sample_count"] == 1
+
+
+def test_create_persists_missing_markers(fresh_db):
+    """create() should serialise missing_markers into missing_markers_json
+    and round-trip through get()."""
+    tid = _setup(fresh_db)
+    r = repo.create(
+        test_id=tid, image_path="/tmp/x.png", image_sha256="abc",
+        swatches=[_swatch(500, "#ff0000")],
+        missing_markers=[1, 3],
+    )
+    assert r["missing_markers"] == [1, 3]
+    fetched = repo.get(r["id"])
+    assert fetched["missing_markers"] == [1, 3]
+
+
+def test_create_default_missing_markers_is_empty(fresh_db):
+    """When missing_markers is not passed, the row should round-trip as []."""
+    tid = _setup(fresh_db)
+    r = repo.create(
+        test_id=tid, image_path="/tmp/x.png", image_sha256="abc",
+        swatches=[_swatch(500, "#ff0000")],
+    )
+    assert r["missing_markers"] == []
+
+
+def test_replace_capture_overwrites_swatches_and_missing_markers(fresh_db):
+    """replace_capture should atomically swap both fields and leave the
+    rest of the row (image_path, sha, owner) untouched."""
+    tid = _setup(fresh_db)
+    r = repo.create(
+        test_id=tid, image_path="/tmp/x.png", image_sha256="abc",
+        swatches=[_swatch(500, "#ff0000")],
+        missing_markers=[1],
+    )
+    new_swatches = [_swatch(600, "#00ff00", sigma=0.5)]
+    refreshed = repo.replace_capture(
+        r["id"], swatches=new_swatches, missing_markers=[],
+    )
+    assert refreshed is not None
+    assert refreshed["swatches"] == new_swatches
+    assert refreshed["missing_markers"] == []
+    assert refreshed["image_path"] == "/tmp/x.png"  # untouched
+    assert refreshed["image_sha256"] == "abc"        # untouched
+
+
+def test_replace_capture_wrong_owner_returns_none(fresh_db):
+    """replace_capture must owner-scope its UPDATE — a wrong-owner call
+    returns None and leaves the original row untouched. This pins the
+    most security-sensitive line in the function."""
+    tid = _setup(fresh_db)
+    r = repo.create(
+        test_id=tid, image_path="/tmp/x.png", image_sha256="abc",
+        swatches=[_swatch(500, "#ff0000")],
+        owner_id=1,  # explicit
+        missing_markers=[1],
+    )
+
+    refreshed = repo.replace_capture(
+        r["id"],
+        swatches=[_swatch(999, "#000000")],
+        missing_markers=[2, 3],
+        owner_id=2,  # different owner
+    )
+    assert refreshed is None
+
+    # Original row must be untouched.
+    original = repo.get(r["id"], owner_id=1)
+    assert original is not None
+    assert original["missing_markers"] == [1]
+    assert original["swatches"][0]["x_value"] == 500

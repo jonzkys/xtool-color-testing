@@ -102,3 +102,20 @@ def test_warp_raises_with_fewer_than_four_anchors():
             burn_size_mm=(40.0, 20.0),
             px_per_mm=10.0,
         )
+
+
+def test_preprocessing_variants_returns_four_variants():
+    """We need four detection variants — raw gray, Otsu(blurred), CLAHE,
+    adaptive-threshold mean-C — so the QR/ArUco loops have multiple
+    chances to recover photos with uneven lighting or glare. A
+    regression to fewer variants degrades detection on phone photos
+    of round discs."""
+    import numpy as np
+    from xcs_gen_web.capture_pipeline import _preprocessing_variants
+
+    gray = np.full((200, 200), 128, dtype=np.uint8)
+    variants = _preprocessing_variants(gray)
+    assert len(variants) == 4, f"expected 4 variants, got {len(variants)}"
+    for v in variants:
+        assert v.shape == gray.shape
+        assert v.dtype == np.uint8

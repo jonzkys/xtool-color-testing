@@ -158,6 +158,12 @@ results = Table(
     # uniqueness constraint because the same retest can legitimately
     # appear multiple times (two photos of the same run, say).
     Column("retest_index", Integer, nullable=False, server_default="0"),
+    Column(
+        "missing_markers_json",
+        Text,
+        nullable=False,
+        server_default="[]",
+    ),
     CheckConstraint(_VISIBILITY_CHECK, name="results_visibility_chk"),
     CheckConstraint(_VIA_CHECK, name="results_via_chk"),
     Index("ix_results_test_id", "test_id"),

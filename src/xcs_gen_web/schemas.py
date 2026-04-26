@@ -551,6 +551,9 @@ class ResultResponse(BaseModel):
     # Copied from the QR at ingest. 0 for burns from pre-retest-era
     # XCS files (the implicit "first burn").
     retest_index: int = 0
+    # ArUco IDs (subset of {1, 2, 3}) that detection did not find.
+    # Empty when the homography was fully constrained.
+    missing_markers: list[int] = []
 
 
 class ResultPatch(BaseModel):

@@ -38,6 +38,7 @@ def _row(r) -> dict[str, Any]:
         "via": r.via,
         # Pre-0006 rows lack the column — keep older test DBs loading.
         "retest_index": int(getattr(r, "retest_index", 0) or 0),
+        "missing_markers": json.loads(getattr(r, "missing_markers_json", None) or "[]"),
     }
 
 
@@ -48,6 +49,7 @@ def create(
     visibility: str = DEFAULT_VISIBILITY,
     via: str = "desktop",
     retest_index: int = 0,
+    missing_markers: list[int] | None = None,
 ) -> dict[str, Any]:
     with session_scope() as s:
         res = s.execute(results.insert().values(
@@ -60,6 +62,9 @@ def create(
             owner_id=owner_id, visibility=visibility,
             via=via,
             retest_index=int(retest_index),
+            missing_markers_json=json.dumps(
+                list(missing_markers or []), separators=(",", ":"),
+            ),
         ))
         rid = res.inserted_primary_key[0]
     return get(rid, owner_id=owner_id)  # type: ignore[return-value]
@@ -223,3 +228,29 @@ def averaged_swatches(tid: int, *, owner_id: int = STANDALONE_USER_ID) -> list[d
             ],
         })
     return out
+
+
+def replace_capture(
+    rid: int,
+    *,
+    swatches: list[dict[str, Any]],
+    missing_markers: list[int],
+    owner_id: int = STANDALONE_USER_ID,
+) -> dict[str, Any] | None:
+    """Replace ``swatches_json`` and ``missing_markers_json`` on an
+    existing result row. Used by the reingest endpoint to write fresh
+    capture output without touching the source photo or upload metadata.
+    Returns None if the row does not exist or is not owned by ``owner_id``.
+    """
+    with session_scope() as s:
+        s.execute(
+            results.update()
+            .where(and_(results.c.id == rid, results.c.owner_id == owner_id))
+            .values(
+                swatches_json=json.dumps(swatches, separators=(",", ":")),
+                missing_markers_json=json.dumps(
+                    list(missing_markers), separators=(",", ":"),
+                ),
+            )
+        )
+    return get(rid, owner_id=owner_id)

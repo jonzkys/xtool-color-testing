@@ -205,8 +205,20 @@ class S3Storage:
         return {"path": self._uri(key), "sha256": sha256_hex(data)}
 
     def read(self, path: str) -> bytes:
+        import botocore.exceptions
+
         key = self._check_bucket(path)
-        resp = self._client.get_object(Bucket=self.bucket, Key=key)
+        try:
+            resp = self._client.get_object(Bucket=self.bucket, Key=key)
+        except botocore.exceptions.ClientError as e:
+            code = e.response.get("Error", {}).get("Code", "")
+            # Normalise S3's "missing object" signal to the same exception
+            # the filesystem backend raises, so callers (e.g. the reingest
+            # endpoint) can have a single error path that works on both
+            # storage types.
+            if code in ("NoSuchKey", "404"):
+                raise FileNotFoundError(path) from e
+            raise
         return resp["Body"].read()
 
     def delete(self, path: str) -> None:

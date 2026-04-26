@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 
 from xcs_gen.capture.layout import (
+    ARUCO_ID_BOTTOM_LEFT,
+    ARUCO_ID_BOTTOM_RIGHT,
+    ARUCO_ID_TOP_RIGHT,
     ARUCO_SIZE_DEFAULT_MM,
     MARKER_MARGIN_MM,
     QR_SIZE_DEFAULT_MM,
@@ -24,6 +27,12 @@ from ..capture_pipeline import (
 )
 from ..capture_sampling import sample_grid
 from ..palette import hex_to_lab
+
+# IDs of the three ArUco fiducials the layout places around the burn area.
+# Kept as a frozenset so missing-marker computation can be a pure set op.
+_EXPECTED_ARUCOS = frozenset(
+    {ARUCO_ID_TOP_RIGHT, ARUCO_ID_BOTTOM_LEFT, ARUCO_ID_BOTTOM_RIGHT}
+)
 
 # Generator defaults that govern wrapped-grid row placement. Kept in sync
 # with generate_gradient's defaults (row_gap=1.0, tick_length=0.5,
@@ -67,6 +76,12 @@ class CaptureResult:
     warped_image_bgr: np.ndarray
     # Retest index decoded from the QR. Pre-retest-era burns → 0.
     retest_index: int = 0
+    # ArUco IDs (subset of {1, 2, 3}) that detect_fiducials did not find
+    # in the photo. The homography is still solvable with ≥4 anchors,
+    # but a missing ArUco means that quadrant of the burn-space is
+    # extrapolated rather than constrained — sample colours near the
+    # corresponding corner are unreliable.
+    missing_markers: list[int] = field(default_factory=list)
 
 
 def run_capture(*, image_bytes: bytes, test_id: int,
@@ -80,6 +95,8 @@ def run_capture(*, image_bytes: bytes, test_id: int,
         qr_id, retest_index, corners_px = detect_fiducials(img)
     except DetectionError as e:
         raise CaptureError(str(e)) from e
+
+    missing_markers = sorted(_EXPECTED_ARUCOS - set(corners_px.keys()))
 
     if qr_id != test_id:
         raise CaptureError(
@@ -179,4 +196,5 @@ def run_capture(*, image_bytes: bytes, test_id: int,
         swatches=swatches,
         warped_image_bgr=warped,
         retest_index=retest_index,
+        missing_markers=missing_markers,
     )
