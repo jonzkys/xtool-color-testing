@@ -332,28 +332,32 @@ def inspect_cell(
 
     x_steps = spec["x_steps"]
     y_steps = spec.get("y_steps") if spec.get("y_param") is not None else 1
-    if not (0 <= row < (y_steps or 1)) or not (0 <= col < x_steps):
-        raise CaptureError(
-            f"cell ({row}, {col}) out of bounds for grid "
-            f"y_steps={y_steps} x_steps={x_steps}",
-        )
 
-    # Cell centre + dimensions in burn-space mm. The wrapped-1D path
-    # divides x_steps into `per_row` cells per physical row, so cell
-    # width is grid_w / per_row, NOT grid_w / x_steps. Mirroring the
-    # math in sample_grid keeps the inspect crop aligned with the
-    # actual sampled region.
+    # Determine the actual grid layout the swatches use, then bounds-check
+    # the requested (row, col) against IT — not against the raw x/y_steps.
+    # Wrapped 1D layouts (rows>1, y_param=None) split x_steps across
+    # `per_row` cells per physical row; the swatch grid's row index goes
+    # 0..rows_total-1 and col index 0..per_row-1. Sticking with the raw
+    # y_steps=1 here was the bug — it rejected any non-row-0 click.
     if spec.get("y_param") is None and rows_total > 1:
         per_row = math.ceil(x_steps / rows_total)
+        max_row, max_col = rows_total, per_row
         cell_w_mm = grid_w / per_row
         cell_h_mm = row_height_mm
         cx_mm = grid_origin_mm[0] + (col + 0.5) * cell_w_mm
         cy_mm = grid_origin_mm[1] + row * row_stride_mm + row_height_mm / 2
     else:
+        max_row, max_col = (y_steps or 1), x_steps
         cell_w_mm = grid_w / x_steps
         cell_h_mm = grid_h / (y_steps or 1)
         cx_mm = grid_origin_mm[0] + (col + 0.5) * cell_w_mm
         cy_mm = grid_origin_mm[1] + (row + 0.5) * cell_h_mm
+
+    if not (0 <= row < max_row) or not (0 <= col < max_col):
+        raise CaptureError(
+            f"cell ({row}, {col}) out of bounds for grid "
+            f"max_row={max_row} max_col={max_col}",
+        )
 
     cell_w_px = cell_w_mm * px_per_mm
     cell_h_px = cell_h_mm * px_per_mm

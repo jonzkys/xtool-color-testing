@@ -437,10 +437,51 @@ def test_inspect_cell_out_of_bounds_returns_400(fresh_db, monkeypatch, tmp_path)
         files={"image": ("x.png", b"fake", "image/png")},
     )
     rid = upload.json()["id"]
-    # SPEC has x_steps=3, y_steps=None → grid is 1x3. Asking for col 99 is OOB.
+    # SPEC has x_steps=3, y_steps=None, rows=1 → grid is 1×3. Col 99 is OOB.
     r = c.get(f"/api/results/{rid}/inspect/0/99")
     assert r.status_code == 400
     assert "out of bounds" in r.json()["detail"].lower()
+
+
+def test_inspect_cell_wrapped_1d_accepts_non_row_zero(fresh_db, monkeypatch, tmp_path):
+    """Wrapped 1D tests have y_param=None but multiple physical rows.
+    The bounds check used to fail on any non-row-0 click because it
+    used y_steps=1 as the row limit. Real bound is rows_total."""
+    from fastapi.testclient import TestClient
+    from xcs_gen_web.app import create_app
+    from xcs_gen_web.services import capture as cap
+
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture_large)
+
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    wrapped_spec = {
+        **SPEC,
+        "x_steps": 12,
+        "rows": 4,
+        "width_mm": 18,
+        "height_mm": 6,
+        "y_param": None,
+    }
+    tid = t_repo.create(name="W", material_id=mid, spec=wrapped_spec)["id"]
+    upload = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    rid = upload.json()["id"]
+    # row 1 (second physical row) MUST be accepted — there are 4 rows.
+    r = c.get(f"/api/results/{rid}/inspect/1/0")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["row"] == 1
+    # And row 4 (>= rows_total) MUST be rejected.
+    r = c.get(f"/api/results/{rid}/inspect/4/0")
+    assert r.status_code == 400
+    assert "out of bounds" in r.json()["detail"].lower()
+    # And col >= per_row (12/4=3) MUST be rejected.
+    r = c.get(f"/api/results/{rid}/inspect/0/3")
+    assert r.status_code == 400
 
 
 def test_inspect_cell_wrapped_1d_uses_per_row_cell_width(fresh_db, monkeypatch, tmp_path):
