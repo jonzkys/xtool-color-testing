@@ -213,3 +213,36 @@ def test_dispatching_storage_writes_always_go_to_primary(tmp_path, s3_mock):
     assert rec["path"].startswith("s3://xcs/")
     # Filesystem wasn't touched.
     assert list(tmp_path.iterdir()) == []
+
+
+# --- S3Storage.read error-translation contract --------------------------
+
+def test_s3_read_translates_no_such_key_to_file_not_found_error(s3_mock):
+    """S3 raises ClientError(Code=NoSuchKey); the read method should
+    normalise this to FileNotFoundError so callers can have a single
+    error path that works on both filesystem and S3 backends."""
+    import botocore.exceptions
+
+    s3_mock.get_object.side_effect = botocore.exceptions.ClientError(
+        error_response={"Error": {"Code": "NoSuchKey"}},
+        operation_name="GetObject",
+    )
+
+    s = S3Storage(bucket="xcs")
+    with pytest.raises(FileNotFoundError):
+        s.read("s3://xcs/1/2.png")
+
+
+def test_s3_read_propagates_other_client_errors(s3_mock):
+    """Non-missing-object errors (e.g. AccessDenied) should NOT be
+    swallowed as FileNotFoundError — they bubble up as ClientError."""
+    import botocore.exceptions
+
+    s3_mock.get_object.side_effect = botocore.exceptions.ClientError(
+        error_response={"Error": {"Code": "AccessDenied"}},
+        operation_name="GetObject",
+    )
+
+    s = S3Storage(bucket="xcs")
+    with pytest.raises(botocore.exceptions.ClientError):
+        s.read("s3://xcs/1/2.png")

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, Camera, RotateCcw, Trash2, Upload } from "lucide-react";
 import type { AveragedSwatch, ResultRecord } from "../types";
 import { useAuthedImage } from "../hooks/useAuthedImage";
 import { ResultDetailDialog } from "./ResultDetailDialog";
@@ -8,10 +8,12 @@ import {
   uploadResult,
   patchResult,
   deleteResult,
+  reingestResult,
   getAveragedSwatches,
   ingestToPalette,
 } from "../api/results";
 import { useIsDemo } from "../hooks/useIsDemo";
+import { formatMissingCorners } from "./captureWarnings";
 import {
   Badge,
   Button,
@@ -44,6 +46,7 @@ export function ResultsPanel({
   const [replaceExisting, setReplaceExisting] = useState(false);
   const [detailId, setDetailId] = useState<number | null>(null);
   const detailResult = results.find((r) => r.id === detailId) ?? null;
+  const [reingestingId, setReingestingId] = useState<number | null>(null);
 
   async function refresh(opts: { autoSelect?: boolean } = {}) {
     try {
@@ -108,6 +111,19 @@ export function ResultsPanel({
     if (!confirm("Delete this result?")) return;
     await deleteResult(rid);
     await refresh();
+  }
+
+  async function reingest(rid: number) {
+    setReingestingId(rid);
+    try {
+      await reingestResult(rid);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+      console.error("Reingest failed:", err);
+    } finally {
+      setReingestingId(null);
+    }
   }
 
   const indices = Object.entries(selected)
@@ -222,6 +238,17 @@ export function ResultsPanel({
                         retest #{r.retest_index}
                       </span>
                     )}
+                    {(r.missing_markers?.length ?? 0) > 0 && (
+                      <Badge
+                        variant="warning"
+                        size="sm"
+                        title={`${r.missing_markers!.length} of 3 ArUco markers missing — colours near ${formatMissingCorners(r.missing_markers!)} may be inaccurate`}
+                        aria-label="Capture warning"
+                      >
+                        <AlertTriangle className="h-2.5 w-2.5" strokeWidth={2} />
+                        {r.missing_markers!.length}/3
+                      </Badge>
+                    )}
                   </div>
                   <div className="text-[11px] text-[color:var(--color-ink-muted)]">
                     {new Date(r.uploaded_at).toLocaleString()}
@@ -244,6 +271,24 @@ export function ResultsPanel({
                   />
                   exclude
                 </label>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void reingest(r.id);
+                  }}
+                  disabled={isDemo || reingestingId === r.id}
+                  className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-primary)] hover:bg-[color:var(--color-primary-tint)] disabled:opacity-50"
+                  title={isDemo
+                    ? "Reingesting is disabled in the demo."
+                    : "Reingest — re-run capture on the saved photo"}
+                  aria-label="Reingest result"
+                >
+                  <RotateCcw className={cn(
+                    "h-3.5 w-3.5",
+                    reingestingId === r.id && "animate-spin",
+                  )} />
+                </button>
                 <button
                   type="button"
                   onClick={(e) => {

@@ -35,6 +35,9 @@ export async function patchResult(rid: number, patch: { excluded?: boolean; note
 export async function deleteResult(rid: number): Promise<void> {
   await j(await fetch(`/api/results/${rid}`, { method: "DELETE" }));
 }
+export async function reingestResult(rid: number): Promise<ResultRecord> {
+  return j(await fetch(`/api/results/${rid}/reingest`, { method: "POST" }));
+}
 export async function getAveragedSwatches(testId: number): Promise<AveragedSwatch[]> {
   return j(await fetch(`/api/tests/${testId}/swatches`));
 }

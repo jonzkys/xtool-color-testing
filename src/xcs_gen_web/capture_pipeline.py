@@ -92,13 +92,24 @@ def _preprocessing_variants(gray: np.ndarray) -> list[np.ndarray]:
 
     Phone photos of laser burns on stainless usually aren't pure B&W —
     burns are mid-tone gray on a bright substrate. Raw gray confuses
-    zbar/ArUco's built-in thresholding. Running the detectors on a
-    blurred-and-Otsu'd version rescues most shots; we keep the raw
-    image too so crisp burns don't get hurt by the blur.
+    zbar/ArUco's built-in thresholding. Variants 2–4 are increasingly
+    aggressive recovery techniques: Otsu rescues most mid-tone shots;
+    CLAHE normalises uneven lighting (the most common failure mode on
+    round-disc photos where one edge gets less flash); adaptive
+    threshold catches photos where Otsu picks a bad global split
+    because of a bright background highlight.
     """
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     _, otsu = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return [gray, otsu]
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
+    # blockSize=51 is smaller than one ArUco cell at full phone-resolution
+    # (~67 px/cell at 80 px/mm); we rely on OpenCV's internal pyramid
+    # scaling in detectMarkers to make the local-mean meaningful.
+    adaptive = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY,
+        blockSize=51, C=10,
+    )
+    return [gray, otsu, clahe, adaptive]
 
 
 def _qr_polygon_raw(

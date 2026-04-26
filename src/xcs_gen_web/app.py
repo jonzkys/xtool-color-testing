@@ -1031,6 +1031,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             owner_id=r["owner_id"],
             visibility=r["visibility"],
             retest_index=r.get("retest_index", 0),
+            missing_markers=r.get("missing_markers", []),
         )
 
     def _persist_upload(
@@ -1058,6 +1059,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             owner_id=user_id,
             via=via,
             retest_index=cap_result.retest_index,
+            missing_markers=cap_result.missing_markers,
         )
         rec = images.save(test_id=tid, result_id=placeholder["id"],
                           data=data, suffix=suffix)
@@ -1069,6 +1071,51 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         t_repo.mark_tested_and_lock(tid, owner_id=user_id)
         refreshed = r_repo.get(placeholder["id"], owner_id=user_id)
+        return _result_to_response(refreshed)
+
+    @app.post(
+        "/api/results/{rid}/reingest",
+        response_model=ResultResponse,
+    )
+    def results_reingest(
+        rid: int, user_id: int = Depends(get_current_user),
+    ) -> ResultResponse:
+        """Re-run the capture pipeline against the result's saved photo.
+
+        Replaces ``swatches_json`` and ``missing_markers_json`` on the
+        row using current detection code and the test's current spec.
+        Useful after detection improvements, after retest spec edits,
+        or when the user wants to verify a previously-flagged result
+        is now accurate.
+        """
+        r = r_repo.get(rid, owner_id=user_id)
+        if r is None:
+            raise HTTPException(status_code=404, detail="result not found")
+        t = t_repo.get(r["test_id"], owner_id=user_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        try:
+            data = images.read(r["image_path"])
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=410,
+                detail="source image no longer available — cannot reingest",
+            )
+        try:
+            cap_result = capture_service.run_capture(
+                image_bytes=data, test_id=r["test_id"], spec=t["spec"],
+            )
+        except capture_service.CaptureError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        refreshed = r_repo.replace_capture(
+            rid,
+            swatches=cap_result.swatches,
+            missing_markers=cap_result.missing_markers,
+            owner_id=user_id,
+        )
+        if refreshed is None:
+            # Owner check passed in r_repo.get; row should still exist.
+            raise HTTPException(status_code=500, detail="reingest write failed")
         return _result_to_response(refreshed)
 
     @app.post("/api/tests/{tid}/results", response_model=ResultResponse, status_code=201)

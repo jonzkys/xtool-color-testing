@@ -160,3 +160,128 @@ def test_patch_excluded_flips_average(fresh_db, monkeypatch, tmp_path):
     rid = r.json()["id"]
     c.patch(f"/api/results/{rid}", json={"excluded": True})
     assert c.get(f"/api/tests/{tid}/swatches").json() == []
+
+
+def test_upload_response_includes_missing_markers(fresh_db, monkeypatch, tmp_path):
+    """The upload route should expose missing_markers on the
+    ResultResponse — the UI relies on it to render the warning pill."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+
+    def _capture_with_missing_marker(*, image_bytes, test_id, spec):
+        return cap.CaptureResult(
+            swatches=[
+                {"row": 0, "col": 0, "x_value": 500, "y_value": None,
+                 "hex": "#ff0000", "lab": [0, 0, 0], "sigma": 1.0},
+            ],
+            warped_image_bgr=np.zeros((10, 10, 3), dtype=np.uint8),
+            missing_markers=[1],
+        )
+    monkeypatch.setattr(cap, "run_capture", _capture_with_missing_marker)
+
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+
+    r = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert "missing_markers" in body
+    assert body["missing_markers"] == [1]
+
+
+def test_upload_response_missing_markers_defaults_to_empty(
+    fresh_db, monkeypatch, tmp_path,
+):
+    """When run_capture returns a CaptureResult without missing markers,
+    the API exposes the empty list — not absent, not None."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+
+    r = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["missing_markers"] == []
+
+
+def test_reingest_happy_path(fresh_db, monkeypatch, tmp_path):
+    """POST /api/results/{rid}/reingest re-runs capture against the
+    saved photo and returns a ResultResponse with fresh swatches +
+    missing_markers."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+
+    upload = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    assert upload.status_code == 201, upload.text
+    rid = upload.json()["id"]
+
+    # Swap to a different fake_capture so we can confirm the swatches
+    # were actually replaced rather than left untouched.
+    def _new_capture(*, image_bytes, test_id, spec):
+        return cap.CaptureResult(
+            swatches=[
+                {"row": 0, "col": 0, "x_value": 999, "y_value": None,
+                 "hex": "#0000ff", "lab": [0, 0, 0], "sigma": 0.5},
+            ],
+            warped_image_bgr=np.zeros((10, 10, 3), dtype=np.uint8),
+            missing_markers=[2],
+        )
+    monkeypatch.setattr(cap, "run_capture", _new_capture)
+
+    r = c.post(f"/api/results/{rid}/reingest")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == rid
+    assert len(body["swatches"]) == 1
+    assert body["swatches"][0]["x_value"] == 999
+    assert body["swatches"][0]["hex"] == "#0000ff"
+    assert body["missing_markers"] == [2]
+
+
+def test_reingest_returns_410_when_image_missing(fresh_db, monkeypatch, tmp_path):
+    """If the saved photo is gone (FS deleted, S3 404), reingest should
+    return 410 Gone with a clear message — not 500."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+
+    upload = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    rid = upload.json()["id"]
+
+    # Force images.read to fail as if the file was deleted from disk.
+    from xcs_gen_web import images
+    monkeypatch.setattr(images, "read",
+                        lambda _: (_ for _ in ()).throw(FileNotFoundError()))
+
+    r = c.post(f"/api/results/{rid}/reingest")
+    assert r.status_code == 410, r.text
+    assert "no longer available" in r.json()["detail"].lower()
+
+
+def test_reingest_returns_404_for_unknown_rid(fresh_db, monkeypatch, tmp_path):
+    """Unknown rid (or wrong owner) returns 404, not 500."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    c = TestClient(create_app())
+    r = c.post("/api/results/9999/reingest")
+    assert r.status_code == 404
