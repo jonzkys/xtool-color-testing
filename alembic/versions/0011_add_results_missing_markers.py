@@ -22,14 +22,24 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # MySQL won't allow DEFAULT '[]' on a TEXT column (error 1101). Add the
+    # column nullable, backfill existing rows, then tighten to NOT NULL with
+    # no DB-level default. New rows always get a value via the application
+    # layer (repositories/results.py serialises an empty list when the
+    # caller doesn't pass missing_markers).
     with op.batch_alter_table("results") as batch:
         batch.add_column(
-            sa.Column(
-                "missing_markers_json",
-                sa.Text,
-                nullable=False,
-                server_default="[]",
-            ),
+            sa.Column("missing_markers_json", sa.Text, nullable=True),
+        )
+    op.execute(
+        "UPDATE results SET missing_markers_json = '[]' "
+        "WHERE missing_markers_json IS NULL"
+    )
+    with op.batch_alter_table("results") as batch:
+        batch.alter_column(
+            "missing_markers_json",
+            existing_type=sa.Text(),
+            nullable=False,
         )
 
 
