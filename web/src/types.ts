@@ -189,6 +189,11 @@ export interface ResultRecord {
   swatches: ResultSwatch[];
   /** Copied from the QR on ingest; 0 for pre-retest-era burns. */
   retest_index?: number;
+  /** ArUco IDs (subset of {1,2,3}) the pipeline failed to detect on
+   *  this photo. Empty/absent when the homography was fully
+   *  constrained. UI surfaces this as a warning so users know which
+   *  corner's colours may be unreliable. */
+  missing_markers?: number[];
 }
 
 export interface AveragedSwatch extends ResultSwatch {

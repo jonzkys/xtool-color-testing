@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
 import { DialogClose } from "@radix-ui/react-dialog";
 import {
   Dialog,
@@ -9,6 +9,7 @@ import {
 } from "../ui";
 import type { ResultRecord, ResultSwatch } from "../types";
 import { useAuthedImage } from "../hooks/useAuthedImage";
+import { formatMissingCorners } from "./captureWarnings";
 
 export interface ResultDetailDialogProps {
   open: boolean;
@@ -181,6 +182,26 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
           grids so more fit per row and the scroll region stays usable. */}
       <div className="px-5 pt-4 pb-5">
         <ChartLabel title={`Swatches (${result.swatches.length})`} />
+        {(result.missing_markers?.length ?? 0) > 0 && (
+          <div
+            role="status"
+            className={cn(
+              "mt-3 flex items-start gap-2 px-3 py-2 rounded-[6px]",
+              "border border-[color:var(--color-warning)]/40",
+              "bg-[color:var(--color-warning-tint)]",
+              "text-[color:var(--color-warning)]",
+              "text-[12px] leading-snug",
+            )}
+          >
+            <AlertTriangle className="h-3.5 w-3.5 mt-[1px] shrink-0" strokeWidth={2} />
+            <div>
+              {result.missing_markers!.length} of 3 ArUco markers missing on this
+              photo ({formatMissingCorners(result.missing_markers!)}). Colours
+              near {result.missing_markers!.length > 1 ? "those corners" : "that corner"} may
+              be inaccurate. Reingest after retaking.
+            </div>
+          </div>
+        )}
         <div
           className={cn(
             "mt-3 grid gap-1.5 max-h-[45vh] overflow-y-auto pr-1",
