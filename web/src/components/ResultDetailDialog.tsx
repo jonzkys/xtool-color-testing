@@ -320,7 +320,6 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
           rid={result.id}
           row={inspectingCell.row}
           col={inspectingCell.col}
-          cellShape={cellShape}
           currentAggregator={currentAggregator}
           onAggregatorPicked={(agg) => {
             setInspectingCell(null);

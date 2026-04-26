@@ -389,6 +389,10 @@ def inspect_cell(
             "shape": "circle",
             "radius_px": float(radius_px),
             "center_px": [int(cx_px - rx0), int(cy_px - ry0)],
+            # 50% inscribed circle is the only circle mask we ship today;
+            # the label travels with the data so the UI doesn't have to
+            # know the convention.
+            "fraction_label": "50% Ø",
         }
     else:
         masked = sample_box.reshape(-1, 3)
@@ -397,6 +401,9 @@ def inspect_cell(
             "half_w_px": float(half_sample_w),
             "half_h_px": float(half_sample_h),
             "center_px": [int(cx_px - rx0), int(cy_px - ry0)],
+            # Reflects the actual constant — if _CENTRAL_REGION_FRACTION
+            # is retuned, the inspector's overlay annotation auto-updates.
+            "fraction_label": f"{int(round(_CENTRAL_REGION_FRACTION * 100))}%",
         }
 
     # Run all aggregators.

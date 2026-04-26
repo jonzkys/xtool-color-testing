@@ -53,7 +53,6 @@ export interface InspectMatchDialogProps {
   rid: number;
   row: number;
   col: number;
-  cellShape: "rect" | "circle";
   currentAggregator: SampleAggregator;
   /** Called when the user clicks a tile in the comparison tray.
    * Parent typically closes the modal and switches its preview to the
@@ -73,7 +72,6 @@ function InspectBody({
   rid,
   row,
   col,
-  cellShape,
   currentAggregator,
   onAggregatorPicked,
 }: InspectMatchDialogProps) {
@@ -145,7 +143,7 @@ function InspectBody({
         {data && (
           <>
             {/* === SPECIMEN PAIR ========================================== */}
-            <SpecimenPanel data={data} cellShape={cellShape} />
+            <SpecimenPanel data={data} />
 
             <MetalBar variant="soft" />
 
@@ -245,13 +243,7 @@ function ReadoutCell({ label, value }: { label: string; value: string }) {
 // Specimen pair — left: raw crop. right: crop with sampling iris.
 // ============================================================================
 
-function SpecimenPanel({
-  data,
-  cellShape,
-}: {
-  data: InspectCellResponse;
-  cellShape: "rect" | "circle";
-}) {
+function SpecimenPanel({ data }: { data: InspectCellResponse }) {
   const src = `data:image/png;base64,${data.cell_image_b64}`;
   const region = data.sampling_region;
 
@@ -272,7 +264,7 @@ function SpecimenPanel({
         title="Sampling region"
         annotation={geometryCaption}
         src={src}
-        overlay={<SamplingOverlay region={region} cellShape={cellShape} />}
+        overlay={<SamplingOverlay region={region} />}
       />
     </div>
   );
@@ -335,10 +327,8 @@ function SpecimenSlot({
 
 function SamplingOverlay({
   region,
-  cellShape,
 }: {
   region: InspectCellResponse["sampling_region"];
-  cellShape: "rect" | "circle";
 }) {
   // The crop's natural dimensions aren't passed in — use the center to
   // derive a viewBox by assuming square aspect. The image is rendered
@@ -412,20 +402,20 @@ function SamplingOverlay({
             vectorEffect="non-scaling-stroke"
           />
         )}
-      {/* Cell-shape annotation as a tiny mark in the upper-left of the iris area */}
-      {cellShape && (
-        <text
-          x={4}
-          y={12}
-          fontSize={Math.max(w, h) * 0.04}
-          fontFamily="JetBrains Mono, monospace"
-          fill={stroke}
-          opacity={0.85}
-          letterSpacing={0.06}
-        >
-          {cellShape === "circle" ? "● 50% Ø" : "▢ 60%"}
-        </text>
-      )}
+      {/* Cell-shape + sampling-fraction annotation in the upper-left of
+          the iris area. The fraction comes from the backend so the
+          label can't drift from the actual constant. */}
+      <text
+        x={4}
+        y={12}
+        fontSize={Math.max(w, h) * 0.04}
+        fontFamily="JetBrains Mono, monospace"
+        fill={stroke}
+        opacity={0.85}
+        letterSpacing={0.06}
+      >
+        {region.shape === "circle" ? "●" : "▢"} {region.fraction_label}
+      </text>
     </svg>
   );
 }

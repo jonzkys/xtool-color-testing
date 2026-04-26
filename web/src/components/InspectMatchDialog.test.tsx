@@ -18,6 +18,7 @@ const fakeResponse = {
     half_w_px: 10,
     half_h_px: 10,
     center_px: [10, 10] as [number, number],
+    fraction_label: "30%",
   },
   aggregator_results: {
     median: "#101010",
@@ -53,7 +54,6 @@ describe("InspectMatchDialog", () => {
         rid={1}
         row={0}
         col={0}
-        cellShape="rect"
         currentAggregator="median"
         onAggregatorPicked={() => {}}
       />,
@@ -76,7 +76,6 @@ describe("InspectMatchDialog", () => {
         rid={1}
         row={0}
         col={0}
-        cellShape="rect"
         currentAggregator="median"
         onAggregatorPicked={onPicked}
       />,
@@ -95,7 +94,6 @@ describe("InspectMatchDialog", () => {
         rid={1}
         row={0}
         col={0}
-        cellShape="rect"
         currentAggregator="median"
         onAggregatorPicked={() => {}}
       />,

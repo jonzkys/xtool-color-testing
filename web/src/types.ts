@@ -292,6 +292,10 @@ export interface InspectSamplingRegion {
   half_w_px?: number;
   half_h_px?: number;
   center_px: [number, number];
+  /** Human-readable label of the sampling fraction (e.g. "30%" for the
+   *  rect mask, "50% Ø" for the inscribed circle). Travels with the
+   *  data so the UI annotation can't drift from the backend constant. */
+  fraction_label: string;
 }
 
 export interface InspectCellResponse {
