@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from xcs_gen_web.repositories import materials as m_repo
+from xcs_gen_web.repositories import palette as pal_repo
 from xcs_gen_web.repositories import tests as repo
 
 
@@ -51,6 +52,26 @@ def test_update_name_and_notes_allowed_when_locked(fresh_db):
     updated = repo.update(t["id"], name="T1 renamed", notes="after burn")
     assert updated["name"] == "T1 renamed"
     assert updated["notes"] == "after burn"
+
+
+def test_update_material_cascades_palette_when_locked(fresh_db):
+    """Reassigning a locked test's material moves any palette entries
+    harvested from it to the new material in the same transaction."""
+    mid1 = _seed(fresh_db)
+    mid2 = m_repo.create(name="Brass")["id"]
+    t = repo.create(name="T1", material_id=mid1, spec=SPEC)
+    repo.mark_tested_and_lock(t["id"])
+    [eid] = pal_repo.insert_bulk([{
+        "test_id": t["id"], "material_id": mid1, "hex": "#aabbcc",
+        "sigma": 1.0, "source": "single_result",
+    }])
+
+    updated = repo.update(t["id"], material_id=mid2)
+
+    assert updated["material_id"] == mid2
+    [entry] = pal_repo.list_all(material_id=mid2)
+    assert entry["id"] == eid
+    assert pal_repo.list_all(material_id=mid1) == []
 
 
 def test_soft_delete(fresh_db):

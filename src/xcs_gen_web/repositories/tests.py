@@ -15,7 +15,7 @@ from sqlalchemy import and_, select
 
 from ..config import DEFAULT_VISIBILITY, STANDALONE_USER_ID
 from ..db import session_scope
-from ..models import tests
+from ..models import palette_entries, tests
 
 
 class LockedError(Exception):
@@ -127,14 +127,11 @@ def update(
             raise LockedError(f"test {tid} is locked; duplicate it to change spec")
         values["spec_json"] = json.dumps(spec, separators=(",", ":"))
     if material_id is not None and material_id != cur["material_id"]:
-        # Same guard as spec — changing the substrate on a test that
-        # already has ingested swatches would orphan those palette
-        # entries. The app layer validates the new material belongs
-        # to the caller before reaching here.
-        if cur["locked"]:
-            raise LockedError(
-                f"test {tid} is locked; duplicate it to change material",
-            )
+        # Material is editable even on locked tests: the common case is
+        # a test that was created against the wrong material and needs
+        # to be relabelled. Any palette entries already harvested from
+        # this test cascade to the new material in the same transaction
+        # so they don't end up filed under the old (incorrect) one.
         values["material_id"] = material_id
     if visibility is not None:
         values["visibility"] = visibility
@@ -144,6 +141,17 @@ def update(
             .where(and_(tests.c.id == tid, tests.c.owner_id == owner_id))
             .values(**values)
         )
+        if "material_id" in values:
+            s.execute(
+                palette_entries.update()
+                .where(
+                    and_(
+                        palette_entries.c.test_id == tid,
+                        palette_entries.c.owner_id == owner_id,
+                    )
+                )
+                .values(material_id=values["material_id"])
+            )
     return get(tid, owner_id=owner_id)
 
 
