@@ -1,4 +1,7 @@
-import type { AveragedSwatch, ResultRecord } from "../types";
+import type {
+  AveragedSwatch, ResultRecord,
+  SampleAggregator, SwatchPreviewResponse, InspectCellResponse,
+} from "../types";
 
 async function j<T>(r: Response): Promise<T> {
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
@@ -37,6 +40,20 @@ export async function deleteResult(rid: number): Promise<void> {
 }
 export async function reingestResult(rid: number): Promise<ResultRecord> {
   return j(await fetch(`/api/results/${rid}/reingest`, { method: "POST" }));
+}
+
+export async function previewSwatches(
+  rid: number, aggregator: SampleAggregator,
+): Promise<SwatchPreviewResponse> {
+  return j(await fetch(
+    `/api/results/${rid}/swatches/preview?aggregator=${encodeURIComponent(aggregator)}`,
+  ));
+}
+
+export async function inspectCell(
+  rid: number, row: number, col: number,
+): Promise<InspectCellResponse> {
+  return j(await fetch(`/api/results/${rid}/inspect/${row}/${col}`));
 }
 export async function getAveragedSwatches(testId: number): Promise<AveragedSwatch[]> {
   return j(await fetch(`/api/tests/${testId}/swatches`));
