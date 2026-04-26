@@ -403,15 +403,21 @@ function SamplingOverlay({
           />
         )}
       {/* Cell-shape + sampling-fraction annotation in the upper-left of
-          the iris area. The fraction comes from the backend so the
-          label can't drift from the actual constant. */}
+          the iris area. White fill + thin dark outline (paintOrder so
+          the stroke renders behind the fill) keeps it legible against
+          burn colours of any hue. The fraction comes from the backend
+          so the label can't drift from the actual constant. */}
       <text
-        x={4}
-        y={12}
-        fontSize={Math.max(w, h) * 0.04}
+        x={6}
+        y={Math.max(w, h) * 0.06 + 4}
+        fontSize={Math.max(w, h) * 0.045}
         fontFamily="JetBrains Mono, monospace"
-        fill={stroke}
-        opacity={0.85}
+        fontWeight={600}
+        fill="white"
+        stroke="black"
+        strokeWidth={Math.max(w, h) * 0.012}
+        strokeOpacity={0.65}
+        paintOrder="stroke fill"
         letterSpacing={0.06}
       >
         {region.shape === "circle" ? "●" : "▢"} {region.fraction_label}
