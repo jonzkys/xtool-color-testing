@@ -187,8 +187,12 @@ export function SvgLayersPage() {
   );
   type LayerSortKey = "detected" | "hue" | "luminance_light_first" | "luminance_dark_first";
   const [layerSort, setLayerSort] = useState<LayerSortKey>("detected");
-  type PreviewMode = "original" | "matched";
-  const [previewMode, setPreviewMode] = useState<PreviewMode>("original");
+  // What the .xcs export uses for layer colours: "original" keeps the
+  // detected SVG fills (XCS Studio shows the source colours), "matched"
+  // rewrites every fill to the matched palette hex before export so the
+  // .xcs canvas reads the palette colours instead.
+  type ExportColorMode = "original" | "matched";
+  const [exportColorMode, setExportColorMode] = useState<ExportColorMode>("original");
   const [autoApplying, setAutoApplying] = useState(false);
   const [autoApplyMessage, setAutoApplyMessage] = useState<string | undefined>();
   // Cache the full palette per material_id. Auto-match used to fire one
@@ -499,9 +503,51 @@ export function SvgLayersPage() {
   }
 
   function buildGenerateRequest(): SvgLayersRequest {
-    if (!collapseIdenticalLayers) return request;
-    const groups = computeParamMergeGroups(request.layers.filter((l) => l.enabled));
-    if (groups.length === 0) return request;
+    let r = request;
+
+    // Optional palette-colour rewrite: every detected fill that has a
+    // palette match becomes the matched hex in both the SVG content and
+    // each LayerSpec.color. Two detected colours that map to the same
+    // matched colour collapse into one layer (the backend keys shapes to
+    // layers by fill, so duplicate colours need merging).
+    if (exportColorMode === "matched" && Object.keys(predictedByColor).length > 0) {
+      const matchEntries = Object.entries(predictedByColor)
+        .filter(([from, to]) => from !== to);
+      if (matchEntries.length > 0) {
+        // Group source colours by representative so mergeColorsInSvg can
+        // dedupe overlaps and the LayerSpec list stays one-per-rep.
+        const byRep = new Map<string, string[]>();
+        for (const [from, to] of matchEntries) {
+          const list = byRep.get(to) ?? [];
+          list.push(from);
+          byRep.set(to, list);
+        }
+        const matchGroups: MergeGroup[] = [];
+        for (const [rep, sources] of byRep) {
+          // Include the representative itself in the source list — the
+          // SVG might also contain shapes at the matched-hex value
+          // already (rare, but safe to dedupe through).
+          const allSources = sources.includes(rep) ? sources : [...sources, rep];
+          matchGroups.push({ sourceColors: allSources, representativeColor: rep });
+        }
+        const reps = new Set(matchGroups.map((g) => g.representativeColor));
+        const losers = new Set(
+          matchGroups.flatMap((g) => g.sourceColors.filter((c) => !reps.has(c))),
+        );
+        const remappedSvg = mergeColorsInSvg(r.svg_content, matchGroups);
+        const remappedLayers = r.layers
+          .filter((l) => !losers.has(l.color) || reps.has(l.color))
+          .map((l) => {
+            const matched = predictedByColor[l.color];
+            return matched && matched !== l.color ? { ...l, color: matched } : l;
+          });
+        r = { ...r, svg_content: remappedSvg, layers: remappedLayers };
+      }
+    }
+
+    if (!collapseIdenticalLayers) return r;
+    const groups = computeParamMergeGroups(r.layers.filter((l) => l.enabled));
+    if (groups.length === 0) return r;
 
     const mergeGroups: MergeGroup[] = groups.map((members) => ({
       sourceColors: members.map((m) => m.color),
@@ -512,11 +558,11 @@ export function SvgLayersPage() {
       mergeGroups.flatMap((g) => g.sourceColors.filter((c) => c !== g.representativeColor)),
     );
 
-    const collapsedSvg = mergeColorsInSvg(request.svg_content, mergeGroups);
-    const collapsedLayers = request.layers.filter(
+    const collapsedSvg = mergeColorsInSvg(r.svg_content, mergeGroups);
+    const collapsedLayers = r.layers.filter(
       (l) => !loserColors.has(l.color) || representatives.has(l.color),
     );
-    return { ...request, svg_content: collapsedSvg, layers: collapsedLayers };
+    return { ...r, svg_content: collapsedSvg, layers: collapsedLayers };
   }
 
   const hasLayers = request.layers.length > 0;
@@ -551,6 +597,45 @@ export function SvgLayersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <div
+            role="tablist"
+            aria-label="Export colour source"
+            title="What colour each layer is labelled with in the .xcs — engrave params come from the layer's base_params either way."
+            className="inline-flex items-stretch rounded-[6px] border border-[color:var(--color-border)] overflow-hidden"
+          >
+            {(["original", "matched"] as const).map((mode) => {
+              const active = exportColorMode === mode;
+              const matchedDisabled =
+                mode === "matched" && Object.keys(predictedByColor).length === 0;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  disabled={matchedDisabled}
+                  onClick={() => setExportColorMode(mode)}
+                  title={
+                    matchedDisabled
+                      ? "Apply palette matches first to enable matched-colour export"
+                      : mode === "original"
+                        ? "Export with detected colours"
+                        : "Export with matched palette colours"
+                  }
+                  className={cn(
+                    "px-2.5 py-1.5 font-mono text-[10px] tracking-[0.18em] uppercase font-semibold transition-colors",
+                    active
+                      ? "bg-[color:var(--color-primary)] text-white"
+                      : matchedDisabled
+                        ? "bg-[color:var(--color-surface)] text-[color:var(--color-ink-subtle)] opacity-50 cursor-not-allowed"
+                        : "bg-[color:var(--color-surface)] text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)]",
+                  )}
+                >
+                  {mode}
+                </button>
+              );
+            })}
+          </div>
           <Button
             variant="primary"
             onClick={handleGenerate}
@@ -981,58 +1066,26 @@ export function SvgLayersPage() {
         {/* RIGHT: previews */}
         <div className="flex flex-col gap-3 self-start sticky top-4 min-w-0">
           <PreviewBlock
-            title={previewMode === "matched" ? "Expected burn" : "Design"}
+            title="Design"
             trailing={
-              <div className="flex items-center gap-1.5">
-                <div
-                  role="tablist"
-                  aria-label="Preview mode"
-                  className="inline-flex items-stretch rounded-[6px] border border-[color:var(--color-border)] overflow-hidden"
-                >
-                  {(["original", "matched"] as const).map((mode) => {
-                    const active = previewMode === mode;
-                    return (
-                      <button
-                        key={mode}
-                        type="button"
-                        role="tab"
-                        aria-selected={active}
-                        onClick={() => setPreviewMode(mode)}
-                        className={cn(
-                          "px-2 py-1 font-mono text-[9.5px] tracking-[0.18em] uppercase font-semibold transition-colors",
-                          active
-                            ? "bg-[color:var(--color-primary)] text-white"
-                            : "bg-[color:var(--color-surface)] text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)]",
-                        )}
-                      >
-                        {mode === "original" ? "Original" : "Matched"}
-                      </button>
-                    );
-                  })}
-                </div>
-                <IconButton
-                  aria-label={isolateSelected ? "Show all layers" : "Isolate selected layer"}
-                  size="sm"
-                  variant={isolateSelected ? "active" : "default"}
-                  disabled={!selectedColor}
-                  icon={
-                    isolateSelected ? (
-                      <Eye className="h-4 w-4" />
-                    ) : (
-                      <EyeOff className="h-4 w-4" />
-                    )
-                  }
-                  onClick={() => setIsolateSelected((v) => !v)}
-                  title={isolateSelected ? "Show all layers" : "Isolate selected layer"}
-                />
-              </div>
+              <IconButton
+                aria-label={isolateSelected ? "Show all layers" : "Isolate selected layer"}
+                size="sm"
+                variant={isolateSelected ? "active" : "default"}
+                disabled={!selectedColor}
+                icon={
+                  isolateSelected ? (
+                    <Eye className="h-4 w-4" />
+                  ) : (
+                    <EyeOff className="h-4 w-4" />
+                  )
+                }
+                onClick={() => setIsolateSelected((v) => !v)}
+                title={isolateSelected ? "Show all layers" : "Isolate selected layer"}
+              />
             }
             subtext={
-              previewMode === "matched" && Object.keys(predictedByColor).length === 0 ? (
-                <span className="text-[color:var(--color-warning)]">
-                  Apply palette matches to populate
-                </span>
-              ) : isolateSelected && selectedColor ? (
+              isolateSelected && selectedColor ? (
                 <span className="font-mono text-[11px] text-[color:var(--color-primary)]">
                   {selectedColor}
                 </span>
@@ -1043,7 +1096,23 @@ export function SvgLayersPage() {
               svg={subtractedSvg ?? request.svg_content}
               highlightColor={isolateSelected ? selectedColor : null}
               enabledColors={enabledColors}
-              colorMap={previewMode === "matched" ? predictedByColor : undefined}
+            />
+          </PreviewBlock>
+          <PreviewBlock
+            title="Expected burn"
+            subtext={
+              Object.keys(predictedByColor).length === 0 ? (
+                <span className="text-[color:var(--color-warning)]">
+                  Apply palette matches to populate
+                </span>
+              ) : undefined
+            }
+          >
+            <SvgPreview
+              svg={subtractedSvg ?? request.svg_content}
+              highlightColor={null}
+              enabledColors={enabledColors}
+              colorMap={predictedByColor}
             />
           </PreviewBlock>
         </div>
