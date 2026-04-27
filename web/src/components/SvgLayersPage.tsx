@@ -334,25 +334,43 @@ export function SvgLayersPage() {
       });
 
       let applied = 0;
+      let unchanged = 0;
+      let noMatch = 0;
       const nextPredicted: Record<string, string> = { ...predictedByColor };
       setRequest((prev) => ({
         ...prev,
         layers: prev.layers.map((l) => {
           const match = results.find((r) => r.layer.color === l.color);
-          if (!match?.best) return l;
+          if (!match?.best) {
+            noMatch += 1;
+            return l;
+          }
           const newParams = paletteParamsToBaseParams(match.best.entry.params);
+          // Compare to what's already there: if the predicted hex is the
+          // same and base_params already match, this is a no-op.
+          const alreadyMatched =
+            predictedByColor[l.color] === match.best.entry.hex &&
+            (Object.entries(newParams) as [keyof typeof newParams, unknown][])
+              .every(([k, v]) => l.base_params[k] === v);
           nextPredicted[l.color] = match.best.entry.hex;
+          if (alreadyMatched) {
+            unchanged += 1;
+            return l;
+          }
           applied += 1;
           return { ...l, base_params: { ...l.base_params, ...newParams } };
         }),
       }));
       setPredictedByColor(nextPredicted);
 
-      const skipped = results.length - applied;
+      // Compose a message that distinguishes the three buckets.
+      const plural = (n: number) => (n === 1 ? "" : "s");
+      const parts: string[] = [];
+      if (applied > 0) parts.push(`Applied to ${applied} layer${plural(applied)}`);
+      if (unchanged > 0) parts.push(`${unchanged} already matched`);
+      if (noMatch > 0) parts.push(`${noMatch} skipped — no palette match`);
       setAutoApplyMessage(
-        skipped === 0
-          ? `Applied matches to all ${applied} layer${applied === 1 ? "" : "s"}.`
-          : `Applied to ${applied}/${results.length} layers (${skipped} skipped — no palette match).`,
+        parts.length === 0 ? "No layers to match." : `${parts.join(" · ")}.`,
       );
     } catch (err) {
       setAutoApplyMessage(`Failed: ${(err as Error).message}`);
