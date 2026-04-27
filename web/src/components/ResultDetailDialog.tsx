@@ -74,6 +74,10 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
   const currentAggregator = previewAggregator ?? storedAggregator;
   const displayedSwatches = previewSwatchesData ?? result.swatches;
   const isPreviewing = previewAggregator !== null && previewAggregator !== storedAggregator;
+  // The spectrum strip plots one tile per x_value, so on a 2D sweep it
+  // collapses the y dimension entirely. Hide it in that case — the
+  // swatch grid below already shows the full 2D structure.
+  const is2D = testSpec?.y_param != null && (testSpec?.y_steps ?? 1) > 1;
 
   async function onAggregatorChange(agg: SampleAggregator) {
     setPreviewAggregator(agg);
@@ -270,13 +274,15 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
             />
             <LuminanceRamp swatches={displayedSwatches} />
           </div>
-          <div>
-            <ChartLabel
-              title="Spectrum · L* vs sweep"
-              hint="colors across the parameter axis"
-            />
-            <SpectrumStrip swatches={displayedSwatches} />
-          </div>
+          {!is2D && (
+            <div>
+              <ChartLabel
+                title="Spectrum · L* vs sweep"
+                hint="colors across the parameter axis"
+              />
+              <SpectrumStrip swatches={displayedSwatches} />
+            </div>
+          )}
         </div>
       </div>
 
