@@ -169,3 +169,64 @@ def subtract_overlapping_shapes(shapes: list[ParsedShape]) -> list[ParsedShape]:
         )
 
     return result
+
+
+def clip_shapes_to_rect(
+    shapes: list[ParsedShape],
+    *, x: float, y: float, width: float, height: float,
+) -> list[ParsedShape]:
+    """Intersect each filled shape with the canvas rect ``(x, y, width, height)``.
+
+    vtracer occasionally emits polygons whose vertices sit a fraction of a
+    pixel outside the source-image rect — a leftover from anti-alias edge
+    smoothing. Without clipping those slivers leak into the .xcs output as
+    burns past the design canvas. This applies a single rectangular clip
+    so the engraved area never exceeds the input image's footprint.
+
+    Stroke-only shapes pass through unchanged. Shapes whose intersection
+    with the rect is empty are dropped.
+    """
+    if not shapes:
+        return shapes
+    canvas = Polygon([
+        (x, y), (x + width, y),
+        (x + width, y + height), (x, y + height),
+    ])
+    if canvas.is_empty:
+        return shapes
+    out: list[ParsedShape] = []
+    for sh in shapes:
+        if sh.fill is None:
+            out.append(sh)
+            continue
+        try:
+            poly = svg_d_to_polygon(sh.d, fill_rule=sh.fill_rule)
+        except Exception:
+            poly = None
+        if poly is None or poly.is_empty:
+            out.append(sh)
+            continue
+        if canvas.contains(poly):
+            # Fully inside — common case, no need to rebuild geometry.
+            out.append(sh)
+            continue
+        clipped = poly.intersection(canvas)
+        if clipped.is_empty:
+            continue
+        new_d = _geom_to_svg_d(clipped)
+        if not new_d:
+            continue
+        minx, miny, maxx, maxy = clipped.bounds
+        out.append(
+            replace(
+                sh,
+                d=new_d,
+                kind="path",
+                bbox_x_mm=minx,
+                bbox_y_mm=miny,
+                bbox_width_mm=max(maxx - minx, 0.001),
+                bbox_height_mm=max(maxy - miny, 0.001),
+                is_close_path=True,
+            )
+        )
+    return out

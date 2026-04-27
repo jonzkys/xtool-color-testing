@@ -27,7 +27,7 @@ from .schemas import (
     SvgPreviewResponse,
 )
 from .svg_guard import assert_shape_count
-from .svg_subtract import subtract_overlapping_shapes
+from .svg_subtract import clip_shapes_to_rect, subtract_overlapping_shapes
 from .timing import TimingReport
 
 
@@ -106,6 +106,16 @@ def build_svg_layers_project(
     if request.subtract_overlaps:
         with _phase("subtract"):
             shapes = subtract_overlapping_shapes(shapes)
+
+    # Always clip to the canvas — vtracer can emit fractional-pixel
+    # overhang from anti-alias edges; without this, a "base colour" can
+    # bleed past the source image's footprint.
+    if parse_result.output_width_mm > 0 and parse_result.output_height_mm > 0:
+        shapes = clip_shapes_to_rect(
+            shapes, x=0.0, y=0.0,
+            width=parse_result.output_width_mm,
+            height=parse_result.output_height_mm,
+        )
 
     shapes = [
         shape for shape in shapes
@@ -284,6 +294,15 @@ def svg_preview(request: SvgPreviewRequest) -> SvgPreviewResponse:
     # the preview matches what will actually be engraved.
     if request.subtract_overlaps and shapes:
         shapes = subtract_overlapping_shapes(shapes)
+
+    # Same canvas-clip as the build pipeline applies — keeps preview and
+    # final .xcs in lockstep so what the user sees is what burns.
+    if shapes and parsed.output_width_mm > 0 and parsed.output_height_mm > 0:
+        shapes = clip_shapes_to_rect(
+            shapes, x=0.0, y=0.0,
+            width=parsed.output_width_mm,
+            height=parsed.output_height_mm,
+        )
 
     if request.enabled_colors is not None:
         enabled = set(request.enabled_colors)

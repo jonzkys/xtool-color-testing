@@ -102,6 +102,26 @@ function defaultLayerFromDetected(
   };
 }
 
+/** Hue in degrees [0, 360) for an HTML hex string. Returns 0 for greys. */
+function hexHue(hex: string): number {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return 0;
+  const n = parseInt(m[1], 16);
+  const r = ((n >> 16) & 0xff) / 255;
+  const g = ((n >> 8) & 0xff) / 255;
+  const b = (n & 0xff) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  if (d === 0) return 0;
+  let h: number;
+  if (max === r) h = ((g - b) / d) % 6;
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  h *= 60;
+  return h < 0 ? h + 360 : h;
+}
+
 function defaultRequest(materialId: string): SvgLayersRequest {
   return {
     name: "svg-layers",
@@ -166,6 +186,8 @@ export function SvgLayersPage() {
   const [predictedByColor, setPredictedByColor] = useState<Record<string, string>>(
     {},
   );
+  type LayerSortKey = "detected" | "hue" | "luminance_light_first" | "luminance_dark_first";
+  const [layerSort, setLayerSort] = useState<LayerSortKey>("detected");
   const [autoApplying, setAutoApplying] = useState(false);
   const [autoApplyMessage, setAutoApplyMessage] = useState<string | undefined>();
   // Cache the full palette per material_id. Auto-match used to fire one
@@ -710,7 +732,7 @@ export function SvgLayersPage() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setMergeDialogOpen(true)}
-                    title="Merge colors that are within a similarity threshold"
+                    title="Group near-identical colours into one layer. Rewrites every shape's fill in the SVG to the representative colour, so subtraction and engrave passes treat them as one. Reduces pass count without moving any shapes; same-colour overlaps that result will collapse into a single shape."
                   >
                     <Combine className="h-4 w-4" />
                     Merge similar…
@@ -765,8 +787,35 @@ export function SvgLayersPage() {
                 </label>
               )}
               {hasLayers && (
+                <label className="flex items-center gap-2 text-[11.5px] text-[color:var(--color-ink-muted)]">
+                  Sort
+                  <Select
+                    value={layerSort}
+                    onChange={(e) => setLayerSort(e.target.value as LayerSortKey)}
+                    className="h-7 text-[12px] py-0"
+                  >
+                    <option value="detected">As detected (top → bottom)</option>
+                    <option value="hue">Hue</option>
+                    <option value="luminance_light_first">Luminance · light → dark</option>
+                    <option value="luminance_dark_first">Luminance · dark → light</option>
+                  </Select>
+                </label>
+              )}
+              {hasLayers && (
                 <ul className="flex flex-col gap-1.5 max-h-[40vh] overflow-y-auto -mx-1 px-1">
-                  {[...request.layers].reverse().map((l) => {
+                  {(() => {
+                    const ls = [...request.layers];
+                    if (layerSort === "detected") {
+                      ls.reverse(); // last in document = drawn on top = first in list
+                    } else if (layerSort === "hue") {
+                      ls.sort((a, b) => hexHue(a.color) - hexHue(b.color));
+                    } else if (layerSort === "luminance_light_first") {
+                      ls.sort((a, b) => hexToLab(b.color)[0] - hexToLab(a.color)[0]);
+                    } else if (layerSort === "luminance_dark_first") {
+                      ls.sort((a, b) => hexToLab(a.color)[0] - hexToLab(b.color)[0]);
+                    }
+                    return ls;
+                  })().map((l) => {
                     const isSel = selectedColor === l.color;
                     return (
                       <li key={l.color}>
@@ -864,7 +913,9 @@ export function SvgLayersPage() {
                 <span>
                   Subtract overlaps
                   <span className="block text-[11px] text-[color:var(--color-ink-subtle)]">
-                    No double-engrave regions.
+                    Where two layers overlap, the top layer (drawn last) wins —
+                    the bottom layer's overlap region is erased so the laser
+                    never engraves the same patch twice.
                   </span>
                 </span>
               </label>
