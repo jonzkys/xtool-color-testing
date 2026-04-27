@@ -685,10 +685,12 @@ function SpectrumStrip({ swatches }: { swatches: ResultSwatch[] }) {
     sorted.map((s) => s.x_value),
     sorted.map((s) => s.lab[0]),
   );
-  // Stripe width: keep individual bars visible when swatches are
-  // sparse, let them overlap into a continuous band when dense.
-  // 180 / N caps at 10px (min ~2px) — sweet spot for 10–200 swatches.
-  const stripeWidthPx = Math.max(2, Math.min(10, Math.floor(180 / sorted.length)));
+  // Each stripe owns the x-axis territory from the midpoint with its
+  // left neighbour to the midpoint with its right neighbour (1D Voronoi).
+  // First/last stripes anchor at xMin/xMax. This tiles the strip with
+  // no gaps regardless of how many swatches there are or how unevenly
+  // they're spaced — the previous fixed-px-width approach left visible
+  // background gaps for sparse sweeps.
   return (
     <div className="mt-2">
       <div
@@ -696,16 +698,22 @@ function SpectrumStrip({ swatches }: { swatches: ResultSwatch[] }) {
         style={{ height: 64 }}
       >
         {sorted.map((s, i) => {
-          const left = ((s.x_value - xMin) / range) * 100;
+          const leftBoundary =
+            i === 0 ? xMin : (s.x_value + sorted[i - 1].x_value) / 2;
+          const rightBoundary =
+            i === sorted.length - 1
+              ? xMax
+              : (s.x_value + sorted[i + 1].x_value) / 2;
+          const leftPct = ((leftBoundary - xMin) / range) * 100;
+          const widthPct = ((rightBoundary - leftBoundary) / range) * 100;
           return (
             <div
               key={i}
               title={`x ${s.x_value.toFixed(1)} · ${s.hex} · L* ${s.lab[0].toFixed(1)}`}
               className="absolute top-0 bottom-0"
               style={{
-                left: `${left}%`,
-                width: `${stripeWidthPx}px`,
-                transform: "translateX(-50%)",
+                left: `${leftPct}%`,
+                width: `${widthPct}%`,
                 background: s.hex,
               }}
             />
