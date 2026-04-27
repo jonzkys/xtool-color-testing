@@ -108,7 +108,7 @@ export function computePreviewGeometry(spec: TestSpec): PreviewGeometry {
   return { viewW, viewH, gridX, gridY, gridW, gridH, rows, qr, arucos, shape: spec.cell_shape };
 }
 
-export function TestPreview({ spec, testId: _testId }: { spec: TestSpec; testId: number | null }) {
+export function TestPreview({ spec, testId: _testId, compact = false }: { spec: TestSpec; testId: number | null; compact?: boolean }) {
   const g = computePreviewGeometry(spec);
 
   // Token-backed substrate panel — flips in dark mode via --color-substrate.
@@ -117,21 +117,28 @@ export function TestPreview({ spec, testId: _testId }: { spec: TestSpec; testId:
 
   return (
     <div className="w-full flex flex-col gap-2">
-      <div className="flex items-baseline justify-between">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
-          Preview
+      {!compact && (
+        <div className="flex items-baseline justify-between">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
+            Preview
+          </div>
+          <div className="font-mono text-[11px] text-[color:var(--color-ink-muted)] tabular-nums">
+            {g.viewW.toFixed(1)}mm × {g.viewH.toFixed(1)}mm
+          </div>
         </div>
-        <div className="font-mono text-[11px] text-[color:var(--color-ink-muted)] tabular-nums">
-          {g.viewW.toFixed(1)}mm × {g.viewH.toFixed(1)}mm
-        </div>
-      </div>
+      )}
       <div
-        className="rounded-[12px] border border-[color:var(--color-border)] overflow-hidden p-4 bg-[color:var(--color-substrate)]"
+        className={compact
+          ? "h-[160px] w-full rounded-[12px] border border-[color:var(--color-border)] overflow-hidden p-2 bg-[color:var(--color-substrate)]"
+          : "rounded-[12px] border border-[color:var(--color-border)] overflow-hidden p-4 bg-[color:var(--color-substrate)]"}
         style={{ boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04), var(--shadow-card)" }}
       >
         <svg
           viewBox={`0 0 ${g.viewW} ${g.viewH}`}
-          style={{ width: "100%", height: "auto", display: "block" }}
+          preserveAspectRatio={compact ? "xMidYMid meet" : undefined}
+          style={compact
+            ? { width: "100%", height: "100%", display: "block" }
+            : { width: "100%", height: "auto", display: "block" }}
         >
           {g.rows.map((row, ri) => (
             <g key={`cells-${ri}`}>
