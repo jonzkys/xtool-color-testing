@@ -214,14 +214,34 @@ function injectCornerBackdrops(
   const br = sampleCornerColor(pixels, width, height, "br");
   const halfW = width / 2;
   const halfH = height / 2;
-  // Each rect covers its own quadrant, expanded by 1 pixel on every
-  // side so adjacent rects overlap by 1 pixel along the midlines (no
-  // hairline seam between quadrants) and each rect extends 1 pixel
-  // past the canvas edge (no hairline seam where vtracer's traced
-  // shapes meet the canvas border). The viewBox clips the overshoot.
+  // Five rects total. A base full-canvas rect with the corner-average
+  // colour catches any sub-pixel hairline that the per-corner rects
+  // leave at their seams (Firefox is sensitive to this). Above it,
+  // four quadrant rects refine the colour at each canvas corner so the
+  // top-left picks up sky blue, the bottom-left picks up the ground,
+  // etc. Each quadrant is expanded by one pixel on every side so
+  // adjacent quadrants overlap by one pixel along the midlines and
+  // each extends one pixel past the canvas edge.
   const W2 = halfW + 1;
   const H2 = halfH + 1;
+  const avgHex = (() => {
+    const parse = (h: string) => [
+      parseInt(h.slice(1, 3), 16),
+      parseInt(h.slice(3, 5), 16),
+      parseInt(h.slice(5, 7), 16),
+    ];
+    const [tlr, tlg, tlb] = parse(tl);
+    const [trr, trg, trb] = parse(tr);
+    const [blr, blg, blb] = parse(bl);
+    const [brr, brg, brb] = parse(br);
+    const r = Math.round((tlr + trr + blr + brr) / 4);
+    const g = Math.round((tlg + trg + blg + brg) / 4);
+    const b = Math.round((tlb + trb + blb + brb) / 4);
+    const hx = (v: number) => v.toString(16).padStart(2, "0");
+    return `#${hx(r)}${hx(g)}${hx(b)}`;
+  })();
   const rects = [
+    `<rect x="-1" y="-1" width="${width + 2}" height="${height + 2}" fill="${avgHex}"/>`,
     `<rect x="-1" y="-1" width="${W2}" height="${H2}" fill="${tl}"/>`,
     `<rect x="${halfW}" y="-1" width="${W2}" height="${H2}" fill="${tr}"/>`,
     `<rect x="-1" y="${halfH}" width="${W2}" height="${H2}" fill="${bl}"/>`,
