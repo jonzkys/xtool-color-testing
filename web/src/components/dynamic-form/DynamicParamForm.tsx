@@ -41,6 +41,11 @@ export interface DynamicParamFormProps {
   value: Record<string, number | string>;
   onChange: (next: Record<string, number | string>) => void;
   disabled?: boolean;
+  /** Per-field override captions. When a field is in this map, the
+   *  field renders disabled and the caption appears below it as
+   *  italic micro-text. Used by the test-detail editor to mark base
+   *  params that are overridden by the X/Y sweep. */
+  fieldOverrides?: Record<string, string>;
 }
 
 /**
@@ -62,6 +67,7 @@ export function DynamicParamForm({
   value,
   onChange,
   disabled,
+  fieldOverrides,
 }: DynamicParamFormProps) {
   function patch(field: string, next: number | string) {
     onChange({ ...value, [field]: next });
@@ -77,6 +83,8 @@ export function DynamicParamForm({
     const meta = FIELD_META[field] ?? { label: field };
     const current = value[field] ?? 0;
     const isFullWidth = FULL_WIDTH_FIELDS.has(field);
+    const overrideCaption = fieldOverrides?.[field];
+    const effectiveDisabled = disabled || !!overrideCaption;
 
     let node: React.ReactNode = null;
 
@@ -90,7 +98,7 @@ export function DynamicParamForm({
           step={constraint.step}
           value={typeof current === "number" ? current : Number(current)}
           onChange={(v) => patch(field, v)}
-          disabled={disabled}
+          disabled={effectiveDisabled}
           prominent={field === "power"}
         />
       );
@@ -100,7 +108,7 @@ export function DynamicParamForm({
           <PulseWidthSelect
             value={typeof current === "number" ? current : Number(current)}
             onChange={(v) => patch(field, v)}
-            disabled={disabled}
+            disabled={effectiveDisabled}
           />
         );
       } else {
@@ -111,7 +119,7 @@ export function DynamicParamForm({
             values={constraint.values}
             value={current}
             onChange={(v) => patch(field, v)}
-            disabled={disabled}
+            disabled={effectiveDisabled}
           />
         );
       }
@@ -122,7 +130,7 @@ export function DynamicParamForm({
             value={String(current)}
             values={constraint.values as string[]}
             onChange={(v) => patch(field, v)}
-            disabled={disabled}
+            disabled={effectiveDisabled}
           />
         );
       } else {
@@ -132,13 +140,26 @@ export function DynamicParamForm({
             values={constraint.values}
             value={current}
             onChange={(v) => patch(field, v)}
-            disabled={disabled}
+            disabled={effectiveDisabled}
           />
         );
       }
     }
 
-    if (node) rendered.push({ field, node, fullWidth: isFullWidth });
+    if (node) {
+      // Wrap with caption if overridden.
+      if (overrideCaption) {
+        node = (
+          <div>
+            {node}
+            <p className="mt-1 text-[10.5px] text-[color:var(--color-ink-subtle)] italic">
+              {overrideCaption}
+            </p>
+          </div>
+        );
+      }
+      rendered.push({ field, node, fullWidth: isFullWidth });
+    }
   }
 
   if (rendered.length === 0) return null;

@@ -42,7 +42,11 @@ export function ResultDetailDialog({
 }
 
 function ResultDetailBody({ result }: { result: ResultRecord }) {
-  const blobUrl = useAuthedImage(result.image_url);
+  const [imageView, setImageView] = useState<"warped" | "original">("warped");
+  const heroUrl = imageView === "warped"
+    ? `/api/results/${result.id}/warped-image`
+    : result.image_url;
+  const blobUrl = useAuthedImage(heroUrl);
   const isDemo = useIsDemo();
   const [previewAggregator, setPreviewAggregator] = useState<SampleAggregator | null>(null);
   const [previewSwatchesData, setPreviewSwatchesData] = useState<ResultSwatch[] | null>(null);
@@ -70,6 +74,10 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
   const currentAggregator = previewAggregator ?? storedAggregator;
   const displayedSwatches = previewSwatchesData ?? result.swatches;
   const isPreviewing = previewAggregator !== null && previewAggregator !== storedAggregator;
+  // The spectrum strip plots one tile per x_value, so on a 2D sweep it
+  // collapses the y dimension entirely. Hide it in that case — the
+  // swatch grid below already shows the full 2D structure.
+  const is2D = testSpec?.y_param != null && (testSpec?.y_steps ?? 1) > 1;
 
   async function onAggregatorChange(agg: SampleAggregator) {
     setPreviewAggregator(agg);
@@ -123,14 +131,17 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
       </DialogTitle>
       <div className="flex-1 overflow-y-auto">
 
-      {/* Hero: the photograph on a dark mat, with lab-notebook crop
-          marks and a mix-blend slug that stays legible against any
-          photograph. */}
+      {/* Hero: warped (default) or original photograph, on a dark mat,
+          with lab-notebook crop marks and a mix-blend slug that stays
+          legible against any image. The toggle in the bottom-left
+          swaps between the two views. */}
       <div className="relative h-[300px] bg-[color:var(--color-substrate)] overflow-hidden">
         {blobUrl ? (
           <img
             src={blobUrl}
-            alt={`Photograph of test result #${result.id}`}
+            alt={imageView === "warped"
+              ? `Rectified burn-space view of result #${result.id}`
+              : `Photograph of test result #${result.id}`}
             className="absolute inset-0 w-full h-full object-contain"
           />
         ) : (
@@ -194,6 +205,36 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
         >
           <X className="h-4 w-4" strokeWidth={2} />
         </DialogClose>
+
+        {/* View toggle — top-centre. Defaults to the warped colour-only
+            crop (the part that actually drives sampling) with the
+            original photo a click away. */}
+        <div
+          role="tablist"
+          aria-label="Hero view"
+          className="absolute top-3 left-1/2 -translate-x-1/2 inline-flex items-stretch rounded-full border border-white/30 overflow-hidden backdrop-blur-[2px]"
+          style={{ mixBlendMode: "difference" }}
+        >
+          {(["warped", "original"] as const).map((view) => {
+            const active = imageView === view;
+            return (
+              <button
+                key={view}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setImageView(view)}
+                className={cn(
+                  "px-3 py-1 font-mono text-[9.5px] tracking-[0.2em] uppercase font-semibold transition-colors",
+                  active ? "bg-white/20" : "hover:bg-white/10",
+                )}
+                style={{ color: "white" }}
+              >
+                {view}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <MetalBar />
@@ -233,13 +274,15 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
             />
             <LuminanceRamp swatches={displayedSwatches} />
           </div>
-          <div>
-            <ChartLabel
-              title="Spectrum · L* vs sweep"
-              hint="colors across the parameter axis"
-            />
-            <SpectrumStrip swatches={displayedSwatches} />
-          </div>
+          {!is2D && (
+            <div>
+              <ChartLabel
+                title="Spectrum · L* vs sweep"
+                hint="colors across the parameter axis"
+              />
+              <SpectrumStrip swatches={displayedSwatches} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -685,10 +728,12 @@ function SpectrumStrip({ swatches }: { swatches: ResultSwatch[] }) {
     sorted.map((s) => s.x_value),
     sorted.map((s) => s.lab[0]),
   );
-  // Stripe width: keep individual bars visible when swatches are
-  // sparse, let them overlap into a continuous band when dense.
-  // 180 / N caps at 10px (min ~2px) — sweet spot for 10–200 swatches.
-  const stripeWidthPx = Math.max(2, Math.min(10, Math.floor(180 / sorted.length)));
+  // Each stripe owns the x-axis territory from the midpoint with its
+  // left neighbour to the midpoint with its right neighbour (1D Voronoi).
+  // First/last stripes anchor at xMin/xMax. This tiles the strip with
+  // no gaps regardless of how many swatches there are or how unevenly
+  // they're spaced — the previous fixed-px-width approach left visible
+  // background gaps for sparse sweeps.
   return (
     <div className="mt-2">
       <div
@@ -696,16 +741,22 @@ function SpectrumStrip({ swatches }: { swatches: ResultSwatch[] }) {
         style={{ height: 64 }}
       >
         {sorted.map((s, i) => {
-          const left = ((s.x_value - xMin) / range) * 100;
+          const leftBoundary =
+            i === 0 ? xMin : (s.x_value + sorted[i - 1].x_value) / 2;
+          const rightBoundary =
+            i === sorted.length - 1
+              ? xMax
+              : (s.x_value + sorted[i + 1].x_value) / 2;
+          const leftPct = ((leftBoundary - xMin) / range) * 100;
+          const widthPct = ((rightBoundary - leftBoundary) / range) * 100;
           return (
             <div
               key={i}
               title={`x ${s.x_value.toFixed(1)} · ${s.hex} · L* ${s.lab[0].toFixed(1)}`}
               className="absolute top-0 bottom-0"
               style={{
-                left: `${left}%`,
-                width: `${stripeWidthPx}px`,
-                transform: "translateX(-50%)",
+                left: `${leftPct}%`,
+                width: `${widthPct}%`,
                 background: s.hex,
               }}
             />

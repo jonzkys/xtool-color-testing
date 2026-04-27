@@ -1334,6 +1334,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         suffix = Path(r["image_path"]).suffix
         return Response(content=data, media_type=content_type_for(suffix))
 
+    @app.get("/api/results/{rid}/warped-image")
+    def results_warped_image(
+        rid: int, user_id: int = Depends(get_current_user),
+    ) -> Response:
+        """Re-run the capture pipeline to produce the rectified
+        burn-space image (just the colour grid, ArUco/QR cropped out)
+        and return it as PNG. Re-computes each call — fast enough for
+        a modal that's only opened on demand.
+        """
+        import cv2
+        r = r_repo.get(rid, owner_id=user_id)
+        if r is None:
+            raise HTTPException(status_code=404, detail="result not found")
+        t = t_repo.get(r["test_id"], owner_id=user_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        try:
+            data = images.read(r["image_path"])
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=410,
+                detail="source image no longer available",
+            )
+        try:
+            cap_result = capture_service.run_capture(
+                image_bytes=data, test_id=r["test_id"], spec=t["spec"],
+            )
+        except capture_service.CaptureError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        ok, buf = cv2.imencode(".png", cap_result.warped_image_bgr)
+        if not ok:
+            raise HTTPException(status_code=500, detail="failed to encode warped image")
+        return Response(content=bytes(buf), media_type="image/png")
+
     @app.get("/api/tests/{tid}/swatches", response_model=list[AveragedSwatch])
     def test_swatches(
         tid: int, user_id: int = Depends(get_current_user),
