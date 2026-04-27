@@ -224,6 +224,7 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
               <input
                 type="checkbox"
                 checked={t.hide_axis_labels}
+                disabled={locked}
                 onChange={(e) => updateSpec({ hide_axis_labels: e.target.checked })}
                 className="mt-0.5"
               />

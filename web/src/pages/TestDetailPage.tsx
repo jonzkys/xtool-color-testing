@@ -163,7 +163,8 @@ export function TestDetailPage({ testId }: Props) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <header className="shrink-0 px-6 pt-4 pb-3 flex flex-wrap items-start gap-4 border-b border-[color:var(--color-border)]">
+      <header className="shrink-0 border-b border-[color:var(--color-border)]">
+        <div className="mx-auto max-w-[1500px] w-full px-6 pt-4 pb-3 flex flex-wrap items-start gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)] mb-1">
             <span>Test</span>
@@ -258,16 +259,19 @@ export function TestDetailPage({ testId }: Props) {
             </DemoLock>
           )}
         </div>
+        </div>
       </header>
 
       {error && (
-        <div className="shrink-0 mx-6 mt-3 rounded-[6px] border border-[color:var(--color-destructive)]/30 bg-[color:var(--color-destructive-tint)] px-3 py-2 text-[13px] text-[color:var(--color-destructive)]">
-          {error}
+        <div className="shrink-0 mx-auto max-w-[1500px] w-full px-6 mt-3">
+          <div className="rounded-[6px] border border-[color:var(--color-destructive)]/30 bg-[color:var(--color-destructive-tint)] px-3 py-2 text-[13px] text-[color:var(--color-destructive)]">
+            {error}
+          </div>
         </div>
       )}
 
-      {/* BODY: 2-column grid filling remaining viewport height */}
-      <div className="flex-1 min-h-0 grid grid-cols-[58fr_42fr] gap-5 px-6 py-4">
+      {/* BODY: 2-column grid filling remaining viewport height, centered with breathing room on wide screens */}
+      <div className="flex-1 min-h-0 mx-auto max-w-[1500px] w-full grid grid-cols-[58fr_42fr] gap-5 px-6 py-4">
         {/* LEFT: tabbed editor */}
         <div className="flex flex-col min-h-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-hidden">
           <TabBar<ParamTestEditorTab>
