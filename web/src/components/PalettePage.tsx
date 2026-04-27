@@ -9,9 +9,10 @@ import {
   createManualPaletteEntry,
   patchPaletteEntry,
 } from "../api/palette";
-import type { PaletteEntry, PaletteQueryResult } from "../types";
+import type { PaletteEntry, PaletteQueryResult, TestRecord } from "../types";
 import type { Material } from "../library";
 import { listMaterials, listPresets } from "../api/library";
+import { listTests } from "../api/tests";
 import { formatRoute } from "../router";
 import { PaletteEntryDialog } from "./PaletteEntryDialog";
 import { getCurrentMachineId } from "../state/machine";
@@ -263,6 +264,9 @@ function BrowseView({ materials }: { materials: Material[] }) {
   const [materialId, setMaterialId] = useState<string>("");
   const [error, setError] = useState<string | undefined>();
   const [infoId, setInfoId] = useState<number | null>(null);
+  // test_id → name lookup so each section header can read "Test #N · Name"
+  // instead of just the bare id. Loaded once for the current machine.
+  const [testNames, setTestNames] = useState<Record<number, string>>({});
 
   async function refresh() {
     setError(undefined);
@@ -277,6 +281,15 @@ function BrowseView({ materials }: { materials: Material[] }) {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [materialId]);
+  useEffect(() => {
+    listTests({ machine_id: getCurrentMachineId() })
+      .then((ts: TestRecord[]) => {
+        const map: Record<number, string> = {};
+        for (const t of ts) map[t.id] = t.name;
+        setTestNames(map);
+      })
+      .catch(() => { /* names are decorative; silent on failure */ });
+  }, []);
 
   async function onDelete(id: number) {
     const entry = entries.find((e) => e.id === id);
@@ -365,10 +378,15 @@ function BrowseView({ materials }: { materials: Material[] }) {
           <Section
             key={testId}
             title={
-              <span className="flex items-baseline gap-2">
+              <span className="flex items-baseline gap-2 flex-wrap">
                 <span>
                   Test <span className="font-mono text-[color:var(--color-ink)]">#{testId}</span>
                 </span>
+                {testNames[testId] && (
+                  <span className="text-[color:var(--color-ink-muted)] font-normal">
+                    · {testNames[testId]}
+                  </span>
+                )}
                 <Badge variant="info" size="sm">{materialName}</Badge>
               </span>
             }
