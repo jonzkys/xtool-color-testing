@@ -12,6 +12,7 @@ import {
 } from "../api/tests";
 import { listMaterials, listPresets } from "../api/library";
 import { ParamTestEditor } from "../components/ParamTestEditor";
+import type { ParamTestEditorTab } from "../components/ParamTestEditor";
 import { TestPreview } from "../components/TestPreview";
 import { ResultsPanel } from "../components/ResultsPanel";
 import { formatRoute } from "../router";
@@ -21,13 +22,10 @@ import { getCurrentMachineId } from "../state/machine";
 import {
   Badge,
   Button,
-  Card,
   DemoLock,
   EmptyState,
-  Field,
   Input,
-  PageContainer,
-  Select,
+  TabBar,
 } from "../ui";
 
 interface Props {
@@ -43,6 +41,7 @@ export function TestDetailPage({ testId }: Props) {
   const [name, setName] = useState("New test");
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState<ParamTestEditorTab>("test");
 
   useEffect(() => {
     (async () => {
@@ -162,8 +161,9 @@ export function TestDetailPage({ testId }: Props) {
   }
 
   return (
-    <PageContainer maxWidth="wide" className="py-6">
-      <header className="mb-5 flex flex-wrap items-start gap-4">
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Header */}
+      <header className="shrink-0 px-6 pt-4 pb-3 flex flex-wrap items-start gap-4 border-b border-[color:var(--color-border)]">
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)] mb-1">
             <span>Test</span>
@@ -261,52 +261,57 @@ export function TestDetailPage({ testId }: Props) {
       </header>
 
       {error && (
-        <div className="mb-4 rounded-[6px] border border-[color:var(--color-destructive)]/30 bg-[color:var(--color-destructive-tint)] px-3 py-2 text-[13px] text-[color:var(--color-destructive)]">
+        <div className="shrink-0 mx-6 mt-3 rounded-[6px] border border-[color:var(--color-destructive)]/30 bg-[color:var(--color-destructive-tint)] px-3 py-2 text-[13px] text-[color:var(--color-destructive)]">
           {error}
         </div>
       )}
 
-      <div className="grid grid-cols-[360px_minmax(0,1fr)_360px] gap-5">
-        {/* LEFT: form */}
-        <Card padded={false} className="self-start">
-          <div className="p-4 pb-0">
-            <Field label="Material">
-              <Select
-                value={materialId ?? ""}
-                // Material stays editable on locked tests so a burn
-                // ingested under the wrong substrate can be relabelled
-                // — the backend cascades the change to harvested
-                // palette entries.
-                onChange={(e) => setMaterialId(Number(e.target.value))}
-              >
-                {materials.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+      {/* BODY: 2-column grid filling remaining viewport height */}
+      <div className="flex-1 min-h-0 grid grid-cols-[58fr_42fr] gap-5 px-6 py-4">
+        {/* LEFT: tabbed editor */}
+        <div className="flex flex-col min-h-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-hidden">
+          <TabBar
+            items={[
+              { id: "test", label: "Test" },
+              { id: "sweep", label: "Sweep" },
+              { id: "base", label: "Base params" },
+              { id: "registration", label: "Registration" },
+            ]}
+            value={activeTab}
+            onChange={(id) => setActiveTab(id as ParamTestEditorTab)}
+          />
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <ParamTestEditor
+              spec={spec}
+              onChange={setSpec}
+              locked={test?.locked ?? false}
+              tab={activeTab}
+              materials={materials}
+              materialId={materialId}
+              onMaterialChange={setMaterialId}
+            />
           </div>
-          <ParamTestEditor spec={spec} onChange={setSpec} locked={test?.locked ?? false} />
-        </Card>
-
-        {/* CENTER: preview */}
-        <div className="flex flex-col gap-4 min-w-0">
-          <TestPreview spec={spec} testId={test?.id ?? null} />
         </div>
 
-        {/* RIGHT: results */}
-        <Card padded={false} className="self-start">
-          {test ? (
-            <ResultsPanel testId={test.id} locked={test.locked} />
-          ) : (
-            <EmptyState
-              title="Save first"
-              description="Upload and ingest palette swatches after the test is saved."
-            />
-          )}
-        </Card>
+        {/* RIGHT: preview + scrollable results */}
+        <div className="flex flex-col min-h-0 gap-3">
+          <div className="shrink-0">
+            <TestPreview spec={spec} testId={test?.id ?? null} compact />
+          </div>
+          <div className="flex-1 min-h-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-hidden">
+            {test ? (
+              <ResultsPanel testId={test.id} locked={test.locked} />
+            ) : (
+              <div className="p-6 h-full flex items-center justify-center">
+                <EmptyState
+                  title="Save first"
+                  description="Upload and ingest palette swatches after the test is saved."
+                />
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-    </PageContainer>
+    </div>
   );
 }
