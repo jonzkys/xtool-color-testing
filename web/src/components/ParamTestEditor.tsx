@@ -33,6 +33,28 @@ function samplingDescription(cell_shape: string, aggregator?: SampleAggregator):
   return `${region}, ${AGGREGATOR_LABELS[agg]}`;
 }
 
+/** Base-param fields that can also appear as an X or Y sweep axis.
+ *  When swept, the Base-tab field is overridden and should render
+ *  disabled with a "swept" caption. Laser is omitted — it's a fixed
+ *  enum, not a numeric range, and isn't a valid sweep axis. */
+const SWEPTABLE_FIELDS = new Set([
+  "power", "speed", "frequency", "density",
+  "passes", "pulse_width", "scan_angle",
+] as const);
+
+/** If `field` is the X or Y sweep axis, return the human-readable
+ *  caption explaining the override. Otherwise return null. */
+function sweptByCaption(
+  field: string,
+  xParam: string,
+  yParam: string | null,
+): string | null {
+  if (!SWEPTABLE_FIELDS.has(field as (typeof SWEPTABLE_FIELDS extends Set<infer T> ? T : never))) return null;
+  if (xParam === field) return "Overridden by X-axis sweep";
+  if (yParam === field) return "Overridden by Y-axis sweep";
+  return null;
+}
+
 export type ParamTestEditorTab = "test" | "sweep" | "base" | "registration";
 
 interface Props {
@@ -350,6 +372,8 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
             base_params={t.base_params}
             angle_mode={t.angle_mode}
             updateBase={updateBase}
+            x_param={t.x_param}
+            y_param={t.y_param}
           />
 
           <Section title="Engraving direction">
@@ -585,6 +609,8 @@ function BaseParamsSection({
   base_params,
   angle_mode,
   updateBase,
+  x_param,
+  y_param,
 }: {
   machine: Machine | null;
   currentMode: ModeId;
@@ -594,7 +620,15 @@ function BaseParamsSection({
   base_params: TestSpec["base_params"];
   angle_mode: TestSpec["angle_mode"];
   updateBase: (patch: Partial<TestSpec["base_params"]>) => void;
+  x_param: TestSpec["x_param"];
+  y_param: TestSpec["y_param"];
 }) {
+  const fieldOverrides: Record<string, string> = {};
+  for (const f of ["power", "density", "frequency", "speed", "passes", "pulse_width"]) {
+    const cap = sweptByCaption(f, x_param, y_param);
+    if (cap) fieldOverrides[f] = cap;
+  }
+
   return (
     <section className="flex flex-col">
       {/* Section header */}
@@ -633,6 +667,7 @@ function BaseParamsSection({
                 updateBase(next as Partial<TestSpec["base_params"]>)
               }
               disabled={locked}
+              fieldOverrides={fieldOverrides}
             />
 
             {/* Crosshatch pass hint */}
@@ -645,11 +680,23 @@ function BaseParamsSection({
             )}
 
             {/* Scan angle — a compact inline readout row */}
-            <ScanAngleRow
-              value={base_params.scan_angle ?? 90}
-              onChange={(v) => updateBase({ scan_angle: v })}
-              disabled={locked}
-            />
+            {(() => {
+              const scanCaption = sweptByCaption("scan_angle", x_param, y_param);
+              return (
+                <div>
+                  <ScanAngleRow
+                    value={base_params.scan_angle ?? 90}
+                    onChange={(v) => updateBase({ scan_angle: v })}
+                    disabled={locked || scanCaption !== null}
+                  />
+                  {scanCaption && (
+                    <p className="mt-1 text-[10.5px] text-[color:var(--color-ink-subtle)] italic">
+                      {scanCaption}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
           </>
         ) : (
           /* Profile not yet loaded — render the static fallback form. */
