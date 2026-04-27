@@ -178,3 +178,88 @@ def test_set_favorited_works_on_any_source(fresh_db):
 
 def test_set_favorited_missing_returns_none(fresh_db):
     assert repo.set_favorited(99999, True) is None
+
+
+def test_insert_bulk_is_idempotent_for_same_identity(fresh_db):
+    """Calling insert_bulk twice with the same entries must produce
+    the same rows — no duplicates. The second call returns the same
+    ids as the first."""
+    mid = _seed_material()
+    entries = [
+        dict(test_id=1, material_id=mid, x_value=500, y_value=None,
+             hex="#ff0000", sigma=1.0, source="averaged",
+             source_result_id=None, params={"power": 50}),
+        dict(test_id=1, material_id=mid, x_value=600, y_value=None,
+             hex="#00ff00", sigma=1.0, source="averaged",
+             source_result_id=None, params={"power": 60}),
+    ]
+    first_ids = repo.insert_bulk(entries)
+    second_ids = repo.insert_bulk(entries)
+    assert first_ids == second_ids
+    # Only the original two rows exist, not four.
+    assert len(repo.list_all(material_id=mid)) == 2
+
+
+def test_insert_bulk_refreshes_capture_fields_preserves_user_state(fresh_db):
+    """A re-ingest with a different hex must update the row in place,
+    refreshing hex/lab/sigma/params but preserving notes, favorited,
+    and created_at."""
+    mid = _seed_material()
+    [rid] = repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=500, y_value=None,
+             hex="#aa0000", sigma=1.0, source="averaged",
+             source_result_id=None, params={"power": 40}),
+    ])
+    # Mark the row favorited and add a note via the existing repo API.
+    repo.set_favorited(rid, True)
+    repo.update_entry(rid, notes="perfect for stainless 316")
+    original = repo.get_by_id(rid)
+    original_created_at = original["created_at"]
+
+    # Re-ingest with a different hex + sigma + params.
+    [rid_again] = repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=500, y_value=None,
+             hex="#bb1111", sigma=2.5, source="averaged",
+             source_result_id=None, params={"power": 50}),
+    ])
+    assert rid_again == rid  # same row, refreshed in place
+    refreshed = repo.get_by_id(rid)
+    # Capture-derived fields refreshed:
+    assert refreshed["hex"] == "#bb1111"
+    assert refreshed["sigma"] == 2.5
+    assert refreshed["params"] == {"power": 50}
+    # lab_l should reflect the new hex (just check it changed).
+    assert refreshed["lab"] != original["lab"]
+    # User-curated state preserved:
+    assert refreshed["notes"] == "perfect for stainless 316"
+    assert refreshed["favorited"] is True
+    assert refreshed["created_at"] == original_created_at
+
+
+def test_insert_bulk_distinct_source_result_ids_stay_distinct(fresh_db):
+    """Two rows with the same (test_id, x, y, source) but different
+    source_result_id are DIFFERENT logical entries — they must not
+    merge."""
+    mid = _seed_material()
+    [id_a] = repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=500, y_value=None,
+             hex="#aa0000", sigma=1.0, source="single_result",
+             source_result_id=10, params={"power": 50}),
+    ])
+    [id_b] = repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=500, y_value=None,
+             hex="#bb0000", sigma=1.0, source="single_result",
+             source_result_id=11, params={"power": 50}),
+    ])
+    assert id_a != id_b
+    assert len(repo.list_all(material_id=mid)) == 2
+    # Re-ingesting just one should refresh only that row.
+    [id_a_again] = repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=500, y_value=None,
+             hex="#cc0000", sigma=1.0, source="single_result",
+             source_result_id=10, params={"power": 50}),
+    ])
+    assert id_a_again == id_a
+    rows = {e["id"]: e for e in repo.list_all(material_id=mid)}
+    assert rows[id_a]["hex"] == "#cc0000"
+    assert rows[id_b]["hex"] == "#bb0000"  # untouched

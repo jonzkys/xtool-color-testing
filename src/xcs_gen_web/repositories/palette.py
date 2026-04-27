@@ -97,10 +97,59 @@ def _check_machine_matches_test(s, e: dict[str, Any]) -> None:
         )
 
 
+# Capture-derived columns refreshed on re-ingest; user-curated columns
+# (notes, favorited, created_at) are preserved.
+_REFRESH_COLUMNS = ("hex", "lab_l", "lab_a", "lab_b", "sigma", "params_json")
+
+
+def _find_existing_id(s, row: dict[str, Any]) -> int | None:
+    """Return the id of the existing palette_entries row whose natural
+    identity matches ``row``, or None if none exists. Identity is
+    (test_id, x_value, y_value, source, source_result_id, owner_id)
+    with NULL-safe equality on the nullable fields."""
+    cond = and_(
+        palette_entries.c.test_id == row["test_id"],
+        palette_entries.c.source == row["source"],
+        palette_entries.c.owner_id == row["owner_id"],
+        (
+            palette_entries.c.x_value.is_(None)
+            if row["x_value"] is None
+            else palette_entries.c.x_value == row["x_value"]
+        ),
+        (
+            palette_entries.c.y_value.is_(None)
+            if row["y_value"] is None
+            else palette_entries.c.y_value == row["y_value"]
+        ),
+        (
+            palette_entries.c.source_result_id.is_(None)
+            if row["source_result_id"] is None
+            else palette_entries.c.source_result_id == row["source_result_id"]
+        ),
+    )
+    existing = s.execute(
+        select(palette_entries.c.id).where(cond).limit(1)
+    ).one_or_none()
+    return existing.id if existing else None
+
+
 def insert_bulk(
     entries: Iterable[dict[str, Any]], *, owner_id: int = STANDALONE_USER_ID,
     visibility: str = DEFAULT_VISIBILITY,
 ) -> list[int]:
+    """Idempotent upsert: for each entry, refresh the existing row whose
+    natural identity matches if one exists, else insert a new row.
+
+    Natural identity is (test_id, x_value, y_value, source,
+    source_result_id, owner_id). On UPDATE only the capture-derived
+    columns (hex, lab_*, sigma, params_json) are refreshed —
+    user-curated columns (notes, favorited, created_at) are preserved
+    so that ingest never silently destroys annotations or favourite
+    stars.
+
+    Returns the list of row ids (existing or newly-inserted) in input
+    order, so callers can correlate ``ids[i]`` with ``entries[i]``.
+    """
     entries = list(entries)
     now = _now()
     rows = [_build_row(e, now, owner_id, visibility) for e in entries]
@@ -111,8 +160,18 @@ def insert_bulk(
             _check_machine_matches_test(s, e)
         ids: list[int] = []
         for row in rows:
-            res = s.execute(palette_entries.insert().values(**row))
-            ids.append(res.inserted_primary_key[0])
+            existing_id = _find_existing_id(s, row)
+            if existing_id is not None:
+                refresh_values = {col: row[col] for col in _REFRESH_COLUMNS}
+                s.execute(
+                    palette_entries.update()
+                    .where(palette_entries.c.id == existing_id)
+                    .values(**refresh_values)
+                )
+                ids.append(existing_id)
+            else:
+                res = s.execute(palette_entries.insert().values(**row))
+                ids.append(res.inserted_primary_key[0])
         return ids
 
 
@@ -163,6 +222,20 @@ def list_all(
             q = q.where(palette_entries.c.source == source)
         q = q.order_by(palette_entries.c.created_at.desc())
         return [_row_to_entry(r) for r in s.execute(q).all()]
+
+
+def get_by_id(eid: int, *, owner_id: int = STANDALONE_USER_ID) -> dict[str, Any] | None:
+    """Return the palette entry with the given id (owner-scoped), or None."""
+    with session_scope() as s:
+        row = s.execute(
+            select(palette_entries).where(
+                and_(
+                    palette_entries.c.id == eid,
+                    palette_entries.c.owner_id == owner_id,
+                ),
+            )
+        ).one_or_none()
+        return _row_to_entry(row) if row else None
 
 
 def query_by_hex(
