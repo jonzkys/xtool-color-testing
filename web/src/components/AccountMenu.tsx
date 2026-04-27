@@ -74,18 +74,16 @@ export function AccountMenu() {
     window.location.reload();
   };
 
-  if (!me) {
-    // Still resolving — render a subtle placeholder chip so TopBar
-    // layout doesn't jump.
-    return (
-      <div className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] text-[color:var(--color-ink-subtle)] font-mono text-[10.5px] tracking-[0.1em] uppercase">
-        <User className="h-3 w-3" strokeWidth={2} />
-        <span>…</span>
-      </div>
-    );
-  }
-
-  const display = me.first_name || maskKey(me.api_key);
+  // Display name resolution. Empty first_name falls back to a masked
+  // hint of the api_key; if the key is also empty (or me hasn't
+  // resolved yet) we use a generic "User" so the trigger is always
+  // clickable. The previous loading-state placeholder was a <div>
+  // (non-interactive), which left the user stranded with no way to
+  // sign out when getMe failed silently.
+  const display =
+    (me?.first_name && me.first_name.trim()) ||
+    (me?.api_key ? maskKey(me.api_key) : "") ||
+    "User";
 
   return (
     <DropdownMenu.Root>
@@ -124,7 +122,7 @@ export function AccountMenu() {
             <div className="font-mono text-[9.5px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)]">
               Workbench
             </div>
-            {renaming ? (
+            {renaming && me ? (
               <input
                 type="text"
                 value={draft}
@@ -143,31 +141,35 @@ export function AccountMenu() {
               />
             ) : (
               <div className="mt-0.5 text-[14px] font-semibold text-[color:var(--color-ink)] truncate">
-                {me.first_name || <em className="font-normal text-[color:var(--color-ink-muted)]">no name</em>}
+                {me?.first_name?.trim() || <em className="font-normal text-[color:var(--color-ink-muted)]">no name</em>}
               </div>
             )}
             <div className="mt-1.5 font-mono text-[10.5px] text-[color:var(--color-ink-muted)] tabular-nums break-all select-all">
-              {me.api_key}
+              {me?.api_key ?? "—"}
             </div>
           </div>
 
-          <MenuItem
-            icon={copied ? <Check className="h-3.5 w-3.5 text-[color:var(--color-success)]" strokeWidth={2.5} /> : <Copy className="h-3.5 w-3.5" strokeWidth={1.75} />}
-            label={copied ? "Copied to clipboard" : "Copy api key"}
-            onSelect={(e) => {
-              // Keep the dropdown open while the confirmation flashes.
-              e.preventDefault();
-              void copy();
-            }}
-          />
-          <MenuItem
-            icon={<Pencil className="h-3.5 w-3.5" strokeWidth={1.75} />}
-            label={me.first_name ? "Rename" : "Add a name"}
-            onSelect={(e) => {
-              e.preventDefault();
-              setRenaming(true);
-            }}
-          />
+          {me && (
+            <>
+              <MenuItem
+                icon={copied ? <Check className="h-3.5 w-3.5 text-[color:var(--color-success)]" strokeWidth={2.5} /> : <Copy className="h-3.5 w-3.5" strokeWidth={1.75} />}
+                label={copied ? "Copied to clipboard" : "Copy api key"}
+                onSelect={(e) => {
+                  // Keep the dropdown open while the confirmation flashes.
+                  e.preventDefault();
+                  void copy();
+                }}
+              />
+              <MenuItem
+                icon={<Pencil className="h-3.5 w-3.5" strokeWidth={1.75} />}
+                label={me.first_name?.trim() ? "Rename" : "Add a name"}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  setRenaming(true);
+                }}
+              />
+            </>
+          )}
 
           <DropdownMenu.Separator className="h-px bg-[color:var(--color-border)]" />
 

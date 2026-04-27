@@ -17,7 +17,7 @@ import {
 import type { TestRecord } from "../types";
 import { listTests } from "../api/tests";
 import { formatRoute } from "../router";
-import { getCurrentMachineId } from "../state/machine";
+import { getCurrentMachineId, useCurrentMachine, getValidationProfile } from "../state/machine";
 import { useIsDemo } from "../hooks/useIsDemo";
 import {
   Badge,
@@ -39,6 +39,7 @@ interface Props {
 
 export function LibraryPage({ onMaterialsChange }: Props) {
   const isDemo = useIsDemo();
+  const { registry, machineId, machine } = useCurrentMachine();
   const [materials, setMaterials] = useState<Material[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [activeMaterialId, setActiveMaterialId] = useState<number | null>(null);
@@ -129,7 +130,12 @@ export function LibraryPage({ onMaterialsChange }: Props) {
     const existingDefault = presets.find(
       (p) => p.material_id === selectedMaterialId && p.is_default,
     );
-    const seed = existingDefault ? existingDefault.base_params : defaultBaseParams();
+    // Profile-aware defaults so a fresh preset on (say) F1 doesn't
+    // ship freq=125 (the F2-era legacy default), which then 422s
+    // when the preset is later applied to an F1 test save.
+    const defaultMode = machine?.modes[0]?.id ?? (machineId === "F2Ultra" ? "color_engrave" : "engrave");
+    const profile = getValidationProfile(registry, machineId, defaultMode) ?? undefined;
+    const seed = existingDefault ? existingDefault.base_params : defaultBaseParams(profile);
     setLoading(true);
     try {
       await createPreset({
