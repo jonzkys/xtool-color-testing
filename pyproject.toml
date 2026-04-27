@@ -29,6 +29,12 @@ dependencies = [
     "sqlalchemy>=2.0",
     "alembic>=1.13",
     "scikit-learn>=1.7.2",
+    # Sentry — initialised at app startup ONLY when XCS_GEN_SENTRY_DSN
+    # is set. Listed as a hard dependency rather than an extra so the
+    # runtime is identical regardless of whether a deploy enables error
+    # reporting; the import is essentially free when the SDK is never
+    # initialised.
+    "sentry-sdk[fastapi]>=2.0",
 ]
 
 [project.optional-dependencies]

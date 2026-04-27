@@ -254,6 +254,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Configure logging before anything that might log (migrations emit
     # INFO lines; without this call they'd be swallowed).
     configure_logging()
+    # Sentry — no-op when XCS_GEN_SENTRY_DSN is unset. Init order: after
+    # logging (so the SDK's status line appears), before migrations and
+    # routing (so any boot-time exception lands in Sentry too).
+    from .sentry import init_sentry
+    init_sentry(
+        dsn=settings.sentry_dsn,
+        environment=settings.sentry_environment,
+        release=settings.sentry_release,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+    )
     if settings.auto_migrate:
         _run_migrations()
     # Startup sanity check for common misconfiguration.
