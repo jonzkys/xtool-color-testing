@@ -26,7 +26,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-_initialised = False
 _log = logging.getLogger(__name__)
 
 
@@ -39,12 +38,10 @@ def init_sentry(
 ) -> None:
     """Initialise the Sentry SDK once per process.
 
-    ``init_sentry`` is idempotent — multiple calls with the same DSN
-    are a no-op after the first; calls with no DSN never initialise.
+    Idempotent — Sentry's own ``is_initialized()`` check skips the
+    second call when ``init_sentry`` runs again with the same (or any)
+    DSN. Calls with no DSN never initialise.
     """
-    global _initialised
-    if _initialised:
-        return
     if not dsn:
         _log.info("sentry: XCS_GEN_SENTRY_DSN unset — error reporting disabled")
         return
@@ -57,6 +54,12 @@ def init_sentry(
         # Hard dependency, but be defensive — a misinstalled wheel
         # shouldn't crash the app on boot.
         _log.warning("sentry: SDK import failed (%s) — disabling", e)
+        return
+
+    if sentry_sdk.is_initialized():
+        # Already configured this process (e.g. tests that build the app
+        # multiple times in one run). Skip — re-init would tear down the
+        # existing client and lose any in-flight events.
         return
 
     sentry_sdk.init(
@@ -78,7 +81,6 @@ def init_sentry(
         ],
         before_send=_before_send,
     )
-    _initialised = True
     _log.info("sentry: initialised env=%s release=%s", environment, release or "<unset>")
 
 
