@@ -135,6 +135,17 @@ Look at existing entries before writing a new one.
 - `XCS_GEN_IMAGES_DIR` — where uploaded photos land (local FS)
 - `XCS_GEN_S3_BUCKET` + friends — enable S3 image storage (IAM-auth only)
 - `XCSGEN_LOG` — `WARNING` to quiet the dev server
+- **Sentry (BE)** — set `XCS_GEN_SENTRY_DSN` to enable error reporting;
+  unset = no-op. Optional: `XCS_GEN_SENTRY_ENVIRONMENT` (default
+  `production`), `XCS_GEN_SENTRY_RELEASE` (git sha or tag from CI),
+  `XCS_GEN_SENTRY_TRACES_SAMPLE_RATE` (default `0` — only enable if the
+  Sentry project has performance turned on, otherwise traces cost
+  network round-trips and get dropped server-side).
+- **Sentry (FE)** — set `VITE_SENTRY_DSN` at build time (CI / `.env`);
+  unset = no SDK bundle is loaded. Optional `VITE_SENTRY_ENVIRONMENT`,
+  `VITE_SENTRY_RELEASE`, `VITE_SENTRY_TRACES_SAMPLE_RATE`. Both BE and
+  FE strip request bodies + auth headers via `before_send` hooks so a
+  future API key can't leak into the dashboard.
 
 ## Don't do
 - **Don't write migrations by hand.** Use `alembic revision --autogenerate`

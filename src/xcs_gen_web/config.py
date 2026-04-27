@@ -103,6 +103,19 @@ class Settings:
     demo_api_key: str = "DEMO"
     demo_target_user_id: int = 1
 
+    # Sentry — error reporting. DSN is read from XCS_GEN_SENTRY_DSN; when
+    # unset the SDK is never initialised and there is zero runtime
+    # overhead. ``sentry_environment`` and ``sentry_release`` are
+    # forwarded to Sentry as-is so the dashboard can group by deploy.
+    # ``sentry_traces_sample_rate`` controls performance tracing — leave
+    # at 0 unless the performance product is enabled in the project,
+    # otherwise traces are dropped server-side but still cost network
+    # round-trips.
+    sentry_dsn: str | None = None
+    sentry_environment: str = "production"
+    sentry_release: str | None = None
+    sentry_traces_sample_rate: float = 0.0
+
     @classmethod
     def from_env(cls) -> "Settings":
         mode_raw = os.environ.get("XCS_GEN_MODE", "standalone").strip().lower()
@@ -142,5 +155,13 @@ class Settings:
             demo_api_key=os.environ.get("XCS_GEN_DEMO_API_KEY", "DEMO"),
             demo_target_user_id=int(
                 os.environ.get("XCS_GEN_DEMO_TARGET_USER_ID", "1"),
+            ),
+            sentry_dsn=os.environ.get("XCS_GEN_SENTRY_DSN") or None,
+            sentry_environment=os.environ.get(
+                "XCS_GEN_SENTRY_ENVIRONMENT", "production",
+            ),
+            sentry_release=os.environ.get("XCS_GEN_SENTRY_RELEASE") or None,
+            sentry_traces_sample_rate=float(
+                os.environ.get("XCS_GEN_SENTRY_TRACES_SAMPLE_RATE", "0"),
             ),
         )
