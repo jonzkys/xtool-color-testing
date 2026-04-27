@@ -2,7 +2,10 @@
 
 from pathlib import Path
 
-from xcs_gen_web.svg_subtract import subtract_overlapping_shapes
+from xcs_gen_web.svg_subtract import (
+    clip_shapes_to_rect,
+    subtract_overlapping_shapes,
+)
 from xcs_gen.svg_source import ParsedShape, parse_svg
 
 
@@ -121,3 +124,50 @@ def test_pikachu_subtraction_reduces_but_preserves_colors():
         if before.fill and before.d != after.d
     )
     assert changed > 0
+
+
+# ── clip_shapes_to_rect ─────────────────────────────────────────────────────
+
+
+def test_clip_inside_rect_passes_through():
+    """A shape strictly inside the canvas survives untouched."""
+    shapes = [_sq(2, 2, 5, 5, "#ff0000")]
+    out = clip_shapes_to_rect(shapes, x=0, y=0, width=10, height=10)
+    assert len(out) == 1
+    assert out[0].d == shapes[0].d  # unchanged
+    assert out[0].fill == "#ff0000"
+
+
+def test_clip_outside_rect_drops_shape():
+    """A shape entirely outside the canvas is removed."""
+    shapes = [_sq(20, 20, 5, 5, "#ff0000")]
+    out = clip_shapes_to_rect(shapes, x=0, y=0, width=10, height=10)
+    assert out == []
+
+
+def test_clip_overhanging_shape_trimmed_to_rect():
+    """A shape that pokes past the canvas edge gets trimmed to the rect."""
+    shapes = [_sq(-2, -2, 14, 14, "#ff0000")]  # 14×14 centred to overhang on all sides
+    out = clip_shapes_to_rect(shapes, x=0, y=0, width=10, height=10)
+    assert len(out) == 1
+    s = out[0]
+    # bbox now exactly the canvas
+    assert s.bbox_x_mm == 0
+    assert s.bbox_y_mm == 0
+    assert s.bbox_width_mm == 10
+    assert s.bbox_height_mm == 10
+    assert s.fill == "#ff0000"
+
+
+def test_clip_stroke_only_passes_through():
+    """Stroke-only shapes (fill=None) pass through unchanged."""
+    s = _sq(0, 0, 5, 5, "#ff0000")
+    s = ParsedShape(
+        kind=s.kind, d=s.d,
+        bbox_x_mm=s.bbox_x_mm, bbox_y_mm=s.bbox_y_mm,
+        bbox_width_mm=s.bbox_width_mm, bbox_height_mm=s.bbox_height_mm,
+        fill=None, stroke="#000", fill_rule="evenodd", is_close_path=True,
+    )
+    out = clip_shapes_to_rect([s], x=0, y=0, width=2, height=2)
+    assert len(out) == 1
+    assert out[0].fill is None
