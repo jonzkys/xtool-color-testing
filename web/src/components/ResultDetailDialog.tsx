@@ -42,7 +42,11 @@ export function ResultDetailDialog({
 }
 
 function ResultDetailBody({ result }: { result: ResultRecord }) {
-  const blobUrl = useAuthedImage(result.image_url);
+  const [imageView, setImageView] = useState<"warped" | "original">("warped");
+  const heroUrl = imageView === "warped"
+    ? `/api/results/${result.id}/warped-image`
+    : result.image_url;
+  const blobUrl = useAuthedImage(heroUrl);
   const isDemo = useIsDemo();
   const [previewAggregator, setPreviewAggregator] = useState<SampleAggregator | null>(null);
   const [previewSwatchesData, setPreviewSwatchesData] = useState<ResultSwatch[] | null>(null);
@@ -123,14 +127,17 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
       </DialogTitle>
       <div className="flex-1 overflow-y-auto">
 
-      {/* Hero: the photograph on a dark mat, with lab-notebook crop
-          marks and a mix-blend slug that stays legible against any
-          photograph. */}
+      {/* Hero: warped (default) or original photograph, on a dark mat,
+          with lab-notebook crop marks and a mix-blend slug that stays
+          legible against any image. The toggle in the bottom-left
+          swaps between the two views. */}
       <div className="relative h-[300px] bg-[color:var(--color-substrate)] overflow-hidden">
         {blobUrl ? (
           <img
             src={blobUrl}
-            alt={`Photograph of test result #${result.id}`}
+            alt={imageView === "warped"
+              ? `Rectified burn-space view of result #${result.id}`
+              : `Photograph of test result #${result.id}`}
             className="absolute inset-0 w-full h-full object-contain"
           />
         ) : (
@@ -194,6 +201,36 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
         >
           <X className="h-4 w-4" strokeWidth={2} />
         </DialogClose>
+
+        {/* View toggle — top-centre. Defaults to the warped colour-only
+            crop (the part that actually drives sampling) with the
+            original photo a click away. */}
+        <div
+          role="tablist"
+          aria-label="Hero view"
+          className="absolute top-3 left-1/2 -translate-x-1/2 inline-flex items-stretch rounded-full border border-white/30 overflow-hidden backdrop-blur-[2px]"
+          style={{ mixBlendMode: "difference" }}
+        >
+          {(["warped", "original"] as const).map((view) => {
+            const active = imageView === view;
+            return (
+              <button
+                key={view}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setImageView(view)}
+                className={cn(
+                  "px-3 py-1 font-mono text-[9.5px] tracking-[0.2em] uppercase font-semibold transition-colors",
+                  active ? "bg-white/20" : "hover:bg-white/10",
+                )}
+                style={{ color: "white" }}
+              >
+                {view}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <MetalBar />
