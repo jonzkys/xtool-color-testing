@@ -39,7 +39,6 @@ import { mergeColorsInSvg, computeParamMergeGroups, type MergeGroup } from "../s
 import { validateLayerSpec } from "../validation";
 import type { LibraryState } from "../library";
 import { listMaterials, listPresets } from "../api/library";
-import { MaterialPresetPicker } from "./MaterialPresetPicker";
 import { StarToggle } from "./StarToggle";
 import { listPaletteEntries, queryPalette, patchPaletteEntry } from "../api/palette";
 import { getCurrentMachineId } from "../state/machine";
@@ -188,6 +187,8 @@ export function SvgLayersPage() {
   );
   type LayerSortKey = "detected" | "hue" | "luminance_light_first" | "luminance_dark_first";
   const [layerSort, setLayerSort] = useState<LayerSortKey>("detected");
+  type PreviewMode = "original" | "matched";
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("original");
   const [autoApplying, setAutoApplying] = useState(false);
   const [autoApplyMessage, setAutoApplyMessage] = useState<string | undefined>();
   // Cache the full palette per material_id. Auto-match used to fire one
@@ -802,7 +803,7 @@ export function SvgLayersPage() {
                 </label>
               )}
               {hasLayers && (
-                <ul className="flex flex-col gap-1.5 max-h-[40vh] overflow-y-auto -mx-1 px-1">
+                <ul className="grid grid-cols-2 gap-1.5 max-h-[50vh] overflow-y-auto -mx-1 px-1 pb-1">
                   {(() => {
                     const ls = [...request.layers];
                     if (layerSort === "detected") {
@@ -817,28 +818,53 @@ export function SvgLayersPage() {
                     return ls;
                   })().map((l) => {
                     const isSel = selectedColor === l.color;
+                    const matched = predictedByColor[l.color];
                     return (
                       <li key={l.color}>
                         <button
                           type="button"
                           onClick={() => setSelectedColor(l.color)}
                           className={cn(
-                            "w-full flex items-center gap-2 px-2 py-1.5 rounded-[6px]",
+                            "group relative w-full overflow-hidden rounded-[6px]",
                             "border transition-colors text-left",
                             isSel
-                              ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary-tint)]/60"
-                              : "border-[color:var(--color-border)] bg-[color:var(--color-surface)] hover:border-[color:var(--color-border-strong)]",
+                              ? "border-[color:var(--color-primary)] ring-1 ring-[color:var(--color-primary)]/40"
+                              : "border-[color:var(--color-border)] hover:border-[color:var(--color-border-strong)]",
                             !l.enabled && "opacity-50",
                           )}
+                          aria-label={`Layer ${l.color}${matched ? `, matched to ${matched}` : ", no palette match"}`}
                         >
-                          <span
+                          {/* Top half: detected colour */}
+                          <div
                             aria-hidden="true"
-                            className="h-4 w-4 rounded-[3px] shrink-0 border border-[color:var(--color-border-strong)]"
+                            className="h-10 w-full"
                             style={{ background: l.color }}
                           />
-                          <span className="flex-1 min-w-0 truncate font-mono text-[11.5px] text-[color:var(--color-ink)]">
-                            {l.name}
-                          </span>
+                          {/* Bottom half: matched palette colour, or muted with hint */}
+                          <div
+                            aria-hidden="true"
+                            className="h-10 w-full relative"
+                            style={{ background: matched ?? "var(--color-surface-elevated)" }}
+                          >
+                            {!matched && (
+                              <span className="absolute inset-0 flex items-center justify-center font-mono text-[8.5px] tracking-[0.15em] uppercase text-[color:var(--color-ink-subtle)]">
+                                no match
+                              </span>
+                            )}
+                          </div>
+                          {/* Hex codes underneath */}
+                          <div className="flex items-baseline justify-between gap-1 px-1.5 py-1 bg-[color:var(--color-surface)] border-t border-[color:var(--color-border)]">
+                            <span className="font-mono text-[9.5px] text-[color:var(--color-ink)] truncate">
+                              {l.color}
+                            </span>
+                            <span className={cn(
+                              "font-mono text-[9.5px] truncate",
+                              matched ? "text-[color:var(--color-ink-muted)]" : "text-[color:var(--color-ink-subtle)]/40",
+                            )}>
+                              {matched ?? "—"}
+                            </span>
+                          </div>
+                          {/* Enable checkbox — top-right corner */}
                           <input
                             type="checkbox"
                             checked={l.enabled}
@@ -847,6 +873,7 @@ export function SvgLayersPage() {
                               updateLayer(l.color, { enabled: e.target.checked })
                             }
                             title={l.enabled ? "Disable layer" : "Enable layer"}
+                            className="absolute top-1 right-1 cursor-pointer drop-shadow-[0_0_2px_rgba(0,0,0,0.5)]"
                           />
                         </button>
                       </li>
@@ -933,7 +960,6 @@ export function SvgLayersPage() {
                 layerIdx={request.layers.findIndex(
                   (l) => l.color === selected.color,
                 )}
-                library={library}
                 projectMaterialId={request.material_id}
                 onPatch={(p) => updateLayer(selected.color, p)}
                 onBasePatch={(p) => updateBase(selected.color, p)}
@@ -955,26 +981,58 @@ export function SvgLayersPage() {
         {/* RIGHT: previews */}
         <div className="flex flex-col gap-3 self-start sticky top-4 min-w-0">
           <PreviewBlock
-            title="Design"
+            title={previewMode === "matched" ? "Expected burn" : "Design"}
             trailing={
-              <IconButton
-                aria-label={isolateSelected ? "Show all layers" : "Isolate selected layer"}
-                size="sm"
-                variant={isolateSelected ? "active" : "default"}
-                disabled={!selectedColor}
-                icon={
-                  isolateSelected ? (
-                    <Eye className="h-4 w-4" />
-                  ) : (
-                    <EyeOff className="h-4 w-4" />
-                  )
-                }
-                onClick={() => setIsolateSelected((v) => !v)}
-                title={isolateSelected ? "Show all layers" : "Isolate selected layer"}
-              />
+              <div className="flex items-center gap-1.5">
+                <div
+                  role="tablist"
+                  aria-label="Preview mode"
+                  className="inline-flex items-stretch rounded-[6px] border border-[color:var(--color-border)] overflow-hidden"
+                >
+                  {(["original", "matched"] as const).map((mode) => {
+                    const active = previewMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        onClick={() => setPreviewMode(mode)}
+                        className={cn(
+                          "px-2 py-1 font-mono text-[9.5px] tracking-[0.18em] uppercase font-semibold transition-colors",
+                          active
+                            ? "bg-[color:var(--color-primary)] text-white"
+                            : "bg-[color:var(--color-surface)] text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)]",
+                        )}
+                      >
+                        {mode === "original" ? "Original" : "Matched"}
+                      </button>
+                    );
+                  })}
+                </div>
+                <IconButton
+                  aria-label={isolateSelected ? "Show all layers" : "Isolate selected layer"}
+                  size="sm"
+                  variant={isolateSelected ? "active" : "default"}
+                  disabled={!selectedColor}
+                  icon={
+                    isolateSelected ? (
+                      <Eye className="h-4 w-4" />
+                    ) : (
+                      <EyeOff className="h-4 w-4" />
+                    )
+                  }
+                  onClick={() => setIsolateSelected((v) => !v)}
+                  title={isolateSelected ? "Show all layers" : "Isolate selected layer"}
+                />
+              </div>
             }
             subtext={
-              isolateSelected && selectedColor ? (
+              previewMode === "matched" && Object.keys(predictedByColor).length === 0 ? (
+                <span className="text-[color:var(--color-warning)]">
+                  Apply palette matches to populate
+                </span>
+              ) : isolateSelected && selectedColor ? (
                 <span className="font-mono text-[11px] text-[color:var(--color-primary)]">
                   {selectedColor}
                 </span>
@@ -985,23 +1043,7 @@ export function SvgLayersPage() {
               svg={subtractedSvg ?? request.svg_content}
               highlightColor={isolateSelected ? selectedColor : null}
               enabledColors={enabledColors}
-            />
-          </PreviewBlock>
-          <PreviewBlock
-            title="Expected burn"
-            subtext={
-              Object.keys(predictedByColor).length === 0 ? (
-                <span className="text-[color:var(--color-warning)]">
-                  Apply palette matches to populate
-                </span>
-              ) : undefined
-            }
-          >
-            <SvgPreview
-              svg={subtractedSvg ?? request.svg_content}
-              highlightColor={null}
-              enabledColors={enabledColors}
-              colorMap={predictedByColor}
+              colorMap={previewMode === "matched" ? predictedByColor : undefined}
             />
           </PreviewBlock>
         </div>
@@ -1047,7 +1089,6 @@ function PreviewBlock({
 function LayerEditor({
   layer,
   layerIdx,
-  library,
   projectMaterialId,
   onPatch,
   onBasePatch,
@@ -1056,7 +1097,6 @@ function LayerEditor({
 }: {
   layer: LayerSpec;
   layerIdx: number;
-  library: LibraryState;
   projectMaterialId: string;
   onPatch: (p: Partial<LayerSpec>) => void;
   onBasePatch: (p: Partial<LayerSpec["base_params"]>) => void;
@@ -1159,14 +1199,10 @@ function LayerEditor({
       )}
 
       <Section title="Base parameters">
-        <MaterialPresetPicker
-          library={library}
-          materialId={layer.material_id}
-          baseParams={layer.base_params}
-          onApply={(materialId, baseParams) => {
-            onPatch({ material_id: materialId, base_params: { ...baseParams } });
-          }}
-        />
+        <p className="text-[11.5px] text-[color:var(--color-ink-muted)] leading-relaxed">
+          Params come from the palette match above — pick a swatch to apply
+          its values to this layer. Manual edits below override.
+        </p>
         <div className="grid grid-cols-2 gap-3">
           <NumberField
             label="Power %"
