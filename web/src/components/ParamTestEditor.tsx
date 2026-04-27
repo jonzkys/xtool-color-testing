@@ -76,6 +76,32 @@ function defaultModeFor(machineId: string): ModeId {
   return machineId === "F2Ultra" ? "color_engrave" : "engrave";
 }
 
+/** Min/max range a sweep parameter can legally take on the active machine
+ *  + mode. Returns null when the param isn't constrained on this profile
+ *  (e.g. enum-only fields like `laser` — but those aren't sweepable
+ *  anyway). For `pulse_width` use the ALLOWED_PULSE_WIDTHS endpoints
+ *  directly — the constraint kind is "stepped" but its endpoints are
+ *  the right defaults. */
+function paramAxisRange(
+  profile: ValidationProfile | null,
+  param: ParamName,
+): { min: number; max: number } | null {
+  if (param === "pulse_width") {
+    return {
+      min: ALLOWED_PULSE_WIDTHS[0],
+      max: ALLOWED_PULSE_WIDTHS[ALLOWED_PULSE_WIDTHS.length - 1],
+    };
+  }
+  const c = profile?.[param];
+  if (!c) return null;
+  if (c.kind === "range") return { min: c.min, max: c.max };
+  if (c.kind === "stepped") {
+    const nums = c.values.filter((v): v is number => typeof v === "number");
+    if (nums.length > 0) return { min: Math.min(...nums), max: Math.max(...nums) };
+  }
+  return null;
+}
+
 export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, materials, materialId, onMaterialChange }: Props) {
   const t = spec;
 
@@ -245,7 +271,15 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
             <Field label="Parameter">
               <Select
                 value={t.x_param}
-                onChange={(e) => updateSpec({ x_param: e.target.value as ParamName })}
+                onChange={(e) => {
+                  const next = e.target.value as ParamName;
+                  const range = paramAxisRange(profile, next);
+                  updateSpec(
+                    range
+                      ? { x_param: next, x_min: range.min, x_max: range.max }
+                      : { x_param: next },
+                  );
+                }}
                 disabled={locked}
               >
                 {PARAM_NAMES.map((p) => (
@@ -265,30 +299,39 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
                 fieldPrefix="x"
               />
             ) : (
-              <div className="grid grid-cols-3 gap-3">
-                <NumberField
-                  label="Min"
-                  value={t.x_min}
-                  onChange={(v) => updateSpec({ x_min: v })}
-                  issue={findIssue("x_min")}
-                  disabled={locked}
-                />
-                <NumberField
-                  label="Max"
-                  value={t.x_max}
-                  onChange={(v) => updateSpec({ x_max: v })}
-                  disabled={locked}
-                />
-                <NumberField
-                  label="Steps"
-                  value={t.x_steps}
-                  integer
-                  min={2}
-                  onChange={(v) => updateSpec({ x_steps: v })}
-                  issue={findIssue("x_steps")}
-                  disabled={locked}
-                />
-              </div>
+              (() => {
+                const xRange = paramAxisRange(profile, t.x_param);
+                return (
+                  <div className="grid grid-cols-3 gap-3">
+                    <NumberField
+                      label="Min"
+                      value={t.x_min}
+                      min={xRange?.min}
+                      max={xRange?.max}
+                      onChange={(v) => updateSpec({ x_min: v })}
+                      issue={findIssue("x_min")}
+                      disabled={locked}
+                    />
+                    <NumberField
+                      label="Max"
+                      value={t.x_max}
+                      min={xRange?.min}
+                      max={xRange?.max}
+                      onChange={(v) => updateSpec({ x_max: v })}
+                      disabled={locked}
+                    />
+                    <NumberField
+                      label="Steps"
+                      value={t.x_steps}
+                      integer
+                      min={2}
+                      onChange={(v) => updateSpec({ x_steps: v })}
+                      issue={findIssue("x_steps")}
+                      disabled={locked}
+                    />
+                  </div>
+                );
+              })()
             )}
           </Section>
 
@@ -297,14 +340,21 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
               <Select
                 value={t.y_param ?? ""}
                 disabled={locked}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  if (!raw) {
+                    updateSpec({ y_param: null, y_min: null, y_max: null, y_steps: null });
+                    return;
+                  }
+                  const next = raw as ParamName;
+                  const range = paramAxisRange(profile, next);
                   updateSpec({
-                    y_param: e.target.value ? (e.target.value as ParamName) : null,
-                    y_min: e.target.value ? (t.y_min ?? 0) : null,
-                    y_max: e.target.value ? (t.y_max ?? 10) : null,
-                    y_steps: e.target.value ? (t.y_steps ?? 5) : null,
-                  })
-                }
+                    y_param: next,
+                    y_min: range ? range.min : (t.y_min ?? 0),
+                    y_max: range ? range.max : (t.y_max ?? 10),
+                    y_steps: t.y_steps ?? 5,
+                  });
+                }}
               >
                 <option value="">None (single axis)</option>
                 {PARAM_NAMES.map((p) => (
@@ -324,28 +374,37 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
                 fieldPrefix="y"
               />
             ) : t.y_param ? (
-              <div className="grid grid-cols-3 gap-3">
-                <NumberField
-                  label="Min"
-                  value={t.y_min ?? 0}
-                  onChange={(v) => updateSpec({ y_min: v })}
-                  disabled={locked}
-                />
-                <NumberField
-                  label="Max"
-                  value={t.y_max ?? 0}
-                  onChange={(v) => updateSpec({ y_max: v })}
-                  disabled={locked}
-                />
-                <NumberField
-                  label="Steps"
-                  value={t.y_steps ?? 2}
-                  integer
-                  min={2}
-                  onChange={(v) => updateSpec({ y_steps: v })}
-                  disabled={locked}
-                />
-              </div>
+              (() => {
+                const yRange = paramAxisRange(profile, t.y_param);
+                return (
+                  <div className="grid grid-cols-3 gap-3">
+                    <NumberField
+                      label="Min"
+                      value={t.y_min ?? 0}
+                      min={yRange?.min}
+                      max={yRange?.max}
+                      onChange={(v) => updateSpec({ y_min: v })}
+                      disabled={locked}
+                    />
+                    <NumberField
+                      label="Max"
+                      value={t.y_max ?? 0}
+                      min={yRange?.min}
+                      max={yRange?.max}
+                      onChange={(v) => updateSpec({ y_max: v })}
+                      disabled={locked}
+                    />
+                    <NumberField
+                      label="Steps"
+                      value={t.y_steps ?? 2}
+                      integer
+                      min={2}
+                      onChange={(v) => updateSpec({ y_steps: v })}
+                      disabled={locked}
+                    />
+                  </div>
+                );
+              })()
             ) : null}
           </Section>
 
