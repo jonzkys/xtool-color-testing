@@ -1368,6 +1368,73 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=500, detail="failed to encode warped image")
         return Response(content=bytes(buf), media_type="image/png")
 
+    def _capture_or_410(rid: int, user_id: int):
+        """Shared helper — re-run capture for a result, raising the right
+        HTTP errors. Returns (test_record, capture_result)."""
+        r = r_repo.get(rid, owner_id=user_id)
+        if r is None:
+            raise HTTPException(status_code=404, detail="result not found")
+        t = t_repo.get(r["test_id"], owner_id=user_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        try:
+            data = images.read(r["image_path"])
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=410,
+                detail="source image no longer available",
+            )
+        try:
+            cap = capture_service.run_capture(
+                image_bytes=data, test_id=r["test_id"], spec=t["spec"],
+            )
+        except capture_service.CaptureError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return t, cap, r
+
+    @app.get("/api/results/{rid}/debug/warped-with-grid")
+    def results_debug_warped_with_grid(
+        rid: int, user_id: int = Depends(get_current_user),
+    ) -> Response:
+        """Warped image with cell rectangles + sample dots overlaid and
+        a small parameter title strip. Powers the result-debug modal."""
+        t, cap, _ = _capture_or_410(rid, user_id)
+        try:
+            png = capture_service.render_warped_with_grid(
+                cap.warped_image_bgr, t["spec"],
+            )
+        except capture_service.CaptureError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return Response(content=png, media_type="image/png")
+
+    @app.get("/api/results/{rid}/debug/row-count")
+    def results_debug_row_count(
+        rid: int, user_id: int = Depends(get_current_user),
+    ) -> dict:
+        """Number of physical grid rows in the result's test — the
+        debug modal uses this to know how many per-row strips to fetch."""
+        r = r_repo.get(rid, owner_id=user_id)
+        if r is None:
+            raise HTTPException(status_code=404, detail="result not found")
+        t = t_repo.get(r["test_id"], owner_id=user_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        return {"rows": capture_service.grid_row_count(t["spec"])}
+
+    @app.get("/api/results/{rid}/debug/row/{row}")
+    def results_debug_row(
+        rid: int, row: int, user_id: int = Depends(get_current_user),
+    ) -> Response:
+        """One row's actual-vs-captured strip."""
+        t, cap, r = _capture_or_410(rid, user_id)
+        try:
+            png = capture_service.render_row_strip(
+                cap.warped_image_bgr, t["spec"], r["swatches"], row,
+            )
+        except capture_service.CaptureError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return Response(content=png, media_type="image/png")
+
     @app.get("/api/tests/{tid}/swatches", response_model=list[AveragedSwatch])
     def test_swatches(
         tid: int, user_id: int = Depends(get_current_user),
