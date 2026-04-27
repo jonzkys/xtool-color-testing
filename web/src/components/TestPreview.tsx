@@ -129,10 +129,15 @@ export function TestPreview({ spec, testId: _testId, compact = false }: { spec: 
       )}
       <div
         className={compact
-          ? "h-[160px] w-full rounded-[12px] border border-[color:var(--color-border)] overflow-hidden p-2 bg-[color:var(--color-substrate)]"
+          ? "relative h-[160px] w-full rounded-[12px] border border-[color:var(--color-border)] overflow-hidden p-2 bg-[color:var(--color-substrate)]"
           : "rounded-[12px] border border-[color:var(--color-border)] overflow-hidden p-4 bg-[color:var(--color-substrate)]"}
         style={{ boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04), var(--shadow-card)" }}
       >
+        {compact && (
+          <div className="pointer-events-none absolute top-1.5 left-2 font-mono text-[9px] tracking-[0.2em] uppercase font-semibold text-[color:var(--color-substrate-ink)]/50">
+            Preview · {g.viewW.toFixed(1)}×{g.viewH.toFixed(1)}mm
+          </div>
+        )}
         <svg
           viewBox={`0 0 ${g.viewW} ${g.viewH}`}
           preserveAspectRatio={compact ? "xMidYMid meet" : undefined}
