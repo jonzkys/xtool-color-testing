@@ -57,3 +57,72 @@ export const TabPanel = forwardRef<
   />
 ));
 TabPanel.displayName = "TabPanel";
+
+// ---------------------------------------------------------------------------
+// Headless controlled Tabs primitive
+// ---------------------------------------------------------------------------
+
+export interface TabItem {
+  id: string;
+  label: string;
+}
+
+export interface TabBarProps {
+  items: TabItem[];
+  value: string;
+  onChange: (id: string) => void;
+  /** Optional extra className for the outer bar container. */
+  className?: string;
+}
+
+/**
+ * TabBar — headless controlled tab bar. Renders the tab strip only; the
+ * active tab's content is rendered by the parent (this component does NOT
+ * own the panel content).
+ *
+ * Workshop-instrument register: JetBrains Mono uppercase tracking,
+ * primary-colour underline on the active tab. Visual treatment is
+ * intentionally minimal here so the frontend-design pass can refine
+ * later.
+ */
+export function TabBar({ items, value, onChange, className }: TabBarProps) {
+  return (
+    <div
+      role="tablist"
+      className={cn(
+        "flex items-stretch border-b border-[color:var(--color-border)]",
+        className,
+      )}
+    >
+      {items.map((item) => {
+        const active = item.id === value;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(item.id)}
+            className={cn(
+              "relative px-4 py-2.5",
+              "font-mono text-[10.5px] tracking-[0.18em] uppercase font-semibold",
+              "transition-colors duration-100",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/50 focus-visible:ring-inset",
+              active
+                ? "text-[color:var(--color-primary)]"
+                : "text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
+            )}
+          >
+            {item.label}
+            {active && (
+              <span
+                aria-hidden
+                className="absolute left-3 right-3 bottom-[-1px] h-[2px] bg-[color:var(--color-primary)] rounded-full"
+              />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

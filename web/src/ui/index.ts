@@ -12,6 +12,7 @@ export { Card, CardHeader, CardTitle, CardFooter, type CardProps } from "./Card"
 export { Section, type SectionProps } from "./Section";
 export { Badge, type BadgeProps } from "./Badge";
 export { Tabs, TabList, Tab, TabPanel } from "./Tabs";
+export { TabBar, type TabItem, type TabBarProps } from "./Tabs";
 export {
   Dialog,
   DialogTrigger,
