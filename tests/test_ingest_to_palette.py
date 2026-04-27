@@ -138,3 +138,24 @@ def test_ingest_400_on_out_of_range_index(fresh_db, monkeypatch, tmp_path):
     r = c.post(f"/api/tests/{tid}/ingest-to-palette",
                json={"swatch_indices": [999], "mode": "averaged"})
     assert r.status_code == 400
+
+
+def test_ingest_is_idempotent_through_api(fresh_db, monkeypatch, tmp_path):
+    """Re-calling POST /api/tests/{tid}/ingest-to-palette with the
+    same body must not produce duplicate palette rows."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_cap)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    c.post(f"/api/tests/{tid}/results",
+           files={"image": ("x.png", b"fake", "image/png")})
+
+    body = {"swatch_indices": [0, 1], "mode": "averaged"}
+    c.post(f"/api/tests/{tid}/ingest-to-palette", json=body)
+    c.post(f"/api/tests/{tid}/ingest-to-palette", json=body)
+
+    entries = c.get(f"/api/palette?material_id={mid}").json()
+    assert len(entries) == 2, (
+        f"expected 2 entries after two identical ingest calls, got {len(entries)}"
+    )

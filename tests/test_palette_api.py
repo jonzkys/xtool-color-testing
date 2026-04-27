@@ -122,10 +122,16 @@ def test_list_filters_by_material_id(client, fresh_db):
 def test_query_filters_by_material_id(client, fresh_db):
     m1 = m_repo.create(name="Stainless")["id"]
     m2 = m_repo.create(name="Brass")["id"]
+    # Two entries from DIFFERENT tests (one per material). Using the same
+    # test_id for both materials would conflict with insert_bulk's
+    # idempotency: a palette_entry's material is determined by its test,
+    # so (test_id, x, y, source, source_result_id) at the same position
+    # must be the same material. Companion test_list_filters_by_material_id
+    # already uses this pattern.
     pal_repo.insert_bulk([dict(test_id=1, material_id=m1, x_value=0, y_value=None,
                                hex="#ff0000", sigma=1.0, source="averaged",
                                source_result_id=None, params={})])
-    pal_repo.insert_bulk([dict(test_id=1, material_id=m2, x_value=0, y_value=None,
+    pal_repo.insert_bulk([dict(test_id=2, material_id=m2, x_value=0, y_value=None,
                                hex="#ef0000", sigma=1.0, source="averaged",
                                source_result_id=None, params={})])
     results = client.get(
