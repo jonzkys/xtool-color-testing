@@ -205,6 +205,16 @@ function sampleCornerColor(
   return `#${hx(r)}${hx(g)}${hx(b)}`;
 }
 
+/** Squared RGB distance — fast proxy for ΔE; we only need a "are these
+ *  colours visually close enough to count as one" test, not perceptual
+ *  fidelity. Threshold 600 ≈ 8 RGB units per channel. */
+function rgbDistSq(a: string, b: string): number {
+  const ar = parseInt(a.slice(1, 3), 16), ag = parseInt(a.slice(3, 5), 16), ab = parseInt(a.slice(5, 7), 16);
+  const br = parseInt(b.slice(1, 3), 16), bg = parseInt(b.slice(3, 5), 16), bb = parseInt(b.slice(5, 7), 16);
+  const dr = ar - br, dg = ag - bg, db = ab - bb;
+  return dr * dr + dg * dg + db * db;
+}
+
 function injectCornerBackdrops(
   svg: string, pixels: Uint8ClampedArray, width: number, height: number,
 ): string {
@@ -212,41 +222,56 @@ function injectCornerBackdrops(
   const tr = sampleCornerColor(pixels, width, height, "tr");
   const bl = sampleCornerColor(pixels, width, height, "bl");
   const br = sampleCornerColor(pixels, width, height, "br");
+
+  // Threshold for "visually the same" — ≈ ΔE ~5 in RGB squared distance.
+  // Below this we collapse adjacent corners into one rect to avoid
+  // emitting near-duplicate backdrop layers (which xCS Studio can
+  // silently skip when they look identical).
+  const THRESH_SQ = 600;
+  const eq = (a: string, b: string) => rgbDistSq(a, b) < THRESH_SQ;
+  const allFour = eq(tl, tr) && eq(tl, bl) && eq(tl, br);
+  const topRowSame = eq(tl, tr);
+  const botRowSame = eq(bl, br);
+  const leftColSame = eq(tl, bl);
+  const rightColSame = eq(tr, br);
+
+  // Each rect is expanded by 1 px on every side so adjacent rects
+  // overlap by 1 px along the midlines (no hairline seam) and each
+  // extends 1 px past the canvas edge (no hairline where vtracer's
+  // traced shapes meet the canvas border). The viewBox clips overshoot.
   const halfW = width / 2;
   const halfH = height / 2;
-  // Five rects total. A base full-canvas rect with the corner-average
-  // colour catches any sub-pixel hairline that the per-corner rects
-  // leave at their seams (Firefox is sensitive to this). Above it,
-  // four quadrant rects refine the colour at each canvas corner so the
-  // top-left picks up sky blue, the bottom-left picks up the ground,
-  // etc. Each quadrant is expanded by one pixel on every side so
-  // adjacent quadrants overlap by one pixel along the midlines and
-  // each extends one pixel past the canvas edge.
   const W2 = halfW + 1;
   const H2 = halfH + 1;
-  const avgHex = (() => {
-    const parse = (h: string) => [
-      parseInt(h.slice(1, 3), 16),
-      parseInt(h.slice(3, 5), 16),
-      parseInt(h.slice(5, 7), 16),
-    ];
-    const [tlr, tlg, tlb] = parse(tl);
-    const [trr, trg, trb] = parse(tr);
-    const [blr, blg, blb] = parse(bl);
-    const [brr, brg, brb] = parse(br);
-    const r = Math.round((tlr + trr + blr + brr) / 4);
-    const g = Math.round((tlg + trg + blg + brg) / 4);
-    const b = Math.round((tlb + trb + blb + brb) / 4);
-    const hx = (v: number) => v.toString(16).padStart(2, "0");
-    return `#${hx(r)}${hx(g)}${hx(b)}`;
-  })();
-  const rects = [
-    `<rect x="-1" y="-1" width="${width + 2}" height="${height + 2}" fill="${avgHex}"/>`,
-    `<rect x="-1" y="-1" width="${W2}" height="${H2}" fill="${tl}"/>`,
-    `<rect x="${halfW}" y="-1" width="${W2}" height="${H2}" fill="${tr}"/>`,
-    `<rect x="-1" y="${halfH}" width="${W2}" height="${H2}" fill="${bl}"/>`,
-    `<rect x="${halfW}" y="${halfH}" width="${W2}" height="${H2}" fill="${br}"/>`,
-  ].join("");
+
+  let rects: string;
+  if (allFour) {
+    // One full-canvas rect — typical case for cartoons / icons with a
+    // single background tone all the way to the edges.
+    rects = `<rect x="-1" y="-1" width="${width + 2}" height="${height + 2}" fill="${tl}"/>`;
+  } else if (topRowSame && botRowSame) {
+    // Top half + bottom half — common when the top half is sky and
+    // the bottom is ground.
+    rects = [
+      `<rect x="-1" y="-1" width="${width + 2}" height="${H2}" fill="${tl}"/>`,
+      `<rect x="-1" y="${halfH}" width="${width + 2}" height="${H2}" fill="${bl}"/>`,
+    ].join("");
+  } else if (leftColSame && rightColSame) {
+    // Left half + right half — when columns share a tone.
+    rects = [
+      `<rect x="-1" y="-1" width="${W2}" height="${height + 2}" fill="${tl}"/>`,
+      `<rect x="${halfW}" y="-1" width="${W2}" height="${height + 2}" fill="${tr}"/>`,
+    ].join("");
+  } else {
+    // Four distinct corners — fall back to per-quadrant rects.
+    rects = [
+      `<rect x="-1" y="-1" width="${W2}" height="${H2}" fill="${tl}"/>`,
+      `<rect x="${halfW}" y="-1" width="${W2}" height="${H2}" fill="${tr}"/>`,
+      `<rect x="-1" y="${halfH}" width="${W2}" height="${H2}" fill="${bl}"/>`,
+      `<rect x="${halfW}" y="${halfH}" width="${W2}" height="${H2}" fill="${br}"/>`,
+    ].join("");
+  }
+
   const match = svg.match(/<svg\b[^>]*>/);
   if (!match) return svg;
   return svg.replace(match[0], `${match[0]}${rects}`);
