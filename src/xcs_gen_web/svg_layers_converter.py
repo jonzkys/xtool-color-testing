@@ -109,10 +109,14 @@ def build_svg_layers_project(
 
     # Always clip to the canvas — vtracer can emit fractional-pixel
     # overhang from anti-alias edges; without this, a "base colour" can
-    # bleed past the source image's footprint.
+    # bleed past the source image's footprint. parse_svg bakes the
+    # start_x/start_y offset into every shape, so the clip rect uses
+    # the same offset frame to match the shape positions.
     if parse_result.output_width_mm > 0 and parse_result.output_height_mm > 0:
         shapes = clip_shapes_to_rect(
-            shapes, x=0.0, y=0.0,
+            shapes,
+            x=request.start_x,
+            y=request.start_y,
             width=parse_result.output_width_mm,
             height=parse_result.output_height_mm,
         )
