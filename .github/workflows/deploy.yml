@@ -122,6 +122,12 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
           ECS_TASK_DEFINITION: ${{ secrets.ECS_TASK_DEFINITION }}
+          # Sentry — DSN comes from a secret, release is the deploy sha
+          # so a Sentry event links back to the exact code that
+          # produced it. Empty SENTRY_BACKEND_DSN → the SDK no-ops in
+          # production and the env block stays clean.
+          SENTRY_BACKEND_DSN: ${{ secrets.SENTRY_BACKEND_DSN }}
+          SENTRY_RELEASE: ${{ github.sha }}
         run: |
           # Pull the latest revision of the task definition.
           TASK_DEF=$(aws ecs describe-task-definition \
@@ -133,12 +139,30 @@ jobs:
           # assuming a convention.
           CONTAINER_NAME=$(echo "$TASK_DEF" | jq -r '.containerDefinitions[0].name')
 
-          # Swap in the new image and strip the read-only fields that
-          # register-task-definition refuses to accept on input.
+          # Swap in the new image, refresh Sentry env vars, and strip
+          # the read-only fields that register-task-definition refuses
+          # to accept on input.
+          #
+          # Env-var refresh logic:
+          #   1. Drop any pre-existing XCS_GEN_SENTRY_* entries so a
+          #      stale value can't shadow the new one.
+          #   2. Append XCS_GEN_SENTRY_RELEASE = the deploy sha.
+          #   3. Append XCS_GEN_SENTRY_DSN only if the secret was set
+          #      (empty value is treated as "leave Sentry disabled").
           NEW_IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
           UPDATED=$(echo "$TASK_DEF" | \
             jq --arg IMG "$NEW_IMAGE" \
+               --arg DSN "$SENTRY_BACKEND_DSN" \
+               --arg REL "$SENTRY_RELEASE" \
             '.containerDefinitions[0].image = $IMG |
+             .containerDefinitions[0].environment = (
+               (.containerDefinitions[0].environment // [])
+               | map(select(.name | startswith("XCS_GEN_SENTRY_") | not))
+               + [{name: "XCS_GEN_SENTRY_RELEASE", value: $REL}]
+               + (if $DSN == "" then [] else
+                   [{name: "XCS_GEN_SENTRY_DSN", value: $DSN}]
+                 end)
+             ) |
              del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                  .compatibilities, .registeredAt, .registeredBy)')
 
@@ -263,8 +287,18 @@ jobs:
         # VITE_API_BASE_URL is baked into the JS bundle at build time.
         # Unset → relative /api/* URLs (single-origin deployments); set
         # → frontend fetches absolute https://api.example.com/api/…
+        #
+        # VITE_SENTRY_DSN (and friends) are also build-time — Vite
+        # inlines `import.meta.env.VITE_*` and tree-shakes the SDK
+        # import out when DSN is empty. Set the secret to enable error
+        # reporting; leave unset to skip the bundle entirely. The
+        # release tag is the commit sha so a Sentry event links back
+        # to the exact code that produced it.
         env:
           VITE_API_BASE_URL: ${{ secrets.FRONTEND_API_URL }}
+          VITE_SENTRY_DSN: ${{ secrets.SENTRY_FRONTEND_DSN }}
+          VITE_SENTRY_ENVIRONMENT: production
+          VITE_SENTRY_RELEASE: ${{ github.sha }}
         run: |
           npm ci
           npm run build
