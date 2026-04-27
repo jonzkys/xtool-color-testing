@@ -270,7 +270,7 @@ export function TestDetailPage({ testId }: Props) {
       <div className="flex-1 min-h-0 grid grid-cols-[58fr_42fr] gap-5 px-6 py-4">
         {/* LEFT: tabbed editor */}
         <div className="flex flex-col min-h-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-hidden">
-          <TabBar
+          <TabBar<ParamTestEditorTab>
             items={[
               { id: "test", label: "Test" },
               { id: "sweep", label: "Sweep" },
@@ -278,7 +278,7 @@ export function TestDetailPage({ testId }: Props) {
               { id: "registration", label: "Registration" },
             ]}
             value={activeTab}
-            onChange={(id) => setActiveTab(id as ParamTestEditorTab)}
+            onChange={setActiveTab}
           />
           <div className="flex-1 min-h-0 overflow-y-auto">
             <ParamTestEditor
@@ -302,12 +302,11 @@ export function TestDetailPage({ testId }: Props) {
             {test ? (
               <ResultsPanel testId={test.id} locked={test.locked} />
             ) : (
-              <div className="p-6 h-full flex items-center justify-center">
-                <EmptyState
-                  title="Save first"
-                  description="Upload and ingest palette swatches after the test is saved."
-                />
-              </div>
+              <EmptyState
+                className="h-full"
+                title="Save first"
+                description="Upload and ingest palette swatches after the test is saved."
+              />
             )}
           </div>
         </div>

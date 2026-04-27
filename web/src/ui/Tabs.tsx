@@ -62,15 +62,15 @@ TabPanel.displayName = "TabPanel";
 // Headless controlled Tabs primitive
 // ---------------------------------------------------------------------------
 
-export interface TabItem {
-  id: string;
+export interface TabItem<Id extends string = string> {
+  id: Id;
   label: string;
 }
 
-export interface TabBarProps {
-  items: TabItem[];
-  value: string;
-  onChange: (id: string) => void;
+export interface TabBarProps<Id extends string = string> {
+  items: TabItem<Id>[];
+  value: Id;
+  onChange: (id: Id) => void;
   /** Optional extra className for the outer bar container. */
   className?: string;
 }
@@ -85,7 +85,7 @@ export interface TabBarProps {
  * intentionally minimal here so the frontend-design pass can refine
  * later.
  */
-export function TabBar({ items, value, onChange, className }: TabBarProps) {
+export function TabBar<Id extends string = string>({ items, value, onChange, className }: TabBarProps<Id>) {
   return (
     <div
       role="tablist"
