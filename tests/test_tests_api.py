@@ -179,24 +179,27 @@ def test_tests_create_explicit_mode_color_engrave_for_f2(fresh_db):
     assert r.status_code == 201, r.json()
 
 
-def test_tests_create_f1_defaults_engrave_rejects_high_frequency(fresh_db):
+def test_tests_create_f1_clamps_high_frequency_to_profile_max(fresh_db):
     """F1Ultra with no mode defaults to engrave (STANDARD, max 60 kHz).
 
-    frequency=400 kHz should be rejected with 422 because the default
-    mode on F1Ultra is engrave → STANDARD profile → max 60 kHz.
+    A spec with frequency=400 kHz used to 422; we now snap it to the
+    profile's max instead so legacy specs (created on F2 / migrated
+    from older defaults) survive a save under the new machine. Mirrors
+    the pulse_width snap-on-load behaviour — see CLAUDE.md.
     """
     c = TestClient(create_app())
     mid = m_repo.create(name="Aluminium")["id"]
-    # Use base params with high frequency (invalid for STANDARD)
-    base_f1 = dict(_BASE_CE)   # frequency=400_000, pulse_width=200
-    # Strip pulse_width — it's not_applicable on STANDARD and is stripped
-    # server-side already, but include a frequency that breaks STANDARD.
+    base_f1 = dict(_BASE_CE)   # frequency=400_000 (kHz), pulse_width=200
     spec_f1 = dict(_SPEC_CE)
     spec_f1["base_params"] = base_f1
     r = c.post("/api/tests", json={
-        "name": "F1-bad-freq",
+        "name": "F1-snapped-freq",
         "material_id": mid,
         "machine_id": "F1Ultra",
         "spec": spec_f1,
     })
-    assert r.status_code == 422, r.json()
+    assert r.status_code == 201, r.json()
+    saved = r.json()
+    # F1Ultra STANDARD profile has frequency in [30, 60] kHz — the
+    # excessive 400_000 should snap down to 60.
+    assert saved["spec"]["base_params"]["frequency"] == 60

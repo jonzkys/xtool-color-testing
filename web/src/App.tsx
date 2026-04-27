@@ -19,6 +19,7 @@ import { MobileUploadPage } from "./pages/MobileUploadPage";
 import { enterDemo } from "./api/userHeader";
 import { useIsDemo } from "./hooks/useIsDemo";
 import { DemoBanner } from "./components/DemoBanner";
+import { ToastHost } from "./ui";
 
 export default function App() {
   const [route, navigate] = useRoute();
@@ -137,6 +138,7 @@ export default function App() {
         open={gate === "welcome"}
         onResolved={() => setGate("ready")}
       />
+      <ToastHost />
     </div>
   );
 }

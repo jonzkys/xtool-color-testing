@@ -29,3 +29,4 @@ export { Toolbar, type ToolbarProps } from "./Toolbar";
 export { MetalBar, type MetalBarProps } from "./MetalBar";
 export { ThemeToggle, initThemeEagerly } from "./ThemeToggle";
 export { DemoLock, type DemoLockProps } from "./DemoLock";
+export { ToastHost, notify, type ToastLevel, type ToastMessage } from "./Toast";

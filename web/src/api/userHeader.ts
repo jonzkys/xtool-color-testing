@@ -143,26 +143,43 @@ export function installUserHeader(): void {
     // pre-built Request with its own body still work. When the URL
     // needs rewriting we unavoidably rebuild — Request's URL is
     // immutable, so we pull its properties and reconstruct.
+    let resp: Response;
     if (typeof input === "string" || input instanceof URL) {
-      return original(rewrittenUrl, { ...init, headers });
+      resp = await original(rewrittenUrl, { ...init, headers });
+    } else {
+      const req = input as Request;
+      const rebuilt = new Request(rewrittenUrl, {
+        method: req.method,
+        headers,
+        body:
+          req.method === "GET" || req.method === "HEAD"
+            ? undefined
+            : req.clone().body,
+        mode: req.mode,
+        credentials: req.credentials,
+        cache: req.cache,
+        redirect: req.redirect,
+        referrer: req.referrer,
+        integrity: req.integrity,
+      });
+      resp = await original(rebuilt, init);
     }
-    // Request object: rebuild with the rewritten URL, inherit everything else.
-    const req = input as Request;
-    const rebuilt = new Request(rewrittenUrl, {
-      method: req.method,
-      headers,
-      body:
-        req.method === "GET" || req.method === "HEAD"
-          ? undefined
-          : req.clone().body,
-      mode: req.mode,
-      credentials: req.credentials,
-      cache: req.cache,
-      redirect: req.redirect,
-      referrer: req.referrer,
-      integrity: req.integrity,
-    });
-    return original(rebuilt, init);
+
+    // Surface non-2xx /api/* errors via the toast host. Per-call sites
+    // can still catch the error and show their own banner — the toast
+    // is a global safety net so a save / generate failure can't be
+    // silently lost while the user is scrolled away from the form's
+    // local error state. Skipped for known no-op statuses (304, 401)
+    // and for opted-out callers (X-Skip-Toast: 1).
+    if (
+      !resp.ok
+      && resp.status !== 401
+      && resp.status !== 304
+      && headers.get("X-Skip-Toast") !== "1"
+    ) {
+      void surfaceErrorToast(resp.clone(), originalUrl).catch(() => {});
+    }
+    return resp;
   };
 
   (window as any).__xcsgenFetchPatched = true;
@@ -171,4 +188,44 @@ export function installUserHeader(): void {
 /** Exposed for tests / debugging. */
 export function getApiBaseUrl(): string {
   return API_BASE_URL;
+}
+
+/**
+ * Best-effort error → toast surface. Reads the response body so we can
+ * include the structured detail (e.g. `{"field":"frequency","message":"..."}`)
+ * if the backend sent one. Falls back to the bare HTTP status text if
+ * the body isn't readable.
+ *
+ * Lazy-imported so the toast module isn't pulled into the entry chunk
+ * unless an error actually fires (keeps cold-load JS small).
+ */
+async function surfaceErrorToast(resp: Response, url: string): Promise<void> {
+  let detail = "";
+  try {
+    const text = await resp.text();
+    if (text) {
+      try {
+        const parsed = JSON.parse(text);
+        const d = parsed && typeof parsed === "object" ? parsed.detail : null;
+        if (typeof d === "string") {
+          detail = d;
+        } else if (d && typeof d === "object" && d.message) {
+          detail = d.field
+            ? `${d.field}: ${d.message}`
+            : String(d.message);
+        } else if (d) {
+          detail = JSON.stringify(d);
+        }
+      } catch {
+        detail = text.slice(0, 200);
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  const path = url.replace(/^\/api\//, "");
+  const header = `${resp.status} on ${path.split("?")[0]}`;
+  const message = detail ? `${header}\n${detail}` : header;
+  const { notify } = await import("../ui/Toast");
+  notify(message, "error");
 }

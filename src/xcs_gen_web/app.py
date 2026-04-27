@@ -913,7 +913,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 k: v for k, v in spec_dict["base_params"].items()
                 if k not in not_applicable
             }
-            validate_against_profile(profile_id, params_to_validate)
+            # Pre-clamp range fields onto [min, max] so legacy
+            # base_params from a different machine/mode (eg. freq=125
+            # from F2 carried into a saved test loaded on F1, where
+            # freq is [30, 60]) snap into the active profile instead
+            # of failing the save with a 422. Mirrors the snap-on-load
+            # behaviour the stepped/pulse_width path already has —
+            # see CLAUDE.md "Pydantic validators snap legacy values".
+            range_clamps: dict[str, tuple[object, float]] = {}
+            for field_name, constraint in profile.items():
+                if constraint.get("kind") != "range":
+                    continue
+                if field_name not in params_to_validate:
+                    continue
+                v = params_to_validate[field_name]
+                lo, hi = constraint["min"], constraint["max"]
+                try:
+                    nv = float(v)
+                except (TypeError, ValueError):
+                    continue
+                if not (lo <= nv <= hi):
+                    clamped = max(float(lo), min(float(hi), nv))
+                    out_v = int(clamped) if isinstance(v, int) else clamped
+                    range_clamps[field_name] = (v, out_v)
+                    params_to_validate[field_name] = out_v
+            result = validate_against_profile(profile_id, params_to_validate)
+            # Apply both pre-clamps and any stepped/pulse_width snaps
+            # the validator made back onto the spec so we persist the
+            # actually-burnable values.
+            if range_clamps or result.snapped:
+                spec_dict["base_params"].update(result.values)
         except ProfileError as e:
             raise HTTPException(status_code=422, detail={"field": e.field, "message": e.message})
         t = t_repo.create(
