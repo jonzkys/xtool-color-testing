@@ -367,7 +367,13 @@ export function SvgLayersPage() {
     setDetectError(undefined);
     try {
       const merged = mergeColorsInSvg(request.svg_content, groups);
-      await applyDetectedSvg(merged, request.name);
+      // Snapshot existing layers' state (params, name, enabled,
+      // processing_type, hatch_passes, etc.) before re-detect wipes
+      // them. The merge UI picks the representative colour from the
+      // existing layers, so the representative's old layer is the
+      // right source of state for the new (post-merge) layer.
+      const inherit = request.layers;
+      await applyDetectedSvg(merged, request.name, inherit);
     } catch (err) {
       setDetectError((err as Error).message);
     }
@@ -383,7 +389,11 @@ export function SvgLayersPage() {
     }
   }
 
-  async function applyDetectedSvg(svgText: string, suggestedName: string) {
+  async function applyDetectedSvg(
+    svgText: string,
+    suggestedName: string,
+    inherit?: LayerSpec[],
+  ) {
     setRequest((prev) => ({
       ...prev,
       svg_content: svgText,
@@ -396,7 +406,20 @@ export function SvgLayersPage() {
       const visible = detected.filter(
         (d) => includeNearWhite || !d.is_near_white,
       );
-      const layers = visible.map((d) => defaultLayerFromDetected(d, library));
+      // If a previous layer had this colour (e.g. through a merge that
+      // promotes the representative), inherit its full state — params,
+      // name, enabled flag, processing type, hatch passes, etc. The
+      // re-detect would otherwise reset everything to the default
+      // preset and wipe any auto-match work.
+      const inheritByColor = inherit
+        ? new Map(inherit.map((l) => [l.color, l]))
+        : null;
+      const layers = visible.map((d) => {
+        const prior = inheritByColor?.get(d.color);
+        return prior
+          ? { ...prior, color: d.color }
+          : defaultLayerFromDetected(d, library);
+      });
       setRequest((prev) => ({ ...prev, layers }));
       setSelectedColor(layers[0]?.color ?? null);
     } catch (err) {
