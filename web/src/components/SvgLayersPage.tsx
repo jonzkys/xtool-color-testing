@@ -39,7 +39,6 @@ import { mergeColorsInSvg, computeParamMergeGroups, type MergeGroup } from "../s
 import { validateLayerSpec } from "../validation";
 import type { LibraryState } from "../library";
 import { listMaterials, listPresets } from "../api/library";
-import { MaterialPresetPicker } from "./MaterialPresetPicker";
 import { StarToggle } from "./StarToggle";
 import { listPaletteEntries, queryPalette, patchPaletteEntry } from "../api/palette";
 import { getCurrentMachineId } from "../state/machine";
@@ -188,6 +187,12 @@ export function SvgLayersPage() {
   );
   type LayerSortKey = "detected" | "hue" | "luminance_light_first" | "luminance_dark_first";
   const [layerSort, setLayerSort] = useState<LayerSortKey>("detected");
+  // What the .xcs export uses for layer colours: "original" keeps the
+  // detected SVG fills (XCS Studio shows the source colours), "matched"
+  // rewrites every fill to the matched palette hex before export so the
+  // .xcs canvas reads the palette colours instead.
+  type ExportColorMode = "original" | "matched";
+  const [exportColorMode, setExportColorMode] = useState<ExportColorMode>("original");
   const [autoApplying, setAutoApplying] = useState(false);
   const [autoApplyMessage, setAutoApplyMessage] = useState<string | undefined>();
   // Cache the full palette per material_id. Auto-match used to fire one
@@ -329,25 +334,43 @@ export function SvgLayersPage() {
       });
 
       let applied = 0;
+      let unchanged = 0;
+      let noMatch = 0;
       const nextPredicted: Record<string, string> = { ...predictedByColor };
       setRequest((prev) => ({
         ...prev,
         layers: prev.layers.map((l) => {
           const match = results.find((r) => r.layer.color === l.color);
-          if (!match?.best) return l;
+          if (!match?.best) {
+            noMatch += 1;
+            return l;
+          }
           const newParams = paletteParamsToBaseParams(match.best.entry.params);
+          // Compare to what's already there: if the predicted hex is the
+          // same and base_params already match, this is a no-op.
+          const alreadyMatched =
+            predictedByColor[l.color] === match.best.entry.hex &&
+            (Object.entries(newParams) as [keyof typeof newParams, unknown][])
+              .every(([k, v]) => l.base_params[k] === v);
           nextPredicted[l.color] = match.best.entry.hex;
+          if (alreadyMatched) {
+            unchanged += 1;
+            return l;
+          }
           applied += 1;
           return { ...l, base_params: { ...l.base_params, ...newParams } };
         }),
       }));
       setPredictedByColor(nextPredicted);
 
-      const skipped = results.length - applied;
+      // Compose a message that distinguishes the three buckets.
+      const plural = (n: number) => (n === 1 ? "" : "s");
+      const parts: string[] = [];
+      if (applied > 0) parts.push(`Applied to ${applied} layer${plural(applied)}`);
+      if (unchanged > 0) parts.push(`${unchanged} already matched`);
+      if (noMatch > 0) parts.push(`${noMatch} skipped — no palette match`);
       setAutoApplyMessage(
-        skipped === 0
-          ? `Applied matches to all ${applied} layer${applied === 1 ? "" : "s"}.`
-          : `Applied to ${applied}/${results.length} layers (${skipped} skipped — no palette match).`,
+        parts.length === 0 ? "No layers to match." : `${parts.join(" · ")}.`,
       );
     } catch (err) {
       setAutoApplyMessage(`Failed: ${(err as Error).message}`);
@@ -362,7 +385,13 @@ export function SvgLayersPage() {
     setDetectError(undefined);
     try {
       const merged = mergeColorsInSvg(request.svg_content, groups);
-      await applyDetectedSvg(merged, request.name);
+      // Snapshot existing layers' state (params, name, enabled,
+      // processing_type, hatch_passes, etc.) before re-detect wipes
+      // them. The merge UI picks the representative colour from the
+      // existing layers, so the representative's old layer is the
+      // right source of state for the new (post-merge) layer.
+      const inherit = request.layers;
+      await applyDetectedSvg(merged, request.name, inherit);
     } catch (err) {
       setDetectError((err as Error).message);
     }
@@ -378,7 +407,11 @@ export function SvgLayersPage() {
     }
   }
 
-  async function applyDetectedSvg(svgText: string, suggestedName: string) {
+  async function applyDetectedSvg(
+    svgText: string,
+    suggestedName: string,
+    inherit?: LayerSpec[],
+  ) {
     setRequest((prev) => ({
       ...prev,
       svg_content: svgText,
@@ -391,7 +424,20 @@ export function SvgLayersPage() {
       const visible = detected.filter(
         (d) => includeNearWhite || !d.is_near_white,
       );
-      const layers = visible.map((d) => defaultLayerFromDetected(d, library));
+      // If a previous layer had this colour (e.g. through a merge that
+      // promotes the representative), inherit its full state — params,
+      // name, enabled flag, processing type, hatch passes, etc. The
+      // re-detect would otherwise reset everything to the default
+      // preset and wipe any auto-match work.
+      const inheritByColor = inherit
+        ? new Map(inherit.map((l) => [l.color, l]))
+        : null;
+      const layers = visible.map((d) => {
+        const prior = inheritByColor?.get(d.color);
+        return prior
+          ? { ...prior, color: d.color }
+          : defaultLayerFromDetected(d, library);
+      });
       setRequest((prev) => ({ ...prev, layers }));
       setSelectedColor(layers[0]?.color ?? null);
     } catch (err) {
@@ -498,9 +544,51 @@ export function SvgLayersPage() {
   }
 
   function buildGenerateRequest(): SvgLayersRequest {
-    if (!collapseIdenticalLayers) return request;
-    const groups = computeParamMergeGroups(request.layers.filter((l) => l.enabled));
-    if (groups.length === 0) return request;
+    let r = request;
+
+    // Optional palette-colour rewrite: every detected fill that has a
+    // palette match becomes the matched hex in both the SVG content and
+    // each LayerSpec.color. Two detected colours that map to the same
+    // matched colour collapse into one layer (the backend keys shapes to
+    // layers by fill, so duplicate colours need merging).
+    if (exportColorMode === "matched" && Object.keys(predictedByColor).length > 0) {
+      const matchEntries = Object.entries(predictedByColor)
+        .filter(([from, to]) => from !== to);
+      if (matchEntries.length > 0) {
+        // Group source colours by representative so mergeColorsInSvg can
+        // dedupe overlaps and the LayerSpec list stays one-per-rep.
+        const byRep = new Map<string, string[]>();
+        for (const [from, to] of matchEntries) {
+          const list = byRep.get(to) ?? [];
+          list.push(from);
+          byRep.set(to, list);
+        }
+        const matchGroups: MergeGroup[] = [];
+        for (const [rep, sources] of byRep) {
+          // Include the representative itself in the source list — the
+          // SVG might also contain shapes at the matched-hex value
+          // already (rare, but safe to dedupe through).
+          const allSources = sources.includes(rep) ? sources : [...sources, rep];
+          matchGroups.push({ sourceColors: allSources, representativeColor: rep });
+        }
+        const reps = new Set(matchGroups.map((g) => g.representativeColor));
+        const losers = new Set(
+          matchGroups.flatMap((g) => g.sourceColors.filter((c) => !reps.has(c))),
+        );
+        const remappedSvg = mergeColorsInSvg(r.svg_content, matchGroups);
+        const remappedLayers = r.layers
+          .filter((l) => !losers.has(l.color) || reps.has(l.color))
+          .map((l) => {
+            const matched = predictedByColor[l.color];
+            return matched && matched !== l.color ? { ...l, color: matched } : l;
+          });
+        r = { ...r, svg_content: remappedSvg, layers: remappedLayers };
+      }
+    }
+
+    if (!collapseIdenticalLayers) return r;
+    const groups = computeParamMergeGroups(r.layers.filter((l) => l.enabled));
+    if (groups.length === 0) return r;
 
     const mergeGroups: MergeGroup[] = groups.map((members) => ({
       sourceColors: members.map((m) => m.color),
@@ -511,11 +599,11 @@ export function SvgLayersPage() {
       mergeGroups.flatMap((g) => g.sourceColors.filter((c) => c !== g.representativeColor)),
     );
 
-    const collapsedSvg = mergeColorsInSvg(request.svg_content, mergeGroups);
-    const collapsedLayers = request.layers.filter(
+    const collapsedSvg = mergeColorsInSvg(r.svg_content, mergeGroups);
+    const collapsedLayers = r.layers.filter(
       (l) => !loserColors.has(l.color) || representatives.has(l.color),
     );
-    return { ...request, svg_content: collapsedSvg, layers: collapsedLayers };
+    return { ...r, svg_content: collapsedSvg, layers: collapsedLayers };
   }
 
   const hasLayers = request.layers.length > 0;
@@ -550,6 +638,45 @@ export function SvgLayersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <div
+            role="tablist"
+            aria-label="Export colour source"
+            title="What colour each layer is labelled with in the .xcs — engrave params come from the layer's base_params either way."
+            className="inline-flex items-stretch rounded-[6px] border border-[color:var(--color-border)] overflow-hidden"
+          >
+            {(["original", "matched"] as const).map((mode) => {
+              const active = exportColorMode === mode;
+              const matchedDisabled =
+                mode === "matched" && Object.keys(predictedByColor).length === 0;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  disabled={matchedDisabled}
+                  onClick={() => setExportColorMode(mode)}
+                  title={
+                    matchedDisabled
+                      ? "Apply palette matches first to enable matched-colour export"
+                      : mode === "original"
+                        ? "Export with detected colours"
+                        : "Export with matched palette colours"
+                  }
+                  className={cn(
+                    "px-2.5 py-1.5 font-mono text-[10px] tracking-[0.18em] uppercase font-semibold transition-colors",
+                    active
+                      ? "bg-[color:var(--color-primary)] text-white"
+                      : matchedDisabled
+                        ? "bg-[color:var(--color-surface)] text-[color:var(--color-ink-subtle)] opacity-50 cursor-not-allowed"
+                        : "bg-[color:var(--color-surface)] text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)]",
+                  )}
+                >
+                  {mode}
+                </button>
+              );
+            })}
+          </div>
           <Button
             variant="primary"
             onClick={handleGenerate}
@@ -802,7 +929,7 @@ export function SvgLayersPage() {
                 </label>
               )}
               {hasLayers && (
-                <ul className="flex flex-col gap-1.5 max-h-[40vh] overflow-y-auto -mx-1 px-1">
+                <ul className="grid grid-cols-2 gap-1.5 max-h-[50vh] overflow-y-auto -mx-1 px-1 pb-1">
                   {(() => {
                     const ls = [...request.layers];
                     if (layerSort === "detected") {
@@ -817,28 +944,53 @@ export function SvgLayersPage() {
                     return ls;
                   })().map((l) => {
                     const isSel = selectedColor === l.color;
+                    const matched = predictedByColor[l.color];
                     return (
                       <li key={l.color}>
                         <button
                           type="button"
                           onClick={() => setSelectedColor(l.color)}
                           className={cn(
-                            "w-full flex items-center gap-2 px-2 py-1.5 rounded-[6px]",
+                            "group relative w-full overflow-hidden rounded-[6px]",
                             "border transition-colors text-left",
                             isSel
-                              ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary-tint)]/60"
-                              : "border-[color:var(--color-border)] bg-[color:var(--color-surface)] hover:border-[color:var(--color-border-strong)]",
+                              ? "border-[color:var(--color-primary)] ring-1 ring-[color:var(--color-primary)]/40"
+                              : "border-[color:var(--color-border)] hover:border-[color:var(--color-border-strong)]",
                             !l.enabled && "opacity-50",
                           )}
+                          aria-label={`Layer ${l.color}${matched ? `, matched to ${matched}` : ", no palette match"}`}
                         >
-                          <span
+                          {/* Top half: detected colour */}
+                          <div
                             aria-hidden="true"
-                            className="h-4 w-4 rounded-[3px] shrink-0 border border-[color:var(--color-border-strong)]"
+                            className="h-10 w-full"
                             style={{ background: l.color }}
                           />
-                          <span className="flex-1 min-w-0 truncate font-mono text-[11.5px] text-[color:var(--color-ink)]">
-                            {l.name}
-                          </span>
+                          {/* Bottom half: matched palette colour, or muted with hint */}
+                          <div
+                            aria-hidden="true"
+                            className="h-10 w-full relative"
+                            style={{ background: matched ?? "var(--color-surface-elevated)" }}
+                          >
+                            {!matched && (
+                              <span className="absolute inset-0 flex items-center justify-center font-mono text-[8.5px] tracking-[0.15em] uppercase text-[color:var(--color-ink-subtle)]">
+                                no match
+                              </span>
+                            )}
+                          </div>
+                          {/* Hex codes underneath */}
+                          <div className="flex items-baseline justify-between gap-1 px-1.5 py-1 bg-[color:var(--color-surface)] border-t border-[color:var(--color-border)]">
+                            <span className="font-mono text-[9.5px] text-[color:var(--color-ink)] truncate">
+                              {l.color}
+                            </span>
+                            <span className={cn(
+                              "font-mono text-[9.5px] truncate",
+                              matched ? "text-[color:var(--color-ink-muted)]" : "text-[color:var(--color-ink-subtle)]/40",
+                            )}>
+                              {matched ?? "—"}
+                            </span>
+                          </div>
+                          {/* Enable checkbox — top-right corner */}
                           <input
                             type="checkbox"
                             checked={l.enabled}
@@ -847,6 +999,7 @@ export function SvgLayersPage() {
                               updateLayer(l.color, { enabled: e.target.checked })
                             }
                             title={l.enabled ? "Disable layer" : "Enable layer"}
+                            className="absolute top-1 right-1 cursor-pointer drop-shadow-[0_0_2px_rgba(0,0,0,0.5)]"
                           />
                         </button>
                       </li>
@@ -933,7 +1086,6 @@ export function SvgLayersPage() {
                 layerIdx={request.layers.findIndex(
                   (l) => l.color === selected.color,
                 )}
-                library={library}
                 projectMaterialId={request.material_id}
                 onPatch={(p) => updateLayer(selected.color, p)}
                 onBasePatch={(p) => updateBase(selected.color, p)}
@@ -1047,7 +1199,6 @@ function PreviewBlock({
 function LayerEditor({
   layer,
   layerIdx,
-  library,
   projectMaterialId,
   onPatch,
   onBasePatch,
@@ -1056,7 +1207,6 @@ function LayerEditor({
 }: {
   layer: LayerSpec;
   layerIdx: number;
-  library: LibraryState;
   projectMaterialId: string;
   onPatch: (p: Partial<LayerSpec>) => void;
   onBasePatch: (p: Partial<LayerSpec["base_params"]>) => void;
@@ -1159,14 +1309,10 @@ function LayerEditor({
       )}
 
       <Section title="Base parameters">
-        <MaterialPresetPicker
-          library={library}
-          materialId={layer.material_id}
-          baseParams={layer.base_params}
-          onApply={(materialId, baseParams) => {
-            onPatch({ material_id: materialId, base_params: { ...baseParams } });
-          }}
-        />
+        <p className="text-[11.5px] text-[color:var(--color-ink-muted)] leading-relaxed">
+          Params come from the palette match above — pick a swatch to apply
+          its values to this layer. Manual edits below override.
+        </p>
         <div className="grid grid-cols-2 gap-3">
           <NumberField
             label="Power %"
