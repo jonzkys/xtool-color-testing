@@ -454,3 +454,222 @@ def inspect_cell(
         "sampling_region": sampling_region,
         "aggregator_results": results,
     }
+
+
+def _grid_layout_for_warped(spec: dict[str, Any]) -> dict[str, Any]:
+    """Cell-grid math shared by the debug renderers — derives per-row /
+    per-cell mm coordinates from the spec. Mirrors the maths in
+    ``inspect_cell``; extracted so the renderers don't have to duplicate
+    every line of arithmetic. ``px_per_mm`` is a constant 10.0 across
+    the capture pipeline.
+    """
+    import math
+
+    px_per_mm = 10.0
+    grid_w = spec["width_mm"]
+    row_height_mm = spec["height_mm"]
+    rows_total = spec.get("rows", 1) or 1
+    is_wrapped_1d = rows_total > 1 and spec.get("y_param") is None
+
+    reg = spec.get("registration", {}) if isinstance(spec.get("registration"), dict) else {}
+    qr_size = reg.get("qr_size_mm") or QR_SIZE_DEFAULT_MM
+    aruco_size = reg.get("aruco_size_mm") or ARUCO_SIZE_DEFAULT_MM
+    margin = MARKER_MARGIN_MM
+    qr_tl = (margin, margin)
+    grid_origin_mm = (
+        qr_tl[0] + qr_size + margin,
+        max(qr_tl[1] + qr_size + margin, margin + aruco_size + margin),
+    )
+
+    x_steps = spec["x_steps"]
+    y_steps = spec.get("y_steps") if spec.get("y_param") is not None else 1
+
+    if is_wrapped_1d:
+        per_row = math.ceil(x_steps / rows_total)
+        cell_w_mm = grid_w / per_row
+        cell_h_mm = row_height_mm
+        max_row, max_col = rows_total, per_row
+        gap = _effective_row_gap_mm(bool(spec.get("hide_axis_labels", False)))
+        row_stride_mm = row_height_mm + gap
+    else:
+        cell_w_mm = grid_w / x_steps
+        cell_h_mm = row_height_mm / (y_steps or 1)
+        max_row, max_col = (y_steps or 1), x_steps
+        # 2D / single-row 1D: cells stack with no inter-row gap.
+        row_stride_mm = cell_h_mm
+
+    return {
+        "px_per_mm": px_per_mm,
+        "grid_origin_mm": grid_origin_mm,
+        "row_stride_mm": row_stride_mm,
+        "cell_w_mm": cell_w_mm,
+        "cell_h_mm": cell_h_mm,
+        "max_row": max_row,
+        "max_col": max_col,
+        "is_wrapped_1d": is_wrapped_1d,
+    }
+
+
+def _cell_bounds_px(g: dict[str, Any], row: int, col: int) -> tuple[int, int, int, int]:
+    """(x0, y0, x1, y1) in warped-image pixel coords for cell (row, col)."""
+    px_per_mm = g["px_per_mm"]
+    cx_mm = g["grid_origin_mm"][0] + (col + 0.5) * g["cell_w_mm"]
+    cy_mm = g["grid_origin_mm"][1] + row * g["row_stride_mm"] + g["cell_h_mm"] / 2
+    half_w_px = g["cell_w_mm"] * px_per_mm / 2
+    half_h_px = g["cell_h_mm"] * px_per_mm / 2
+    cx_px = cx_mm * px_per_mm
+    cy_px = cy_mm * px_per_mm
+    return (
+        int(round(cx_px - half_w_px)),
+        int(round(cy_px - half_h_px)),
+        int(round(cx_px + half_w_px)),
+        int(round(cy_px + half_h_px)),
+    )
+
+
+def render_warped_with_grid(warped: np.ndarray, spec: dict[str, Any]) -> bytes:
+    """Render the warped capture with cell rectangles + sample-centre dots
+    drawn on top, plus a yellow outline around the overall grid bounds.
+    Returns PNG bytes.
+    """
+    import cv2
+
+    g = _grid_layout_for_warped(spec)
+    img = warped.copy()
+
+    # Yellow outline around the whole grid bounding box.
+    px_per_mm = g["px_per_mm"]
+    gx_px = int(round(g["grid_origin_mm"][0] * px_per_mm))
+    gy_px = int(round(g["grid_origin_mm"][1] * px_per_mm))
+    grid_w_px = int(round(g["max_col"] * g["cell_w_mm"] * px_per_mm))
+    # For wrapped 1D, total grid height includes inter-row gaps.
+    if g["is_wrapped_1d"]:
+        grid_h_px = int(round((g["max_row"] * g["cell_h_mm"]
+                               + (g["max_row"] - 1) * (g["row_stride_mm"] - g["cell_h_mm"]))
+                              * px_per_mm))
+    else:
+        grid_h_px = int(round(g["max_row"] * g["cell_h_mm"] * px_per_mm))
+    cv2.rectangle(img, (gx_px, gy_px), (gx_px + grid_w_px, gy_px + grid_h_px),
+                  color=(0, 255, 255), thickness=2)
+
+    # Per-cell red rectangles + blue centre dots.
+    for r in range(g["max_row"]):
+        for c in range(g["max_col"]):
+            x0, y0, x1, y1 = _cell_bounds_px(g, r, c)
+            cv2.rectangle(img, (x0, y0), (x1, y1), color=(0, 0, 255), thickness=1)
+            cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+            cv2.circle(img, (cx, cy), radius=3, color=(255, 128, 0), thickness=-1)
+
+    # Title strip across the top with a brief parameter summary. Drawn
+    # by extending the canvas upward so the grid itself stays untouched.
+    title = _debug_title(spec)
+    if title:
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        scale = 0.45
+        (tw, th), baseline = cv2.getTextSize(title, font, scale, 1)
+        pad = 5
+        band_h = th + 2 * pad + baseline
+        band = np.full((band_h, img.shape[1], 3), 20, dtype=np.uint8)
+        cv2.putText(band, title, (pad, pad + th),
+                    font, scale, (255, 255, 255), 1, cv2.LINE_AA)
+        img = np.vstack([band, img])
+
+    ok, buf = cv2.imencode(".png", img)
+    if not ok:
+        raise CaptureError("failed to encode debug image")
+    return bytes(buf)
+
+
+def _debug_title(spec: dict[str, Any]) -> str:
+    """Compact title string describing the swept axes + key base params."""
+    parts = [f"{spec['x_param']} {spec['x_min']}-{spec['x_max']}"]
+    if spec.get("y_param"):
+        parts.append(f"{spec['y_param']} {spec.get('y_min')}-{spec.get('y_max')}")
+    bp = spec.get("base_params", {}) or {}
+    bits = []
+    if "power" in bp: bits.append(f"P{bp['power']}%")
+    if "speed" in bp: bits.append(f"S{bp['speed']}")
+    if "frequency" in bp: bits.append(f"F{bp['frequency']}kHz")
+    if "passes" in bp: bits.append(f"{bp['passes']}x")
+    if bits: parts.append(" ".join(bits))
+    return " / ".join(parts)
+
+
+def render_row_strip(
+    warped: np.ndarray,
+    spec: dict[str, Any],
+    swatches: list[dict[str, Any]],
+    row: int,
+) -> bytes:
+    """Render one debug row strip: top half = actual cell crops from the
+    warped image, bottom half = the captured colour swatch (flat fill of
+    swatch.hex). Cells are concatenated horizontally with a 4-px black
+    divider between them. Returns PNG bytes.
+    """
+    import cv2
+
+    g = _grid_layout_for_warped(spec)
+    if not (0 <= row < g["max_row"]):
+        raise CaptureError(
+            f"row {row} out of bounds (max_row={g['max_row']})"
+        )
+
+    row_swatches = sorted(
+        [s for s in swatches if s.get("row") == row],
+        key=lambda s: s.get("col", 0),
+    )
+    if not row_swatches:
+        raise CaptureError(f"no swatches for row {row}")
+
+    cells: list[np.ndarray] = []
+    for s in row_swatches:
+        col = int(s["col"])
+        x0, y0, x1, y1 = _cell_bounds_px(g, row, col)
+        # Clamp to image bounds.
+        x0 = max(0, x0); y0 = max(0, y0)
+        x1 = min(warped.shape[1], x1); y1 = min(warped.shape[0], y1)
+        actual = warped[y0:y1, x0:x1].copy()
+        if actual.size == 0:
+            continue
+        h, w = actual.shape[:2]
+        # Captured colour fill — same height as the actual crop, full width.
+        hex_str = s.get("hex", "#000000").lstrip("#")
+        try:
+            r_, g_, b_ = (int(hex_str[i:i + 2], 16) for i in (0, 2, 4))
+        except ValueError:
+            r_, g_, b_ = 0, 0, 0
+        captured = np.full((h, w, 3), (b_, g_, r_), dtype=np.uint8)
+        # Stack vertically with a 4-px black divider.
+        divider = np.zeros((4, w, 3), dtype=np.uint8)
+        cells.append(np.vstack([actual, divider, captured]))
+
+    if not cells:
+        raise CaptureError(f"no renderable cells for row {row}")
+
+    # Normalise heights (the cell crops can differ by 1 pixel from rounding).
+    target_h = max(c.shape[0] for c in cells)
+    normalised: list[np.ndarray] = []
+    for c in cells:
+        if c.shape[0] != target_h:
+            pad = np.zeros((target_h - c.shape[0], c.shape[1], 3), dtype=np.uint8)
+            c = np.vstack([c, pad])
+        normalised.append(c)
+
+    h_divider_w = 4
+    h_div = np.zeros((target_h, h_divider_w, 3), dtype=np.uint8)
+    pieces: list[np.ndarray] = []
+    for i, c in enumerate(normalised):
+        if i > 0:
+            pieces.append(h_div)
+        pieces.append(c)
+    strip = np.hstack(pieces)
+    ok, buf = cv2.imencode(".png", strip)
+    if not ok:
+        raise CaptureError("failed to encode row strip")
+    return bytes(buf)
+
+
+def grid_row_count(spec: dict[str, Any]) -> int:
+    """How many physical rows the warped grid has — used by the debug
+    modal to know how many per-row strips to request."""
+    return _grid_layout_for_warped(spec)["max_row"]

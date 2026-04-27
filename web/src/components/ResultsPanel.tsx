@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Camera, RotateCcw, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, Bug, Camera, RotateCcw, Trash2, Upload } from "lucide-react";
 import type { AveragedSwatch, ResultRecord } from "../types";
 import { useAuthedImage } from "../hooks/useAuthedImage";
 import { ResultDetailDialog } from "./ResultDetailDialog";
+import { ResultDebugDialog } from "./ResultDebugDialog";
 import {
   listResults,
   uploadResult,
@@ -46,6 +47,7 @@ export function ResultsPanel({
   const [replaceExisting, setReplaceExisting] = useState(false);
   const [detailId, setDetailId] = useState<number | null>(null);
   const detailResult = results.find((r) => r.id === detailId) ?? null;
+  const [debugId, setDebugId] = useState<number | null>(null);
   const [reingestingId, setReingestingId] = useState<number | null>(null);
 
   async function refresh(opts: { autoSelect?: boolean } = {}) {
@@ -278,6 +280,18 @@ export function ResultsPanel({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
+                      setDebugId(r.id);
+                    }}
+                    className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-primary)] hover:bg-[color:var(--color-primary-tint)]"
+                    title="Debug — warped+grid overlay and per-row actual vs captured"
+                    aria-label="Debug result"
+                  >
+                    <Bug className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
                       void reingest(r.id);
                     }}
                     disabled={isDemo || reingestingId === r.id}
@@ -452,6 +466,11 @@ export function ResultsPanel({
         open={detailId !== null}
         onOpenChange={(o) => !o && setDetailId(null)}
         result={detailResult}
+      />
+      <ResultDebugDialog
+        open={debugId !== null}
+        onOpenChange={(o) => !o && setDebugId(null)}
+        resultId={debugId}
       />
     </div>
   );
