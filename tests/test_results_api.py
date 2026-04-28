@@ -374,7 +374,12 @@ def test_delete_invalidates_warped_cache(fresh_db, monkeypatch, tmp_path):
     # Locate the sidecar on disk; it must exist before delete.
     sidecars = list(tmp_path.rglob("*-warped.png"))
     assert len(sidecars) == 1, f"expected 1 warped sidecar, got {sidecars}"
-    assert c.delete(f"/api/results/{rid}").status_code == 204
+    # Hold the response in a local — the DELETE has a side effect we
+    # rely on. ``assert c.delete(...).status_code == 204`` would skip
+    # the call under ``python -O`` (asserts are stripped), so the
+    # subsequent sidecar check would race against an undeleted row.
+    resp = c.delete(f"/api/results/{rid}")
+    assert resp.status_code == 204
     # Sidecar is gone after delete.
     assert list(tmp_path.rglob("*-warped.png")) == []
 

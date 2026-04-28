@@ -19,6 +19,7 @@ from xcs_gen.capture.marker_render import render_aruco_bits
 from xcs_gen.capture.qr_payload import encode_id
 from xcs_gen_web.capture_pipeline import (
     DetectionError,
+    decode_image_bytes,
     detect_fiducials,
     warp_to_burn_space,
 )
@@ -119,3 +120,26 @@ def test_preprocessing_variants_returns_four_variants():
     for v in variants:
         assert v.shape == gray.shape
         assert v.dtype == np.uint8
+
+
+def test_decode_image_bytes_accepts_heic():
+    """iPhones default to HEIC. ``pillow_heif.register_heif_opener`` is
+    called at module load, so PIL's ``Image.open`` accepts HEIC bytes
+    without a separate code path. Round-trip a small RGB → HEIC →
+    decode and assert the colour comes back. Encoded as HEIF (no
+    encoder licence needed for the test) — the format is the same
+    family Pillow's opener handles."""
+    import io
+    from PIL import Image
+    import pillow_heif
+
+    src = Image.new("RGB", (16, 16), (200, 100, 50))
+    buf = io.BytesIO()
+    pillow_heif.from_pillow(src).save(buf, format="HEIF")
+
+    arr = decode_image_bytes(buf.getvalue())
+    assert arr.shape == (16, 16, 3)
+    assert arr.dtype == np.uint8
+    # decode_image_bytes returns BGR; the source is RGB(200, 100, 50).
+    bgr = arr[8, 8]
+    assert tuple(int(x) for x in bgr) == (50, 100, 200)

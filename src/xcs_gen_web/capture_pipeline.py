@@ -25,7 +25,18 @@ import sys
 
 import cv2
 import numpy as np
+import pillow_heif
 from PIL import Image, ImageCms
+
+
+# iPhones save photos as HEIC by default. iOS Safari sometimes
+# auto-converts on upload but not always (depends on iOS version and
+# the page's accept attribute) — bytes do reach the server. Register
+# the HEIF/HEIC decoder once at module load so PIL's ``Image.open``
+# in ``decode_image_bytes`` accepts them transparently. The library
+# ships self-contained manylinux wheels with libheif statically
+# linked, so no system-level apt change.
+pillow_heif.register_heif_opener()
 
 
 def _register_homebrew_zbar() -> None:
