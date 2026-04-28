@@ -236,22 +236,64 @@ def _label_qr_corners(
     return result
 
 
+def _unrotate_point(
+    xr: float, yr: float, *, orig_w: int, orig_h: int, k: int,
+) -> tuple[float, float]:
+    """Map a point detected in ``np.rot90(orig, k)`` back to the
+    original frame's ``(x, y)`` pixel coordinates. ``orig_w`` /
+    ``orig_h`` are the original image's width and height."""
+    if k == 0:
+        return xr, yr
+    if k == 1:  # 90° CCW
+        return orig_w - 1 - yr, xr
+    if k == 2:  # 180°
+        return orig_w - 1 - xr, orig_h - 1 - yr
+    if k == 3:  # 270° CCW (= 90° CW)
+        return yr, orig_h - 1 - xr
+    raise ValueError(f"unexpected rotation k={k}")
+
+
 def _aruco_centres_px(img: np.ndarray) -> dict[int, tuple[float, float]]:
-    """Return {marker_id: centre_px} for every detected ArUco 1/2/3."""
+    """Return ``{marker_id: centre_px}`` for every detected ArUco 1/2/3.
+
+    OpenCV's ArUco detector is *technically* rotation-invariant, but
+    on real phone photos where one of the markers is near a frame
+    edge, detection can succeed at one in-plane rotation and silently
+    fail at others. After exhausting the four preprocessing variants
+    in the natural orientation, fall back to detecting on 90°/180°/
+    270° rotated copies and unrotate the centres back. Pure recovery
+    path — fast when the natural orientation already finds all three.
+    """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape[:2]
     detector = cv2.aruco.ArucoDetector(_ARUCO_DICT, _ARUCO_PARAMS)
     out: dict[int, tuple[float, float]] = {}
-    for candidate in _preprocessing_variants(gray):
-        corners, ids, _ = detector.detectMarkers(candidate)
-        if ids is None:
-            continue
-        for c_set, id_ in zip(corners, ids.flatten()):
-            key = int(id_)
-            if key not in (1, 2, 3) or key in out:
+
+    def _scan(rotated_gray: np.ndarray, k: int) -> None:
+        for candidate in _preprocessing_variants(rotated_gray):
+            corners, ids, _ = detector.detectMarkers(candidate)
+            if ids is None:
                 continue
-            pts = c_set.reshape(-1, 2)
-            cx, cy = pts[:, 0].mean(), pts[:, 1].mean()
-            out[key] = (float(cx), float(cy))
+            for c_set, id_ in zip(corners, ids.flatten()):
+                key = int(id_)
+                if key not in (1, 2, 3) or key in out:
+                    continue
+                pts = c_set.reshape(-1, 2)
+                cx_r, cy_r = float(pts[:, 0].mean()), float(pts[:, 1].mean())
+                cx, cy = _unrotate_point(
+                    cx_r, cy_r, orig_w=w, orig_h=h, k=k,
+                )
+                out[key] = (cx, cy)
+            if len(out) == 3:
+                return
+
+    # Try the natural orientation first — covers the common case
+    # without paying the cost of three extra detection passes.
+    _scan(gray, 0)
+    if len(out) == 3:
+        return out
+    for k in (1, 2, 3):
+        _scan(np.rot90(gray, k), k)
         if len(out) == 3:
             break
     return out

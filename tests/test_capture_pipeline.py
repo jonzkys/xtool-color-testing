@@ -145,6 +145,33 @@ def test_decode_image_bytes_accepts_heic():
     assert tuple(int(x) for x in bgr) == (50, 100, 200)
 
 
+def test_unrotate_point_round_trips_through_all_rotations():
+    """``_unrotate_point`` must invert ``np.rot90(arr, k)``: a marker
+    detected in the rotated image at ``(xr, yr)`` should map back to
+    the same pixel in the original. Verify by picking a unique pixel
+    in a small image, rotating, locating the marker post-rotation,
+    and checking the inverse equals the source coordinates."""
+    from xcs_gen_web.capture_pipeline import _unrotate_point
+
+    # Build an 8×5 image (w=8, h=5) with a unique non-zero at (3, 2).
+    h, w = 5, 8
+    arr = np.zeros((h, w), dtype=np.uint8)
+    src_x, src_y = 3, 2
+    arr[src_y, src_x] = 255
+
+    for k in (0, 1, 2, 3):
+        rotated = np.rot90(arr, k)
+        # Locate the marker in the rotated frame.
+        ys, xs = np.where(rotated == 255)
+        assert len(xs) == 1, f"k={k}: marker missing after rotation"
+        xr, yr = float(xs[0]), float(ys[0])
+        x_back, y_back = _unrotate_point(xr, yr, orig_w=w, orig_h=h, k=k)
+        assert (round(x_back), round(y_back)) == (src_x, src_y), (
+            f"k={k}: rotated marker at ({xr},{yr}) → unmapped "
+            f"({x_back},{y_back}), expected ({src_x},{src_y})"
+        )
+
+
 def test_decode_image_bytes_honours_exif_orientation():
     """iPhone HEIC/JPEGs store pixels in raw sensor orientation and
     rely on the EXIF Orientation tag to tell viewers how to rotate.
