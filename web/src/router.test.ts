@@ -48,3 +48,24 @@ describe("mobile-upload route", () => {
       .toBe("#/m/xyz");
   });
 });
+
+describe("demo route with optional next", () => {
+  it("parses bare #/demo", () => {
+    expect(parseRoute("#/demo")).toEqual({ name: "demo" });
+  });
+  it("parses #/demo?next=changelog", () => {
+    expect(parseRoute("#/demo?next=changelog"))
+      .toEqual({ name: "demo", next: "changelog" });
+  });
+  it("decodes the next param", () => {
+    expect(parseRoute("#/demo?next=tests%2F42"))
+      .toEqual({ name: "demo", next: "tests/42" });
+  });
+  it("formats demo without next", () => {
+    expect(formatRoute({ name: "demo" })).toBe("#/demo");
+  });
+  it("formats demo with next, encoding the value", () => {
+    expect(formatRoute({ name: "demo", next: "tests/42" }))
+      .toBe("#/demo?next=tests%2F42");
+  });
+});

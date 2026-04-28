@@ -135,7 +135,10 @@ export function TestDetailPage({ testId }: Props) {
         setName(t.name);
         setMaterialId(t.material_id);
       } else {
-        const firstMid = m[0]?.id ?? null;
+        // Prefer the user's default material; fall back to the first
+        // when none has been promoted yet.
+        const startMat = m.find((mm) => mm.is_default) ?? m[0] ?? null;
+        const firstMid = startMat?.id ?? null;
         setMaterialId(firstMid);
         const preset = firstMid
           ? p.find((q) => q.material_id === firstMid && q.is_default)

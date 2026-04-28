@@ -448,6 +448,7 @@ class MaterialResponse(BaseModel):
     diameter_mm: float | None = None
     width_mm: float | None = None
     height_mm: float | None = None
+    is_default: bool = False
 
 
 class UserRegisterRequest(BaseModel):

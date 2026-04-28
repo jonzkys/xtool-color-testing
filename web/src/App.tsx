@@ -34,16 +34,22 @@ export default function App() {
 
   const isDemo = useIsDemo();
 
-  // ``#/demo`` is a side-effect route — entering demo mode then
-  // bouncing the user to the Tests page. The banner on the main app
-  // will show thereafter.
+  // ``#/demo`` is a side-effect route — enter demo mode, then bounce
+  // either to the user's intended destination (``?next=<hash>``, used
+  // when someone hits the welcome gate via a deep link such as
+  // ``#/changelog``) or to the default Tests landing.
+  const demoNext = route.name === "demo" ? route.next : undefined;
   useEffect(() => {
     if (route.name === "demo") {
       enterDemo();
       setGate("ready");
-      navigate({ name: "tests" });
+      if (demoNext) {
+        window.location.hash = `#/${demoNext}`;
+      } else {
+        navigate({ name: "tests" });
+      }
     }
-  }, [route.name, navigate]);
+  }, [route.name, demoNext, navigate]);
 
   useEffect(() => {
     let cancelled = false;

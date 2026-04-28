@@ -13,7 +13,7 @@ export type Route =
   | { name: "styleguide" }
   | { name: "guide" }
   | { name: "changelog" }
-  | { name: "demo" }
+  | { name: "demo"; next?: string }
   | { name: "mobile-upload"; mid: string };
 
 export function parseRoute(hash: string): Route {
@@ -35,7 +35,12 @@ export function parseRoute(hash: string): Route {
   if (h === "styleguide") return { name: "styleguide" };
   if (h === "guide") return { name: "guide" };
   if (h === "changelog") return { name: "changelog" };
+  // ``#/demo`` accepts an optional ``?next=<hash>`` so a deep link
+  // (e.g. someone shared #/changelog) survives the welcome → demo
+  // detour. Anything else stays at the default landing page.
   if (h === "demo") return { name: "demo" };
+  const demoNext = h.match(/^demo\?next=(.+)$/);
+  if (demoNext) return { name: "demo", next: decodeURIComponent(demoNext[1]) };
   const mm = h.match(/^m\/([A-Za-z0-9_\-]+)$/);
   if (mm) return { name: "mobile-upload", mid: mm[1] };
   return { name: "tests" };
@@ -55,7 +60,7 @@ export function formatRoute(r: Route): string {
     case "styleguide":  return "#/styleguide";
     case "guide":       return "#/guide";
     case "changelog":   return "#/changelog";
-    case "demo":        return "#/demo";
+    case "demo":        return r.next ? `#/demo?next=${encodeURIComponent(r.next)}` : "#/demo";
     case "mobile-upload": return `#/m/${r.mid}`;
   }
 }

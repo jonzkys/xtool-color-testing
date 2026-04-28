@@ -33,6 +33,7 @@ def _row_to_dict(r) -> dict[str, Any]:
         "diameter_mm": r.diameter_mm,
         "width_mm": r.width_mm,
         "height_mm": r.height_mm,
+        "is_default": bool(r.is_default),
     }
 
 
@@ -120,6 +121,32 @@ def update(
                 .values(**values)
             )
     return get(mid, owner_id=owner_id)
+
+
+def set_default(mid: int, *, owner_id: int = STANDALONE_USER_ID) -> bool:
+    """Promote ``mid`` to the owner's default material, demoting any
+    previous holder. Returns False when the material doesn't exist
+    under that owner. Idempotent — promoting an already-default
+    material is a cheap no-op flag-rewrite."""
+    with session_scope() as s:
+        target = s.execute(
+            select(materials).where(
+                and_(materials.c.id == mid, materials.c.owner_id == owner_id),
+            )
+        ).one_or_none()
+        if target is None:
+            return False
+        s.execute(
+            materials.update()
+            .where(materials.c.owner_id == owner_id)
+            .values(is_default=0)
+        )
+        s.execute(
+            materials.update()
+            .where(materials.c.id == mid)
+            .values(is_default=1)
+        )
+        return True
 
 
 def delete(mid: int, *, owner_id: int = STANDALONE_USER_ID) -> None:

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, Plus, Star, Trash2, X } from "lucide-react";
 import { defaultBaseParams } from "../defaults";
 import { PulseWidthSelect } from "./PulseWidthSelect";
 import type { Material, Preset } from "../library";
@@ -10,6 +10,7 @@ import {
   deletePreset,
   listMaterials,
   listPresets,
+  setDefaultMaterial,
   setDefaultPreset,
   updateMaterial,
   updatePreset,
@@ -105,6 +106,19 @@ export function LibraryPage({ onMaterialsChange }: Props) {
       await refresh();
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function onMakeDefaultMaterial(id: number) {
+    // Cheap optimistic update so the pill flips before the round-trip.
+    setMaterials((prev) =>
+      prev.map((m) => ({ ...m, is_default: m.id === id })),
+    );
+    try {
+      await setDefaultMaterial(id);
+    } catch (err) {
+      setError((err as Error).message);
+      await refresh();
     }
   }
 
@@ -273,6 +287,11 @@ export function LibraryPage({ onMaterialsChange }: Props) {
                       >
                         {presetCount}
                       </Badge>
+                      <DefaultStar
+                        isDefault={m.is_default}
+                        isDemo={isDemo}
+                        onPromote={() => void onMakeDefaultMaterial(m.id)}
+                      />
                       <button
                         type="button"
                         onClick={(e) => {
@@ -608,5 +627,53 @@ function PresetCard({
         </DemoLock>
       </div>
     </Card>
+  );
+}
+
+/** Tiny star icon on each material row. Filled = current default;
+ *  outline = clickable to promote. Sits inline with the edit/delete
+ *  buttons — keeps the material name column wider than the previous
+ *  text-pill which truncated longer names. Promotion is optimistic. */
+function DefaultStar({
+  isDefault,
+  isDemo,
+  onPromote,
+}: {
+  isDefault: boolean;
+  isDemo: boolean;
+  onPromote: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!isDefault && !isDemo) onPromote();
+      }}
+      disabled={isDemo || isDefault}
+      className={cn(
+        "p-1 rounded transition-colors",
+        isDefault
+          ? "text-[color:var(--color-primary)] cursor-default"
+          : isDemo
+            ? "text-[color:var(--color-ink-subtle)] opacity-40 cursor-not-allowed"
+            : "text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-primary)] hover:bg-[color:var(--color-primary-tint)] cursor-pointer",
+      )}
+      title={
+        isDefault
+          ? "Default material — pre-fills the new-test picker"
+          : isDemo
+            ? "Materials are read-only in the demo."
+            : "Make this the default material"
+      }
+      aria-label={isDefault ? "Default material" : "Make default"}
+      aria-pressed={isDefault}
+    >
+      <Star
+        className="h-3.5 w-3.5"
+        fill={isDefault ? "currentColor" : "none"}
+        strokeWidth={2}
+      />
+    </button>
   );
 }

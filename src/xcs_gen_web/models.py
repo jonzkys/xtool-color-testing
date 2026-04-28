@@ -101,6 +101,10 @@ materials = Table(
     Column("diameter_mm", Float, nullable=True),
     Column("width_mm", Float, nullable=True),
     Column("height_mm", Float, nullable=True),
+    # Per-owner "preferred" material — pre-fills the picker on the new
+    # test page. At most one material per owner has ``is_default=1``;
+    # promoting a material clears the flag on the previous one.
+    Column("is_default", Integer, nullable=False, server_default="0"),
     CheckConstraint(_VISIBILITY_CHECK, name="materials_visibility_chk"),
     Index("ix_materials_owner", "owner_id"),
 )

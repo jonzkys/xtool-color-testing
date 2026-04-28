@@ -39,6 +39,9 @@ export async function updateMaterial(
 export async function deleteMaterial(id: number): Promise<void> {
   await j(await fetch(`/api/materials/${id}`, { method: "DELETE" }));
 }
+export async function setDefaultMaterial(id: number): Promise<void> {
+  await j(await fetch(`/api/materials/${id}/set-default`, { method: "POST" }));
+}
 
 export async function listPresets(materialId?: number, machine_id?: string): Promise<Preset[]> {
   const qs = new URLSearchParams();
