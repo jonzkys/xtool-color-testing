@@ -287,6 +287,98 @@ def test_reingest_returns_404_for_unknown_rid(fresh_db, monkeypatch, tmp_path):
     assert r.status_code == 404
 
 
+# ── Warped-image cache ──────────────────────────────────────────────────
+
+
+def _setup_for_warped_cache(monkeypatch, tmp_path) -> tuple[TestClient, int, list[int]]:
+    """Stand up a fresh DB + uploaded result with a counting capture
+    stub. Returns ``(client, rid, call_count_ref)`` where the counter
+    increments on every ``run_capture`` invocation."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    counter = [0]
+
+    def _counting_capture(*, image_bytes, test_id, spec):
+        counter[0] += 1
+        return cap.CaptureResult(
+            swatches=[
+                {"row": 0, "col": 0, "x_value": 500, "y_value": None,
+                 "hex": "#ff0000", "lab": [0, 0, 0], "sigma": 1.0},
+            ],
+            warped_image_bgr=np.zeros((10, 10, 3), dtype=np.uint8),
+        )
+    monkeypatch.setattr(cap, "run_capture", _counting_capture)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    upload = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    assert upload.status_code == 201, upload.text
+    rid = upload.json()["id"]
+    # Reset after upload — _persist_upload runs capture once, that's
+    # not part of the cache assertions.
+    counter[0] = 0
+    return c, rid, counter
+
+
+def test_warped_image_cached_after_first_call(fresh_db, monkeypatch, tmp_path):
+    c, rid, counter = _setup_for_warped_cache(monkeypatch, tmp_path)
+    # First fetch runs capture + saves the sidecar.
+    assert c.get(f"/api/results/{rid}/warped-image").status_code == 200
+    assert counter[0] == 1
+    # Second fetch streams the cache — no capture run.
+    assert c.get(f"/api/results/{rid}/warped-image").status_code == 200
+    assert counter[0] == 1
+
+
+def test_debug_endpoints_share_one_capture(fresh_db, monkeypatch, tmp_path):
+    """Opening the debug modal fires warped-image + warped-with-grid +
+    row strips. The 5-10 s slow path was a capture-pipeline run per
+    request — with the cache, only the first request runs capture.
+    We assert the counter, not the row-strip HTTP status (the strip
+    rendering on a 10×10 stub image is unrelated to caching)."""
+    c, rid, counter = _setup_for_warped_cache(monkeypatch, tmp_path)
+    assert c.get(f"/api/results/{rid}/warped-image").status_code == 200
+    assert c.get(f"/api/results/{rid}/debug/warped-with-grid").status_code == 200
+    # Hit row/0 too — even if rendering fails downstream, the cache
+    # path must not have invoked run_capture.
+    c.get(f"/api/results/{rid}/debug/row/0")
+    assert counter[0] == 1
+
+
+def test_reingest_invalidates_warped_cache(fresh_db, monkeypatch, tmp_path):
+    """Reingest must drop the cached warped image; the next debug
+    fetch should re-run capture (the spec / detection code may have
+    changed)."""
+    c, rid, counter = _setup_for_warped_cache(monkeypatch, tmp_path)
+    # Warm the cache.
+    c.get(f"/api/results/{rid}/warped-image")
+    assert counter[0] == 1
+    # Reingest re-runs capture (counter += 1) and nulls warped_image_path.
+    assert c.post(f"/api/results/{rid}/reingest").status_code == 200
+    assert counter[0] == 2
+    # Next warped fetch sees the null and re-runs.
+    assert c.get(f"/api/results/{rid}/warped-image").status_code == 200
+    assert counter[0] == 3
+    # And then the cache is warm again.
+    c.get(f"/api/results/{rid}/warped-image")
+    assert counter[0] == 3
+
+
+def test_delete_invalidates_warped_cache(fresh_db, monkeypatch, tmp_path):
+    """Deleting a result removes the cached warped sidecar so it can't
+    leak into a future result that happens to take the same id."""
+    c, rid, _ = _setup_for_warped_cache(monkeypatch, tmp_path)
+    c.get(f"/api/results/{rid}/warped-image")  # warm cache
+    # Locate the sidecar on disk; it must exist before delete.
+    sidecars = list(tmp_path.rglob("*-warped.png"))
+    assert len(sidecars) == 1, f"expected 1 warped sidecar, got {sidecars}"
+    assert c.delete(f"/api/results/{rid}").status_code == 204
+    # Sidecar is gone after delete.
+    assert list(tmp_path.rglob("*-warped.png")) == []
+
+
 def test_swatch_preview_with_alternate_aggregator(fresh_db, monkeypatch, tmp_path):
     """The preview endpoint re-runs aggregation with a different method
     and returns the result without writing to DB. The original

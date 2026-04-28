@@ -177,6 +177,12 @@ results = Table(
     # The application always writes a JSON value via repositories/results.py
     # (defaults to "[]" there), so the column is reliably populated.
     Column("missing_markers_json", Text, nullable=False),
+    # Cached path to the rectified burn-space image, populated lazily
+    # on first debug-modal request and used to skip the full capture
+    # pipeline (ArUco/QR/perspective warp) on subsequent reads.
+    # Cleared by reingest + delete. Pure cache — losing it just means
+    # the next read re-computes once.
+    Column("warped_image_path", Text, nullable=True),
     CheckConstraint(_VISIBILITY_CHECK, name="results_visibility_chk"),
     CheckConstraint(_VIA_CHECK, name="results_via_chk"),
     Index("ix_results_test_id", "test_id"),
