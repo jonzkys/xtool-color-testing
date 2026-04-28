@@ -10,6 +10,11 @@ requires-python = ">=3.10"
 license = "MIT"
 dependencies = [
     "Pillow>=10.0",
+    # iPhone-default photo format. ``pillow_heif.register_heif_opener()``
+    # in capture_pipeline.py extends Pillow's Image.open with HEIC/HEIF
+    # support. Self-contained manylinux wheels bundle libheif, so no
+    # apt-get changes on the runtime image.
+    "pillow-heif>=0.16",
     "fastapi>=0.110",
     # python-multipart is required by FastAPI for UploadFile / File()
     # parsing (the image-upload endpoints). Not auto-installed by

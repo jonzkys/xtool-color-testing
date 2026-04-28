@@ -159,3 +159,35 @@ def test_ingest_is_idempotent_through_api(fresh_db, monkeypatch, tmp_path):
     assert len(entries) == 2, (
         f"expected 2 entries after two identical ingest calls, got {len(entries)}"
     )
+
+
+def test_test_response_carries_ingested_flag(fresh_db, monkeypatch, tmp_path):
+    """The list + detail endpoints expose a derived ``ingested`` flag
+    so the FE can render an "ingested" pill on the test card alongside
+    the status badge. Flag flips true once any palette entry references
+    the test."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_cap)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+
+    # Pre-ingest: ingested is False.
+    assert c.get(f"/api/tests/{tid}").json()["ingested"] is False
+    assert c.get("/api/tests").json()[0]["ingested"] is False
+
+    # Upload + ingest one swatch.
+    c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    r = c.post(
+        f"/api/tests/{tid}/ingest-to-palette",
+        json={"swatch_indices": [0], "mode": "averaged"},
+    )
+    assert r.status_code == 200
+
+    # Post-ingest: flag flips on both endpoints.
+    assert c.get(f"/api/tests/{tid}").json()["ingested"] is True
+    listed = c.get("/api/tests").json()
+    assert next(t for t in listed if t["id"] == tid)["ingested"] is True

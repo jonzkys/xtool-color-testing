@@ -84,9 +84,10 @@ def images_root() -> Path:
 
 
 def save(*, test_id: int, result_id: int, data: bytes,
-         suffix: str) -> dict[str, Any]:
+         suffix: str, kind: str = "") -> dict[str, Any]:
     return _backend().save(
-        test_id=test_id, result_id=result_id, data=data, suffix=suffix,
+        test_id=test_id, result_id=result_id,
+        data=data, suffix=suffix, kind=kind,
     )
 
 

@@ -48,10 +48,16 @@ def sha256_hex(data: bytes) -> str:
 
 
 class StorageBackend(Protocol):
-    """Minimal interface the app needs."""
+    """Minimal interface the app needs.
+
+    ``kind`` lets callers attach sidecar artefacts to a result without
+    overwriting the original (e.g. a cached warped image). Empty
+    string keeps the legacy ``<id><suffix>`` filename; a non-empty
+    value produces ``<id>-<kind><suffix>``.
+    """
 
     def save(self, *, test_id: int, result_id: int, data: bytes,
-             suffix: str) -> dict[str, Any]: ...
+             suffix: str, kind: str = "") -> dict[str, Any]: ...
     def read(self, path: str) -> bytes: ...
     def delete(self, path: str) -> None: ...
 
@@ -66,12 +72,14 @@ class FilesystemStorage:
 
     def save(
         self, *, test_id: int, result_id: int,
-        data: bytes, suffix: str,
+        data: bytes, suffix: str, kind: str = "",
     ) -> dict[str, Any]:
         _assert_safe_suffix(suffix)
+        _assert_safe_kind(kind)
         target_dir = self.root / str(test_id)
         target_dir.mkdir(parents=True, exist_ok=True)
-        path = target_dir / f"{result_id}{suffix}"
+        suffix_kind = f"-{kind}" if kind else ""
+        path = target_dir / f"{result_id}{suffix_kind}{suffix}"
         path.write_bytes(data)
         return {"path": str(path), "sha256": sha256_hex(data)}
 
@@ -127,6 +135,17 @@ def _assert_safe_suffix(suffix: str) -> None:
         raise ValueError(f"suffix too long: {suffix!r}")
 
 
+def _assert_safe_kind(kind: str) -> None:
+    """``kind`` becomes part of the filename — same hardening as
+    ``_assert_safe_suffix``. Empty is allowed (= no sidecar segment)."""
+    if not kind:
+        return
+    if any(c in kind for c in ("/", "\\", "\x00", ".", " ")):
+        raise ValueError(f"kind contains illegal chars: {kind!r}")
+    if len(kind) > 16:
+        raise ValueError(f"kind too long: {kind!r}")
+
+
 def _parse_s3_uri(uri: str) -> tuple[str, str]:
     if not uri.startswith(S3_URI_PREFIX):
         raise ValueError(f"not an s3 uri: {uri!r}")
@@ -166,9 +185,10 @@ class S3Storage:
             endpoint_url=endpoint_url,
         )
 
-    def _key(self, test_id: int, result_id: int, suffix: str) -> str:
+    def _key(self, test_id: int, result_id: int, suffix: str, kind: str = "") -> str:
         parts = [p for p in (self.prefix, str(int(test_id))) if p]
-        parts.append(f"{int(result_id)}{suffix}")
+        suffix_kind = f"-{kind}" if kind else ""
+        parts.append(f"{int(result_id)}{suffix_kind}{suffix}")
         return "/".join(parts)
 
     def _uri(self, key: str) -> str:
@@ -191,10 +211,11 @@ class S3Storage:
 
     def save(
         self, *, test_id: int, result_id: int,
-        data: bytes, suffix: str,
+        data: bytes, suffix: str, kind: str = "",
     ) -> dict[str, Any]:
         _assert_safe_suffix(suffix)
-        key = self._key(test_id, result_id, suffix)
+        _assert_safe_kind(kind)
+        key = self._key(test_id, result_id, suffix, kind=kind)
         self._client.put_object(
             Bucket=self.bucket,
             Key=key,
@@ -275,7 +296,7 @@ class DispatchingStorage:
         self._primary = primary
         self._fs = fs_fallback
 
-    def save(self, **kw) -> dict[str, Any]:
+    def save(self, **kw: Any) -> dict[str, Any]:
         return self._primary.save(**kw)
 
     def _backend_for(self, path: str) -> StorageBackend:

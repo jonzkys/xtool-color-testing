@@ -39,6 +39,7 @@ def _row(r) -> dict[str, Any]:
         # Pre-0006 rows lack the column — keep older test DBs loading.
         "retest_index": int(getattr(r, "retest_index", 0) or 0),
         "missing_markers": json.loads(getattr(r, "missing_markers_json", None) or "[]"),
+        "warped_image_path": getattr(r, "warped_image_path", None),
     }
 
 
@@ -241,6 +242,10 @@ def replace_capture(
     existing result row. Used by the reingest endpoint to write fresh
     capture output without touching the source photo or upload metadata.
     Returns None if the row does not exist or is not owned by ``owner_id``.
+
+    Also nulls ``warped_image_path`` — the previous cached warped is
+    stale once we re-run capture; the next debug-modal fetch will
+    repopulate.
     """
     with session_scope() as s:
         s.execute(
@@ -251,6 +256,20 @@ def replace_capture(
                 missing_markers_json=json.dumps(
                     list(missing_markers), separators=(",", ":"),
                 ),
+                warped_image_path=None,
             )
         )
     return get(rid, owner_id=owner_id)
+
+
+def set_warped_image_path(
+    rid: int, path: str | None, *, owner_id: int = STANDALONE_USER_ID,
+) -> None:
+    """Persist (or clear) the cached warped-image sidecar path. ``None``
+    invalidates the cache."""
+    with session_scope() as s:
+        s.execute(
+            results.update()
+            .where(and_(results.c.id == rid, results.c.owner_id == owner_id))
+            .values(warped_image_path=path)
+        )

@@ -30,7 +30,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _row(r) -> dict[str, Any]:
+def _row(r, *, ingested: bool = False) -> dict[str, Any]:
     return {
         "id": r.id,
         "name": r.name,
@@ -48,7 +48,29 @@ def _row(r) -> dict[str, Any]:
         # carry an int.
         "retest_index": int(getattr(r, "retest_index", 0) or 0),
         "machine_id": getattr(r, "machine_id", "F2Ultra"),
+        # Derived: does this test have at least one swatch in the
+        # palette? Set per-call from the palette_entries table — see
+        # ``_ingested_test_ids``. Defaults to False for safety on
+        # paths that don't compute it.
+        "ingested": ingested,
     }
+
+
+def _ingested_test_ids(s, *, owner_id: int) -> set[int]:
+    """Return the set of test_ids that have at least one palette
+    entry for ``owner_id``. Single query — used by ``list_all`` to
+    decorate every row in O(1)."""
+    rows = s.execute(
+        select(palette_entries.c.test_id)
+        .where(
+            and_(
+                palette_entries.c.owner_id == owner_id,
+                palette_entries.c.test_id.is_not(None),
+            ),
+        )
+        .distinct()
+    ).all()
+    return {int(r.test_id) for r in rows}
 
 
 def create(
@@ -78,7 +100,19 @@ def get(tid: int, *, owner_id: int = STANDALONE_USER_ID) -> dict[str, Any] | Non
                 and_(tests.c.id == tid, tests.c.owner_id == owner_id),
             )
         ).one_or_none()
-        return _row(row) if row else None
+        if row is None:
+            return None
+        ingested = s.execute(
+            select(palette_entries.c.id)
+            .where(
+                and_(
+                    palette_entries.c.test_id == tid,
+                    palette_entries.c.owner_id == owner_id,
+                ),
+            )
+            .limit(1)
+        ).first() is not None
+        return _row(row, ingested=ingested)
 
 
 def list_all(
@@ -98,7 +132,9 @@ def list_all(
         else:
             q = q.where(tests.c.status != "deleted")
         q = q.order_by(tests.c.id.desc())
-        return [_row(r) for r in s.execute(q).all()]
+        rows = s.execute(q).all()
+        ingested = _ingested_test_ids(s, owner_id=owner_id)
+        return [_row(r, ingested=int(r.id) in ingested) for r in rows]
 
 
 def update(
