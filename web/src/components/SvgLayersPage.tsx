@@ -522,8 +522,9 @@ export function SvgLayersPage() {
     setTracing(true);
     try {
       const svg = await traceImageToSvg(dataUrl, traceOptions);
-      setOriginalSvgContent(svg);
-      await applyDetectedSvg(svg, suggested);
+      const cleaned = await preBakeOverlaps(svg, request.width_mm);
+      setOriginalSvgContent(cleaned);
+      await applyDetectedSvg(cleaned, suggested);
     } catch (err) {
       setDetectError((err as Error).message);
     } finally {
@@ -537,14 +538,38 @@ export function SvgLayersPage() {
     setTracing(true);
     try {
       const svg = await traceImageToSvg(rasterDataUrl, opts);
-      setOriginalSvgContent(svg);
+      const cleaned = await preBakeOverlaps(svg, request.width_mm);
+      setOriginalSvgContent(cleaned);
       const currentName = request.name;
-      await applyDetectedSvg(svg, currentName);
+      await applyDetectedSvg(cleaned, currentName);
       setTracePending(false);
     } catch (err) {
       setDetectError((err as Error).message);
     } finally {
       setTracing(false);
+    }
+  }
+
+  /** Run subtract-overlaps on a freshly-traced SVG before storing.
+   *  vtracer outputs each colour layer as an unbounded shape — large
+   *  layers tile the whole canvas and only the highest-z layer wins
+   *  visually. With raw output, gaps in the trace expose the largest
+   *  layer's colour wherever no upper layer covers (the "red bleed"
+   *  the user reported on the london skyline). Pre-baking via the
+   *  existing ``/api/svg-preview`` endpoint hands us shapes that are
+   *  already non-overlapping, so the runtime ``Subtract overlaps``
+   *  toggle becomes effectively idempotent and gaps in the trace
+   *  burn nothing instead of showing the wrong colour. Falls back to
+   *  the raw SVG on API failure — better to ship the unsubtracted
+   *  output than fail the trace entirely. */
+  async function preBakeOverlaps(svg: string, widthMm: number): Promise<string> {
+    try {
+      return await previewSvg(svg, {
+        subtract_overlaps: true,
+        width_mm: widthMm > 0 ? widthMm : 100,
+      });
+    } catch {
+      return svg;
     }
   }
 
