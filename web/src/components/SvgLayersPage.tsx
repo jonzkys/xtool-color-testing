@@ -1561,9 +1561,16 @@ function SvgPreview({
     svgEl.setAttribute("width", "100%");
     svgEl.setAttribute("height", "100%");
     svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    // Explicit overflow=hidden on both the SVG attribute and CSS so
+    // shapes whose paths extend past the viewBox (vtracer routinely
+    // emits these — a "background" layer's path can sweep well
+    // outside the canvas) get clipped instead of bleeding into the
+    // surrounding preview pane.
+    svgEl.setAttribute("overflow", "hidden");
     svgEl.style.width = "100%";
     svgEl.style.height = "100%";
     svgEl.style.display = "block";
+    svgEl.style.overflow = "hidden";
 
     const elements = svgEl.querySelectorAll<SVGElement>("*");
 
