@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Dialog,
@@ -7,6 +7,72 @@ import {
   DialogTitle,
 } from "../ui";
 import { simplifySvg, type SimplifyResult } from "../svg/simplify";
+
+/** Inline preview render for the simplify dialog. Mounts the
+ *  ``previewSvg`` (which has dropped shapes still present, tagged
+ *  with ``data-xcs-simplify-drop``), then hands styling to a
+ *  scoped stylesheet that paints those red. The kept shapes get a
+ *  desaturated/faded treatment so the diff stands out at a glance.
+ *  Re-mounts whenever the SVG text changes. */
+function SimplifyPreviewSvg({
+  previewSvg,
+  hasChanges,
+}: {
+  previewSvg: string;
+  hasChanges: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const host = ref.current;
+    if (!host) return;
+    host.innerHTML = previewSvg;
+    const svg = host.querySelector("svg");
+    if (!svg) return;
+    // Mirror SvgPreview's normalisation so the inline render fills
+    // the dialog's preview pane regardless of the source SVG's
+    // declared size.
+    const declaredW = svg.getAttribute("width");
+    const declaredH = svg.getAttribute("height");
+    if (!svg.getAttribute("viewBox") && declaredW && declaredH) {
+      const w = parseFloat(declaredW);
+      const h = parseFloat(declaredH);
+      if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+        svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+      }
+    }
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", "100%");
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    (svg as SVGElement).style.width = "100%";
+    (svg as SVGElement).style.height = "100%";
+    (svg as SVGElement).style.display = "block";
+  }, [previewSvg]);
+
+  return (
+    <div className="relative w-full h-full">
+      {/* Scoped style — affects only the dialog's preview tree. The
+          ``!important`` overrides per-element inline fills so dropped
+          shapes are unmistakable regardless of their original colour. */}
+      <style>{`
+        .xcs-simplify-preview svg [data-xcs-simplify-drop] {
+          fill: #ef4444 !important;
+          stroke: #b91c1c !important;
+          stroke-width: 0.5px;
+          fill-opacity: 0.85 !important;
+        }
+        .xcs-simplify-preview svg :not([data-xcs-simplify-drop]) {
+          opacity: 0.55;
+        }
+      `}</style>
+      <div
+        ref={ref}
+        className="xcs-simplify-preview w-full h-full"
+        aria-hidden={!hasChanges}
+      />
+    </div>
+  );
+}
 
 // Both sliders snap to two-decimal mm. Defaults bias towards the
 // area filter (which is what fixes xTool studio's many-shapes
@@ -58,7 +124,13 @@ export function SimplifyShapesDialog({
 
   const result = useMemo<SimplifyResult | { error: string }>(() => {
     if (!svgContent) {
-      return { svgText: svgContent, beforeShapes: 0, afterShapes: 0, pathsSimplified: 0 };
+      return {
+        svgText: svgContent,
+        previewSvg: svgContent,
+        beforeShapes: 0,
+        afterShapes: 0,
+        pathsSimplified: 0,
+      };
     }
     try {
       return simplifySvg(svgContent, {
@@ -145,6 +217,21 @@ export function SimplifyShapesDialog({
         <div className="flex justify-between text-[10px] text-[color:var(--color-ink-subtle)] mb-4">
           <span>off</span>
           <span>{TOL_MAX} mm</span>
+        </div>
+
+        {/* Visual diff — kept shapes faded, dropped shapes painted
+            red so the user can see what they're about to lose at the
+            current threshold without committing. */}
+        <div
+          className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-substrate)] mb-3 overflow-hidden"
+          style={{ aspectRatio: "16 / 10" }}
+        >
+          {!isErr && (
+            <SimplifyPreviewSvg
+              previewSvg={result.previewSvg}
+              hasChanges={!noChange}
+            />
+          )}
         </div>
 
         {/* Result summary */}

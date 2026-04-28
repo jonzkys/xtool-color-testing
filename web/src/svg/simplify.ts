@@ -44,10 +44,21 @@ export interface SimplifyOptions {
   widthMm: number;
 }
 
+/** Attribute name used to flag dropped shapes in the preview SVG.
+ *  Stylable via ``[data-xcs-simplify-drop]`` so the dialog can paint
+ *  them red over the kept shapes. */
+export const DROP_FLAG_ATTR = "data-xcs-simplify-drop";
+
 export interface SimplifyResult {
   /** Rewritten SVG with sub-threshold shapes removed and remaining
-   *  polyline paths simplified. */
+   *  polyline paths simplified. This is what gets written into
+   *  ``request.svg_content`` on Apply. */
   svgText: string;
+  /** Same tree as ``svgText`` but dropped shapes are kept in-place
+   *  and tagged with ``data-xcs-simplify-drop="1"`` so the dialog
+   *  can highlight what's about to disappear. The kept shapes are
+   *  identical to ``svgText``. */
+  previewSvg: string;
   /** Shape count before simplification. */
   beforeShapes: number;
   /** Shape count after the area-threshold pass. */
@@ -91,19 +102,14 @@ export function simplifySvg(
   let afterShapes = 0;
   let pathsSimplified = 0;
 
-  for (const el of shapes) {
-    // ── Area filter ────────────────────────────────────────────────
-    if (minAreaPx > 0) {
-      const area = computeArea(el);
-      // Open shapes return null — skip the filter. They contribute to
-      // shape count but the area test isn't meaningful for them.
-      if (area !== null && area < minAreaPx) {
-        el.parentNode?.removeChild(el);
-        continue;
-      }
-    }
-    afterShapes++;
+  // First pass on the SOURCE tree: simplify polyline paths in place
+  // (kept and dropped shapes both get the simplification — preview
+  // and final SVG share the same path data). Track which shapes are
+  // marked-for-drop so we can both flag them on the preview tree
+  // and remove them from the final tree.
+  const droppedShapes: Element[] = [];
 
+  for (const el of shapes) {
     // ── Path vertex simplification ─────────────────────────────────
     if (
       tolerancePx > 0
@@ -123,15 +129,55 @@ export function simplifySvg(
         }
       }
     }
+
+    // ── Area filter ────────────────────────────────────────────────
+    if (minAreaPx > 0) {
+      const area = computeArea(el);
+      if (area !== null && area < minAreaPx) {
+        droppedShapes.push(el);
+        el.setAttribute(DROP_FLAG_ATTR, "1");
+        continue;
+      }
+    }
+    afterShapes++;
   }
 
-  const serialized = new XMLSerializer().serializeToString(parsed);
-  const out =
-    svgText.trimStart().startsWith("<?xml") && !serialized.startsWith("<?xml")
-      ? `<?xml version="1.0" encoding="UTF-8"?>\n${serialized}`
-      : serialized;
+  // Preview SVG = current tree with dropped shapes still present and
+  // tagged. Serialize first.
+  const previewSerialized = new XMLSerializer().serializeToString(parsed);
+  const previewOut = restoreXmlProlog(svgText, previewSerialized);
 
-  return { svgText: out, beforeShapes, afterShapes, pathsSimplified };
+  // Final SVG = preview tree with dropped shapes removed and the flag
+  // attribute stripped from any kept shapes (defensive — only dropped
+  // shapes carry it, but a stray attr serves no purpose downstream).
+  for (const el of droppedShapes) {
+    el.parentNode?.removeChild(el);
+  }
+  // Strip the drop flag from anything else (including dropped descendants
+  // inside structural groups, just in case).
+  parsed.querySelectorAll(`[${DROP_FLAG_ATTR}]`).forEach((el) => {
+    el.removeAttribute(DROP_FLAG_ATTR);
+  });
+  const finalSerialized = new XMLSerializer().serializeToString(parsed);
+  const finalOut = restoreXmlProlog(svgText, finalSerialized);
+
+  return {
+    svgText: finalOut,
+    previewSvg: previewOut,
+    beforeShapes,
+    afterShapes,
+    pathsSimplified,
+  };
+}
+
+function restoreXmlProlog(original: string, serialized: string): string {
+  if (
+    original.trimStart().startsWith("<?xml")
+    && !serialized.startsWith("<?xml")
+  ) {
+    return `<?xml version="1.0" encoding="UTF-8"?>\n${serialized}`;
+  }
+  return serialized;
 }
 
 interface ViewBox { width: number; height: number; }

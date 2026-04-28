@@ -175,6 +175,11 @@ export function SvgLayersPage() {
   const [generating, setGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
   const [subtractedSvg, setSubtractedSvg] = useState<string | null>(null);
+  // True while ``previewSvg`` is debounce-scheduled or its API call is
+  // in flight — drives a small spinner overlay on the SvgPreview so
+  // there's always SOMETHING happening visually after a slider tick or
+  // a Simplify / Merge apply.
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [rasterDataUrl, setRasterDataUrl] = useState<string | null>(null);
   const [traceOptions, setTraceOptions] = useState<RasterTraceOptions>(() => ({
     ...DEFAULT_RASTER_TRACE_OPTIONS,
@@ -239,6 +244,7 @@ export function SvgLayersPage() {
   useEffect(() => {
     if (!request.subtract_overlaps || !request.svg_content) {
       setSubtractedSvg(null);
+      setPreviewLoading(false);
       return;
     }
     // Debounce the preview call: every width/enable-toggle change fires this
@@ -247,6 +253,7 @@ export function SvgLayersPage() {
     // tick and pegs a backend CPU. 300 ms feels instant to the user and
     // collapses a drag into ~1 request.
     let cancelled = false;
+    setPreviewLoading(true);
     const timer = window.setTimeout(() => {
       previewSvg(request.svg_content, {
         enabled_colors: [...enabledColors],
@@ -254,10 +261,16 @@ export function SvgLayersPage() {
         width_mm: request.width_mm,
       })
         .then((svg) => {
-          if (!cancelled) setSubtractedSvg(svg);
+          if (!cancelled) {
+            setSubtractedSvg(svg);
+            setPreviewLoading(false);
+          }
         })
         .catch(() => {
-          if (!cancelled) setSubtractedSvg(null);
+          if (!cancelled) {
+            setSubtractedSvg(null);
+            setPreviewLoading(false);
+          }
         });
     }, 300);
     return () => {
@@ -1195,6 +1208,7 @@ export function SvgLayersPage() {
                 </span>
               ) : undefined
             }
+            loading={previewLoading}
           >
             <SvgPreview
               svg={subtractedSvg ?? request.svg_content}
@@ -1211,6 +1225,7 @@ export function SvgLayersPage() {
                 </span>
               ) : undefined
             }
+            loading={previewLoading}
           >
             <SvgPreview
               svg={subtractedSvg ?? request.svg_content}
@@ -1243,11 +1258,17 @@ function PreviewBlock({
   title,
   trailing,
   subtext,
+  loading,
   children,
 }: {
   title: string;
   trailing?: React.ReactNode;
   subtext?: React.ReactNode;
+  /** When true, render an overlay with a spinner + "Rendering…" hint
+   *  on top of ``children``. Used while ``previewSvg`` is in flight
+   *  (subtract-overlaps recompute) so it's clear something's happening
+   *  after a slider tick or a Simplify/Merge apply. */
+  loading?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -1257,10 +1278,39 @@ function PreviewBlock({
           {title}
         </span>
         {subtext && <span className="text-[11px]">{subtext}</span>}
+        {loading && (
+          <span className="inline-flex items-center gap-1 text-[10.5px] font-mono uppercase tracking-[0.14em] text-[color:var(--color-ink-subtle)]">
+            <span
+              aria-hidden
+              className="inline-block h-2.5 w-2.5 rounded-full border-2 border-current border-r-transparent animate-spin"
+            />
+            rendering
+          </span>
+        )}
         {trailing && <span className="ml-auto">{trailing}</span>}
       </div>
-      <Card variant="inset" padded={false} className="h-[40vh] min-h-[240px] overflow-hidden">
+      <Card
+        variant="inset"
+        padded={false}
+        className="relative h-[40vh] min-h-[240px] overflow-hidden"
+      >
         {children}
+        {loading && (
+          <div
+            className="absolute inset-0 flex items-center justify-center bg-[color:var(--color-substrate)]/45 backdrop-blur-[1px] pointer-events-none"
+            aria-live="polite"
+          >
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[color:var(--color-surface)] border border-[color:var(--color-border)] shadow-[var(--shadow-card)]">
+              <span
+                aria-hidden
+                className="inline-block h-3 w-3 rounded-full border-2 border-[color:var(--color-primary)] border-r-transparent animate-spin"
+              />
+              <span className="text-[11.5px] text-[color:var(--color-ink-muted)]">
+                Rendering preview…
+              </span>
+            </div>
+          </div>
+        )}
       </Card>
     </div>
   );
