@@ -192,9 +192,14 @@ function MajorEntry({ entry, unseen }: { entry: ChangelogEntry; unseen: boolean 
       {entry.images.length > 0 && (
         <div className="mt-4 flex flex-col gap-3">
           {entry.images.map((img, i) => (
+            // Cap figure width so a full-window screenshot doesn't
+            // stretch to the 960px page max — most shots contain a
+            // small modal/panel surrounded by app chrome, so a tighter
+            // crop (centred) reads better and leaves room for body
+            // text without the image dominating.
             <figure
               key={i}
-              className="rounded-[8px] overflow-hidden border border-[color:var(--color-border-strong)] bg-[color:var(--color-surface)]"
+              className="self-center w-full max-w-[640px] rounded-[8px] overflow-hidden border border-[color:var(--color-border-strong)] bg-[color:var(--color-surface)]"
             >
               <img
                 src={img.src}
