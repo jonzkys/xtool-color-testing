@@ -217,6 +217,10 @@ export function SvgLayersPage() {
     for (const d of rawDetected) out[d.color] = d.shape_count;
     return out;
   }, [rawDetected]);
+  const totalShapeCount = useMemo(
+    () => rawDetected.reduce((n, d) => n + d.shape_count, 0),
+    [rawDetected],
+  );
 
   const paramGroups = useMemo(
     () =>
@@ -833,7 +837,16 @@ export function SvgLayersPage() {
             <Section
               title={
                 <span className="inline-flex items-center gap-2">
-                  <span>Layers{hasLayers ? ` (${request.layers.length})` : ""}</span>
+                  <span>
+                    Layers
+                    {hasLayers
+                      ? ` (${request.layers.length}${
+                          totalShapeCount > 0
+                            ? ` · ${totalShapeCount.toLocaleString()} shapes`
+                            : ""
+                        })`
+                      : ""}
+                  </span>
                   {originalSvgContent !== null &&
                     originalSvgContent !== request.svg_content && (
                       <button
@@ -945,6 +958,7 @@ export function SvgLayersPage() {
                   })().map((l) => {
                     const isSel = selectedColor === l.color;
                     const matched = predictedByColor[l.color];
+                    const shapeCount = shapeCountsByColor[l.color] ?? 0;
                     return (
                       <li key={l.color}>
                         <button
@@ -978,7 +992,7 @@ export function SvgLayersPage() {
                               </span>
                             )}
                           </div>
-                          {/* Hex codes underneath */}
+                          {/* Hex codes + shape count underneath */}
                           <div className="flex items-baseline justify-between gap-1 px-1.5 py-1 bg-[color:var(--color-surface)] border-t border-[color:var(--color-border)]">
                             <span className="font-mono text-[9.5px] text-[color:var(--color-ink)] truncate">
                               {l.color}
@@ -990,6 +1004,20 @@ export function SvgLayersPage() {
                               {matched ?? "—"}
                             </span>
                           </div>
+                          {/* Shape count — quick read on layer complexity.
+                              xTool studio gets sluggish past ~1k total
+                              shapes, so a per-layer chip helps the user
+                              spot the offenders before export. */}
+                          {shapeCount > 0 && (
+                            <div className="flex items-center justify-end gap-1 px-1.5 pb-1 bg-[color:var(--color-surface)]">
+                              <span
+                                className="font-mono text-[8.5px] tracking-[0.1em] tabular-nums text-[color:var(--color-ink-subtle)]"
+                                title={`${shapeCount} shape${shapeCount === 1 ? "" : "s"} in this layer`}
+                              >
+                                {shapeCount.toLocaleString()} shape{shapeCount === 1 ? "" : "s"}
+                              </span>
+                            </div>
+                          )}
                           {/* Enable checkbox — top-right corner */}
                           <input
                             type="checkbox"
