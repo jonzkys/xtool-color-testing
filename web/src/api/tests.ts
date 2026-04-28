@@ -1,9 +1,6 @@
 import type { TestRecord, TestSpec } from "../types";
-
-async function j<T>(r: Response): Promise<T> {
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  return (r.status === 204 ? undefined : r.json()) as Promise<T>;
-}
+import { ApiError, j } from "./_fetch";
+import { captureHandledError } from "../sentry";
 
 export async function listTests(params: {
   material_id?: number; status?: string; machine_id?: string;
@@ -41,7 +38,17 @@ export async function deleteTest(id: number): Promise<void> {
 }
 export async function generateTestXcs(id: number): Promise<Blob> {
   const r = await fetch(`/api/tests/${id}/generate`, { method: "POST" });
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  if (!r.ok) {
+    const body = await r.text().catch(() => "");
+    const err = new ApiError({
+      status: r.status, url: r.url, body, message: `${r.status} ${body}`,
+    });
+    captureHandledError(err, {
+      tags: { api_status: String(r.status), api_url: r.url.split("?")[0] },
+      extras: { body: body.slice(0, 1000) },
+    });
+    throw err;
+  }
   return r.blob();
 }
 

@@ -1,9 +1,5 @@
 import type { Material, MaterialShape, Preset } from "../library";
-
-async function j<T>(r: Response): Promise<T> {
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  return (r.status === 204 ? undefined : r.json()) as Promise<T>;
-}
+import { j } from "./_fetch";
 
 /** Optional shape + dimensions for the create / update payloads.
  *  Pass ``shape: null`` (with dimensions also null) to clear. */

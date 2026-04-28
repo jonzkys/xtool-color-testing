@@ -1,9 +1,5 @@
 import type { MachinesPayload } from "../types";
-
-async function j<T>(r: Response): Promise<T> {
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  return r.json() as Promise<T>;
-}
+import { j } from "./_fetch";
 
 let _cache: MachinesPayload | null = null;
 

@@ -9,10 +9,7 @@
  *    server payload.
  */
 
-async function j<T>(r: Response): Promise<T> {
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  return r.json() as Promise<T>;
-}
+import { j } from "./_fetch";
 
 export type ChangelogLevel = "major" | "minor";
 
