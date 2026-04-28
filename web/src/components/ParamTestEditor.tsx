@@ -1,8 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { Material } from "../library";
 import type { Machine, ModeId, ParamName, RegistrationMode, SampleAggregator, TestSpec, ValidationProfile } from "../types";
 import { PARAM_NAMES } from "../types";
 import { squareCellHeight } from "../specUtils";
+import { computeAutoFitGrid, gridHeightToSpecHeight } from "../autofit";
 import { Field, NumberField, Section, Select } from "../ui";
 import { PulseWidthSelect } from "./PulseWidthSelect";
 import {
@@ -131,13 +132,54 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
     updateBase({ mode: id });
   }
 
+  // ── Auto-fit state ──────────────────────────────────────────────────
+  // Per-test toggle that derives grid width/height from a material
+  // shape + size. State is transient (not persisted on the spec) — the
+  // visible side-effect is whatever auto-fit writes into spec.width_mm
+  // / spec.height_mm, which IS persisted. Re-opening a saved test
+  // starts with auto-fit off, but the saved width/height still reflect
+  // the previous fit.
+  const [autoFit, setAutoFit] = useState(false);
+  type ShapeChoice = "circle" | "rect" | null;
+  const [afShape, setAfShape] = useState<ShapeChoice>(null);
+  const [afDiameter, setAfDiameter] = useState<number | null>(null);
+  const [afWidthMm, setAfWidthMm] = useState<number | null>(null);
+  const [afHeightMm, setAfHeightMm] = useState<number | null>(null);
+  const [afBufferPct, setAfBufferPct] = useState(2);
+
+  const activeMaterial = materials.find((m) => m.id === materialId) ?? null;
+  const materialHasShape = !!activeMaterial?.shape;
+
+  // Whenever the active material changes (or its shape metadata
+  // updates), pre-fill the auto-fit panel from it. Editing the panel
+  // values doesn't push back to the material — it's per-test
+  // override.
   useEffect(() => {
+    if (!activeMaterial?.shape) return;
+    setAfShape(activeMaterial.shape);
+    setAfDiameter(activeMaterial.diameter_mm ?? null);
+    setAfWidthMm(activeMaterial.width_mm ?? null);
+    setAfHeightMm(activeMaterial.height_mm ?? null);
+  }, [
+    activeMaterial?.id,
+    activeMaterial?.shape,
+    activeMaterial?.diameter_mm,
+    activeMaterial?.width_mm,
+    activeMaterial?.height_mm,
+  ]);
+
+  // Square-cells auto-height. Skipped when auto-fit is on — auto-fit
+  // owns both dimensions in that mode, otherwise the two effects fight
+  // and the grid stops fitting.
+  useEffect(() => {
+    if (autoFit) return;
     if (!t.square_cells) return;
     const target = squareCellHeight(t);
     if (Math.abs(target - t.height_mm) > 0.001) {
       updateSpec({ height_mm: Number(target.toFixed(3)) });
     }
   }, [
+    autoFit,
     t.square_cells,
     t.width_mm,
     t.gap_mm,
@@ -146,6 +188,48 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
     t.y_param,
     t.y_steps,
     t.height_mm,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-fit recompute. Fires whenever a relevant input changes and
+  // writes spec.width_mm / spec.height_mm to fit the material minus
+  // buffer + registration markers.
+  useEffect(() => {
+    if (!autoFit) return;
+    const grid = computeAutoFitGrid({
+      shape: afShape,
+      diameter_mm: afDiameter,
+      width_mm: afWidthMm,
+      height_mm: afHeightMm,
+      buffer_pct: afBufferPct,
+      qr_size_mm: t.registration.qr_size_mm ?? null,
+      aruco_size_mm: t.registration.aruco_size_mm ?? null,
+      registration_on: t.registration.mode === "on",
+    });
+    if (!grid) return;
+    const is2D = t.y_param !== null && (t.y_steps ?? 1) > 1;
+    const height_mm = gridHeightToSpecHeight({
+      grid_h: grid.grid_h,
+      rows: t.rows ?? 1,
+      gap_mm: t.gap_mm,
+      hide_axis_labels: t.hide_axis_labels,
+      is_2d: is2D,
+    });
+    const width_mm = grid.grid_w;
+    if (
+      Math.abs(t.width_mm - width_mm) > 0.01
+      || Math.abs(t.height_mm - height_mm) > 0.01
+    ) {
+      updateSpec({
+        width_mm: Number(width_mm.toFixed(2)),
+        height_mm: Number(height_mm.toFixed(3)),
+      });
+    }
+  }, [
+    autoFit,
+    afShape, afDiameter, afWidthMm, afHeightMm, afBufferPct,
+    t.gap_mm, t.rows, t.y_param, t.y_steps, t.hide_axis_labels,
+    t.registration.qr_size_mm, t.registration.aruco_size_mm, t.registration.mode,
+    t.width_mm, t.height_mm,
   ]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function findIssue(suffix: string): string | undefined {
@@ -172,25 +256,134 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
             </Field>
           </Section>
 
+          <Section
+            title="Auto-fit to material"
+            description="When on, derives the grid width and height from the workpiece outline minus buffer + registration markers. Per-test override — pre-fills from the material's default but stays editable here."
+            dense
+          >
+            <label className="flex items-start gap-2 text-[12.5px] text-[color:var(--color-ink-muted)]">
+              <input
+                type="checkbox"
+                checked={autoFit}
+                disabled={locked}
+                onChange={(e) => setAutoFit(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                Auto-fit grid to material outline
+                <span className="block text-[11px] text-[color:var(--color-ink-subtle)]">
+                  Width &amp; height become read-only and recompute from the values below.
+                </span>
+              </span>
+            </label>
+            {autoFit && !materialHasShape && (
+              <div className="rounded-[6px] border border-[color:var(--color-warning)]/30 bg-[color:var(--color-warning-tint)]/60 px-3 py-2 text-[11.5px] text-[color:var(--color-warning)]">
+                Material doesn't have a default size — set the shape and dimensions
+                below for this test, or update it on the Library page so the next
+                test starts pre-filled.
+              </div>
+            )}
+            {autoFit && (
+              <>
+                <Field label="Shape">
+                  <Select
+                    value={afShape ?? ""}
+                    disabled={locked}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setAfShape(v === "circle" || v === "rect" ? v : null);
+                    }}
+                  >
+                    <option value="">— pick a shape —</option>
+                    <option value="circle">Circle</option>
+                    <option value="rect">Rectangle</option>
+                  </Select>
+                </Field>
+                {afShape === "circle" && (
+                  <NumberField
+                    label="Diameter (mm)"
+                    value={afDiameter ?? 0}
+                    min={1} max={1000}
+                    disabled={locked}
+                    onChange={(v) => setAfDiameter(v)}
+                  />
+                )}
+                {afShape === "rect" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumberField
+                      label="Width (mm)"
+                      value={afWidthMm ?? 0}
+                      min={1} max={1000}
+                      disabled={locked}
+                      onChange={(v) => setAfWidthMm(v)}
+                    />
+                    <NumberField
+                      label="Height (mm)"
+                      value={afHeightMm ?? 0}
+                      min={1} max={1000}
+                      disabled={locked}
+                      onChange={(v) => setAfHeightMm(v)}
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className="flex items-center justify-between text-[12px] text-[color:var(--color-ink-muted)] mb-1">
+                    <span>Buffer</span>
+                    <span className="font-mono tabular-nums text-[color:var(--color-ink)]">
+                      {afBufferPct.toFixed(1)}%
+                    </span>
+                  </label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={10}
+                    step={0.5}
+                    value={afBufferPct}
+                    disabled={locked}
+                    onChange={(e) => setAfBufferPct(Number(e.target.value))}
+                    className="w-full"
+                  />
+                  <p className="mt-1 text-[11px] text-[color:var(--color-ink-subtle)]">
+                    Empty space to leave on every side, as a percentage of the
+                    material's outline. Helps with alignment on the bed.
+                  </p>
+                </div>
+              </>
+            )}
+          </Section>
+
           <Section title="Layout">
             <div className="grid grid-cols-2 gap-3">
               <NumberField
-                label="Width (mm)"
+                label={autoFit ? "Width (mm, auto)" : "Width (mm)"}
                 value={t.width_mm}
                 onChange={(v) => updateSpec({ width_mm: v })}
                 issue={findIssue("width_mm")}
-                disabled={locked}
+                disabled={locked || autoFit}
+                help={
+                  autoFit
+                    ? "Auto-fit drives this from the material outline above."
+                    : undefined
+                }
               />
               <NumberField
-                label={t.square_cells ? "Height (mm, auto)" : "Height (mm)"}
+                label={
+                  autoFit
+                    ? "Height (mm, auto)"
+                    : t.square_cells
+                      ? "Height (mm, auto)"
+                      : "Height (mm)"
+                }
                 value={t.height_mm}
                 onChange={(v) => updateSpec({ height_mm: v })}
                 issue={findIssue("height_mm")}
-                disabled={locked || t.square_cells}
+                disabled={locked || t.square_cells || autoFit}
                 help={
-                  t.square_cells
-                    ? "Auto-computed from width + steps + rows + gap to keep cells square. Disable 'Square cells' below to edit directly."
-                    : undefined
+                  autoFit
+                    ? "Auto-fit drives this from the material outline above."
+                    : t.square_cells
+                      ? "Auto-computed from width + steps + rows + gap to keep cells square. Disable 'Square cells' below to edit directly."
+                      : undefined
                 }
               />
               <NumberField
