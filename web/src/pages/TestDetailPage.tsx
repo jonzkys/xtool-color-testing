@@ -1,5 +1,8 @@
-import { useEffect, useState } from "react";
-import { Copy, Download, Lock, Save, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  AlertCircle, Check, Copy, Download, Loader2, Lock, Save, Trash2,
+} from "lucide-react";
+import { useIsDemo } from "../hooks/useIsDemo";
 import type { Material, Preset } from "../library";
 import type { TestRecord, TestSpec } from "../types";
 import {
@@ -28,6 +31,68 @@ import {
   TabBar,
 } from "../ui";
 
+type SaveStatus = "idle" | "saving" | "saved" | "error";
+
+function formatAgo(date: Date, now: number): string {
+  const seconds = Math.max(0, Math.floor((now - date.getTime()) / 1000));
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function SaveStatusPill({
+  status, lastSavedAt, onRetry,
+}: {
+  status: SaveStatus;
+  lastSavedAt: Date | null;
+  onRetry: () => void;
+}) {
+  // Tick once a minute so "5m ago" → "6m ago" without a manual refresh.
+  // Below 60s the displayed value is "just now"/"Ns ago" — for those
+  // the next save event will replace it before the second matters.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  if (status === "saving") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[12px] text-[color:var(--color-ink-subtle)] tabular-nums">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        Saving…
+      </span>
+    );
+  }
+  if (status === "error") {
+    return (
+      <button
+        type="button"
+        onClick={onRetry}
+        className="inline-flex items-center gap-1.5 text-[12px] text-[color:var(--color-destructive)] hover:underline"
+        title="Retry save"
+      >
+        <AlertCircle className="h-3.5 w-3.5" />
+        Save failed — retry
+      </button>
+    );
+  }
+  // status === "idle" | "saved" — render the last-saved timestamp
+  // when we have one, otherwise nothing to say.
+  if (!lastSavedAt) return null;
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[12px] text-[color:var(--color-ink-subtle)] tabular-nums">
+      <Check className="h-3.5 w-3.5" />
+      Saved · {formatAgo(lastSavedAt, now)}
+    </span>
+  );
+}
+
 interface Props {
   testId: number | "new";
 }
@@ -40,8 +105,21 @@ export function TestDetailPage({ testId }: Props) {
   const [materialId, setMaterialId] = useState<number | null>(null);
   const [name, setName] = useState("New test");
   const [error, setError] = useState<string>();
-  const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [activeTab, setActiveTab] = useState<ParamTestEditorTab>("test");
+  // True once the user has changed name / spec / material at least
+  // once via the editor. Autosave is gated on this so the load
+  // effect's re-renders never trigger a PATCH-back of the loaded
+  // values.
+  const userInteractedRef = useRef(false);
+  const autoSaveTimerRef = useRef<number | null>(null);
+  const inFlightSaveRef = useRef<Promise<void> | null>(null);
+  const isDemo = useIsDemo();
+  // Timestamp of the last successful persistence — pre-filled from
+  // test.updated_at on load so the pill can show "Saved · 3m ago"
+  // even before the user makes their first edit.
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -50,6 +128,8 @@ export function TestDetailPage({ testId }: Props) {
       setPresets(p);
       if (testId !== "new") {
         const t = await getTest(testId);
+        userInteractedRef.current = false;
+        setLastSavedAt(t.updated_at ? new Date(t.updated_at) : null);
         setTest(t);
         setSpec(t.spec);
         setName(t.name);
@@ -65,39 +145,107 @@ export function TestDetailPage({ testId }: Props) {
     })().catch((e) => setError((e as Error).message));
   }, [testId]);
 
-  async function onSave() {
-    if (materialId === null) {
-      setError("Pick a material");
-      return;
-    }
-    setSaving(true);
+  // Persist the current state to an existing test. No-ops when there's
+  // no test yet (the Create button handles initial creation explicitly
+  // since it also navigates to the new URL). Sequences saves so that a
+  // PATCH in flight can't be overtaken by a newer one on a later
+  // keystroke — we simply queue and run once the current promise
+  // settles.
+  async function persistChanges(): Promise<void> {
+    if (!test || materialId === null || isDemo) return;
+    setSaveStatus("saving");
     setError(undefined);
     try {
       const normalized = normalizeSpec(spec);
       if (normalized !== spec) setSpec(normalized);
-      if (test) {
-        // Spec is frozen once a result has been uploaded, but name and
-        // material can still change — the backend cascades a material
-        // reassignment to any palette entries harvested from this test
-        // so a wrong-substrate burn can be relabelled in place.
-        const patch = test.locked
-          ? { name, material_id: materialId }
-          : { name, spec: normalized, material_id: materialId };
-        const updated = await updateTest(test.id, patch);
-        setTest(updated);
-      } else {
-        const created = await createTest({
-          name,
-          material_id: materialId,
-          spec: normalized,
-          machine_id: getCurrentMachineId(),
-        });
-        window.location.hash = formatRoute({ name: "test-detail", id: created.id });
+      // Spec is frozen once a result has been uploaded, but name and
+      // material can still change — the backend cascades a material
+      // reassignment to any palette entries harvested from this test
+      // so a wrong-substrate burn can be relabelled in place.
+      const patch = test.locked
+        ? { name, material_id: materialId }
+        : { name, spec: normalized, material_id: materialId };
+      const updated = await updateTest(test.id, patch);
+      setTest(updated);
+      setLastSavedAt(new Date());
+      setSaveStatus("saved");
+    } catch (e) {
+      setError((e as Error).message);
+      setSaveStatus("error");
+    }
+  }
+
+  // Debounced autosave for existing tests. Locked off until the user
+  // has touched the form once — the load effect can re-render
+  // multiple times before all loaded values settle, and we don't want
+  // to PATCH the loaded values back to the server during that window.
+  useEffect(() => {
+    if (!test || materialId === null || isDemo) return;
+    if (!userInteractedRef.current) return;
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = window.setTimeout(() => {
+      autoSaveTimerRef.current = null;
+      inFlightSaveRef.current = persistChanges();
+    }, 800);
+    return () => {
+      if (autoSaveTimerRef.current !== null) {
+        window.clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
       }
+    };
+  }, [name, spec, materialId, test?.id, test?.locked, isDemo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Wrapped setters that flag user interaction. The autosave effect
+  // skips its scheduling unless the flag is set, so loaded values
+  // never get PATCHed back unchanged.
+  function handleSpecChange(next: TestSpec) {
+    userInteractedRef.current = true;
+    setSpec(next);
+  }
+  function handleNameChange(next: string) {
+    userInteractedRef.current = true;
+    setName(next);
+  }
+  function handleMaterialChange(id: number) {
+    userInteractedRef.current = true;
+    setMaterialId(id);
+  }
+
+  // Flush any pending debounced save and wait for any in-flight one.
+  // Used by Generate before downloading the .xcs so the file always
+  // reflects the visible spec.
+  async function flushAutoSave(): Promise<void> {
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+      inFlightSaveRef.current = persistChanges();
+    }
+    if (inFlightSaveRef.current) await inFlightSaveRef.current;
+  }
+
+  async function onCreate() {
+    if (materialId === null) {
+      setError("Pick a material");
+      return;
+    }
+    setCreating(true);
+    setError(undefined);
+    try {
+      const normalized = normalizeSpec(spec);
+      if (normalized !== spec) setSpec(normalized);
+      const created = await createTest({
+        name,
+        material_id: materialId,
+        spec: normalized,
+        machine_id: getCurrentMachineId(),
+      });
+      window.location.hash = formatRoute({ name: "test-detail", id: created.id });
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setSaving(false);
+      setCreating(false);
     }
   }
 
@@ -123,12 +271,9 @@ export function TestDetailPage({ testId }: Props) {
     if (!test) return;
     setError(undefined);
     try {
-      if (!test.locked) {
-        const normalized = normalizeSpec(spec);
-        if (normalized !== spec) setSpec(normalized);
-        const updated = await updateTest(test.id, { name, spec: normalized });
-        setTest(updated);
-      }
+      // Flush any debounced autosave so the .xcs reflects the visible
+      // spec, not the last persisted one.
+      await flushAutoSave();
       const blob = await generateTestXcs(test.id);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -196,17 +341,27 @@ export function TestDetailPage({ testId }: Props) {
           </div>
           <Input
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="text-[20px] font-semibold h-auto px-2 py-1.5 bg-transparent border-transparent hover:border-[color:var(--color-border)] focus:bg-[color:var(--color-surface)] focus:border-[color:var(--color-primary)]"
+            onChange={(e) => handleNameChange(e.target.value)}
+            className="text-[20px] font-semibold h-auto px-2 py-1.5 max-w-[420px] bg-transparent border-transparent hover:border-[color:var(--color-border)] focus:bg-[color:var(--color-surface)] focus:border-[color:var(--color-primary)]"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <DemoLock label="Saving test edits is disabled in the demo.">
-            <Button variant="secondary" onClick={onSave} disabled={saving}>
-              <Save className="h-4 w-4" />
-              {test ? "Save" : "Create"}
-            </Button>
-          </DemoLock>
+          {test ? (
+            <span className="mr-2">
+              <SaveStatusPill
+                status={saveStatus}
+                lastSavedAt={lastSavedAt}
+                onRetry={persistChanges}
+              />
+            </span>
+          ) : (
+            <DemoLock label="Saving test edits is disabled in the demo.">
+              <Button variant="secondary" onClick={onCreate} disabled={creating}>
+                <Save className="h-4 w-4" />
+                Create
+              </Button>
+            </DemoLock>
+          )}
           {test && (
             <DemoLock label="Generating .xcs is disabled in the demo.">
               <Button variant="primary" onClick={onGenerate}>
@@ -287,12 +442,12 @@ export function TestDetailPage({ testId }: Props) {
           <div className="flex-1 min-h-0 overflow-y-auto">
             <ParamTestEditor
               spec={spec}
-              onChange={setSpec}
+              onChange={handleSpecChange}
               locked={test?.locked ?? false}
               tab={activeTab}
               materials={materials}
               materialId={materialId}
-              onMaterialChange={setMaterialId}
+              onMaterialChange={handleMaterialChange}
             />
           </div>
         </div>
