@@ -5,6 +5,7 @@ import {
   Eye,
   EyeOff,
   FileCode2,
+  FileImage,
   Filter,
   Layers as LayersIcon,
   Star,
@@ -167,7 +168,10 @@ export function SvgLayersPage() {
   // params, so a default-on collapse silently fuses visually distinct
   // colours into one engrave stage and the "X→1" badge surprises users
   // who haven't picked params yet. Users who want this can opt in.
-  const [collapseIdenticalLayers, setCollapseIdenticalLayers] = useState(false);
+  // Default ON — most users want params shared across same-colour
+  // layers anyway, and the merge collapses cleanly into one output
+  // pass without surprising side effects. Off → no merge happens.
+  const [collapseIdenticalLayers, setCollapseIdenticalLayers] = useState(true);
   const [filename, setFilename] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [isolateSelected, setIsolateSelected] = useState(false);
@@ -580,6 +584,33 @@ export function SvgLayersPage() {
     }
   }
 
+  /** Download the current SVG content — matches whatever the .xcs
+   *  generator would receive (i.e. with palette-matched colours and
+   *  collapse-identical layers applied if the corresponding toggles
+   *  are on). Useful for taking the rewritten asset into another
+   *  tool, or for archiving the version that produced a given burn. */
+  function handleSaveSvg() {
+    setErrorMessage(undefined);
+    try {
+      const r = buildGenerateRequest();
+      if (!r.svg_content) return;
+      const blob = new Blob([r.svg_content], { type: "image/svg+xml" });
+      const url = URL.createObjectURL(blob);
+      try {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${r.name || "svg-layers"}.svg`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      setErrorMessage((err as Error).message);
+    }
+  }
+
   function buildGenerateRequest(): SvgLayersRequest {
     let r = request;
 
@@ -688,6 +719,19 @@ export function SvgLayersPage() {
               );
             })}
           </div>
+          <Button
+            variant="ghost"
+            onClick={handleSaveSvg}
+            disabled={!request.svg_content}
+            title={
+              !request.svg_content
+                ? "Upload an SVG / image first"
+                : "Download the current SVG (with palette + merge rewrites applied if toggled)"
+            }
+          >
+            <FileImage className="h-4 w-4" />
+            Save SVG
+          </Button>
           <Button
             variant="primary"
             onClick={handleGenerate}
