@@ -81,6 +81,14 @@ export function UploadResultDialog({
       } catch {
         /* non-fatal; we still have the result */
       }
+      // Tell any open page (TestDetailPage's ResultsPanel, in
+      // particular) that a new result exists for this test, so it can
+      // refetch without waiting for a hash navigation. Without this,
+      // the user sees "Open test" succeed but the page doesn't show
+      // the new result when they're already there.
+      window.dispatchEvent(new CustomEvent("result:refetch", {
+        detail: { testId: result.test_id },
+      }));
       setState({ kind: "success", result, test, fileName: file.name });
     } catch (e) {
       setState({ kind: "error", message: errorText(e) });
@@ -502,7 +510,18 @@ function SuccessState({
         <div className="mt-4 flex flex-wrap gap-2">
           <a
             href={testHref}
-            onClick={onClose}
+            onClick={(e) => {
+              // If we're already on the test's page the hash won't
+              // change and no hashchange event fires — the click
+              // becomes a no-op visually. The result:refetch event
+              // dispatched on upload success has already updated the
+              // underlying ResultsPanel, so closing the dialog is
+              // the right behaviour.
+              if (window.location.hash === testHref) {
+                e.preventDefault();
+              }
+              onClose();
+            }}
             className="inline-flex items-center gap-1.5 px-3 h-8 rounded-[6px] bg-[color:var(--color-primary)] text-white font-medium text-[13px] no-underline hover:bg-[color:var(--color-primary-hover)] transition-colors"
           >
             Open test

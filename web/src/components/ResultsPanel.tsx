@@ -73,6 +73,22 @@ export function ResultsPanel({
     refresh({ autoSelect: true });
   }, [testId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Cross-page refresh signal — dispatched by UploadResultDialog
+  // after a successful upload (and by other places that mutate
+  // results out-of-band, e.g. the aggregator change in
+  // ResultDetailDialog). Triggers a refetch when the new/updated
+  // result belongs to this test.
+  useEffect(() => {
+    function onRefetch(e: Event) {
+      const detail = (e as CustomEvent<{ testId?: number }>).detail;
+      if (detail?.testId == null || detail.testId === testId) {
+        void refresh();
+      }
+    }
+    window.addEventListener("result:refetch", onRefetch);
+    return () => window.removeEventListener("result:refetch", onRefetch);
+  }, [testId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function selectAll() {
     const picks: Record<number, boolean> = {};
     averaged.forEach((s, i) => {
