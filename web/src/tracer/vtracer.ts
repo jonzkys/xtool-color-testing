@@ -244,7 +244,14 @@ function injectCornerBackdrops(
   const W2 = halfW + 1;
   const H2 = halfH + 1;
 
-  let rects: string;
+  // Emit only the half-canvas backdrops we're CONFIDENT about. Per-
+  // quadrant rects used to be the fallback but that produced a wash
+  // of wrong colour on complex scenes — e.g. the bottom-right corner
+  // of a city skyline samples the red bus body and paints the entire
+  // bottom-right quadrant red, even though most of that quadrant is
+  // dark silhouette. Half-stripes are safer because they only fire
+  // when both endpoints of that edge already agree.
+  let rects = "";
   if (allFour) {
     // One full-canvas rect — typical case for cartoons / icons with a
     // single background tone all the way to the edges.
@@ -263,15 +270,28 @@ function injectCornerBackdrops(
       `<rect x="${halfW}" y="-1" width="${W2}" height="${height + 2}" fill="${tr}"/>`,
     ].join("");
   } else {
-    // Four distinct corners — fall back to per-quadrant rects.
-    rects = [
-      `<rect x="-1" y="-1" width="${W2}" height="${H2}" fill="${tl}"/>`,
-      `<rect x="${halfW}" y="-1" width="${W2}" height="${H2}" fill="${tr}"/>`,
-      `<rect x="-1" y="${halfH}" width="${W2}" height="${H2}" fill="${bl}"/>`,
-      `<rect x="${halfW}" y="${halfH}" width="${W2}" height="${H2}" fill="${br}"/>`,
-    ].join("");
+    // Mixed corners — emit only the half-canvas rects whose two
+    // endpoints actually agree. London skyline triggers ``topRowSame``
+    // alone (blue sky across the top) and we paint the top half blue;
+    // the bottom half stays uncovered because BL/BR disagree. The
+    // (typically tiny) anti-aliased slivers near the bottom edge then
+    // show through to substrate, which is far better than washing the
+    // bottom in a wrong colour.
+    if (topRowSame) {
+      rects += `<rect x="-1" y="-1" width="${width + 2}" height="${H2}" fill="${tl}"/>`;
+    }
+    if (botRowSame) {
+      rects += `<rect x="-1" y="${halfH}" width="${width + 2}" height="${H2}" fill="${bl}"/>`;
+    }
+    if (leftColSame) {
+      rects += `<rect x="-1" y="-1" width="${W2}" height="${height + 2}" fill="${tl}"/>`;
+    }
+    if (rightColSame) {
+      rects += `<rect x="${halfW}" y="-1" width="${W2}" height="${height + 2}" fill="${tr}"/>`;
+    }
   }
 
+  if (!rects) return svg;
   const match = svg.match(/<svg\b[^>]*>/);
   if (!match) return svg;
   return svg.replace(match[0], `${match[0]}${rects}`);
