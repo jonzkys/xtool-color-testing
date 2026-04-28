@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { describe, expect, test } from "vitest";
-import { mergeColorsInSvg, computeColorMergeGroups, computeParamMergeGroups, type MergeGroup } from "./mergeColors";
+import {
+  applyMatchedExport,
+  mergeColorsInSvg,
+  computeColorMergeGroups,
+  computeParamMergeGroups,
+  type MergeGroup,
+} from "./mergeColors";
 import type { LayerSpec } from "../types";
 import { defaultHatchPass } from "../defaults";
 
@@ -376,5 +382,89 @@ describe("computeParamMergeGroups", () => {
     const groups = computeParamMergeGroups(layers);
     // First-occurrence rep = #00ff00 (appears first) since all three match.
     expect(groups[0][0].color).toBe("#00ff00");
+  });
+});
+
+describe("applyMatchedExport", () => {
+  const baseSvg = wrap(
+    `<rect fill="#aa0000"/><rect fill="#bb0000"/><rect fill="#00ff00"/>`,
+  );
+
+  test("returns input unchanged when nothing has been matched", () => {
+    const layers = [layer({ color: "#aa0000" }), layer({ color: "#bb0000" })];
+    const out = applyMatchedExport({
+      svgContent: baseSvg,
+      layers,
+      predictedByColor: {},
+    });
+    expect(out.svgContent).toBe(baseSvg);
+    expect(out.layers).toEqual(layers);
+  });
+
+  test("self-mapped colours don't trigger a remap", () => {
+    const layers = [layer({ color: "#aa0000" })];
+    const out = applyMatchedExport({
+      svgContent: baseSvg,
+      layers,
+      predictedByColor: { "#aa0000": "#aa0000" },
+    });
+    expect(out.svgContent).toBe(baseSvg);
+    expect(out.layers).toEqual(layers);
+  });
+
+  test("remaps a single source colour to a different palette hex", () => {
+    const layers = [layer({ color: "#aa0000" }), layer({ color: "#bb0000" })];
+    const out = applyMatchedExport({
+      svgContent: baseSvg,
+      layers,
+      predictedByColor: { "#aa0000": "#ff0000" },
+    });
+    expect(out.layers.map((l) => l.color)).toEqual(["#ff0000", "#bb0000"]);
+    expect(extractFills(out.svgContent)).toEqual(
+      ["#ff0000", "#bb0000", "#00ff00"],
+    );
+  });
+
+  test("regression: two source colours mapped to a single new rep "
+    + "leaves at least one layer (was 422 on /api/svg-layers)", () => {
+    // ``#aa0000`` and ``#bb0000`` both map to ``#ff0000``, which is
+    // NOT itself an existing layer. Pre-fix, the source layers got
+    // filtered out as "losers" without any rep layer being added,
+    // collapsing layers to []. The schema's ``min_length=1`` then
+    // 422'd the request.
+    const layers = [layer({ color: "#aa0000" }), layer({ color: "#bb0000" })];
+    const out = applyMatchedExport({
+      svgContent: baseSvg,
+      layers,
+      predictedByColor: {
+        "#aa0000": "#ff0000",
+        "#bb0000": "#ff0000",
+      },
+    });
+    expect(out.layers).toHaveLength(1);
+    expect(out.layers[0].color).toBe("#ff0000");
+    // First source's params win because mapping happens before dedupe
+    // and the dedupe keeps the first occurrence.
+    expect(extractFills(out.svgContent)).toEqual(
+      ["#ff0000", "#ff0000", "#00ff00"],
+    );
+  });
+
+  test("preserves an existing rep layer's params when sources also "
+    + "map to that rep", () => {
+    // Existing #ff0000 layer (with a distinct ``name`` so we can
+    // assert it survived) plus #aa0000 mapping to #ff0000 → still
+    // exactly one #ff0000 layer.
+    const existing = layer({ color: "#ff0000", name: "rep-original" });
+    const source = layer({ color: "#aa0000", name: "source" });
+    const out = applyMatchedExport({
+      svgContent: wrap(`<rect fill="#aa0000"/><rect fill="#ff0000"/>`),
+      layers: [existing, source],
+      predictedByColor: { "#aa0000": "#ff0000" },
+    });
+    expect(out.layers).toHaveLength(1);
+    expect(out.layers[0].color).toBe("#ff0000");
+    // Existing rep comes first in the array → its params win the dedupe.
+    expect(out.layers[0].name).toBe("rep-original");
   });
 });

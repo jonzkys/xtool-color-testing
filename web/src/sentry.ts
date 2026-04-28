@@ -14,16 +14,19 @@
  *
  * Capture surface:
  *   - Uncaught errors (window.onerror)
- *   - Unhandled promise rejections (the silent kind that just log to
- *     the console, like the 422 you saw in TestsPage)
- *
- * What we don't capture:
- *   - Handled fetch errors that components surface via their own error
- *     state. The toast system already shows those to the user; we
- *     don't double-log.
+ *   - Unhandled promise rejections
+ *   - Handled non-OK fetch responses (via ``captureHandledError``
+ *     called from ``api/_fetch.ts``). The toast surfaces the message
+ *     to the user; Sentry surfaces it to us. Trialling users tend to
+ *     drop off without reporting bugs, so silent telemetry matters
+ *     more than avoiding a double-log.
  */
 
 let _initialised = false;
+// Cached Sentry module after the first successful init. Subsequent
+// captureHandledError calls re-use this; if init never happened
+// (DSN unset) the helper is a no-op.
+let _sentry: typeof import("@sentry/react") | null = null;
 
 export async function initSentry(): Promise<void> {
   if (_initialised) return;
@@ -57,6 +60,7 @@ export async function initSentry(): Promise<void> {
       replaysSessionSampleRate: 0,
       replaysOnErrorSampleRate: 0,
     });
+    _sentry = Sentry;
     _initialised = true;
     // eslint-disable-next-line no-console
     console.log(
@@ -66,5 +70,35 @@ export async function initSentry(): Promise<void> {
     // Loading Sentry shouldn't take the app down. Log and carry on.
     // eslint-disable-next-line no-console
     console.warn("[sentry] init failed:", err);
+  }
+}
+
+/** Capture a handled error to Sentry. No-op when the SDK isn't
+ *  initialised (e.g. dev or DSN unset). Tags are flat string→string
+ *  for grouping; extras hold longer per-occurrence detail like the
+ *  HTTP response body. Safe to call from any path — failures inside
+ *  the helper are swallowed so a buggy capture never breaks the
+ *  user's flow. */
+export function captureHandledError(
+  err: unknown,
+  ctx?: { tags?: Record<string, string>; extras?: Record<string, unknown> },
+): void {
+  if (!_sentry || !_initialised) return;
+  try {
+    _sentry.withScope((scope) => {
+      if (ctx?.tags) {
+        for (const [k, v] of Object.entries(ctx.tags)) {
+          scope.setTag(k, v);
+        }
+      }
+      if (ctx?.extras) {
+        for (const [k, v] of Object.entries(ctx.extras)) {
+          scope.setExtra(k, v);
+        }
+      }
+      _sentry!.captureException(err);
+    });
+  } catch {
+    // Swallow — telemetry must never throw into the app.
   }
 }

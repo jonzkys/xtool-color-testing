@@ -1,9 +1,5 @@
 import { getCurrentUserId } from "./userHeader";
-
-async function j<T>(r: Response): Promise<T> {
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  return (r.status === 204 ? undefined : r.json()) as Promise<T>;
-}
+import { j } from "./_fetch";
 
 export interface User {
   id: number;

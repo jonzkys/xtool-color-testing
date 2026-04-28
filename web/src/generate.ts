@@ -1,4 +1,6 @@
 import type { SvgLayersRequest, SvgStackRequest } from "./types";
+import { ApiError } from "./api/_fetch";
+import { captureHandledError } from "./sentry";
 
 async function postAndDownload(endpoint: string, body: unknown, filename: string): Promise<void> {
   const resp = await fetch(endpoint, {
@@ -8,12 +10,26 @@ async function postAndDownload(endpoint: string, body: unknown, filename: string
   });
 
   if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
     let detail = `HTTP ${resp.status}`;
     try {
-      const err = await resp.json();
+      const err = JSON.parse(text);
       detail = err.detail ?? detail;
     } catch { /* keep default */ }
-    throw new Error(detail);
+    const err = new ApiError({
+      status: resp.status,
+      url: resp.url,
+      body: text,
+      message: detail,
+    });
+    captureHandledError(err, {
+      tags: {
+        api_status: String(resp.status),
+        api_url: resp.url.split("?")[0],
+      },
+      extras: { body: text.slice(0, 1000) },
+    });
+    throw err;
   }
 
   const blob = await resp.blob();
@@ -75,8 +91,26 @@ export async function previewSvg(
     }),
   });
   if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error(err.detail ?? `HTTP ${resp.status}`);
+    const text = await resp.text().catch(() => "");
+    let detail = `HTTP ${resp.status}`;
+    try {
+      const parsed = JSON.parse(text);
+      detail = parsed.detail ?? detail;
+    } catch { /* keep default */ }
+    const err = new ApiError({
+      status: resp.status,
+      url: resp.url,
+      body: text,
+      message: detail,
+    });
+    captureHandledError(err, {
+      tags: {
+        api_status: String(resp.status),
+        api_url: resp.url.split("?")[0],
+      },
+      extras: { body: text.slice(0, 1000) },
+    });
+    throw err;
   }
   const data = await resp.json();
   return data.svg as string;

@@ -8,17 +8,19 @@ What we capture:
 
 - Unhandled exceptions in request handlers (the FastAPI integration
   installs an exception hook).
-- 5xx responses (FastAPI integration auto-attaches request context).
+- 4xx + 5xx responses (FastAPI integration auto-attaches request
+  context). Trialling users tend to drop off without reporting bugs,
+  so silent telemetry on validation-class failures matters more than
+  avoiding noise. Tune in Sentry's dashboard via inbound filters if
+  a particular status/path proves too chatty.
 
 What we deliberately do NOT capture:
 
-- 4xx responses. These are expected validation errors (the user typed
-  the wrong thing) and would otherwise flood the issue queue.
+- ``/api/health`` regardless of status — it's the load-balancer poll
+  path and any failures there will already be visible via uptime
+  monitoring.
 - Sensitive request bodies / headers (``send_default_pii=False`` and
   the body is stripped via the ``before_send`` hook).
-
-A future tightening pass could add release tagging from CI, denylist
-paths (e.g. ``/api/health``), and structured user context.
 """
 
 from __future__ import annotations
@@ -71,27 +73,45 @@ def init_sentry(
         # The before_send hook below drops any captured request body
         # too, in case an integration re-attaches it later.
         send_default_pii=False,
-        # Filter out client errors — 4xx responses are expected
-        # validation feedback, not server bugs. Without this filter
-        # every 422 ("freq out of range", etc.) would land in Sentry
-        # and bury the actual server failures.
+        # Capture every non-2xx response. 4xx tells us about
+        # validation bugs and unexpected client states (the original
+        # rationale for this PR was a silent 422 on the SVG
+        # matched-export path); 5xx is the obvious server-side win.
+        # Routine noise gets filtered in ``before_send`` below.
         integrations=[
-            StarletteIntegration(failed_request_status_codes={500, *range(501, 600)}),
-            FastApiIntegration(failed_request_status_codes={500, *range(501, 600)}),
+            StarletteIntegration(failed_request_status_codes=set(range(400, 600))),
+            FastApiIntegration(failed_request_status_codes=set(range(400, 600))),
         ],
         before_send=_before_send,
     )
     _log.info("sentry: initialised env=%s release=%s", environment, release or "<unset>")
 
 
-def _before_send(event: dict[str, Any], _hint: dict[str, Any]) -> dict[str, Any] | None:
-    """Drop request bodies and any obviously-secret headers before send.
+_SILENCED_PATHS = ("/api/health",)
 
-    The FastAPI integration captures rich request context for
-    debugging; we trim the bits most likely to contain secrets so a
-    future API key, OAuth token, or upload payload can't leak into
-    Sentry's UI."""
+
+def _before_send(event: dict[str, Any], _hint: dict[str, Any]) -> dict[str, Any] | None:
+    """Drop noisy events + scrub sensitive request data.
+
+    Returning ``None`` from ``before_send`` tells the SDK to swallow
+    the event without sending. Used here to:
+
+    1. Skip events from URLs in ``_SILENCED_PATHS`` (load-balancer
+       polls and similar). Match by path so query strings don't break
+       the comparison.
+    2. Trim the bits most likely to contain secrets so a future API
+       key, OAuth token, or upload payload can't leak into Sentry's
+       UI.
+    """
     req = event.get("request") or {}
+    url = req.get("url") or ""
+    # The integration provides the absolute URL; strip query for the
+    # path-prefix match so silenced paths apply regardless of trailing
+    # ``?since=…`` etc.
+    path_only = url.split("?", 1)[0]
+    for silenced in _SILENCED_PATHS:
+        if path_only.endswith(silenced):
+            return None
     if "data" in req:
         req["data"] = "<stripped>"
     headers = req.get("headers") or {}
