@@ -92,15 +92,20 @@ function ResultDebugBody({ resultId }: { resultId: number }) {
           <div className="font-mono text-[9.5px] tracking-[0.22em] uppercase font-semibold text-[color:var(--color-ink-subtle)] mb-2">
             Warped + sampling grid
           </div>
-          <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-substrate)] overflow-hidden">
+          {/* Warped capture is wider than tall, but with no height
+              cap a wide modal stretched it to occupy most of the
+              available 90vh and pushed the per-row strips below the
+              fold. ``object-contain`` letterboxes inside the cap so
+              the photograph keeps its aspect. */}
+          <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-substrate)] overflow-hidden flex items-center justify-center">
             {wwgBlob ? (
               <img
                 src={wwgBlob}
                 alt="Warped capture with sampling grid overlaid"
-                className="w-full h-auto block"
+                className="w-full max-h-[38vh] object-contain block"
               />
             ) : (
-              <div className="h-[200px] animate-pulse" />
+              <div className="h-[180px] w-full animate-pulse" />
             )}
           </div>
         </section>

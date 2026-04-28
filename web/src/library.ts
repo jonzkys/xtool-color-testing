@@ -15,6 +15,10 @@ export interface Material {
   width_mm?: number | null;
   /** Set when ``shape === "rect"``; null otherwise. */
   height_mm?: number | null;
+  /** When true, this material pre-fills the picker on the new-test
+   *  page. At most one material per owner has this set; promoting a
+   *  different material clears it on the previous holder server-side. */
+  is_default: boolean;
 }
 
 import type { BaseParams } from "./types";

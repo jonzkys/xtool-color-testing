@@ -147,3 +147,42 @@ def test_material_patch_omits_shape_keeps_existing(fresh_db):
     assert body["name"] == "SS New"
     assert body["shape"] == "circle"
     assert body["diameter_mm"] == 30
+
+
+# ── default material ────────────────────────────────────────────────────
+
+
+def test_material_create_starts_not_default(fresh_db):
+    c = _client()
+    r = c.post("/api/materials", json={"name": "SS"})
+    assert r.status_code == 201
+    assert r.json()["is_default"] is False
+
+
+def test_material_set_default_promotes_and_demotes_others(fresh_db):
+    c = _client()
+    m1 = c.post("/api/materials", json={"name": "A"}).json()["id"]
+    m2 = c.post("/api/materials", json={"name": "B"}).json()["id"]
+    r = c.post(f"/api/materials/{m1}/set-default")
+    assert r.status_code == 204
+    assert c.get(f"/api/materials/{m1}").json()["is_default"] is True
+    assert c.get(f"/api/materials/{m2}").json()["is_default"] is False
+    # Promote m2 — m1 must demote.
+    c.post(f"/api/materials/{m2}/set-default")
+    assert c.get(f"/api/materials/{m1}").json()["is_default"] is False
+    assert c.get(f"/api/materials/{m2}").json()["is_default"] is True
+
+
+def test_material_set_default_idempotent(fresh_db):
+    c = _client()
+    mid = c.post("/api/materials", json={"name": "SS"}).json()["id"]
+    c.post(f"/api/materials/{mid}/set-default")
+    r = c.post(f"/api/materials/{mid}/set-default")
+    assert r.status_code == 204
+    assert c.get(f"/api/materials/{mid}").json()["is_default"] is True
+
+
+def test_material_set_default_unknown_id_404(fresh_db):
+    c = _client()
+    r = c.post("/api/materials/9999/set-default")
+    assert r.status_code == 404

@@ -826,6 +826,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(e))
         return Response(status_code=204)
 
+    @app.post("/api/materials/{mid}/set-default", status_code=204)
+    def materials_set_default(
+        mid: int, user_id: int = Depends(get_current_user),
+    ) -> Response:
+        if not m_repo.set_default(mid, owner_id=user_id):
+            raise HTTPException(status_code=404, detail="material not found")
+        return Response(status_code=204)
+
     # Presets ------------------------------------------------------------
     @app.post("/api/presets", response_model=PresetResponse, status_code=201)
     def presets_create(

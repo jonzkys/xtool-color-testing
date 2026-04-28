@@ -10,6 +10,7 @@ import {
   deletePreset,
   listMaterials,
   listPresets,
+  setDefaultMaterial,
   setDefaultPreset,
   updateMaterial,
   updatePreset,
@@ -105,6 +106,19 @@ export function LibraryPage({ onMaterialsChange }: Props) {
       await refresh();
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function onMakeDefaultMaterial(id: number) {
+    // Cheap optimistic update so the pill flips before the round-trip.
+    setMaterials((prev) =>
+      prev.map((m) => ({ ...m, is_default: m.id === id })),
+    );
+    try {
+      await setDefaultMaterial(id);
+    } catch (err) {
+      setError((err as Error).message);
+      await refresh();
     }
   }
 
@@ -266,6 +280,11 @@ export function LibraryPage({ onMaterialsChange }: Props) {
                       <div className="flex-1 min-w-0 truncate text-[13px] font-medium text-[color:var(--color-ink)]">
                         {m.name}
                       </div>
+                      <DefaultPill
+                        isDefault={m.is_default}
+                        isDemo={isDemo}
+                        onPromote={() => void onMakeDefaultMaterial(m.id)}
+                      />
                       <Badge
                         variant={isSelected ? "accent" : "neutral"}
                         size="sm"
@@ -608,5 +627,60 @@ function PresetCard({
         </DemoLock>
       </div>
     </Card>
+  );
+}
+
+/** Tiny pill on each material row. Active = "default" (filled).
+ *  Inactive = clickable "make default" (outline). Promoting through
+ *  a click is optimistic; the row updates before the network call. */
+function DefaultPill({
+  isDefault,
+  isDemo,
+  onPromote,
+}: {
+  isDefault: boolean;
+  isDemo: boolean;
+  onPromote: () => void;
+}) {
+  if (isDefault) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center px-1.5 h-[18px] rounded-full",
+          "border border-[color:var(--color-primary)]/30",
+          "bg-[color:var(--color-primary)]/10",
+          "text-[color:var(--color-primary)]",
+          "font-mono text-[9px] tracking-[0.18em] uppercase font-semibold",
+          "select-none",
+        )}
+        title="Pre-fills the picker on the new-test page"
+      >
+        Default
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!isDemo) onPromote();
+      }}
+      disabled={isDemo}
+      className={cn(
+        "inline-flex items-center px-1.5 h-[18px] rounded-full",
+        "border border-[color:var(--color-border)]",
+        "bg-transparent",
+        "text-[color:var(--color-ink-subtle)]",
+        "font-mono text-[9px] tracking-[0.18em] uppercase font-semibold",
+        "transition-colors",
+        isDemo
+          ? "opacity-40 cursor-not-allowed"
+          : "hover:border-[color:var(--color-primary)]/40 hover:text-[color:var(--color-primary)] cursor-pointer",
+      )}
+      title={isDemo ? "Materials are read-only in the demo." : "Make this the default material"}
+    >
+      Set default
+    </button>
   );
 }
