@@ -29,6 +29,18 @@ type Phase =
   | { kind: "load"; value: string; error?: string; busy?: boolean }
   | { kind: "done" };
 
+/** Build the demo-entry hash, forwarding the user's current location
+ *  as ``?next=<hash>`` when they arrived on a deep link (e.g. someone
+ *  shared ``#/changelog``). The default landing page (``#/tests``)
+ *  and an empty hash both fall back to the plain ``#/demo`` form, so
+ *  ordinary first-time visitors aren't given a noisier URL.
+ */
+function demoHref(): string {
+  const raw = window.location.hash.replace(/^#\/?/, "");
+  if (!raw || raw === "tests") return "#/demo";
+  return `#/demo?next=${encodeURIComponent(raw)}`;
+}
+
 /**
  * Shown at app boot when the server is in multi_user mode and no api
  * key is stored locally. Non-dismissable by design — the user must
@@ -169,7 +181,7 @@ export function WelcomeDialog({
         </div>
         <div className="px-6 pb-6 mt-3">
           <a
-            href="#/demo"
+            href={demoHref()}
             className={cn(
               "flex items-center justify-between gap-3 w-full",
               "rounded-[8px] border border-[color:var(--color-border)]",
