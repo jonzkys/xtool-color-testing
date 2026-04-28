@@ -776,6 +776,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> MaterialResponse:
         return MaterialResponse(**m_repo.create(
             name=body.name, notes=body.notes, owner_id=user_id,
+            shape=body.shape, diameter_mm=body.diameter_mm,
+            width_mm=body.width_mm, height_mm=body.height_mm,
         ))
 
     @app.get("/api/materials", response_model=list[MaterialResponse])
@@ -800,8 +802,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> MaterialResponse:
         if m_repo.get(mid, owner_id=user_id) is None:
             raise HTTPException(status_code=404, detail="material not found")
+        # Forward shape/dimension fields only when the client sent them
+        # (model_fields_set) so a PATCH that omits them doesn't clear
+        # the stored values. Sending null explicitly clears (the repo
+        # uses a sentinel to tell the two cases apart).
+        update_kwargs: dict[str, Any] = {
+            "name": body.name, "notes": body.notes,
+        }
+        for field_name in ("shape", "diameter_mm", "width_mm", "height_mm"):
+            if field_name in body.model_fields_set:
+                update_kwargs[field_name] = getattr(body, field_name)
         return MaterialResponse(**m_repo.update(
-            mid, owner_id=user_id, name=body.name, notes=body.notes,
+            mid, owner_id=user_id, **update_kwargs,
         ))
 
     @app.delete("/api/materials/{mid}", status_code=204)

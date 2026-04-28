@@ -19,6 +19,7 @@ import { listTests } from "../api/tests";
 import { formatRoute } from "../router";
 import { getCurrentMachineId, useCurrentMachine, getValidationProfile } from "../state/machine";
 import { useIsDemo } from "../hooks/useIsDemo";
+import { MaterialEditDialog, type SubmitValues } from "./MaterialEditDialog";
 import {
   Badge,
   Button,
@@ -73,16 +74,35 @@ export function LibraryPage({ onMaterialsChange }: Props) {
     void refresh();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function onAddMaterial() {
-    const name = prompt("Material name?", "Untitled material");
-    if (!name) return;
+  // Material-edit dialog. ``editingMaterial=null`` means create-mode;
+  // ``=Material`` means edit-mode for that record. The dialog itself
+  // rejects empty names and validates the shape/dimension consistency
+  // before calling onSubmit.
+  const [materialDialogOpen, setMaterialDialogOpen] = useState(false);
+  const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
+
+  function onAddMaterial() {
+    setEditingMaterial(null);
+    setMaterialDialogOpen(true);
+  }
+
+  function onEditMaterial(id: number) {
+    const m = materials.find((mm) => mm.id === id);
+    if (!m) return;
+    setEditingMaterial(m);
+    setMaterialDialogOpen(true);
+  }
+
+  async function onMaterialDialogSubmit(values: SubmitValues) {
     setLoading(true);
     try {
-      const created = await createMaterial(name);
+      if (editingMaterial) {
+        await updateMaterial(editingMaterial.id, values);
+      } else {
+        const created = await createMaterial(values);
+        setActiveMaterialId(created.id);
+      }
       await refresh();
-      setActiveMaterialId(created.id);
-    } catch (err) {
-      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -102,22 +122,6 @@ export function LibraryPage({ onMaterialsChange }: Props) {
       await deleteMaterial(id);
       await refresh();
       if (activeMaterialId === id) setActiveMaterialId(null);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function onRenameMaterial(id: number) {
-    const m = materials.find((mm) => mm.id === id);
-    if (!m) return;
-    const name = prompt("New name?", m.name);
-    if (!name || name === m.name) return;
-    setLoading(true);
-    try {
-      await updateMaterial(id, { name });
-      await refresh();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -223,7 +227,7 @@ export function LibraryPage({ onMaterialsChange }: Props) {
           </p>
         </div>
         <DemoLock label="Materials are read-only in the demo.">
-          <Button variant="primary" onClick={() => void onAddMaterial()} disabled={loading}>
+          <Button variant="primary" onClick={onAddMaterial} disabled={loading}>
             <Plus className="h-4 w-4" />
             New material
           </Button>
@@ -273,10 +277,10 @@ export function LibraryPage({ onMaterialsChange }: Props) {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          void onRenameMaterial(m.id);
+                          onEditMaterial(m.id);
                         }}
                         className="p-1 rounded text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)] hover:bg-[color:var(--color-surface-elevated)]"
-                        title={isDemo ? "Materials are read-only in the demo." : "Rename"}
+                        title={isDemo ? "Materials are read-only in the demo." : "Edit"}
                         disabled={isDemo}
                       >
                         <Pencil className="h-3.5 w-3.5" />
@@ -399,6 +403,12 @@ export function LibraryPage({ onMaterialsChange }: Props) {
           )}
         </div>
       </div>
+      <MaterialEditDialog
+        open={materialDialogOpen}
+        onOpenChange={setMaterialDialogOpen}
+        initial={editingMaterial}
+        onSubmit={onMaterialDialogSubmit}
+      />
     </PageContainer>
   );
 }

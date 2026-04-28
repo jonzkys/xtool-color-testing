@@ -90,6 +90,17 @@ materials = Table(
     Column("created_at", String(_ISO_TS_LEN), nullable=False),
     Column("owner_id", Integer, nullable=False),
     Column("visibility", String(_VISIBILITY_LEN), nullable=False, server_default="private"),
+    # Optional physical-shape metadata. Drives the new Tests-page
+    # auto-fit feature: when set, generators size a test to fit the
+    # material's footprint (minus user buffer) without the user having
+    # to type the dimensions. ``shape`` discriminates which dimension
+    # column is meaningful — circle uses diameter_mm, rect uses width_mm
+    # + height_mm. All four columns are nullable so existing materials
+    # require no backfill.
+    Column("shape", String(8), nullable=True),
+    Column("diameter_mm", Float, nullable=True),
+    Column("width_mm", Float, nullable=True),
+    Column("height_mm", Float, nullable=True),
     CheckConstraint(_VISIBILITY_CHECK, name="materials_visibility_chk"),
     Index("ix_materials_owner", "owner_id"),
 )

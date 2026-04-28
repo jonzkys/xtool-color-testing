@@ -387,12 +387,52 @@ class PaletteEntryCreateManual(BaseModel):
         return v
 
 
-class MaterialCreate(BaseModel):
+MaterialShape = Literal["circle", "rect"]
+
+
+class _MaterialShapeMixin(BaseModel):
+    """Shared shape/size validation for create + update."""
+
+    shape: MaterialShape | None = None
+    diameter_mm: float | None = Field(default=None, gt=0, le=1000)
+    width_mm: float | None = Field(default=None, gt=0, le=1000)
+    height_mm: float | None = Field(default=None, gt=0, le=1000)
+
+    @model_validator(mode="after")
+    def _shape_dimensions_consistent(self) -> "_MaterialShapeMixin":
+        # Empty shape → all dimension fields must be empty too. We'd
+        # otherwise allow orphaned diameters / widths that the UI can't
+        # interpret.
+        if self.shape is None:
+            for name in ("diameter_mm", "width_mm", "height_mm"):
+                if getattr(self, name) is not None:
+                    raise ValueError(
+                        f"{name} requires shape to be set",
+                    )
+            return self
+        if self.shape == "circle":
+            if self.diameter_mm is None:
+                raise ValueError("circle shape requires diameter_mm")
+            if self.width_mm is not None or self.height_mm is not None:
+                raise ValueError(
+                    "circle shape uses diameter_mm; width_mm/height_mm must be null",
+                )
+        elif self.shape == "rect":
+            if self.width_mm is None or self.height_mm is None:
+                raise ValueError("rect shape requires width_mm and height_mm")
+            if self.diameter_mm is not None:
+                raise ValueError(
+                    "rect shape uses width_mm/height_mm; diameter_mm must be null",
+                )
+        return self
+
+
+class MaterialCreate(_MaterialShapeMixin):
     name: str
     notes: str | None = None
 
 
-class MaterialUpdate(BaseModel):
+class MaterialUpdate(_MaterialShapeMixin):
     name: str | None = None
     notes: str | None = None
 
@@ -404,6 +444,10 @@ class MaterialResponse(BaseModel):
     created_at: str
     owner_id: int
     visibility: str
+    shape: MaterialShape | None = None
+    diameter_mm: float | None = None
+    width_mm: float | None = None
+    height_mm: float | None = None
 
 
 class UserRegisterRequest(BaseModel):

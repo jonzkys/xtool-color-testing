@@ -29,6 +29,10 @@ def _row_to_dict(r) -> dict[str, Any]:
         "created_at": r.created_at,
         "owner_id": r.owner_id,
         "visibility": r.visibility,
+        "shape": r.shape,
+        "diameter_mm": r.diameter_mm,
+        "width_mm": r.width_mm,
+        "height_mm": r.height_mm,
     }
 
 
@@ -39,11 +43,17 @@ def _now() -> str:
 def create(
     *, name: str, notes: str | None = None, owner_id: int = STANDALONE_USER_ID,
     visibility: str = DEFAULT_VISIBILITY,
+    shape: str | None = None,
+    diameter_mm: float | None = None,
+    width_mm: float | None = None,
+    height_mm: float | None = None,
 ) -> dict[str, Any]:
     with session_scope() as s:
         res = s.execute(materials.insert().values(
             name=name, notes=notes, created_at=_now(),
             owner_id=owner_id, visibility=visibility,
+            shape=shape, diameter_mm=diameter_mm,
+            width_mm=width_mm, height_mm=height_mm,
         ))
         mid = res.inserted_primary_key[0]
     return get(mid, owner_id=owner_id)  # type: ignore[return-value]
@@ -69,10 +79,21 @@ def list_all(*, owner_id: int = STANDALONE_USER_ID) -> list[dict[str, Any]]:
         return [_row_to_dict(r) for r in rows]
 
 
+_UNSET = object()
+
+
 def update(
     mid: int, *, owner_id: int = STANDALONE_USER_ID,
     name: str | None = None, notes: str | None = None,
     visibility: str | None = None,
+    # Shape + dimensions accept an explicit ``None`` to clear the value
+    # (so a user can remove a shape they configured by mistake). The
+    # sentinel distinguishes "not provided in this PATCH" from "set to
+    # null"; ordinary ``None`` here would always overwrite.
+    shape: Any = _UNSET,
+    diameter_mm: Any = _UNSET,
+    width_mm: Any = _UNSET,
+    height_mm: Any = _UNSET,
 ) -> dict[str, Any] | None:
     values: dict[str, Any] = {}
     if name is not None:
@@ -81,6 +102,14 @@ def update(
         values["notes"] = notes
     if visibility is not None:
         values["visibility"] = visibility
+    if shape is not _UNSET:
+        values["shape"] = shape
+    if diameter_mm is not _UNSET:
+        values["diameter_mm"] = diameter_mm
+    if width_mm is not _UNSET:
+        values["width_mm"] = width_mm
+    if height_mm is not _UNSET:
+        values["height_mm"] = height_mm
     if values:
         with session_scope() as s:
             s.execute(
