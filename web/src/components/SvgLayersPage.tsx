@@ -5,6 +5,7 @@ import {
   Eye,
   EyeOff,
   FileCode2,
+  Filter,
   Layers as LayersIcon,
   Star,
   Upload,
@@ -35,6 +36,8 @@ import type {
 } from "../types";
 import { HatchPassesEditor } from "./HatchPassesEditor";
 import { MergeColorsDialog } from "./MergeColorsDialog";
+import { SimplifyShapesDialog } from "./SimplifyShapesDialog";
+import type { SimplifyResult } from "../svg/simplify";
 import { mergeColorsInSvg, computeParamMergeGroups, type MergeGroup } from "../svg/mergeColors";
 import { validateLayerSpec } from "../validation";
 import type { LibraryState } from "../library";
@@ -159,6 +162,7 @@ export function SvgLayersPage() {
   const [rawDetected, setRawDetected] = useState<DetectedLayer[]>([]);
   const [originalSvgContent, setOriginalSvgContent] = useState<string | null>(null);
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [simplifyDialogOpen, setSimplifyDialogOpen] = useState(false);
   // Default off: at first detection every layer carries the same default
   // params, so a default-on collapse silently fuses visually distinct
   // colours into one engrave stage and the "X→1" badge surprises users
@@ -406,6 +410,22 @@ export function SvgLayersPage() {
     setDetectError(undefined);
     try {
       await applyDetectedSvg(originalSvgContent, request.name);
+    } catch (err) {
+      setDetectError((err as Error).message);
+    }
+  }
+
+  async function handleSimplifyConfirm(result: SimplifyResult) {
+    setSimplifyDialogOpen(false);
+    if (result.beforeShapes === result.afterShapes && result.pathsSimplified === 0) {
+      return;
+    }
+    setDetectError(undefined);
+    try {
+      // Layers' params survive — the colour set may shrink if a
+      // tiny-area drop wiped the only shape of some hue, so re-detect
+      // and let applyDetectedSvg's inherit pass migrate state by hex.
+      await applyDetectedSvg(result.svgText, request.name, request.layers);
     } catch (err) {
       setDetectError((err as Error).message);
     }
@@ -867,16 +887,31 @@ export function SvgLayersPage() {
                   : undefined
               }
               actions={
-                hasLayers && request.layers.length >= 2 ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setMergeDialogOpen(true)}
-                    title="Group near-identical colours into one layer. Rewrites every shape's fill in the SVG to the representative colour, so subtraction and engrave passes treat them as one. Reduces pass count without moving any shapes; same-colour overlaps that result will collapse into a single shape."
-                  >
-                    <Combine className="h-4 w-4" />
-                    Merge similar…
-                  </Button>
+                hasLayers ? (
+                  <div className="flex items-center gap-1">
+                    {totalShapeCount > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSimplifyDialogOpen(true)}
+                        title="Drop tiny artefacts (vtracer often leaves hundreds of single-pixel ones) and reduce vertex count on long polylines. xTool studio gets sluggish past ~1k shapes; this is the most direct fix."
+                      >
+                        <Filter className="h-4 w-4" />
+                        Simplify…
+                      </Button>
+                    )}
+                    {request.layers.length >= 2 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setMergeDialogOpen(true)}
+                        title="Group near-identical colours into one layer. Rewrites every shape's fill in the SVG to the representative colour, so subtraction and engrave passes treat them as one. Reduces pass count without moving any shapes; same-colour overlaps that result will collapse into a single shape."
+                      >
+                        <Combine className="h-4 w-4" />
+                        Merge similar…
+                      </Button>
+                    )}
+                  </div>
                 ) : undefined
               }
               dense
@@ -1192,6 +1227,13 @@ export function SvgLayersPage() {
         layers={request.layers}
         shapeCountsByColor={shapeCountsByColor}
         onConfirm={handleMergeConfirm}
+      />
+      <SimplifyShapesDialog
+        open={simplifyDialogOpen}
+        onOpenChange={setSimplifyDialogOpen}
+        svgContent={request.svg_content}
+        widthMm={request.width_mm}
+        onConfirm={handleSimplifyConfirm}
       />
     </PageContainer>
   );
