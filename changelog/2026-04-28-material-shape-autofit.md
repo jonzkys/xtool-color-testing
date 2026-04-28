@@ -70,11 +70,13 @@ honoured so the grid lines up with what the generator emits.
 
 ### Square cells
 
-When auto-fit is on, the existing **Square cells** auto-height
-behaviour pauses — auto-fit owns both dimensions in that mode.
-Square cells stays informational; if you want both auto-fit AND
-square cells in the same test, future work will pick bounds that
-allow squareness inside the available area.
+**Square cells** plays nicely with auto-fit: with both on, the
+recompute picks the largest *square* cell that fits inside the
+material outline (limited by whichever axis runs out first), then
+sizes the grid to match. The grid may end up smaller than the
+material on one axis — that's the price of squareness inside the
+available area, and it's what you almost always want when sweeping
+on a small workpiece.
 
 ### What stays manual
 

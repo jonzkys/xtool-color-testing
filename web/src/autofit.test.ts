@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeAutoFitGrid, gridHeightToSpecHeight } from "./autofit";
+import { computeAutoFitGrid, gridHeightToSpecHeight, squareCellAutoFit } from "./autofit";
 
 const MARGIN = 1.5;
 const QR = 5;
@@ -108,5 +108,63 @@ describe("gridHeightToSpecHeight", () => {
       grid_h: 30, rows: 5, gap_mm: 0.5, hide_axis_labels: true, is_2d: false,
     });
     expect(h).toBeCloseTo((30 - 4 * 0.5) / 5, 4);
+  });
+});
+
+describe("squareCellAutoFit", () => {
+  it("single-row 1D — width-limited cells (10 cells in a 17×17 grid)", () => {
+    // Repro for the bug the user reported: 40mm circle → ~17.15×17.15
+    // grid bounds, x_steps=10, rows=1. Width-derived cell ≈ 1.265mm
+    // is the limit, so the grid collapses to a single row of 1.265mm
+    // cells instead of 10 narrow tall strips.
+    const sq = squareCellAutoFit({
+      grid_w: 17.15, grid_h: 17.153,
+      x_steps: 10, y_steps: 1, rows: 1,
+      gap_mm: 0.5, hide_axis_labels: false, is_2d: false,
+    });
+    expect(sq).not.toBeNull();
+    const cellSide = (17.15 - 9 * 0.5) / 10;
+    expect(sq!.width_mm).toBeCloseTo(17.15, 3);
+    expect(sq!.height_mm).toBeCloseTo(cellSide, 4);
+  });
+
+  it("wrapped 1D — picks the limiting axis", () => {
+    // 50mm-wide grid, 20mm tall. x_steps=10 across 4 rows.
+    // perRow=3 → cellW = (50 - 2·0.5)/3 = 16.33
+    // interRowGap = max(0.5, 2.1) = 2.1 → cellH = (20 - 3·2.1)/4 = 3.425
+    // limit = cellH (smaller), so cell side = 3.425.
+    const sq = squareCellAutoFit({
+      grid_w: 50, grid_h: 20,
+      x_steps: 10, y_steps: 1, rows: 4,
+      gap_mm: 0.5, hide_axis_labels: false, is_2d: false,
+    });
+    expect(sq).not.toBeNull();
+    const cellH_max = (20 - 3 * 2.1) / 4;
+    expect(sq!.height_mm).toBeCloseTo(cellH_max, 4);
+    expect(sq!.width_mm).toBeCloseTo(cellH_max * 3 + 2 * 0.5, 4);
+  });
+
+  it("2D — picks the smaller of width and height cell sides", () => {
+    // 30 wide × 50 tall, 5x4 cells, gap 0.5.
+    // cellW_max = (30 - 4·0.5)/5 = 5.6
+    // cellH_max = (50 - 3·0.5)/4 = 12.125
+    // limit = 5.6
+    const sq = squareCellAutoFit({
+      grid_w: 30, grid_h: 50,
+      x_steps: 5, y_steps: 4, rows: 1,
+      gap_mm: 0.5, hide_axis_labels: false, is_2d: true,
+    });
+    expect(sq).not.toBeNull();
+    const cellSide = 5.6;
+    expect(sq!.width_mm).toBeCloseTo(cellSide * 5 + 4 * 0.5, 4);
+    expect(sq!.height_mm).toBeCloseTo(cellSide * 4 + 3 * 0.5, 4);
+  });
+
+  it("returns null when the grid is too small to host even one cell", () => {
+    expect(squareCellAutoFit({
+      grid_w: 0, grid_h: 0,
+      x_steps: 10, y_steps: 1, rows: 1,
+      gap_mm: 0.5, hide_axis_labels: false, is_2d: false,
+    })).toBeNull();
   });
 });

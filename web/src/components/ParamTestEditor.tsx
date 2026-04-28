@@ -3,7 +3,7 @@ import type { Material } from "../library";
 import type { Machine, ModeId, ParamName, RegistrationMode, SampleAggregator, TestSpec, ValidationProfile } from "../types";
 import { PARAM_NAMES } from "../types";
 import { squareCellHeight } from "../specUtils";
-import { computeAutoFitGrid, gridHeightToSpecHeight } from "../autofit";
+import { computeAutoFitGrid, gridHeightToSpecHeight, squareCellAutoFit } from "../autofit";
 import { Field, NumberField, Section, Select } from "../ui";
 import { PulseWidthSelect } from "./PulseWidthSelect";
 import {
@@ -168,9 +168,10 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
     activeMaterial?.height_mm,
   ]);
 
-  // Square-cells auto-height. Skipped when auto-fit is on — auto-fit
-  // owns both dimensions in that mode, otherwise the two effects fight
-  // and the grid stops fitting.
+  // Square-cells auto-height. When auto-fit is also on, the auto-fit
+  // recompute below honours square_cells directly (picks a cell side
+  // that fits inside the material outline), so this effect skips —
+  // otherwise the two effects fight on height_mm.
   useEffect(() => {
     if (autoFit) return;
     if (!t.square_cells) return;
@@ -192,7 +193,9 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
 
   // Auto-fit recompute. Fires whenever a relevant input changes and
   // writes spec.width_mm / spec.height_mm to fit the material minus
-  // buffer + registration markers.
+  // buffer + registration markers. When square_cells is also on, picks
+  // the largest square cell that fits the bounds instead of letting
+  // the grid fill both axes (which would produce non-square cells).
   useEffect(() => {
     if (!autoFit) return;
     const grid = computeAutoFitGrid({
@@ -207,14 +210,32 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
     });
     if (!grid) return;
     const is2D = t.y_param !== null && (t.y_steps ?? 1) > 1;
-    const height_mm = gridHeightToSpecHeight({
-      grid_h: grid.grid_h,
-      rows: t.rows ?? 1,
-      gap_mm: t.gap_mm,
-      hide_axis_labels: t.hide_axis_labels,
-      is_2d: is2D,
-    });
-    const width_mm = grid.grid_w;
+    let width_mm: number;
+    let height_mm: number;
+    if (t.square_cells) {
+      const sq = squareCellAutoFit({
+        grid_w: grid.grid_w,
+        grid_h: grid.grid_h,
+        x_steps: t.x_steps,
+        y_steps: t.y_steps ?? 1,
+        rows: t.rows ?? 1,
+        gap_mm: t.gap_mm,
+        hide_axis_labels: t.hide_axis_labels,
+        is_2d: is2D,
+      });
+      if (!sq) return;
+      width_mm = sq.width_mm;
+      height_mm = sq.height_mm;
+    } else {
+      width_mm = grid.grid_w;
+      height_mm = gridHeightToSpecHeight({
+        grid_h: grid.grid_h,
+        rows: t.rows ?? 1,
+        gap_mm: t.gap_mm,
+        hide_axis_labels: t.hide_axis_labels,
+        is_2d: is2D,
+      });
+    }
     if (
       Math.abs(t.width_mm - width_mm) > 0.01
       || Math.abs(t.height_mm - height_mm) > 0.01
@@ -227,7 +248,8 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
   }, [
     autoFit,
     afShape, afDiameter, afWidthMm, afHeightMm, afBufferPct,
-    t.gap_mm, t.rows, t.y_param, t.y_steps, t.hide_axis_labels,
+    t.square_cells, t.x_steps, t.gap_mm, t.rows, t.y_param, t.y_steps,
+    t.hide_axis_labels,
     t.registration.qr_size_mm, t.registration.aruco_size_mm, t.registration.mode,
     t.width_mm, t.height_mm,
   ]); // eslint-disable-line react-hooks/exhaustive-deps

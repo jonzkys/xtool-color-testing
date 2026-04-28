@@ -129,3 +129,54 @@ export function gridHeightToSpecHeight(args: {
   const cell_h = (args.grid_h - (args.rows - 1) * interRowGap) / args.rows;
   return Math.max(0.001, cell_h);
 }
+
+/** Co-existence of auto-fit + Square cells: pick the largest *square*
+ *  cell that fits inside the auto-fit bounds, then derive the
+ *  spec.width_mm / spec.height_mm to match. The grid may be smaller
+ *  than the material outline on one axis — that's the price of
+ *  squareness inside the available area.
+ *
+ *  Inputs assume `grid_w` / `grid_h` already have buffer + marker
+ *  chrome subtracted (i.e. the AutoFitGrid output). */
+export function squareCellAutoFit(args: {
+  grid_w: number;
+  grid_h: number;
+  x_steps: number;
+  y_steps: number;
+  rows: number;
+  gap_mm: number;
+  hide_axis_labels: boolean;
+  is_2d: boolean;
+}): { width_mm: number; height_mm: number } | null {
+  const { grid_w, grid_h, x_steps, gap_mm, hide_axis_labels, is_2d } = args;
+  const rows = Math.max(1, args.rows);
+  const ySteps = Math.max(1, args.y_steps);
+
+  if (is_2d) {
+    const cellW_max = (grid_w - Math.max(0, x_steps - 1) * gap_mm) / x_steps;
+    const cellH_max = (grid_h - Math.max(0, ySteps - 1) * gap_mm) / ySteps;
+    const cellSide = Math.min(cellW_max, cellH_max);
+    if (cellSide <= 0) return null;
+    const width_mm = cellSide * x_steps + Math.max(0, x_steps - 1) * gap_mm;
+    const height_mm = cellSide * ySteps + Math.max(0, ySteps - 1) * gap_mm;
+    return { width_mm, height_mm };
+  }
+
+  // 1D (single-row or wrapped).
+  const perRow = Math.max(1, Math.ceil(x_steps / rows));
+  const cellW_max = (grid_w - Math.max(0, perRow - 1) * gap_mm) / perRow;
+  let cellH_max: number;
+  if (rows > 1) {
+    const interRowGap = hide_axis_labels
+      ? gap_mm
+      : Math.max(gap_mm, _ROW_ANNOTATION_MM);
+    cellH_max = (grid_h - (rows - 1) * interRowGap) / rows;
+  } else {
+    cellH_max = grid_h;
+  }
+  const cellSide = Math.min(cellW_max, cellH_max);
+  if (cellSide <= 0) return null;
+  const width_mm = cellSide * perRow + Math.max(0, perRow - 1) * gap_mm;
+  const height_mm = cellSide; // per-row cell height for 1D
+  return { width_mm, height_mm };
+}
