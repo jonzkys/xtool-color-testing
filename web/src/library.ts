@@ -1,8 +1,20 @@
+export type MaterialShape = "circle" | "rect";
+
 export interface Material {
   id: number;
   name: string;
   notes: string;
   created_at: string;
+  /** Optional physical-shape metadata. ``null`` (or undefined) for
+   *  materials that haven't been measured. Drives the Tests-page
+   *  auto-fit feature; the dimension fields hold the actual size. */
+  shape?: MaterialShape | null;
+  /** Set when ``shape === "circle"``; null otherwise. */
+  diameter_mm?: number | null;
+  /** Set when ``shape === "rect"``; null otherwise. */
+  width_mm?: number | null;
+  /** Set when ``shape === "rect"``; null otherwise. */
+  height_mm?: number | null;
 }
 
 import type { BaseParams } from "./types";

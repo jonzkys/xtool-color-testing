@@ -1,21 +1,35 @@
-import type { Material, Preset } from "../library";
+import type { Material, MaterialShape, Preset } from "../library";
 
 async function j<T>(r: Response): Promise<T> {
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
   return (r.status === 204 ? undefined : r.json()) as Promise<T>;
 }
 
+/** Optional shape + dimensions for the create / update payloads.
+ *  Pass ``shape: null`` (with dimensions also null) to clear. */
+export interface MaterialShapeFields {
+  shape?: MaterialShape | null;
+  diameter_mm?: number | null;
+  width_mm?: number | null;
+  height_mm?: number | null;
+}
+
 export async function listMaterials(): Promise<Material[]> {
   return j(await fetch("/api/materials"));
 }
-export async function createMaterial(name: string, notes?: string): Promise<Material> {
+export async function createMaterial(
+  body: { name: string; notes?: string | null } & MaterialShapeFields,
+): Promise<Material> {
   return j(await fetch("/api/materials", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, notes }),
+    body: JSON.stringify(body),
   }));
 }
-export async function updateMaterial(id: number, patch: { name?: string; notes?: string }): Promise<Material> {
+export async function updateMaterial(
+  id: number,
+  patch: { name?: string; notes?: string | null } & MaterialShapeFields,
+): Promise<Material> {
   return j(await fetch(`/api/materials/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
