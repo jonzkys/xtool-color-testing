@@ -233,9 +233,20 @@ function TestCard({
             <span className="capitalize">{spec.base_params.laser} laser</span>
           </div>
         </div>
-        <Badge variant={statusVariant} size="sm" className="shrink-0">
-          {test.status}
-        </Badge>
+        <div className="flex items-center gap-1 shrink-0">
+          <Badge variant={statusVariant} size="sm">
+            {test.status}
+          </Badge>
+          {test.ingested && (
+            <Badge
+              variant="success"
+              size="sm"
+              title="At least one swatch from this test is in the palette"
+            >
+              ingested
+            </Badge>
+          )}
+        </div>
       </div>
 
       {/* Grid pictograph — visual signature of the sweep layout */}

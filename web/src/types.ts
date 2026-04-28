@@ -181,6 +181,10 @@ export interface TestRecord {
    *  for newly-created tests; the next Generate stamps the current
    *  value into the XCS's QR payload. */
   retest_index?: number;
+  /** Derived: true when at least one palette entry references this
+   *  test_id. Server-side computation; defaults to false on older
+   *  API responses that don't carry the field. */
+  ingested?: boolean;
 }
 
 export interface ResultSwatch {

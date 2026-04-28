@@ -575,6 +575,9 @@ class TestResponse(BaseModel):
     machine_id: str
     # Monotonic counter — each POST /api/tests/{id}/retest bumps by 1.
     retest_index: int = 0
+    # Derived — true when the test has at least one palette entry
+    # sourced from it. Drives the "ingested" badge on the test list.
+    ingested: bool = False
 
 
 class ResultSwatch(BaseModel):
