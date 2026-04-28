@@ -143,3 +143,42 @@ def test_decode_image_bytes_accepts_heic():
     # decode_image_bytes returns BGR; the source is RGB(200, 100, 50).
     bgr = arr[8, 8]
     assert tuple(int(x) for x in bgr) == (50, 100, 200)
+
+
+def test_decode_image_bytes_honours_exif_orientation():
+    """iPhone HEIC/JPEGs store pixels in raw sensor orientation and
+    rely on the EXIF Orientation tag to tell viewers how to rotate.
+    Without ``ImageOps.exif_transpose`` an upright phone photo
+    arrives sideways and ArUco detection finds nothing. Construct
+    a 4×8 image where the top-left pixel is unique, then encode it
+    with Orientation=6 (rotate 90° CW). Decode and verify the
+    image came out 8×4 with the unique pixel in the top-right
+    (where rotation places it)."""
+    import io
+    import struct
+    from PIL import Image
+
+    # 32×64 raster with a wide top stripe of red so JPEG compression
+    # can't smear the marker away. Paint the top 4 rows red; everything
+    # else neutral. After Orientation=6 (rotate 90° CW for display)
+    # the red stripe ends up on the *right* of an 64×32 image.
+    src = Image.new("RGB", (32, 64), (220, 220, 220))
+    for y in range(4):
+        for x in range(32):
+            src.putpixel((x, y), (255, 0, 0))
+
+    exif = src.getexif()
+    exif[0x0112] = 6  # Orientation = 6 (rotate 90° CW on display)
+    buf = io.BytesIO()
+    src.save(buf, format="JPEG", exif=exif.tobytes(), quality=92)
+
+    arr = decode_image_bytes(buf.getvalue())
+    # Storage 32×64 rotates to display 64×32; numpy shape is (h, w, c).
+    assert arr.shape == (32, 64, 3), f"expected (32, 64, 3), got {arr.shape}"
+    # Sample the centre of the right stripe — should be clearly red
+    # even with JPEG compression. decode_image_bytes returns BGR.
+    bgr = arr[16, 62]
+    assert int(bgr[2]) > 200, f"expected dominant red, got BGR {tuple(int(x) for x in bgr)}"
+    assert int(bgr[0]) < 80 and int(bgr[1]) < 80, (
+        f"expected non-red channels low, got BGR {tuple(int(x) for x in bgr)}"
+    )

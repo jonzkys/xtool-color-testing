@@ -26,7 +26,7 @@ import sys
 import cv2
 import numpy as np
 import pillow_heif
-from PIL import Image, ImageCms
+from PIL import Image, ImageCms, ImageOps
 
 
 # iPhones save photos as HEIC by default. iOS Safari sometimes
@@ -73,8 +73,15 @@ def decode_image_bytes(raw: bytes) -> np.ndarray:
     entirely and reads raw pixels as if they were already sRGB, which
     leaves colours ~10-15% less saturated than they actually are. Going
     through PIL lets us apply the profile and hand OpenCV true sRGB.
+
+    Also honours the EXIF Orientation tag — HEIC files from iPhones
+    store pixels in raw sensor orientation and rely on the tag to tell
+    viewers how to rotate. Without ``exif_transpose`` the image arrives
+    sideways and ArUco/QR detection fails on photos that should be
+    perfectly readable.
     """
     pil_img = Image.open(io.BytesIO(raw))
+    pil_img = ImageOps.exif_transpose(pil_img)
     icc = pil_img.info.get("icc_profile")
     if icc:
         src_profile = ImageCms.ImageCmsProfile(io.BytesIO(icc))

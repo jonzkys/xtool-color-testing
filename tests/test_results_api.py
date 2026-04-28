@@ -366,6 +366,43 @@ def test_reingest_invalidates_warped_cache(fresh_db, monkeypatch, tmp_path):
     assert counter[0] == 3
 
 
+def test_image_endpoint_transcodes_heic_for_browsers(
+    fresh_db, monkeypatch, tmp_path,
+):
+    """Browsers don't natively render HEIC. The ``/image`` endpoint
+    must serve JPEG bytes (with ``Content-Type: image/jpeg``) so the
+    inline preview on the test page works for iPhone uploads. The
+    original HEIC stays in storage untouched."""
+    import io
+    from PIL import Image
+    import pillow_heif
+
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+
+    # Build a real HEIC payload — small, valid HEIF stream.
+    img = Image.new("RGB", (8, 8), (200, 100, 50))
+    heic_buf = io.BytesIO()
+    pillow_heif.from_pillow(img).save(heic_buf, format="HEIF")
+
+    upload = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("photo.heic", heic_buf.getvalue(), "image/heic")},
+    )
+    assert upload.status_code == 201, upload.text
+    rid = upload.json()["id"]
+
+    resp = c.get(f"/api/results/{rid}/image")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/jpeg"
+    # Body starts with the JPEG SOI marker.
+    assert resp.content[:3] == b"\xff\xd8\xff"
+
+
 def test_delete_invalidates_warped_cache(fresh_db, monkeypatch, tmp_path):
     """Deleting a result removes the cached warped sidecar so it can't
     leak into a future result that happens to take the same id."""

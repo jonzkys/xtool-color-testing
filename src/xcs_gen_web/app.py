@@ -1082,6 +1082,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from . import images, models
     from .db import session_scope
 
+    def _transcode_heic_to_jpeg(raw: bytes) -> bytes:
+        """Decode HEIC/HEIF bytes via PIL (with the heif opener
+        registered at module load) and re-encode as JPEG. Used to give
+        browsers a format they can render inline; the original HEIC
+        stays untouched in storage.
+
+        EXIF orientation is honoured so the preview matches what
+        ArUco detection saw — without ``exif_transpose`` an iPhone
+        portrait photo arrives sideways."""
+        import io as _io
+        from PIL import Image as _Image, ImageOps as _ImageOps
+        img = _Image.open(_io.BytesIO(raw))
+        img = _ImageOps.exif_transpose(img)
+        img = img.convert("RGB")
+        out = _io.BytesIO()
+        img.save(out, format="JPEG", quality=85, optimize=True)
+        return out.getvalue()
+
     def _result_to_response(r: dict) -> ResultResponse:
         return ResultResponse(
             id=r["id"], test_id=r["test_id"],
@@ -1390,11 +1408,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if r is None:
             raise HTTPException(status_code=404, detail="result not found")
         data = images.read(r["image_path"])
+        suffix = Path(r["image_path"]).suffix.lower()
+        # Browsers don't natively decode HEIC/HEIF, so the inline
+        # preview on the test page broke for iPhone uploads. Transcode
+        # to JPEG on demand. The browser-side cache + the
+        # ``Cache-Control`` header below mean a typical session
+        # transcodes each image once.
+        if suffix in (".heic", ".heif"):
+            data = _transcode_heic_to_jpeg(data)
+            return Response(
+                content=data,
+                media_type="image/jpeg",
+                headers={"Cache-Control": "private, max-age=3600"},
+            )
         # ``image/*`` is a wildcard only valid in Accept headers, not a real
         # Content-Type — browsers that MIME-sniff strictly (e.g. Safari
         # cross-origin) refuse to render it. Derive the real type from the
         # stored file's suffix so every browser displays the image.
-        suffix = Path(r["image_path"]).suffix
         return Response(content=data, media_type=content_type_for(suffix))
 
     def _warped_or_http(rid: int, user_id: int):
