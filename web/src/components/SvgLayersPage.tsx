@@ -38,7 +38,7 @@ import { HatchPassesEditor } from "./HatchPassesEditor";
 import { MergeColorsDialog } from "./MergeColorsDialog";
 import { SimplifyShapesDialog } from "./SimplifyShapesDialog";
 import type { SimplifyResult } from "../svg/simplify";
-import { mergeColorsInSvg, computeParamMergeGroups, type MergeGroup } from "../svg/mergeColors";
+import { applyMatchedExport, mergeColorsInSvg, computeParamMergeGroups, type MergeGroup } from "../svg/mergeColors";
 import { validateLayerSpec } from "../validation";
 import type { LibraryState } from "../library";
 import { listMaterials, listPresets } from "../api/library";
@@ -589,38 +589,12 @@ export function SvgLayersPage() {
     // matched colour collapse into one layer (the backend keys shapes to
     // layers by fill, so duplicate colours need merging).
     if (exportColorMode === "matched" && Object.keys(predictedByColor).length > 0) {
-      const matchEntries = Object.entries(predictedByColor)
-        .filter(([from, to]) => from !== to);
-      if (matchEntries.length > 0) {
-        // Group source colours by representative so mergeColorsInSvg can
-        // dedupe overlaps and the LayerSpec list stays one-per-rep.
-        const byRep = new Map<string, string[]>();
-        for (const [from, to] of matchEntries) {
-          const list = byRep.get(to) ?? [];
-          list.push(from);
-          byRep.set(to, list);
-        }
-        const matchGroups: MergeGroup[] = [];
-        for (const [rep, sources] of byRep) {
-          // Include the representative itself in the source list — the
-          // SVG might also contain shapes at the matched-hex value
-          // already (rare, but safe to dedupe through).
-          const allSources = sources.includes(rep) ? sources : [...sources, rep];
-          matchGroups.push({ sourceColors: allSources, representativeColor: rep });
-        }
-        const reps = new Set(matchGroups.map((g) => g.representativeColor));
-        const losers = new Set(
-          matchGroups.flatMap((g) => g.sourceColors.filter((c) => !reps.has(c))),
-        );
-        const remappedSvg = mergeColorsInSvg(r.svg_content, matchGroups);
-        const remappedLayers = r.layers
-          .filter((l) => !losers.has(l.color) || reps.has(l.color))
-          .map((l) => {
-            const matched = predictedByColor[l.color];
-            return matched && matched !== l.color ? { ...l, color: matched } : l;
-          });
-        r = { ...r, svg_content: remappedSvg, layers: remappedLayers };
-      }
+      const result = applyMatchedExport({
+        svgContent: r.svg_content,
+        layers: r.layers,
+        predictedByColor,
+      });
+      r = { ...r, svg_content: result.svgContent, layers: result.layers };
     }
 
     if (!collapseIdenticalLayers) return r;

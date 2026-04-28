@@ -142,6 +142,58 @@ export function computeColorMergeGroups(
  * layers, ``hatch_passes`` is excluded and scan_angle/angle_mode are
  * included.
  */
+/** Apply a "match every detected colour to its palette hex" rewrite
+ *  to both the SVG content and the layer list.
+ *
+ *  ``predictedByColor`` maps detected hex → matched palette hex.
+ *  Returns the rewritten ``svg_content`` and a layer list where each
+ *  matched layer's ``.color`` has been swapped for its representative
+ *  palette hex, then deduped — so multiple detected colours that
+ *  collapse to the same palette hex end up as a single layer entry
+ *  rather than being filtered out entirely (the previous
+ *  filter-losers-keep-reps approach left an empty layers list when
+ *  no kept layer matched the rep, and ``/api/svg-layers`` 422'd on
+ *  ``layers: list[LayerSpec] = Field(min_length=1)``).
+ *
+ *  Pure transform — no side effects, deterministic output. */
+export function applyMatchedExport(args: {
+  svgContent: string;
+  layers: LayerSpec[];
+  predictedByColor: Record<string, string>;
+}): { svgContent: string; layers: LayerSpec[] } {
+  const { layers, predictedByColor } = args;
+  const matchEntries = Object.entries(predictedByColor).filter(
+    ([from, to]) => from !== to,
+  );
+  if (matchEntries.length === 0) {
+    return { svgContent: args.svgContent, layers };
+  }
+  const byRep = new Map<string, string[]>();
+  for (const [from, to] of matchEntries) {
+    const list = byRep.get(to) ?? [];
+    list.push(from);
+    byRep.set(to, list);
+  }
+  const groups: MergeGroup[] = [];
+  for (const [rep, sources] of byRep) {
+    const allSources = sources.includes(rep) ? sources : [...sources, rep];
+    groups.push({ sourceColors: allSources, representativeColor: rep });
+  }
+  const remappedSvg = mergeColorsInSvg(args.svgContent, groups);
+  const remapped = layers.map((l) => {
+    const matched = predictedByColor[l.color];
+    return matched && matched !== l.color ? { ...l, color: matched } : l;
+  });
+  const seen = new Set<string>();
+  const dedupedLayers = remapped.filter((l) => {
+    if (seen.has(l.color)) return false;
+    seen.add(l.color);
+    return true;
+  });
+  return { svgContent: remappedSvg, layers: dedupedLayers };
+}
+
+
 export function computeParamMergeGroups(layers: LayerSpec[]): LayerSpec[][] {
   const buckets = new Map<string, LayerSpec[]>();
   for (const layer of layers) {
