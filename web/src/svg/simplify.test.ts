@@ -102,4 +102,30 @@ describe("simplifySvg", () => {
       simplifySvg(svg, { minAreaMm2: 0, toleranceMm: 0, widthMm: 0 }),
     ).toThrow();
   });
+
+  it("reports before/after vertex counts", () => {
+    // A 6-vertex M/L path with collinear interior points; DP at
+    // toleranceMm=1 should reduce it to ~2 vertices.
+    const d = "M0 0 L10 0.05 L20 0.1 L30 0.05 L40 0 L50 0";
+    const svg = SVG(`<path d="${d}" fill="none" stroke="#000"/>`);
+    const r = simplifySvg(svg, {
+      minAreaMm2: 0, toleranceMm: 1, widthMm: 100,
+    });
+    expect(r.beforeVertices).toBe(6);
+    expect(r.afterVertices).toBeLessThan(6);
+    expect(r.afterVertices).toBeGreaterThanOrEqual(2);
+  });
+
+  it("reports the vertex count of dropped shapes in the before total", () => {
+    // 4 (kept rect) + 4 (dropped rect) = 8 before; only 4 after.
+    const svg = SVG(`
+      <rect x="0" y="0" width="50" height="50" fill="#ff0000"/>
+      <rect x="60" y="60" width="1" height="1" fill="#00ff00"/>
+    `);
+    const r = simplifySvg(svg, {
+      minAreaMm2: 2, toleranceMm: 0, widthMm: 100,
+    });
+    expect(r.beforeVertices).toBe(8);
+    expect(r.afterVertices).toBe(4);
+  });
 });

@@ -52,6 +52,7 @@ export function detectSvgLayers(svgText: string): DetectedLayer[] {
     const order: string[] = [];
     const isFill: Record<string, boolean> = {};
     const counts: Record<string, number> = {};
+    const verts: Record<string, number> = {};
 
     const shapes = mounted.querySelectorAll<SVGGraphicsElement>(SHAPE_SELECTOR);
     for (const el of Array.from(shapes)) {
@@ -75,11 +76,13 @@ export function detectSvgLayers(svgText: string): DetectedLayer[] {
         isFill[color] = asFill;
       }
       counts[color] = (counts[color] ?? 0) + 1;
+      verts[color] = (verts[color] ?? 0) + countShapeVertices(el);
     }
 
     return order.map((c) => ({
       color: c,
       shape_count: counts[c],
+      vertex_count: verts[c],
       is_fill: isFill[c],
       is_near_white: isNearWhite(c),
     }));
@@ -127,6 +130,76 @@ function toHex(r: number, g: number, b: number): string {
       .toString(16)
       .padStart(2, "0");
   return `#${clamp(r)}${clamp(g)}${clamp(b)}`;
+}
+
+/** Count the vertices a shape contributes. The number is meaningful as
+ *  "how complex is this shape", and is what shrinks under the simplify
+ *  dialog's path-simplification tolerance.
+ *
+ *  - ``rect``: 4 (corners).
+ *  - ``line``: 2 (endpoints).
+ *  - ``circle`` / ``ellipse``: 1 — a continuous curve has no discrete
+ *    vertices; reporting 1 lets the total still notice the shape exists.
+ *  - ``polyline`` / ``polygon``: number of listed points.
+ *  - ``path``: parse ``d`` and count one vertex per drawing command,
+ *    handling implicit repeats and the right per-command coord-pair
+ *    width (M/L/T = 2 nums, H/V = 1, C = 6, S/Q = 4, A = 7).
+ */
+export function countShapeVertices(el: Element): number {
+  switch (el.tagName) {
+    case "rect":
+      return 4;
+    case "line":
+      return 2;
+    case "circle":
+    case "ellipse":
+      return 1;
+    case "polyline":
+    case "polygon":
+      return countPointPairs(el.getAttribute("points") ?? "");
+    case "path":
+      return countPathVertices(el.getAttribute("d") ?? "");
+    default:
+      return 0;
+  }
+}
+
+function countPointPairs(raw: string): number {
+  const nums = raw.trim().split(/[\s,]+/).filter(Boolean);
+  return Math.floor(nums.length / 2);
+}
+
+const NUMS_PER_VERTEX: Record<string, number> = {
+  M: 2, L: 2, T: 2,
+  H: 1, V: 1,
+  C: 6, S: 4, Q: 4,
+  A: 7,
+};
+
+function countPathVertices(d: string): number {
+  if (!d) return 0;
+  const re = /([MmLlHhVvCcSsQqTtAaZz])|(-?\d*\.?\d+(?:[eE][+-]?\d+)?)/g;
+  let count = 0;
+  let cmdUpper = "";
+  let numCount = 0;
+  const flush = () => {
+    if (!cmdUpper) return;
+    const stride = NUMS_PER_VERTEX[cmdUpper];
+    if (stride > 0) count += Math.floor(numCount / stride);
+  };
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(d)) !== null) {
+    if (m[1]) {
+      flush();
+      const c = m[1];
+      cmdUpper = c.toUpperCase();
+      numCount = 0;
+    } else if (m[2] !== undefined) {
+      numCount++;
+    }
+  }
+  flush();
+  return count;
 }
 
 function isNearWhite(hex: string): boolean {

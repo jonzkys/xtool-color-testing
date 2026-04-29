@@ -125,6 +125,10 @@ export interface SvgLayersRequest {
 export interface DetectedLayer {
   color: string;
   shape_count: number;
+  /** Sum of vertices across every shape with this colour. Drives the
+   *  "× verts" chip in the layer card so the user can spot which
+   *  layers are the candidates for path-simplification. */
+  vertex_count: number;
   is_fill: boolean;
   /** True when the colour is bright and nearly neutral (min RGB channel
    *  >= 220 AND max-min spread <= 20). Catches pure white plus vtracer

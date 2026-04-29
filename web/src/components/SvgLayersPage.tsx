@@ -230,8 +230,17 @@ export function SvgLayersPage() {
     for (const d of rawDetected) out[d.color] = d.shape_count;
     return out;
   }, [rawDetected]);
+  const vertexCountsByColor = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const d of rawDetected) out[d.color] = d.vertex_count ?? 0;
+    return out;
+  }, [rawDetected]);
   const totalShapeCount = useMemo(
     () => rawDetected.reduce((n, d) => n + d.shape_count, 0),
+    [rawDetected],
+  );
+  const totalVertexCount = useMemo(
+    () => rawDetected.reduce((n, d) => n + (d.vertex_count ?? 0), 0),
     [rawDetected],
   );
 
@@ -918,7 +927,11 @@ export function SvgLayersPage() {
                     {hasLayers
                       ? ` (${request.layers.length}${
                           totalShapeCount > 0
-                            ? ` · ${totalShapeCount.toLocaleString()} shapes`
+                            ? ` · ${totalShapeCount.toLocaleString()} shape${totalShapeCount === 1 ? "" : "s"}`
+                            : ""
+                        }${
+                          totalVertexCount > 0
+                            ? ` · ${totalVertexCount.toLocaleString()} vert${totalVertexCount === 1 ? "" : "s"}`
                             : ""
                         })`
                       : ""}
@@ -1050,6 +1063,7 @@ export function SvgLayersPage() {
                     const isSel = selectedColor === l.color;
                     const matched = predictedByColor[l.color];
                     const shapeCount = shapeCountsByColor[l.color] ?? 0;
+                    const vertexCount = vertexCountsByColor[l.color] ?? 0;
                     return (
                       <li key={l.color}>
                         <button
@@ -1095,18 +1109,27 @@ export function SvgLayersPage() {
                               {matched ?? "—"}
                             </span>
                           </div>
-                          {/* Shape count — quick read on layer complexity.
-                              xTool studio gets sluggish past ~1k total
-                              shapes, so a per-layer chip helps the user
-                              spot the offenders before export. */}
+                          {/* Shape + vertex count — quick read on layer
+                              complexity. xTool studio gets sluggish past
+                              ~1k total shapes; a tall vertex count is
+                              the headline candidate for the simplify
+                              tolerance slider. */}
                           {shapeCount > 0 && (
-                            <div className="flex items-center justify-end gap-1 px-1.5 pb-1 bg-[color:var(--color-surface)]">
+                            <div className="flex items-center justify-end gap-1.5 px-1.5 pb-1 bg-[color:var(--color-surface)]">
                               <span
                                 className="font-mono text-[8.5px] tracking-[0.1em] tabular-nums text-[color:var(--color-ink-subtle)]"
                                 title={`${shapeCount} shape${shapeCount === 1 ? "" : "s"} in this layer`}
                               >
                                 {shapeCount.toLocaleString()} shape{shapeCount === 1 ? "" : "s"}
                               </span>
+                              {vertexCount > 0 && (
+                                <span
+                                  className="font-mono text-[8.5px] tracking-[0.1em] tabular-nums text-[color:var(--color-ink-subtle)]"
+                                  title={`${vertexCount.toLocaleString()} vertices across this layer's shapes — drops under the simplify dialog's path tolerance for polyline-only paths.`}
+                                >
+                                  · {vertexCount.toLocaleString()} vert{vertexCount === 1 ? "" : "s"}
+                                </span>
+                              )}
                             </div>
                           )}
                           {/* Enable checkbox — top-right corner */}

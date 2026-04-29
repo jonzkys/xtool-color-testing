@@ -130,6 +130,8 @@ export function SimplifyShapesDialog({
         beforeShapes: 0,
         afterShapes: 0,
         pathsSimplified: 0,
+        beforeVertices: 0,
+        afterVertices: 0,
       };
     }
     try {
@@ -148,6 +150,8 @@ export function SimplifyShapesDialog({
   const after = isErr ? 0 : result.afterShapes;
   const dropped = isErr ? 0 : before - after;
   const pathsSimplified = isErr ? 0 : result.pathsSimplified;
+  const beforeVerts = isErr ? 0 : result.beforeVertices;
+  const afterVerts = isErr ? 0 : result.afterVertices;
   const noChange =
     !isErr && dropped === 0 && pathsSimplified === 0;
 
@@ -244,17 +248,37 @@ export function SimplifyShapesDialog({
             </span>
           ) : (
             <div className="flex items-baseline justify-between gap-4">
-              <div className="flex items-baseline gap-2">
-                <span className="font-mono text-[18px] tabular-nums text-[color:var(--color-ink)]">
-                  {before.toLocaleString()}
-                </span>
-                <span className="text-[color:var(--color-ink-subtle)]">→</span>
-                <span className="font-mono text-[18px] tabular-nums text-[color:var(--color-primary)]">
-                  {after.toLocaleString()}
-                </span>
-                <span className="text-[12px] text-[color:var(--color-ink-muted)]">
-                  shapes
-                </span>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-[18px] tabular-nums text-[color:var(--color-ink)]">
+                    {before.toLocaleString()}
+                  </span>
+                  <span className="text-[color:var(--color-ink-subtle)]">→</span>
+                  <span className="font-mono text-[18px] tabular-nums text-[color:var(--color-primary)]">
+                    {after.toLocaleString()}
+                  </span>
+                  <span className="text-[12px] text-[color:var(--color-ink-muted)]">
+                    shape{after === 1 ? "" : "s"}
+                  </span>
+                </div>
+                {beforeVerts > 0 && (
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-[13px] tabular-nums text-[color:var(--color-ink-muted)]">
+                      {beforeVerts.toLocaleString()}
+                    </span>
+                    <span className="text-[color:var(--color-ink-subtle)]">→</span>
+                    <span className={`font-mono text-[13px] tabular-nums ${
+                      afterVerts < beforeVerts
+                        ? "text-[color:var(--color-primary)]"
+                        : "text-[color:var(--color-ink-muted)]"
+                    }`}>
+                      {afterVerts.toLocaleString()}
+                    </span>
+                    <span className="text-[11px] text-[color:var(--color-ink-muted)]">
+                      vert{afterVerts === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="text-right text-[11px] text-[color:var(--color-ink-subtle)] tabular-nums">
                 {dropped > 0 && (
