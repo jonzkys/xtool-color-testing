@@ -63,6 +63,11 @@ export interface RasterTraceOptions {
   layer_difference: number;
   filter_speckle: number;
   max_colors: number;  // 0 = disabled, 2-256 = PIL pre-quantize palette size
+  /** vtracer output style. ``spline`` (default) emits cubic Bézier
+   *  paths, preserving smooth curves; ``polygon`` emits M/L-only
+   *  paths so the Simplify dialog's path-tolerance slider can
+   *  collapse vertices. */
+  mode: "spline" | "polygon";
 }
 
 export const DEFAULT_RASTER_TRACE_OPTIONS: RasterTraceOptions = {
@@ -70,6 +75,7 @@ export const DEFAULT_RASTER_TRACE_OPTIONS: RasterTraceOptions = {
   layer_difference: 32,
   filter_speckle: 8,
   max_colors: 6,  // Default for raster: cap palette at 6 colors - best UX for photos
+  mode: "spline",
 };
 
 // Raster-to-SVG tracing is now client-side via vtracer-wasm; see

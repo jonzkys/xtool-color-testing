@@ -878,6 +878,37 @@ export function SvgLayersPage() {
                 }
                 dense
               >
+                <Field
+                  label="Output style"
+                  help={
+                    <span>
+                      <b>Spline</b> emits cubic Bézier paths — smooth
+                      curves at the cost of being un-simplifiable: the
+                      Simplify dialog's tolerance slider does nothing
+                      because it deliberately skips curved paths to
+                      preserve fidelity.
+                      <br /><br />
+                      <b>Polygon</b> emits M/L-only paths — every
+                      curve becomes line segments, which can look
+                      faceted but lets the tolerance slider collapse
+                      vertex chains. Useful for laser cuts where the
+                      firmware flattens curves to lines anyway.
+                    </span>
+                  }
+                  className="mb-2"
+                >
+                  <Select
+                    value={traceOptions.mode}
+                    onChange={(e) =>
+                      updateTraceOptions({
+                        mode: e.target.value as "spline" | "polygon",
+                      })
+                    }
+                  >
+                    <option value="spline">Spline (curves preserved)</option>
+                    <option value="polygon">Polygon (line segments only)</option>
+                  </Select>
+                </Field>
                 <div className="grid grid-cols-2 gap-2">
                   <NumberField
                     label="Max colours"

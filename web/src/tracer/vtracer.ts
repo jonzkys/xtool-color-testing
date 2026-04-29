@@ -40,10 +40,9 @@ interface VtracerConfig {
 // These are the same numbers `vtracer` (Rust CLI) uses in its colour preset.
 const FIXED_CONFIG: Omit<
   VtracerConfig,
-  "colorPrecision" | "layerDifference" | "filterSpeckle"
+  "colorPrecision" | "layerDifference" | "filterSpeckle" | "mode"
 > = {
   binary: false,
-  mode: "spline",
   hierarchical: "stacked",
   cornerThreshold: 60,
   lengthThreshold: 4,
@@ -153,6 +152,7 @@ export async function traceImageToSvg(
 
   const config: VtracerConfig = {
     ...FIXED_CONFIG,
+    mode: opts.mode,
     // vtracer-wasm hands ``colorPrecision`` straight through as
     // visioncortex's ``is_same_color_a`` = precision LOSS. The upstream
     // vtracer CLI instead converts the user-facing precision to loss via
