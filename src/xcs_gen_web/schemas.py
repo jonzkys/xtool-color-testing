@@ -614,6 +614,40 @@ class ResultPatch(BaseModel):
     notes: str | None = None
 
 
+class GridLayout(BaseModel):
+    """Pixel-space geometry of the warped image's cell grid.
+
+    Pure function of the result's :class:`TestSpec`; the cell-inspector
+    overlay uses these numbers both for forward (cell → highlight rect)
+    and reverse (mouse → cell) mapping. The forward formula here
+    matches the sampler's per-cell bounds exactly so a hover lands on
+    the cell that was sampled, not its neighbour.
+    """
+
+    image_width_px: int
+    image_height_px: int
+    grid_origin_x_px: float
+    grid_origin_y_px: float
+    cell_width_px: float
+    cell_height_px: float
+    # Distance between consecutive physical-row tops in pixels —
+    # equals cell_height_px for 2D tests, larger for wrapped 1D when
+    # axis-label gaps push rows apart.
+    row_stride_px: float
+    # Always populated; equals ``x_steps`` for 2D and single-row 1D,
+    # equals ``ceil(x_steps / rows)`` for wrapped 1D.
+    cells_per_physical_row: int
+    physical_rows: int
+    # ``True`` when the test has both x_param and y_param (the grid's
+    # rows carry y_value). ``False`` for 1D tests (single-row or
+    # wrapped). The frontend uses this to decide how to map the
+    # physical cell back to a swatch index.
+    is_2d: bool
+    # Constant 10.0 today; surfaced so a future architectural change
+    # to the capture pipeline doesn't silently break the inspector.
+    px_per_mm: float
+
+
 class SwatchPreviewResponse(BaseModel):
     aggregator: str
     swatches: list[ResultSwatch]

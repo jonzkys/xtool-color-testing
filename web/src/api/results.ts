@@ -1,5 +1,5 @@
 import type {
-  AveragedSwatch, ResultRecord,
+  AveragedSwatch, GridLayout, ResultRecord,
   SampleAggregator, SwatchPreviewResponse, InspectCellResponse,
 } from "../types";
 import { j } from "./_fetch";
@@ -50,6 +50,10 @@ export async function inspectCell(
   rid: number, row: number, col: number,
 ): Promise<InspectCellResponse> {
   return j(await fetch(`/api/results/${rid}/inspect/${row}/${col}`));
+}
+
+export async function getGridLayout(rid: number): Promise<GridLayout> {
+  return j(await fetch(`/api/results/${rid}/grid-layout`));
 }
 export async function getAveragedSwatches(testId: number): Promise<AveragedSwatch[]> {
   return j(await fetch(`/api/tests/${testId}/swatches`));

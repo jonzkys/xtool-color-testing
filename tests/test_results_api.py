@@ -618,6 +618,43 @@ def test_inspect_cell_wrapped_1d_accepts_non_row_zero(fresh_db, monkeypatch, tmp
     assert r.status_code == 400
 
 
+def test_grid_layout_endpoint_returns_geometry(fresh_db, monkeypatch, tmp_path):
+    """The cell-inspector overlay's mouse → cell math runs against
+    this payload; missing or wrong keys break hover."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    upload = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("x.png", b"fake", "image/png")},
+    )
+    rid = upload.json()["id"]
+
+    r = c.get(f"/api/results/{rid}/grid-layout")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    for key in [
+        "image_width_px", "image_height_px",
+        "grid_origin_x_px", "grid_origin_y_px",
+        "cell_width_px", "cell_height_px", "row_stride_px",
+        "cells_per_physical_row", "physical_rows", "px_per_mm",
+    ]:
+        assert key in body
+    # Single-row 1D test → all 3 cells on one physical row.
+    assert body["physical_rows"] == 1
+    assert body["cells_per_physical_row"] == 3
+
+
+def test_grid_layout_endpoint_404_for_missing_result(fresh_db, monkeypatch, tmp_path):
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    c = TestClient(create_app())
+    r = c.get("/api/results/9999/grid-layout")
+    assert r.status_code == 404
+
+
 def test_inspect_cell_wrapped_1d_uses_per_row_cell_width(fresh_db, monkeypatch, tmp_path):
     """Wrapped-1D tests (rows>1, y_param=None) divide x_steps across
     `per_row` cells per physical row. inspect_cell must compute
