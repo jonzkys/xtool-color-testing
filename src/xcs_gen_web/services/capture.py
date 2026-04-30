@@ -537,9 +537,10 @@ def grid_layout_payload(spec: dict[str, Any]) -> dict[str, Any]:
 
     # Re-derive the warped image's burn-space dims the same way
     # capture._get_or_capture does, so we don't have to read the cached
-    # PNG to learn its size.
+    # PNG to learn its size. ``grid_origin_mm`` is already computed
+    # upstream in ``_grid_layout_for_warped``, which uses the QR
+    # offset, so we don't recompute it here.
     reg = spec.get("registration", {}) if isinstance(spec.get("registration"), dict) else {}
-    qr_size = reg.get("qr_size_mm") or QR_SIZE_DEFAULT_MM
     aruco_size = reg.get("aruco_size_mm") or ARUCO_SIZE_DEFAULT_MM
     margin = MARKER_MARGIN_MM
     grid_w = spec["width_mm"]
