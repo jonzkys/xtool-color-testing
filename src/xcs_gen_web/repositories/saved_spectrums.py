@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import delete as sa_delete, select
+from sqlalchemy import and_, delete as sa_delete, select, update
 
 from ..config import STANDALONE_USER_ID
 from ..db import session_scope
@@ -213,3 +213,72 @@ def delete(spectrum_id: int) -> None:
         s.execute(
             sa_delete(saved_spectrums).where(saved_spectrums.c.id == spectrum_id)
         )
+
+
+def list_(
+    *,
+    machine_id: str,
+    material_id: int | None = None,
+    min_r2: float | None = None,
+    source_test_id: int | None = None,
+    owner_id: int = STANDALONE_USER_ID,
+) -> list[dict[str, Any]]:
+    """List saved spectrums for the (owner, machine) scope.
+
+    Optional filters: ``material_id``, ``min_r2`` (excludes anything
+    with fit_r2_min below the threshold), ``source_test_id``.
+    Newest-first by created_at, with id desc as tiebreaker.
+    """
+    with session_scope() as s:
+        clauses = [
+            saved_spectrums.c.owner_id == owner_id,
+            saved_spectrums.c.machine_id == machine_id,
+        ]
+        if material_id is not None:
+            clauses.append(saved_spectrums.c.material_id == material_id)
+        if min_r2 is not None:
+            clauses.append(saved_spectrums.c.fit_r2_min >= min_r2)
+        if source_test_id is not None:
+            clauses.append(saved_spectrums.c.source_test_id == source_test_id)
+        parent_rows = s.execute(
+            select(saved_spectrums)
+            .where(and_(*clauses))
+            .order_by(saved_spectrums.c.created_at.desc(), saved_spectrums.c.id.desc())
+        ).all()
+        if not parent_rows:
+            return []
+        ids = [r.id for r in parent_rows]
+        all_swatches = s.execute(
+            select(saved_spectrum_swatches)
+            .where(saved_spectrum_swatches.c.saved_spectrum_id.in_(ids))
+        ).all()
+        all_coeffs = s.execute(
+            select(saved_spectrum_fit_coefficients)
+            .where(saved_spectrum_fit_coefficients.c.saved_spectrum_id.in_(ids))
+        ).all()
+        # Bucket children by parent id for assembly.
+        sw_by_id: dict[int, list] = {i: [] for i in ids}
+        co_by_id: dict[int, list] = {i: [] for i in ids}
+        for r in all_swatches:
+            sw_by_id[r.saved_spectrum_id].append(r)
+        for r in all_coeffs:
+            co_by_id[r.saved_spectrum_id].append(r)
+        return [
+            _row_to_record(p, sw_by_id[p.id], co_by_id[p.id])
+            for p in parent_rows
+        ]
+
+
+def patch(spectrum_id: int, fields: dict[str, Any]) -> dict[str, Any] | None:
+    """Apply a partial update. Stage 1 only allows ``name``."""
+    allowed = {"name"}
+    payload = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if not payload:
+        return get(spectrum_id)
+    with session_scope() as s:
+        s.execute(
+            update(saved_spectrums)
+            .where(saved_spectrums.c.id == spectrum_id)
+            .values(**payload)
+        )
+        return _read_within_session(s, spectrum_id)

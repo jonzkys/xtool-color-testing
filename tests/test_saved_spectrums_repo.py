@@ -158,3 +158,85 @@ def test_source_test_delete_nulls_reference(fresh_db):
     assert got is not None
     assert got["source_test_id"] is None
     assert len(got["swatches"]) == 5  # data preserved
+
+
+def test_list_returns_owner_machine_scoped_records_newest_first(fresh_db):
+    tid = _setup_test(fresh_db)
+    older = ss_repo.create({
+        "name": "older", "source_test_id": tid,
+        "axis_param": "speed", "axis_min": 1000.0, "axis_max": 3000.0,
+        "fit_form": "polynomial", "fit_degree": 2,
+        "fit_coefficients": _FIT_COEFFS, "fit_r2": _FIT_R2,
+        "displayed_projection": "lightness", "swatches": _SWATCHES,
+    })
+    newer = ss_repo.create({
+        "name": "newer", "source_test_id": tid,
+        "axis_param": "speed", "axis_min": 1000.0, "axis_max": 3000.0,
+        "fit_form": "polynomial", "fit_degree": 2,
+        "fit_coefficients": _FIT_COEFFS, "fit_r2": _FIT_R2,
+        "displayed_projection": "lightness", "swatches": _SWATCHES,
+    })
+    rows = ss_repo.list_(machine_id="F2Ultra")
+    ids = [r["id"] for r in rows]
+    # newer first, older second
+    assert ids == [newer["id"], older["id"]]
+
+
+def test_list_filters_by_min_r2(fresh_db):
+    tid = _setup_test(fresh_db)
+    weak = ss_repo.create({
+        "name": "weak", "source_test_id": tid,
+        "axis_param": "speed", "axis_min": 1000.0, "axis_max": 3000.0,
+        "fit_form": "polynomial", "fit_degree": 2,
+        "fit_coefficients": _FIT_COEFFS,
+        "fit_r2": {"l": 0.5, "a": 0.6, "b": 0.7},  # min is 0.5
+        "displayed_projection": "lightness", "swatches": _SWATCHES,
+    })
+    strong = ss_repo.create({
+        "name": "strong", "source_test_id": tid,
+        "axis_param": "speed", "axis_min": 1000.0, "axis_max": 3000.0,
+        "fit_form": "polynomial", "fit_degree": 2,
+        "fit_coefficients": _FIT_COEFFS,
+        "fit_r2": {"l": 0.99, "a": 0.95, "b": 0.92},  # min is 0.92
+        "displayed_projection": "lightness", "swatches": _SWATCHES,
+    })
+    ids = [r["id"] for r in ss_repo.list_(machine_id="F2Ultra", min_r2=0.9)]
+    assert strong["id"] in ids
+    assert weak["id"] not in ids
+
+
+def test_list_filters_by_source_test(fresh_db):
+    t1 = _setup_test(fresh_db)
+    other_mid = m_repo.create(name="OtherMat")["id"]
+    t2 = t_repo.create(name="Other test", material_id=other_mid, spec=_TEST_SPEC)["id"]
+    a = ss_repo.create({
+        "name": "a", "source_test_id": t1,
+        "axis_param": "speed", "axis_min": 1000.0, "axis_max": 3000.0,
+        "fit_form": "polynomial", "fit_degree": 2,
+        "fit_coefficients": _FIT_COEFFS, "fit_r2": _FIT_R2,
+        "displayed_projection": "lightness", "swatches": _SWATCHES,
+    })
+    ss_repo.create({
+        "name": "b", "source_test_id": t2,
+        "axis_param": "speed", "axis_min": 1000.0, "axis_max": 3000.0,
+        "fit_form": "polynomial", "fit_degree": 2,
+        "fit_coefficients": _FIT_COEFFS, "fit_r2": _FIT_R2,
+        "displayed_projection": "lightness", "swatches": _SWATCHES,
+    })
+    ids = [r["id"] for r in ss_repo.list_(machine_id="F2Ultra", source_test_id=t1)]
+    assert ids == [a["id"]]
+
+
+def test_patch_renames_only(fresh_db):
+    tid = _setup_test(fresh_db)
+    rec = ss_repo.create({
+        "name": "old name", "source_test_id": tid,
+        "axis_param": "speed", "axis_min": 1000.0, "axis_max": 3000.0,
+        "fit_form": "polynomial", "fit_degree": 2,
+        "fit_coefficients": _FIT_COEFFS, "fit_r2": _FIT_R2,
+        "displayed_projection": "lightness", "swatches": _SWATCHES,
+    })
+    updated = ss_repo.patch(rec["id"], {"name": "new name"})
+    assert updated["name"] == "new name"
+    # Children untouched.
+    assert len(updated["swatches"]) == 5
