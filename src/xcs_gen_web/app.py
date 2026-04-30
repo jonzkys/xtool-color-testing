@@ -1637,6 +1637,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="saved spectrum not found")
         return SavedSpectrumResponse(**rec)
 
+    @app.patch(
+        "/api/spectrums/{spectrum_id}",
+        response_model=SavedSpectrumResponse,
+    )
+    def saved_spectrums_patch(
+        spectrum_id: int,
+        patch_body: SavedSpectrumPatch,
+        user_id: int = Depends(get_current_user),
+    ) -> SavedSpectrumResponse:
+        existing = ss_repo.get(spectrum_id)
+        if existing is None or existing["owner_id"] != user_id:
+            raise HTTPException(status_code=404, detail="saved spectrum not found")
+        updated = ss_repo.patch(
+            spectrum_id, patch_body.model_dump(exclude_none=True)
+        )
+        # patch returns None only if the row vanished mid-call.
+        if updated is None:
+            raise HTTPException(status_code=404, detail="saved spectrum not found")
+        return SavedSpectrumResponse(**updated)
+
+    @app.delete(
+        "/api/spectrums/{spectrum_id}",
+        status_code=204,
+    )
+    def saved_spectrums_delete(
+        spectrum_id: int,
+        user_id: int = Depends(get_current_user),
+    ) -> Response:
+        existing = ss_repo.get(spectrum_id)
+        if existing is None or existing["owner_id"] != user_id:
+            raise HTTPException(status_code=404, detail="saved spectrum not found")
+        ss_repo.delete(spectrum_id)
+        return Response(status_code=204)
+
     # Per-machine product images live under web/public/machines/. Vite
     # copies them to web/dist/machines/ at build time, so they're served
     # by the dev backend's SPA mount at "/" and by S3+CloudFront in

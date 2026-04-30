@@ -121,3 +121,33 @@ def test_get_detail_404_for_unknown_id(fresh_db):
     c, _ = _setup(fresh_db)
     r = c.get("/api/spectrums/9999")
     assert r.status_code == 404
+
+
+def test_patch_renames(fresh_db):
+    c, tid = _setup(fresh_db)
+    created = c.post("/api/spectrums", json=_payload(tid, name="old")).json()
+    r = c.patch(f"/api/spectrums/{created['id']}", json={"name": "new"})
+    assert r.status_code == 200
+    assert r.json()["name"] == "new"
+
+
+def test_patch_404_for_unknown_id(fresh_db):
+    c, _ = _setup(fresh_db)
+    r = c.patch("/api/spectrums/9999", json={"name": "doesn't matter"})
+    assert r.status_code == 404
+
+
+def test_delete_removes_record(fresh_db):
+    c, tid = _setup(fresh_db)
+    created = c.post("/api/spectrums", json=_payload(tid)).json()
+    r = c.delete(f"/api/spectrums/{created['id']}")
+    assert r.status_code == 204
+    # Subsequent GET returns 404.
+    r2 = c.get(f"/api/spectrums/{created['id']}")
+    assert r2.status_code == 404
+
+
+def test_delete_404_for_unknown_id(fresh_db):
+    c, _ = _setup(fresh_db)
+    r = c.delete("/api/spectrums/9999")
+    assert r.status_code == 404
