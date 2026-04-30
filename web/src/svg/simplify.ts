@@ -27,6 +27,7 @@
  */
 
 import simplify from "simplify-js";
+import { countShapeVertices } from "./detectLayers";
 
 const SHAPE_SELECTOR = "path, rect, circle, ellipse, line, polyline, polygon";
 
@@ -65,6 +66,13 @@ export interface SimplifyResult {
   afterShapes: number;
   /** Number of polyline paths whose vertex count was reduced. */
   pathsSimplified: number;
+  /** Total vertex count across every detected shape before
+   *  simplification — includes shapes that will be dropped, so the
+   *  before/after delta reflects both the area filter and the
+   *  path-tolerance pass. */
+  beforeVertices: number;
+  /** Total vertex count across surviving shapes after both passes. */
+  afterVertices: number;
 }
 
 /**
@@ -101,6 +109,8 @@ export function simplifySvg(
   const beforeShapes = shapes.length;
   let afterShapes = 0;
   let pathsSimplified = 0;
+  let beforeVertices = 0;
+  let afterVertices = 0;
 
   // First pass on the SOURCE tree: simplify polyline paths in place
   // (kept and dropped shapes both get the simplification — preview
@@ -110,6 +120,11 @@ export function simplifySvg(
   const droppedShapes: Element[] = [];
 
   for (const el of shapes) {
+    // Tally before-state vertex count BEFORE the simplification step
+    // mutates ``d``, so the delta the dialog shows reflects both the
+    // tolerance pass and the area filter dropping shapes.
+    beforeVertices += countShapeVertices(el);
+
     // ── Path vertex simplification ─────────────────────────────────
     if (
       tolerancePx > 0
@@ -140,6 +155,7 @@ export function simplifySvg(
       }
     }
     afterShapes++;
+    afterVertices += countShapeVertices(el);
   }
 
   // Preview SVG = current tree with dropped shapes still present and
@@ -167,6 +183,8 @@ export function simplifySvg(
     beforeShapes,
     afterShapes,
     pathsSimplified,
+    beforeVertices,
+    afterVertices,
   };
 }
 

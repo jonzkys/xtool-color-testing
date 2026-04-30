@@ -5,6 +5,7 @@ import {
   Eye,
   EyeOff,
   FileCode2,
+  FileImage,
   Filter,
   Layers as LayersIcon,
   Star,
@@ -167,7 +168,10 @@ export function SvgLayersPage() {
   // params, so a default-on collapse silently fuses visually distinct
   // colours into one engrave stage and the "X→1" badge surprises users
   // who haven't picked params yet. Users who want this can opt in.
-  const [collapseIdenticalLayers, setCollapseIdenticalLayers] = useState(false);
+  // Default ON — most users want params shared across same-colour
+  // layers anyway, and the merge collapses cleanly into one output
+  // pass without surprising side effects. Off → no merge happens.
+  const [collapseIdenticalLayers, setCollapseIdenticalLayers] = useState(true);
   const [filename, setFilename] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [isolateSelected, setIsolateSelected] = useState(false);
@@ -226,8 +230,17 @@ export function SvgLayersPage() {
     for (const d of rawDetected) out[d.color] = d.shape_count;
     return out;
   }, [rawDetected]);
+  const vertexCountsByColor = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const d of rawDetected) out[d.color] = d.vertex_count ?? 0;
+    return out;
+  }, [rawDetected]);
   const totalShapeCount = useMemo(
     () => rawDetected.reduce((n, d) => n + d.shape_count, 0),
+    [rawDetected],
+  );
+  const totalVertexCount = useMemo(
+    () => rawDetected.reduce((n, d) => n + (d.vertex_count ?? 0), 0),
     [rawDetected],
   );
 
@@ -518,8 +531,9 @@ export function SvgLayersPage() {
     setTracing(true);
     try {
       const svg = await traceImageToSvg(dataUrl, traceOptions);
-      setOriginalSvgContent(svg);
-      await applyDetectedSvg(svg, suggested);
+      const cleaned = await preBakeOverlaps(svg, request.width_mm);
+      setOriginalSvgContent(cleaned);
+      await applyDetectedSvg(cleaned, suggested);
     } catch (err) {
       setDetectError((err as Error).message);
     } finally {
@@ -533,14 +547,38 @@ export function SvgLayersPage() {
     setTracing(true);
     try {
       const svg = await traceImageToSvg(rasterDataUrl, opts);
-      setOriginalSvgContent(svg);
+      const cleaned = await preBakeOverlaps(svg, request.width_mm);
+      setOriginalSvgContent(cleaned);
       const currentName = request.name;
-      await applyDetectedSvg(svg, currentName);
+      await applyDetectedSvg(cleaned, currentName);
       setTracePending(false);
     } catch (err) {
       setDetectError((err as Error).message);
     } finally {
       setTracing(false);
+    }
+  }
+
+  /** Run subtract-overlaps on a freshly-traced SVG before storing.
+   *  vtracer outputs each colour layer as an unbounded shape — large
+   *  layers tile the whole canvas and only the highest-z layer wins
+   *  visually. With raw output, gaps in the trace expose the largest
+   *  layer's colour wherever no upper layer covers (the "red bleed"
+   *  the user reported on the london skyline). Pre-baking via the
+   *  existing ``/api/svg-preview`` endpoint hands us shapes that are
+   *  already non-overlapping, so the runtime ``Subtract overlaps``
+   *  toggle becomes effectively idempotent and gaps in the trace
+   *  burn nothing instead of showing the wrong colour. Falls back to
+   *  the raw SVG on API failure — better to ship the unsubtracted
+   *  output than fail the trace entirely. */
+  async function preBakeOverlaps(svg: string, widthMm: number): Promise<string> {
+    try {
+      return await previewSvg(svg, {
+        subtract_overlaps: true,
+        width_mm: widthMm > 0 ? widthMm : 100,
+      });
+    } catch {
+      return svg;
     }
   }
 
@@ -577,6 +615,33 @@ export function SvgLayersPage() {
       setErrorMessage((err as Error).message);
     } finally {
       setGenerating(false);
+    }
+  }
+
+  /** Download the current SVG content — matches whatever the .xcs
+   *  generator would receive (i.e. with palette-matched colours and
+   *  collapse-identical layers applied if the corresponding toggles
+   *  are on). Useful for taking the rewritten asset into another
+   *  tool, or for archiving the version that produced a given burn. */
+  function handleSaveSvg() {
+    setErrorMessage(undefined);
+    try {
+      const r = buildGenerateRequest();
+      if (!r.svg_content) return;
+      const blob = new Blob([r.svg_content], { type: "image/svg+xml" });
+      const url = URL.createObjectURL(blob);
+      try {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${r.name || "svg-layers"}.svg`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      setErrorMessage((err as Error).message);
     }
   }
 
@@ -689,6 +754,19 @@ export function SvgLayersPage() {
             })}
           </div>
           <Button
+            variant="ghost"
+            onClick={handleSaveSvg}
+            disabled={!request.svg_content}
+            title={
+              !request.svg_content
+                ? "Upload an SVG / image first"
+                : "Download the current SVG (with palette + merge rewrites applied if toggled)"
+            }
+          >
+            <FileImage className="h-4 w-4" />
+            Save SVG
+          </Button>
+          <Button
             variant="primary"
             onClick={handleGenerate}
             disabled={disabled}
@@ -800,6 +878,37 @@ export function SvgLayersPage() {
                 }
                 dense
               >
+                <Field
+                  label="Output style"
+                  help={
+                    <span>
+                      <b>Spline</b> emits cubic Bézier paths — smooth
+                      curves at the cost of being un-simplifiable: the
+                      Simplify dialog's tolerance slider does nothing
+                      because it deliberately skips curved paths to
+                      preserve fidelity.
+                      <br /><br />
+                      <b>Polygon</b> emits M/L-only paths — every
+                      curve becomes line segments, which can look
+                      faceted but lets the tolerance slider collapse
+                      vertex chains. Useful for laser cuts where the
+                      firmware flattens curves to lines anyway.
+                    </span>
+                  }
+                  className="mb-2"
+                >
+                  <Select
+                    value={traceOptions.mode}
+                    onChange={(e) =>
+                      updateTraceOptions({
+                        mode: e.target.value as "spline" | "polygon",
+                      })
+                    }
+                  >
+                    <option value="spline">Spline (curves preserved)</option>
+                    <option value="polygon">Polygon (line segments only)</option>
+                  </Select>
+                </Field>
                 <div className="grid grid-cols-2 gap-2">
                   <NumberField
                     label="Max colours"
@@ -849,7 +958,11 @@ export function SvgLayersPage() {
                     {hasLayers
                       ? ` (${request.layers.length}${
                           totalShapeCount > 0
-                            ? ` · ${totalShapeCount.toLocaleString()} shapes`
+                            ? ` · ${totalShapeCount.toLocaleString()} shape${totalShapeCount === 1 ? "" : "s"}`
+                            : ""
+                        }${
+                          totalVertexCount > 0
+                            ? ` · ${totalVertexCount.toLocaleString()} vert${totalVertexCount === 1 ? "" : "s"}`
                             : ""
                         })`
                       : ""}
@@ -981,6 +1094,7 @@ export function SvgLayersPage() {
                     const isSel = selectedColor === l.color;
                     const matched = predictedByColor[l.color];
                     const shapeCount = shapeCountsByColor[l.color] ?? 0;
+                    const vertexCount = vertexCountsByColor[l.color] ?? 0;
                     return (
                       <li key={l.color}>
                         <button
@@ -1026,18 +1140,27 @@ export function SvgLayersPage() {
                               {matched ?? "—"}
                             </span>
                           </div>
-                          {/* Shape count — quick read on layer complexity.
-                              xTool studio gets sluggish past ~1k total
-                              shapes, so a per-layer chip helps the user
-                              spot the offenders before export. */}
+                          {/* Shape + vertex count — quick read on layer
+                              complexity. xTool studio gets sluggish past
+                              ~1k total shapes; a tall vertex count is
+                              the headline candidate for the simplify
+                              tolerance slider. */}
                           {shapeCount > 0 && (
-                            <div className="flex items-center justify-end gap-1 px-1.5 pb-1 bg-[color:var(--color-surface)]">
+                            <div className="flex items-center justify-end gap-1.5 px-1.5 pb-1 bg-[color:var(--color-surface)]">
                               <span
                                 className="font-mono text-[8.5px] tracking-[0.1em] tabular-nums text-[color:var(--color-ink-subtle)]"
                                 title={`${shapeCount} shape${shapeCount === 1 ? "" : "s"} in this layer`}
                               >
                                 {shapeCount.toLocaleString()} shape{shapeCount === 1 ? "" : "s"}
                               </span>
+                              {vertexCount > 0 && (
+                                <span
+                                  className="font-mono text-[8.5px] tracking-[0.1em] tabular-nums text-[color:var(--color-ink-subtle)]"
+                                  title={`${vertexCount.toLocaleString()} vertices across this layer's shapes — drops under the simplify dialog's path tolerance for polyline-only paths.`}
+                                >
+                                  · {vertexCount.toLocaleString()} vert{vertexCount === 1 ? "" : "s"}
+                                </span>
+                              )}
                             </div>
                           )}
                           {/* Enable checkbox — top-right corner */}
@@ -1492,9 +1615,16 @@ function SvgPreview({
     svgEl.setAttribute("width", "100%");
     svgEl.setAttribute("height", "100%");
     svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    // Explicit overflow=hidden on both the SVG attribute and CSS so
+    // shapes whose paths extend past the viewBox (vtracer routinely
+    // emits these — a "background" layer's path can sweep well
+    // outside the canvas) get clipped instead of bleeding into the
+    // surrounding preview pane.
+    svgEl.setAttribute("overflow", "hidden");
     svgEl.style.width = "100%";
     svgEl.style.height = "100%";
     svgEl.style.display = "block";
+    svgEl.style.overflow = "hidden";
 
     const elements = svgEl.querySelectorAll<SVGElement>("*");
 
