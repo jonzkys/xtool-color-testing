@@ -12,6 +12,8 @@ def test_metadata_has_all_tables():
     assert names == {
         "materials", "presets", "tests",
         "results", "palette_entries", "users",
+        "saved_spectrums", "saved_spectrum_swatches",
+        "saved_spectrum_fit_coefficients",
     }
 
 
@@ -23,7 +25,9 @@ def test_metadata_create_all_on_sqlite_memory():
             "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
         ).fetchall()
     assert [r[0] for r in rows] == [
-        "materials", "palette_entries", "presets", "results", "tests", "users",
+        "materials", "palette_entries", "presets", "results",
+        "saved_spectrum_fit_coefficients", "saved_spectrum_swatches",
+        "saved_spectrums", "tests", "users",
     ]
 
 

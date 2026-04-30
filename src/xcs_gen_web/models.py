@@ -31,6 +31,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
 )
 
 metadata = MetaData()
@@ -219,4 +220,110 @@ palette_entries = Table(
     Index("ix_palette_entries_test_id", "test_id"),
     Index("ix_palette_entries_owner", "owner_id"),
     Index("ix_palette_entries_owner_machine", "owner_id", "machine_id"),
+)
+
+saved_spectrums = Table(
+    "saved_spectrums", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("name", String(_NAME_LEN), nullable=False),
+    # source_test_id NULLs out via ON DELETE SET NULL when the source
+    # test is deleted — saved spectrums are self-contained predictors;
+    # losing the test reference is acceptable, losing the data isn't.
+    Column(
+        "source_test_id", Integer,
+        ForeignKey("tests.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column("machine_id", String(_MACHINE_ID_LEN), nullable=False, server_default="F2Ultra"),
+    Column(
+        "material_id", Integer,
+        ForeignKey("materials.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column("owner_id", Integer, nullable=False),
+    Column("axis_param", String(32), nullable=False),
+    Column("axis_min", Float, nullable=False),
+    Column("axis_max", Float, nullable=False),
+    Column("fit_form", String(32), nullable=False, server_default="polynomial"),
+    Column("fit_degree", Integer, nullable=False),
+    Column("fit_l_r2", Float, nullable=False),
+    Column("fit_a_r2", Float, nullable=False),
+    Column("fit_b_r2", Float, nullable=False),
+    Column("fit_r2_min", Float, nullable=False),
+    Column("displayed_projection", String(32), nullable=False),
+    Column("lab_l_min", Float, nullable=False),
+    Column("lab_l_max", Float, nullable=False),
+    Column("lab_a_min", Float, nullable=False),
+    Column("lab_a_max", Float, nullable=False),
+    Column("lab_b_min", Float, nullable=False),
+    Column("lab_b_max", Float, nullable=False),
+    Column("lab_l_centroid", Float, nullable=False),
+    Column("lab_a_centroid", Float, nullable=False),
+    Column("lab_b_centroid", Float, nullable=False),
+    Column("created_at", String(_ISO_TS_LEN), nullable=False),
+    CheckConstraint(
+        "fit_degree BETWEEN 1 AND 3",
+        name="saved_spectrums_fit_degree_chk",
+    ),
+    Index(
+        "ix_saved_spectrums_owner_machine_created",
+        "owner_id", "machine_id", "created_at",
+    ),
+    Index(
+        "ix_saved_spectrums_material_lab_l",
+        "material_id", "lab_l_min", "lab_l_max",
+    ),
+    Index(
+        "ix_saved_spectrums_material_lab_a",
+        "material_id", "lab_a_min", "lab_a_max",
+    ),
+    Index(
+        "ix_saved_spectrums_material_lab_b",
+        "material_id", "lab_b_min", "lab_b_max",
+    ),
+    Index("ix_saved_spectrums_fit_r2_min", "fit_r2_min"),
+)
+
+saved_spectrum_swatches = Table(
+    "saved_spectrum_swatches", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column(
+        "saved_spectrum_id", Integer,
+        ForeignKey("saved_spectrums.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("swatch_row", Integer, nullable=False),
+    Column("swatch_col", Integer, nullable=False),
+    Column("x_value", Float, nullable=False),
+    Column("hex", String(_COLOR_HEX_LEN), nullable=False),
+    Column("lab_l", Float, nullable=False),
+    Column("lab_a", Float, nullable=False),
+    Column("lab_b", Float, nullable=False),
+    UniqueConstraint(
+        "saved_spectrum_id", "swatch_row", "swatch_col",
+        name="uq_saved_spectrum_swatch_cell",
+    ),
+    Index("ix_saved_spectrum_swatches_parent", "saved_spectrum_id"),
+)
+
+saved_spectrum_fit_coefficients = Table(
+    "saved_spectrum_fit_coefficients", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column(
+        "saved_spectrum_id", Integer,
+        ForeignKey("saved_spectrums.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("channel", String(1), nullable=False),
+    Column("degree", Integer, nullable=False),
+    Column("coeff", Float, nullable=False),
+    CheckConstraint(
+        "channel IN ('l','a','b')",
+        name="saved_spectrum_fit_coefficients_channel_chk",
+    ),
+    UniqueConstraint(
+        "saved_spectrum_id", "channel", "degree",
+        name="uq_saved_spectrum_fit_coeff_cell",
+    ),
+    Index("ix_saved_spectrum_fit_coefficients_parent", "saved_spectrum_id"),
 )
