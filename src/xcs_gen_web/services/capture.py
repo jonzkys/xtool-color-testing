@@ -510,6 +510,66 @@ def _grid_layout_for_warped(spec: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def grid_layout_payload(spec: dict[str, Any]) -> dict[str, Any]:
+    """Public-facing grid geometry — the frontend's :class:`GridLayout`.
+
+    Returns the same numbers as :func:`_grid_layout_for_warped` but in
+    the schema the cell-inspector overlay needs: pixel-space cell
+    origin and stride, the warped image dimensions (so the frontend
+    can map mouse → image-pixel), plus the wrapped/2D distinction.
+
+    Pure function of *spec*; no I/O. Forward formula here MUST land on
+    the same pixel rect that :func:`_cell_bounds_px` produces — hover
+    on the cell that was sampled, not the one next door.
+    """
+    g = _grid_layout_for_warped(spec)
+    px_per_mm = g["px_per_mm"]
+    grid_origin_mm = g["grid_origin_mm"]
+
+    is_2d = spec.get("y_param") is not None and not g["is_wrapped_1d"]
+    cells_per_physical_row = g["max_col"]
+    if is_2d:
+        physical_rows = g["max_row"]
+    elif g["is_wrapped_1d"]:
+        physical_rows = g["max_row"]
+    else:
+        physical_rows = 1
+
+    # Re-derive the warped image's burn-space dims the same way
+    # capture._get_or_capture does, so we don't have to read the cached
+    # PNG to learn its size.
+    reg = spec.get("registration", {}) if isinstance(spec.get("registration"), dict) else {}
+    qr_size = reg.get("qr_size_mm") or QR_SIZE_DEFAULT_MM
+    aruco_size = reg.get("aruco_size_mm") or ARUCO_SIZE_DEFAULT_MM
+    margin = MARKER_MARGIN_MM
+    grid_w = spec["width_mm"]
+    if g["is_wrapped_1d"]:
+        # Wrapped 1D: total grid height = N rows × per-row + (N-1) gaps.
+        rows_total = g["max_row"]
+        cell_h_mm = g["cell_h_mm"]
+        gap_mm = g["row_stride_mm"] - cell_h_mm
+        grid_h_mm = rows_total * cell_h_mm + (rows_total - 1) * gap_mm
+    else:
+        grid_h_mm = spec["height_mm"]
+
+    burn_w_mm = grid_origin_mm[0] + grid_w + aruco_size + margin
+    burn_h_mm = grid_origin_mm[1] + grid_h_mm + aruco_size + margin
+
+    return {
+        "image_width_px": int(round(burn_w_mm * px_per_mm)),
+        "image_height_px": int(round(burn_h_mm * px_per_mm)),
+        "grid_origin_x_px": grid_origin_mm[0] * px_per_mm,
+        "grid_origin_y_px": grid_origin_mm[1] * px_per_mm,
+        "cell_width_px": g["cell_w_mm"] * px_per_mm,
+        "cell_height_px": g["cell_h_mm"] * px_per_mm,
+        "row_stride_px": g["row_stride_mm"] * px_per_mm,
+        "cells_per_physical_row": cells_per_physical_row,
+        "physical_rows": physical_rows,
+        "is_2d": is_2d,
+        "px_per_mm": px_per_mm,
+    }
+
+
 def _cell_bounds_px(g: dict[str, Any], row: int, col: int) -> tuple[int, int, int, int]:
     """(x0, y0, x1, y1) in warped-image pixel coords for cell (row, col)."""
     px_per_mm = g["px_per_mm"]

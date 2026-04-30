@@ -35,6 +35,7 @@ from .schemas import (
     PresetCreate,
     PresetResponse,
     PresetUpdate,
+    GridLayout,
     ResultPatch,
     ResultResponse,
     ResultSwatch,
@@ -1442,6 +1443,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=410, detail=msg)
         except warped_cache.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+    @app.get("/api/results/{rid}/grid-layout", response_model=GridLayout)
+    def results_grid_layout(
+        rid: int, user_id: int = Depends(get_current_user),
+    ) -> GridLayout:
+        """Pixel-space cell geometry — drives the cell-inspector
+        overlay's mouse → cell math. Pure function of the result's
+        TestSpec, no I/O on the warped image, so this is cheap and
+        works for every historical result."""
+        r = r_repo.get(rid, owner_id=user_id)
+        if r is None:
+            raise HTTPException(status_code=404, detail="result not found")
+        t = t_repo.get(r["test_id"], owner_id=user_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        payload = capture_service.grid_layout_payload(t["spec"])
+        return GridLayout(**payload)
 
     @app.get("/api/results/{rid}/warped-image")
     def results_warped_image(
