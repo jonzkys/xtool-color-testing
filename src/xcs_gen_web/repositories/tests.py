@@ -210,6 +210,22 @@ def soft_delete(tid: int, *, owner_id: int = STANDALONE_USER_ID) -> None:
         )
 
 
+def delete(tid: int, *, owner_id: int = STANDALONE_USER_ID) -> None:
+    """Hard-delete a test row (and all FK-cascaded children).
+
+    Used in tests and admin tooling. For soft removal in the UI use
+    ``soft_delete`` instead — it keeps the row visible to the owner's
+    archive view and lets saved-spectrum ``source_test_id`` FK references
+    NULL out gracefully via ON DELETE SET NULL.
+    """
+    with session_scope() as s:
+        s.execute(
+            tests.delete().where(
+                and_(tests.c.id == tid, tests.c.owner_id == owner_id),
+            )
+        )
+
+
 def bump_retest_index(tid: int, *, owner_id: int = STANDALONE_USER_ID) -> dict[str, Any]:
     """Increment ``retest_index`` on the test row and return the updated row.
 

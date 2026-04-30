@@ -10,6 +10,17 @@ from fastapi.testclient import TestClient
 from xcs_gen_web.app import create_app
 from xcs_gen_web.repositories import materials as m_repo
 from xcs_gen_web.repositories import palette as pal_repo
+from xcs_gen_web.repositories import tests as t_repo
+
+
+_SPEC = {"x_param": "speed", "x_min": 100, "x_max": 1000, "x_steps": 5,
+         "rows": 1, "width_mm": 20, "height_mm": 8, "gap_mm": 0.5,
+         "cell_shape": "rect", "square_cells": False, "angle_mode": "fixed",
+         "unidirectional": False,
+         "base_params": {"power": 50, "speed": 500, "frequency": 60,
+                         "density": 200, "passes": 1, "pulse_width": 200,
+                         "laser": "red"},
+         "registration": {"mode": "on"}}
 
 
 @pytest.fixture
@@ -23,7 +34,13 @@ def mid(fresh_db):
     return m_repo.create(name="Stainless")["id"]
 
 
-def _seed_entries(mid: int, test_id: int = 1) -> list[int]:
+def _seed_test(material_id: int) -> int:
+    return t_repo.create(name="t", material_id=material_id, spec=_SPEC)["id"]
+
+
+def _seed_entries(mid: int, test_id: int | None = None) -> list[int]:
+    if test_id is None:
+        test_id = _seed_test(mid)
     return pal_repo.insert_bulk([
         dict(test_id=test_id, material_id=mid, x_value=500, y_value=10,
              hex="#ff0000", sigma=1.2, source="averaged", source_result_id=None,
@@ -73,8 +90,9 @@ def test_delete_by_id_404_when_missing(client, fresh_db):
 
 
 def test_delete_by_test(client, mid):
-    _seed_entries(mid, test_id=42)
-    resp = client.delete("/api/palette/by-test/42")
+    tid = _seed_test(mid)
+    _seed_entries(mid, test_id=tid)
+    resp = client.delete(f"/api/palette/by-test/{tid}")
     assert resp.status_code == 204
     assert client.get("/api/palette").json() == []
 
@@ -104,10 +122,12 @@ def test_patch_404_when_missing(client, fresh_db):
 def test_list_filters_by_material_id(client, fresh_db):
     m1 = m_repo.create(name="Stainless")["id"]
     m2 = m_repo.create(name="Brass")["id"]
-    pal_repo.insert_bulk([dict(test_id=1, material_id=m1, x_value=0, y_value=None,
+    t1 = _seed_test(m1)
+    t2 = _seed_test(m2)
+    pal_repo.insert_bulk([dict(test_id=t1, material_id=m1, x_value=0, y_value=None,
                                hex="#ff0000", sigma=1.0, source="averaged",
                                source_result_id=None, params={})])
-    pal_repo.insert_bulk([dict(test_id=2, material_id=m2, x_value=0, y_value=None,
+    pal_repo.insert_bulk([dict(test_id=t2, material_id=m2, x_value=0, y_value=None,
                                hex="#cc0000", sigma=1.0, source="averaged",
                                source_result_id=None, params={})])
     # No filter: 2 entries
@@ -122,16 +142,18 @@ def test_list_filters_by_material_id(client, fresh_db):
 def test_query_filters_by_material_id(client, fresh_db):
     m1 = m_repo.create(name="Stainless")["id"]
     m2 = m_repo.create(name="Brass")["id"]
+    t1 = _seed_test(m1)
+    t2 = _seed_test(m2)
     # Two entries from DIFFERENT tests (one per material). Using the same
     # test_id for both materials would conflict with insert_bulk's
     # idempotency: a palette_entry's material is determined by its test,
     # so (test_id, x, y, source, source_result_id) at the same position
     # must be the same material. Companion test_list_filters_by_material_id
     # already uses this pattern.
-    pal_repo.insert_bulk([dict(test_id=1, material_id=m1, x_value=0, y_value=None,
+    pal_repo.insert_bulk([dict(test_id=t1, material_id=m1, x_value=0, y_value=None,
                                hex="#ff0000", sigma=1.0, source="averaged",
                                source_result_id=None, params={})])
-    pal_repo.insert_bulk([dict(test_id=2, material_id=m2, x_value=0, y_value=None,
+    pal_repo.insert_bulk([dict(test_id=t2, material_id=m2, x_value=0, y_value=None,
                                hex="#ef0000", sigma=1.0, source="averaged",
                                source_result_id=None, params={})])
     results = client.get(

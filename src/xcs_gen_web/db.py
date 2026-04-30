@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 
 
@@ -28,10 +28,21 @@ _engine: Engine | None = None
 _SessionLocal: sessionmaker[Session] | None = None
 
 
+def _set_sqlite_pragma(dbapi_connection, _connection_record):
+    """Enable FK enforcement for every new SQLite connection."""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
 def get_engine() -> Engine:
     global _engine, _SessionLocal
     if _engine is None:
         _engine = create_engine(db_url(), future=True)
+        # Enable ON DELETE CASCADE / ON DELETE SET NULL for SQLite.
+        # Must be applied per-connection; SQLite defaults to FK enforcement OFF.
+        if _engine.dialect.name == "sqlite":
+            event.listen(_engine, "connect", _set_sqlite_pragma)
         _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False, future=True)
     return _engine
 
