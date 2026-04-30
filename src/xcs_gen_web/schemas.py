@@ -669,3 +669,70 @@ class RecentMobileUpload(BaseModel):
     test_id: int
     test_name: str
     uploaded_at: str   # ISO 8601
+
+
+# Saved Spectrums (stage 1) ------------------------------------------------
+
+class SavedSpectrumSwatchInput(BaseModel):
+    """One data point inside a saved sub-spectrum's crop."""
+    swatch_row: int = Field(ge=0)
+    swatch_col: int = Field(ge=0)
+    x_value: float
+    hex: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
+    lab: tuple[float, float, float]
+
+
+class SavedSpectrumCreate(BaseModel):
+    """Body of POST /api/spectrums."""
+    name: str = Field(min_length=1, max_length=128)
+    source_test_id: int = Field(ge=1)
+    axis_param: str = Field(min_length=1, max_length=32)
+    axis_min: float
+    axis_max: float
+    fit_form: Literal["polynomial"] = "polynomial"
+    fit_degree: int = Field(ge=1, le=3)
+    # One coefficient list per channel; length must equal fit_degree + 1.
+    fit_coefficients: dict[Literal["l", "a", "b"], list[float]]
+    # Per-channel R²; length is always 3.
+    fit_r2: dict[Literal["l", "a", "b"], float]
+    displayed_projection: str = Field(min_length=1, max_length=32)
+    swatches: list[SavedSpectrumSwatchInput] = Field(min_length=2)
+
+
+class SavedSpectrumPatch(BaseModel):
+    """Body of PATCH /api/spectrums/{id}. Only ``name`` is mutable in stage 1."""
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class SavedSpectrumSwatchResponse(BaseModel):
+    swatch_row: int
+    swatch_col: int
+    x_value: float
+    hex: str
+    lab: tuple[float, float, float]
+
+
+class SavedSpectrumResponse(BaseModel):
+    id: int
+    name: str
+    source_test_id: int | None
+    machine_id: str
+    material_id: int | None
+    owner_id: int
+    axis_param: str
+    axis_min: float
+    axis_max: float
+    fit_form: str
+    fit_degree: int
+    fit_coefficients: dict[Literal["l", "a", "b"], list[float]]
+    fit_r2: dict[Literal["l", "a", "b"], float]
+    fit_r2_min: float
+    displayed_projection: str
+    lab_l_min: float; lab_l_max: float
+    lab_a_min: float; lab_a_max: float
+    lab_b_min: float; lab_b_max: float
+    lab_l_centroid: float
+    lab_a_centroid: float
+    lab_b_centroid: float
+    swatches: list[SavedSpectrumSwatchResponse]
+    created_at: str
