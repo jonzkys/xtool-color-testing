@@ -85,6 +85,9 @@ export function TopBar({ title, route, onNavigate }: Props) {
             <TabLink route={route} target={{ name: "spectrum" }} onNavigate={onNavigate}>
               Spectrum
             </TabLink>
+            <TabLink route={route} target={{ name: "saved-spectrums" }} onNavigate={onNavigate}>
+              Saved
+            </TabLink>
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <span className="text-[12.5px] text-[color:var(--color-ink-muted)]">{title}</span>

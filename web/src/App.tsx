@@ -11,6 +11,7 @@ import { Spectrum2DPage } from "./pages/Spectrum2DPage";
 import { StyleguidePage } from "./pages/StyleguidePage";
 import { GuidePage } from "./pages/GuidePage";
 import { ChangelogPage } from "./pages/ChangelogPage";
+import { SavedSpectrumsPage } from "./pages/SavedSpectrumsPage";
 import { WelcomeDialog } from "./components/WelcomeDialog";
 import { getHealth } from "./api/users";
 import { hasStoredKey } from "./api/users";
@@ -101,6 +102,7 @@ export default function App() {
     : route.name === "styleguide" ? "Styleguide"
     : route.name === "spectrum"   ? "Spectrum"
     : route.name === "spectrum-2d" ? "Spectrum · 2D"
+    : route.name === "saved-spectrums" ? "Saved spectrums"
     : route.name === "guide"      ? "Guide"
     : route.name === "changelog"  ? "Changelog"
     : route.name === "demo"       ? "Demo"
@@ -139,6 +141,7 @@ export default function App() {
         {gate === "ready" && route.name === "styleguide"   && <StyleguidePage />}
         {gate === "ready" && route.name === "guide"        && <GuidePage />}
         {gate === "ready" && route.name === "changelog"    && <ChangelogPage />}
+        {gate === "ready" && route.name === "saved-spectrums" && <SavedSpectrumsPage />}
       </main>
       <WelcomeDialog
         open={gate === "welcome"}
