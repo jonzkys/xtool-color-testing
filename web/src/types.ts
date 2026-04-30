@@ -197,6 +197,25 @@ export interface ResultSwatch {
   hex: string; lab: number[]; sigma: number;
 }
 
+/** Pixel-space geometry of a result's warped-image cell grid. Drives
+ *  the cell-inspector overlay's mouse → cell math. */
+export interface GridLayout {
+  image_width_px: number;
+  image_height_px: number;
+  grid_origin_x_px: number;
+  grid_origin_y_px: number;
+  cell_width_px: number;
+  cell_height_px: number;
+  row_stride_px: number;
+  /** Always populated; ``ceil(x_steps / rows)`` for wrapped 1D. */
+  cells_per_physical_row: number;
+  physical_rows: number;
+  /** ``true`` when the test has both axes; ``false`` for 1D
+   *  (single-row or wrapped). Drives swatch-index resolution. */
+  is_2d: boolean;
+  px_per_mm: number;
+}
+
 export interface ResultRecord {
   id: number;
   test_id: number;

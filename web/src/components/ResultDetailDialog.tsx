@@ -8,11 +8,14 @@ import {
   MetalBar,
   cn,
 } from "../ui";
-import type { ResultRecord, ResultSwatch, SampleAggregator, TestSpec } from "../types";
+import type {
+  GridLayout, ResultRecord, ResultSwatch, SampleAggregator, TestSpec,
+} from "../types";
 import { useAuthedImage } from "../hooks/useAuthedImage";
 import { useIsDemo } from "../hooks/useIsDemo";
 import { formatMissingCorners } from "./captureWarnings";
 import { InspectMatchDialog } from "./InspectMatchDialog";
+import { TestCellInspector } from "./TestCellInspector";
 
 export interface ResultDetailDialogProps {
   open: boolean;
@@ -42,11 +45,15 @@ export function ResultDetailDialog({
 }
 
 function ResultDetailBody({ result }: { result: ResultRecord }) {
-  const [imageView, setImageView] = useState<"warped" | "original">("warped");
-  const heroUrl = imageView === "warped"
-    ? `/api/results/${result.id}/warped-image`
-    : result.image_url;
+  const [imageView, setImageView] = useState<"warped" | "original" | "inspect">("inspect");
+  // Inspect mode renders the warped image inside <TestCellInspector>;
+  // the regular hero <img> is hidden in that case.
+  const heroUrl = imageView === "original"
+    ? result.image_url
+    : `/api/results/${result.id}/warped-image`;
   const blobUrl = useAuthedImage(heroUrl);
+  const [gridLayout, setGridLayout] = useState<GridLayout | null>(null);
+  const [layoutErr, setLayoutErr] = useState<string | null>(null);
   const isDemo = useIsDemo();
   const [previewAggregator, setPreviewAggregator] = useState<SampleAggregator | null>(null);
   const [previewSwatchesData, setPreviewSwatchesData] = useState<ResultSwatch[] | null>(null);
@@ -67,6 +74,25 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
     })();
     return () => { cancelled = true; };
   }, [result.test_id]);
+
+  // Lazy-fetch the grid layout the first time inspect mode is opened.
+  // Pure-function on the backend; pre-fetching it for every result
+  // would be wasted on the common case where the user never clicks
+  // Inspect. Fetched once per dialog open.
+  useEffect(() => {
+    if (imageView !== "inspect" || gridLayout || layoutErr) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getGridLayout } = await import("../api/results");
+        const layout = await getGridLayout(result.id);
+        if (!cancelled) setGridLayout(layout);
+      } catch (err) {
+        if (!cancelled) setLayoutErr((err as Error).message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [imageView, gridLayout, layoutErr, result.id]);
 
   const storedAggregator: SampleAggregator =
     testSpec?.sample_aggregator ?? "saturation_median";
@@ -136,7 +162,16 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
           legible against any image. The toggle in the bottom-left
           swaps between the two views. */}
       <div className="relative h-[300px] bg-[color:var(--color-substrate)] overflow-hidden">
-        {blobUrl ? (
+        {imageView === "inspect" && blobUrl && gridLayout && testSpec ? (
+          <TestCellInspector
+            imageUrl={blobUrl}
+            layout={gridLayout}
+            spec={testSpec}
+            swatches={result.swatches}
+            onCellClick={(row, col) => setInspectingCell({ row, col })}
+            imageAlt={`Rectified burn-space view of result #${result.id}, inspect mode`}
+          />
+        ) : blobUrl ? (
           <img
             src={blobUrl}
             alt={imageView === "warped"
@@ -149,6 +184,16 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
             aria-hidden
             className="absolute inset-0 animate-pulse bg-[color:var(--color-substrate)]"
           />
+        )}
+        {imageView === "inspect" && !gridLayout && !layoutErr && (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-2 py-1 rounded-[4px] bg-black/60 text-white text-[10px] tracking-[0.18em] uppercase font-mono">
+            Building inspector…
+          </div>
+        )}
+        {imageView === "inspect" && layoutErr && (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-2 py-1 rounded-[4px] bg-red-500/80 text-white text-[10px] tracking-[0.18em] uppercase font-mono">
+            Inspect unavailable
+          </div>
         )}
 
         {/* Fine grain overlay — same print-shop noise motif as the
@@ -215,7 +260,7 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
           className="absolute top-3 left-1/2 -translate-x-1/2 inline-flex items-stretch rounded-full border border-white/30 overflow-hidden backdrop-blur-[2px]"
           style={{ mixBlendMode: "difference" }}
         >
-          {(["warped", "original"] as const).map((view) => {
+          {(["warped", "original", "inspect"] as const).map((view) => {
             const active = imageView === view;
             return (
               <button
