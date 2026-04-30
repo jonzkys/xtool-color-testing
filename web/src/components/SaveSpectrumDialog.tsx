@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui";
 import { createSpectrum } from "../api/savedSpectrums";
 import type {
@@ -58,6 +58,13 @@ export function SaveSpectrumDialog(props: SaveSpectrumDialogProps) {
   const [name, setName] = useState(
     defaultName(testName, axisParam, axisMin, axisMax),
   );
+  // Reset the name to the freshly-derived default whenever the dialog
+  // opens, so the user gets a name that reflects the *current* crop
+  // rather than whatever crop was active when the dialog first
+  // mounted. The dialog itself stays mounted across opens.
+  useEffect(() => {
+    if (open) setName(defaultName(testName, axisParam, axisMin, axisMax));
+  }, [open, testName, axisParam, axisMin, axisMax]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
