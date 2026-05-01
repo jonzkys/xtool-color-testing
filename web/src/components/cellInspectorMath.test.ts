@@ -100,11 +100,16 @@ describe("resolveSwatchIndex", () => {
     expect(idx).toEqual({ row: 2, col: 3 });
   });
 
-  it("wrapped 1D maps to flat (row=0, col=physicalRow*per_row + displayedCol)", () => {
-    // Physical row 1, col 2 → flat col = 1*4 + 2 = 6
+  it("wrapped 1D preserves (physicalRow, displayedCol) — backend stores swatches under that key", () => {
+    // Backend convention: for wrapped 1D, swatch i has row=i//per_row,
+    // col=i%per_row. The reverse lookup must mirror that exactly so
+    // hovers on the second physical row and beyond hit the right swatch.
     expect(
       resolveSwatchIndex(WRAPPED_1D, { physicalRow: 1, displayedCol: 2 }),
-    ).toEqual({ row: 0, col: 6 });
+    ).toEqual({ row: 1, col: 2 });
+    expect(
+      resolveSwatchIndex(WRAPPED_1D, { physicalRow: 2, displayedCol: 0 }),
+    ).toEqual({ row: 2, col: 0 });
   });
 
   it("returns null for swatch indices in unused cells of a wrapped tail", () => {
@@ -124,7 +129,7 @@ describe("resolveSwatchIndex", () => {
       { physicalRow: 2, displayedCol: 1 },
       /*x_steps*/ 10,
     );
-    expect(idx).toEqual({ row: 0, col: 9 });
+    expect(idx).toEqual({ row: 2, col: 1 });
   });
 });
 
