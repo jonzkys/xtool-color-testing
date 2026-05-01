@@ -37,7 +37,8 @@ export function parsePathSubpaths(d: string): SubPath[] {
   }
 
   const subpaths: SubPath[] = [];
-  let current: SubPath | null = null;
+  let currentIdx = -1;
+  const current = () => (currentIdx >= 0 ? subpaths[currentIdx] : null);
   let cmd = "";
   let cx = 0;
   let cy = 0;
@@ -45,22 +46,16 @@ export function parsePathSubpaths(d: string): SubPath[] {
   let subStartY = 0;
   let i = 0;
 
-  const startSubpath = (x: number, y: number) => {
-    current = { closed: false, points: [{ x, y }] };
-    subpaths.push(current);
-    subStartX = x;
-    subStartY = y;
-  };
-
   while (i < tokens.length) {
     const t = tokens[i];
     if (t.kind === "cmd") {
       cmd = t.val as string;
       if (cmd === "Z" || cmd === "z") {
-        if (current) current.closed = true;
+        const sp = current();
+        if (sp) sp.closed = true;
         cx = subStartX;
         cy = subStartY;
-        current = null;
+        currentIdx = -1;
         i++;
         continue;
       }
@@ -69,14 +64,16 @@ export function parsePathSubpaths(d: string): SubPath[] {
     }
     // Numeric token without an active subpath and no leading M is malformed.
     if (cmd === "") return [];
-    if (current === null && cmd !== "M" && cmd !== "m") return [];
+    if (currentIdx < 0 && cmd !== "M" && cmd !== "m") return [];
 
     if (cmd === "M") {
       const x = tokens[i].val as number;
       const y = tokens[i + 1]?.val as number;
       if (typeof y !== "number") return [];
       cx = x; cy = y;
-      startSubpath(cx, cy);
+      subpaths.push({ closed: false, points: [{ x: cx, y: cy }] });
+      currentIdx = subpaths.length - 1;
+      subStartX = cx; subStartY = cy;
       i += 2;
       cmd = "L";
     } else if (cmd === "m") {
@@ -84,42 +81,50 @@ export function parsePathSubpaths(d: string): SubPath[] {
       const dy = tokens[i + 1]?.val as number;
       if (typeof dy !== "number") return [];
       cx += dx; cy += dy;
-      startSubpath(cx, cy);
+      subpaths.push({ closed: false, points: [{ x: cx, y: cy }] });
+      currentIdx = subpaths.length - 1;
+      subStartX = cx; subStartY = cy;
       i += 2;
       cmd = "l";
     } else if (cmd === "L") {
+      const sp = current();
       const x = tokens[i].val as number;
       const y = tokens[i + 1]?.val as number;
-      if (typeof y !== "number" || !current) return [];
+      if (typeof y !== "number" || !sp) return [];
       cx = x; cy = y;
-      current.points.push({ x: cx, y: cy });
+      sp.points.push({ x: cx, y: cy });
       i += 2;
     } else if (cmd === "l") {
+      const sp = current();
       const dx = tokens[i].val as number;
       const dy = tokens[i + 1]?.val as number;
-      if (typeof dy !== "number" || !current) return [];
+      if (typeof dy !== "number" || !sp) return [];
       cx += dx; cy += dy;
-      current.points.push({ x: cx, y: cy });
+      sp.points.push({ x: cx, y: cy });
       i += 2;
     } else if (cmd === "H") {
-      if (!current) return [];
+      const sp = current();
+      if (!sp) return [];
       cx = tokens[i].val as number;
-      current.points.push({ x: cx, y: cy });
+      sp.points.push({ x: cx, y: cy });
       i += 1;
     } else if (cmd === "h") {
-      if (!current) return [];
+      const sp = current();
+      if (!sp) return [];
       cx += tokens[i].val as number;
-      current.points.push({ x: cx, y: cy });
+      sp.points.push({ x: cx, y: cy });
       i += 1;
     } else if (cmd === "V") {
-      if (!current) return [];
+      const sp = current();
+      if (!sp) return [];
       cy = tokens[i].val as number;
-      current.points.push({ x: cx, y: cy });
+      sp.points.push({ x: cx, y: cy });
       i += 1;
     } else if (cmd === "v") {
-      if (!current) return [];
+      const sp = current();
+      if (!sp) return [];
       cy += tokens[i].val as number;
-      current.points.push({ x: cx, y: cy });
+      sp.points.push({ x: cx, y: cy });
       i += 1;
     } else {
       return [];

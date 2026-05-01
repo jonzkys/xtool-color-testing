@@ -1,7 +1,7 @@
 /**
  * SVG shape simplification — drops sub-threshold shapes and runs
- * Douglas-Peucker on simple polyline paths. Browser-only (uses
- * ``DOMParser``).
+ * topology-preserving Visvalingam-Whyatt on polyline shapes. Browser-
+ * only (uses ``DOMParser``).
  *
  * Two independent levers:
  *
@@ -14,11 +14,12 @@
  *   coordinate-extent bbox) so the function works without a layout
  *   context — important for tests and Web-Worker use later.
  *
- * - ``toleranceMm`` simplifies the vertex chain of polyline paths
- *   (``M`` + ``L`` only — Cubic/Quadratic/Arc paths are skipped to
- *   preserve curve fidelity on hand-designed SVGs). Doesn't change
- *   shape *count*, just vertex count per shape — smaller .xcs file
- *   and snappier rendering.
+ * - ``toleranceMm`` simplifies the vertex chain of polyline shapes
+ *   (path / polygon / polyline). Curved paths (C/Q/A/S/T) and
+ *   primitives (rect/circle/ellipse/line) are passed through
+ *   untouched. Vertex reduction is performed in a single batched
+ *   topology pass so adjacent shapes that share boundaries (vtracer
+ *   colour regions) stay aligned — no slivers between them.
  *
  * Conversion from mm → SVG-user-units uses the project's ``widthMm``
  * vs the SVG's ``viewBox`` width, mirroring how the rest of the
@@ -26,8 +27,18 @@
  * ``height="…"`` when no ``viewBox`` is set.
  */
 
-import simplify from "simplify-js";
 import { countShapeVertices } from "./detectLayers";
+import {
+  isPolylineOnlyPathD,
+  parsePathSubpaths,
+  type Pt,
+  type SubPath,
+} from "./svgGeometry";
+import {
+  simplifyTopology,
+  type RingInput,
+  type ShapeInput,
+} from "./topoSimplify";
 
 const SHAPE_SELECTOR = "path, rect, circle, ellipse, line, polyline, polygon";
 
@@ -37,8 +48,10 @@ export interface SimplifyOptions {
    *  paths without a closing ``Z``) are exempt — they're inherently
    *  1D and dropping them by area would be unexpected. */
   minAreaMm2: number;
-  /** Douglas-Peucker tolerance (in mm) for ``M``/``L``-only path
-   *  vertex reduction. ``0`` disables vertex simplification. */
+  /** Tolerance (in mm) for vertex reduction. ``0`` disables the pass.
+   *  Interpreted as the perpendicular offset on a "long-ish" edge that
+   *  should still be considered redundant — colinear vertices drop at
+   *  any positive value, larger detours need a larger tolerance. */
   toleranceMm: number;
   /** Project width in mm — used together with the SVG viewBox to
    *  convert ``minAreaMm2`` and ``toleranceMm`` into user-units. */
@@ -52,7 +65,7 @@ export const DROP_FLAG_ATTR = "data-xcs-simplify-drop";
 
 export interface SimplifyResult {
   /** Rewritten SVG with sub-threshold shapes removed and remaining
-   *  polyline paths simplified. This is what gets written into
+   *  polyline shapes simplified. This is what gets written into
    *  ``request.svg_content`` on Apply. */
   svgText: string;
   /** Same tree as ``svgText`` but dropped shapes are kept in-place
@@ -64,7 +77,7 @@ export interface SimplifyResult {
   beforeShapes: number;
   /** Shape count after the area-threshold pass. */
   afterShapes: number;
-  /** Number of polyline paths whose vertex count was reduced. */
+  /** Number of polyline shapes whose vertex count was reduced. */
   pathsSimplified: number;
   /** Total vertex count across every detected shape before
    *  simplification — includes shapes that will be dropped, so the
@@ -104,48 +117,56 @@ export function simplifySvg(
   const pxPerMm = view.width / opts.widthMm;
   const minAreaPx = opts.minAreaMm2 * pxPerMm * pxPerMm;
   const tolerancePx = opts.toleranceMm * pxPerMm;
+  // V-W weight is twice a triangle area. Treating tolerance as the
+  // perpendicular offset on an edge of length tolerance gives weight ≈
+  // tolerance². For longer edges this is conservative (drops more
+  // aggressively), which matches user intuition: small wiggles vanish
+  // first, sharp corners stay.
+  const weight = tolerancePx * tolerancePx;
 
   const shapes = Array.from(parsed.querySelectorAll(SHAPE_SELECTOR));
   const beforeShapes = shapes.length;
-  let afterShapes = 0;
-  let pathsSimplified = 0;
+
+  // Snapshot before-vertex counts BEFORE the simplification mutates
+  // anything, so the delta the dialog shows reflects both the
+  // tolerance pass and the area filter dropping shapes.
   let beforeVertices = 0;
-  let afterVertices = 0;
+  for (const el of shapes) beforeVertices += countShapeVertices(el);
 
-  // First pass on the SOURCE tree: simplify polyline paths in place
-  // (kept and dropped shapes both get the simplification — preview
-  // and final SVG share the same path data). Track which shapes are
-  // marked-for-drop so we can both flag them on the preview tree
-  // and remove them from the final tree.
-  const droppedShapes: Element[] = [];
-
-  for (const el of shapes) {
-    // Tally before-state vertex count BEFORE the simplification step
-    // mutates ``d``, so the delta the dialog shows reflects both the
-    // tolerance pass and the area filter dropping shapes.
-    beforeVertices += countShapeVertices(el);
-
-    // ── Path vertex simplification ─────────────────────────────────
-    if (
-      tolerancePx > 0
-      && el.tagName === "path"
-      && (el.getAttribute("d") || "").length > 0
-    ) {
-      const d = el.getAttribute("d") as string;
-      if (isPolylineOnlyPathD(d)) {
-        const pts = parsePolylinePathD(d);
-        if (pts.length >= 4) {
-          const closed = /[zZ]\s*$/.test(d.trim());
-          const simplified = simplify(pts, tolerancePx, /* highQuality */ true);
-          if (simplified.length < pts.length && simplified.length >= 2) {
-            el.setAttribute("d", emitPolylinePathD(simplified, closed));
-            pathsSimplified++;
-          }
+  // ── Vertex simplification (batched, topology-preserving) ───────────
+  let pathsSimplified = 0;
+  if (tolerancePx > 0) {
+    const inputs: ShapeInput[] = [];
+    const idToEl = new Map<string, Element>();
+    const ringsBefore = new Map<string, RingInput[]>();
+    for (let i = 0; i < shapes.length; i++) {
+      const el = shapes[i];
+      const rings = elementToRings(el);
+      if (rings.length === 0) continue;
+      const id = `s${i}`;
+      inputs.push({ id, rings });
+      idToEl.set(id, el);
+      ringsBefore.set(id, rings);
+    }
+    if (inputs.length > 0) {
+      const out = simplifyTopology(inputs, weight);
+      for (const s of out) {
+        const el = idToEl.get(s.id);
+        if (!el) continue;
+        const before = ringsBefore.get(s.id)!;
+        if (ringsDiffer(before, s.rings)) {
+          writeRingsToElement(el, s.rings);
+          pathsSimplified++;
         }
       }
     }
+  }
 
-    // ── Area filter ────────────────────────────────────────────────
+  // ── Area filter ────────────────────────────────────────────────────
+  let afterShapes = 0;
+  let afterVertices = 0;
+  const droppedShapes: Element[] = [];
+  for (const el of shapes) {
     if (minAreaPx > 0) {
       const area = computeArea(el);
       if (area !== null && area < minAreaPx) {
@@ -159,18 +180,12 @@ export function simplifySvg(
   }
 
   // Preview SVG = current tree with dropped shapes still present and
-  // tagged. Serialize first.
+  // tagged. Final SVG = same tree minus dropped shapes.
   const previewSerialized = new XMLSerializer().serializeToString(parsed);
   const previewOut = restoreXmlProlog(svgText, previewSerialized);
-
-  // Final SVG = preview tree with dropped shapes removed and the flag
-  // attribute stripped from any kept shapes (defensive — only dropped
-  // shapes carry it, but a stray attr serves no purpose downstream).
   for (const el of droppedShapes) {
     el.parentNode?.removeChild(el);
   }
-  // Strip the drop flag from anything else (including dropped descendants
-  // inside structural groups, just in case).
   parsed.querySelectorAll(`[${DROP_FLAG_ATTR}]`).forEach((el) => {
     el.removeAttribute(DROP_FLAG_ATTR);
   });
@@ -187,6 +202,80 @@ export function simplifySvg(
     afterVertices,
   };
 }
+
+// ── Shape ↔ ring helpers ───────────────────────────────────────────────
+
+/** SVG element → ring list. Returns ``[]`` for non-polyline elements
+ *  (curves, primitives the topology pipeline can't simplify). */
+function elementToRings(el: Element): RingInput[] {
+  if (el.tagName === "polygon") {
+    const pts = parsePointsAttr(el.getAttribute("points") ?? "");
+    return pts.length >= 3 ? [{ closed: true, points: pts }] : [];
+  }
+  if (el.tagName === "polyline") {
+    const pts = parsePointsAttr(el.getAttribute("points") ?? "");
+    return pts.length >= 2 ? [{ closed: false, points: pts }] : [];
+  }
+  if (el.tagName === "path") {
+    const d = el.getAttribute("d") ?? "";
+    if (!d) return [];
+    return parsePathSubpaths(d).map<RingInput>((s: SubPath) => ({
+      closed: s.closed,
+      points: s.points,
+    }));
+  }
+  return [];
+}
+
+/** Write a list of rings back to an SVG element, choosing the right
+ *  attribute (``points`` for polygon/polyline, ``d`` for path). */
+function writeRingsToElement(el: Element, rings: RingInput[]): void {
+  if (rings.length === 0) return;
+  if (el.tagName === "polygon" || el.tagName === "polyline") {
+    const r = rings[0];
+    el.setAttribute(
+      "points",
+      r.points.map((p) => `${roundCoord(p.x)},${roundCoord(p.y)}`).join(" "),
+    );
+    return;
+  }
+  if (el.tagName === "path") {
+    const parts: string[] = [];
+    for (const r of rings) {
+      if (r.points.length === 0) continue;
+      parts.push(`M${roundCoord(r.points[0].x)} ${roundCoord(r.points[0].y)}`);
+      for (let i = 1; i < r.points.length; i++) {
+        parts.push(`L${roundCoord(r.points[i].x)} ${roundCoord(r.points[i].y)}`);
+      }
+      if (r.closed) parts.push("Z");
+    }
+    el.setAttribute("d", parts.join(" "));
+  }
+}
+
+function parsePointsAttr(raw: string): Pt[] {
+  const nums = raw.trim().split(/[\s,]+/).map(parseFloat).filter(Number.isFinite);
+  const pts: Pt[] = [];
+  for (let i = 0; i + 1 < nums.length; i += 2) {
+    pts.push({ x: nums[i], y: nums[i + 1] });
+  }
+  return pts;
+}
+
+function roundCoord(n: number): string {
+  const s = n.toFixed(4);
+  return s.replace(/\.?0+$/, "");
+}
+
+function ringsDiffer(a: RingInput[], b: RingInput[]): boolean {
+  if (a.length !== b.length) return true;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].points.length !== b[i].points.length) return true;
+  }
+  return false;
+}
+
+// ── XML helpers ────────────────────────────────────────────────────────
 
 function restoreXmlProlog(original: string, serialized: string): string {
   if (
@@ -213,6 +302,8 @@ function parseViewBoxOrSize(svg: Element): ViewBox {
   return { width: w, height: h };
 }
 
+// ── Area filter (unchanged from the pre-topology version) ──────────────
+
 /** Return the shape's area in user-units, or ``null`` for shapes
  *  whose area isn't meaningful (line, open polyline-only path). */
 function computeArea(el: Element): number | null {
@@ -227,24 +318,25 @@ function computeArea(el: Element): number | null {
     case "ellipse":
       return Math.PI * num("rx") * num("ry");
     case "line":
-      // 1D — exempt from area filter.
       return null;
     case "polygon":
       return polygonAreaFromPoints(el.getAttribute("points") ?? "");
     case "polyline":
-      // Open polyline — exempt; closing it would change semantics.
       return null;
     case "path": {
       const d = el.getAttribute("d") ?? "";
       if (!d) return 0;
-      const closed = /[zZ]\s*$/.test(d.trim());
-      // Closed polyline-only path → exact shoelace area.
-      // Open polyline-only path → exempt (1D).
-      // Curved path → coordinate-extent bbox area.
+      // Closed polyline-only path → exact shoelace area summed across
+      // all sub-paths (multi-region paths are common in vtracer
+      // output). Open polyline-only path → exempt (1D). Curved path →
+      // coordinate-extent bbox area.
       if (isPolylineOnlyPathD(d)) {
-        if (!closed) return null;
-        const pts = parsePolylinePathD(d);
-        return polygonArea(pts);
+        const subs = parsePathSubpaths(d);
+        const closedSubs = subs.filter((s) => s.closed);
+        if (closedSubs.length === 0) return null;
+        let total = 0;
+        for (const s of closedSubs) total += polygonArea(s.points);
+        return total;
       }
       return curvyPathExtentArea(d);
     }
@@ -255,14 +347,14 @@ function computeArea(el: Element): number | null {
 
 function polygonAreaFromPoints(raw: string): number {
   const nums = raw.trim().split(/[\s,]+/).map(parseFloat).filter(Number.isFinite);
-  const pts: { x: number; y: number }[] = [];
+  const pts: Pt[] = [];
   for (let i = 0; i + 1 < nums.length; i += 2) {
     pts.push({ x: nums[i], y: nums[i + 1] });
   }
   return polygonArea(pts);
 }
 
-function polygonArea(pts: { x: number; y: number }[]): number {
+function polygonArea(pts: Pt[]): number {
   if (pts.length < 3) return 0;
   let s = 0;
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
@@ -279,8 +371,6 @@ function curvyPathExtentArea(d: string): number {
   const nums = d.match(/-?\d*\.?\d+(?:[eE][+-]?\d+)?/g);
   if (!nums || nums.length < 4) return 0;
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  // Treat number pairs as (x, y) — accurate enough for an extent
-  // estimate; control points show up but they bound the curve too.
   for (let i = 0; i + 1 < nums.length; i += 2) {
     const x = parseFloat(nums[i]);
     const y = parseFloat(nums[i + 1]);
@@ -295,92 +385,4 @@ function curvyPathExtentArea(d: string): number {
   }
   if (!Number.isFinite(minX) || !Number.isFinite(minY)) return 0;
   return Math.max(0, maxX - minX) * Math.max(0, maxY - minY);
-}
-
-/** True when the path's ``d`` attribute uses only line commands —
- *  ``M``/``L``/``H``/``V``/``Z`` in either case. Returns false for
- *  paths with cubic/quadratic/arc segments so we never destroy
- *  curves. */
-function isPolylineOnlyPathD(d: string): boolean {
-  return !/[CcQqAaSsTt]/.test(d);
-}
-
-/** Parse a line-only path ``d`` into absolute (x, y) points. Handles
- *  M/m/L/l/H/h/V/v/Z/z; falls back to ``[]`` on anything weirder so
- *  the caller can leave the path untouched. */
-function parsePolylinePathD(d: string): { x: number; y: number }[] {
-  const tokens: { kind: "cmd" | "num"; val: string | number }[] = [];
-  const re = /([MmLlHhVvZz])|(-?\d*\.?\d+(?:[eE][+-]?\d+)?)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(d)) !== null) {
-    if (m[1]) tokens.push({ kind: "cmd", val: m[1] });
-    else if (m[2] !== undefined) tokens.push({ kind: "num", val: parseFloat(m[2]) });
-  }
-  const pts: { x: number; y: number }[] = [];
-  let cmd = "";
-  let cx = 0;
-  let cy = 0;
-  let i = 0;
-  while (i < tokens.length) {
-    const t = tokens[i];
-    if (t.kind === "cmd") {
-      cmd = t.val as string;
-      i++;
-      continue;
-    }
-    if (cmd === "M" || cmd === "L") {
-      const x = tokens[i].val as number;
-      const y = tokens[i + 1]?.val as number;
-      if (typeof y !== "number") return [];
-      cx = x; cy = y;
-      pts.push({ x: cx, y: cy });
-      i += 2;
-      cmd = "L";
-    } else if (cmd === "m" || cmd === "l") {
-      const dx = tokens[i].val as number;
-      const dy = tokens[i + 1]?.val as number;
-      if (typeof dy !== "number") return [];
-      cx += dx; cy += dy;
-      pts.push({ x: cx, y: cy });
-      i += 2;
-      cmd = "l";
-    } else if (cmd === "H") {
-      cx = tokens[i].val as number;
-      pts.push({ x: cx, y: cy });
-      i += 1;
-    } else if (cmd === "h") {
-      cx += tokens[i].val as number;
-      pts.push({ x: cx, y: cy });
-      i += 1;
-    } else if (cmd === "V") {
-      cy = tokens[i].val as number;
-      pts.push({ x: cx, y: cy });
-      i += 1;
-    } else if (cmd === "v") {
-      cy += tokens[i].val as number;
-      pts.push({ x: cx, y: cy });
-      i += 1;
-    } else {
-      return [];
-    }
-  }
-  return pts;
-}
-
-/** Emit a minimal polyline path ``d`` from points. Always uses
- *  absolute commands and preserves the closing ``Z`` if requested. */
-function emitPolylinePathD(
-  pts: { x: number; y: number }[], closed: boolean,
-): string {
-  if (pts.length === 0) return "";
-  const round = (n: number) => {
-    const s = n.toFixed(4);
-    return s.replace(/\.?0+$/, "");
-  };
-  const out: string[] = [`M${round(pts[0].x)} ${round(pts[0].y)}`];
-  for (let i = 1; i < pts.length; i++) {
-    out.push(`L${round(pts[i].x)} ${round(pts[i].y)}`);
-  }
-  if (closed) out.push("Z");
-  return out.join(" ");
 }

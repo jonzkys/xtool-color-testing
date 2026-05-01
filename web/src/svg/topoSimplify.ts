@@ -114,9 +114,11 @@ export function simplifyTopology(
   const simplified: any =
     weight > 0 ? topoSimplify(pre, weight) : pre;
 
-  // 5. Convert back to a FeatureCollection.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const out = feature(simplified, simplified.objects.shapes) as
+  // 5. Convert back to a FeatureCollection. The runtime returns a
+  //    FeatureCollection because we packed the source as a
+  //    FeatureCollection — topojson-client's type signature is
+  //    over-narrow, hence the `unknown` hop.
+  const out = feature(simplified, simplified.objects.shapes) as unknown as
     GeoJSONFeatureCollection;
 
   // Bucket simplified rings back onto their source shapes.
