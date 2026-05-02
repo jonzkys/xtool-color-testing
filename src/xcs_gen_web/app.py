@@ -1572,10 +1572,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         base = t["spec"]["base_params"]
         x_param = t["spec"]["x_param"]
         y_param = t["spec"].get("y_param")
+        # Test-level angle behaviour determines the actual stroke count
+        # and pattern for every cell — without it stored, a palette entry
+        # can't be reproduced (a "fixed x2" colour is not a "crosshatch x2"
+        # colour). Persist alongside the per-cell params dict; legacy
+        # ``angle_mode="crosshatch"`` is snapped at write time too.
+        spec_angle_mode = t["spec"].get("angle_mode", "fixed")
+        spec_crosshatch = bool(t["spec"].get("crosshatch", False))
+        if spec_angle_mode == "crosshatch":
+            spec_angle_mode = "fixed"
+            spec_crosshatch = True
 
         payload = []
         for s in picked:
             params = dict(base)
+            params["angle_mode"] = spec_angle_mode
+            params["crosshatch"] = spec_crosshatch
             if s.get("x_value") is not None:
                 params[x_param] = s["x_value"]
             if y_param and s.get("y_value") is not None:

@@ -166,7 +166,7 @@ def test_crosshatch_mode_sets_cross_angle_flag_and_preserves_passes():
     angle between strokes — it does not double the burn count. The
     earlier divide-by-2 was a guess that didn't match the device's
     actual behaviour and produced under-burned tests."""
-    t = _test().model_copy(update={"angle_mode": "crosshatch"})
+    t = _test().model_copy(update={"crosshatch": True})
     t = t.model_copy(update={"base_params": t.base_params.model_copy(update={"passes": 4})})
     project = Project(
         name="Test", grid_gap_mm=1.0,
@@ -259,8 +259,8 @@ def test_hide_axis_labels_generator_sees_no_labels():
     """project_to_xcs must forward hide_axis_labels to generate_gradient.
 
     extra_displays stores dicts built by build_line_display/make_text_display,
-    so we assert on the "type" field: no LINE (tick) dicts, and exactly one
-    TEXT dict (the summary — axis-label TEXTs are suppressed).
+    so we assert on the "type" field: no LINE (tick) dicts, and exactly two
+    TEXT dicts (the 2-line summary header — axis-label TEXTs are suppressed).
     """
     def _displays_for(hide: bool):
         project = Project(
@@ -277,11 +277,11 @@ def test_hide_axis_labels_generator_sees_no_labels():
 
     hidden = _displays_for(True)
     assert hidden.count("LINE") == 0
-    assert hidden.count("TEXT") == 1  # summary header only
+    assert hidden.count("TEXT") == 2  # 2-line summary header only
 
     visible = _displays_for(False)
     assert visible.count("LINE") > 0
-    assert visible.count("TEXT") > 1  # summary + axis labels
+    assert visible.count("TEXT") > 2  # 2-line summary + axis labels
 
 
 def test_converter_constants_match_generator_defaults():

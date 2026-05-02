@@ -74,14 +74,15 @@ def test_disabled_layer_is_skipped():
 
 
 def test_layer_crosshatch_sets_cross_angle_flag_and_preserves_passes():
-    """angle_mode='crosshatch' maps to XCS-native ``cross_angle``;
-    ``repeat`` equals the user's passes count (1:1, NOT halved). xTool
-    Studio runs ``repeat`` literally; ``cross_angle`` alternates the
-    scan angle between strokes."""
+    """``crosshatch=True`` maps to XCS-native ``cross_angle``; ``repeat``
+    equals the user's passes count (1:1, NOT halved). xTool Studio runs
+    ``repeat`` literally and ``cross_angle`` adds a 90°-rotated companion
+    stroke per pass — so passes=4 + crosshatch fires 8 strokes (4 at
+    scan_angle, 4 at scan_angle+90°)."""
     yellow_base = _base().model_copy(update={"passes": 4})
     layers = [
-        _layer("#ffd73e", angle_mode="crosshatch", base_params=yellow_base),
-        _layer("#000000"),  # default angle_mode="fixed"
+        _layer("#ffd73e", crosshatch=True, base_params=yellow_base),
+        _layer("#000000"),  # default angle_mode="fixed", crosshatch=False
     ]
     req = SvgLayersRequest(
         name="t", svg_content=PIKACHU_SVG.read_text(),

@@ -224,7 +224,11 @@ def build_svg_layers_project(
             continue  # skip Path emission below for hatched layers
 
         params = replace(
-            _to_processing_params(layer.base_params, angle_mode=layer.angle_mode),
+            _to_processing_params(
+                layer.base_params,
+                angle_mode=layer.angle_mode,
+                crosshatch=layer.crosshatch,
+            ),
             scan_angle=layer.scan_angle,
         )
 

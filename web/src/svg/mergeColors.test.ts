@@ -144,6 +144,7 @@ function layerWithColor(color: string): LayerSpec {
       scan_angle: 90,
     },
     angle_mode: "fixed",
+    crosshatch: false,
     material_id: null,
     hatch_passes: [],
   };
@@ -248,6 +249,7 @@ function layer(overrides: Partial<LayerSpec> = {}): LayerSpec {
     scan_angle: 90,
     base_params: baseParamsOf(),
     angle_mode: "fixed",
+    crosshatch: false,
     material_id: null,
     hatch_passes: [],
     ...overrides,
@@ -278,29 +280,31 @@ describe("computeParamMergeGroups", () => {
     expect(groups).toHaveLength(0);
   });
 
-  test("different angle_mode prevents collapse for non-hatched", () => {
+  test("different crosshatch prevents collapse for non-hatched", () => {
     const layers = [
-      layer({ color: "#ff0000", angle_mode: "fixed" }),
-      layer({ color: "#fb0002", angle_mode: "crosshatch" }),
+      layer({ color: "#ff0000", crosshatch: false }),
+      layer({ color: "#fb0002", crosshatch: true }),
     ];
     const groups = computeParamMergeGroups(layers);
     expect(groups).toHaveLength(0);
   });
 
-  test("scan_angle and angle_mode ignored for HATCHED_LINES", () => {
+  test("scan_angle / angle_mode / crosshatch all ignored for HATCHED_LINES", () => {
     const layers = [
       layer({
         color: "#ff0000",
         processing_type: "HATCHED_LINES",
         scan_angle: 90,
         angle_mode: "fixed",
+        crosshatch: false,
         hatch_passes: [defaultHatchPass(0)],
       }),
       layer({
         color: "#fb0002",
         processing_type: "HATCHED_LINES",
-        scan_angle: 45,          // Differs, but ignored for hatched.
-        angle_mode: "crosshatch",// Differs, but ignored for hatched.
+        scan_angle: 45,           // Differs, but ignored for hatched.
+        angle_mode: "incremental",// Differs, but ignored for hatched.
+        crosshatch: true,         // Differs, but ignored for hatched.
         hatch_passes: [defaultHatchPass(0)],
       }),
     ];

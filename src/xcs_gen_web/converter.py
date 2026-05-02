@@ -53,9 +53,21 @@ def _annotation_space_below(hide_axis_labels: bool = False) -> float:
     return _TICK_LENGTH + 0.05 + text_height(_LABEL_FONT_SIZE) + 0.05
 
 
+_SUMMARY_MAX_LINES = 5  # worst-case for narrow workpieces (50 mm coins)
+
+
 def _summary_space_above() -> float:
-    """Vertical space above a gradient for the summary text line."""
-    return text_height(_LABEL_FONT_SIZE) + 0.05
+    """Vertical space reserved above a gradient for the summary text.
+
+    The generator wraps the summary to fit within the test width, so
+    the actual line count is dynamic (1-5 lines depending on workpiece
+    width and label content). This reservation is the worst case so
+    stacked tests on the same canvas never overlap when one of them
+    wraps to many lines and the others don't. Slight wasted whitespace
+    on wide tests is acceptable — overlap would be silent corruption.
+    """
+    line_h = text_height(_LABEL_FONT_SIZE) + 0.1
+    return _SUMMARY_MAX_LINES * line_h + 0.05
 
 
 def _test_vertical_footprint(t: ParamTest) -> float:
@@ -137,26 +149,34 @@ def validate_beam_widths(project: Project, *, machine_id: str = "F2Ultra") -> No
             )
 
 
-_ANGLE_MODE_MAP: dict[str, tuple[int, bool]] = {
-    "fixed":       (1, False),
-    "crosshatch":  (1, True),
-    "incremental": (2, False),
+# XCS distinguishes two angle behaviours via a single int:
+#   1 = fixed scan angle for every pass
+#   2 = increment the scan angle between passes (XCS picks the rotation)
+# Crosshatch (alternating with the 90°-rotated companion stroke) is
+# orthogonal — controlled by the boolean ``crossAngle`` field — and can
+# layer on top of either fixed or incremental.
+_ANGLE_TYPE_MAP: dict[str, int] = {
+    "fixed":       1,
+    "incremental": 2,
 }
 
 
-def _to_processing_params(bp: BaseParams, *, angle_mode: str = "fixed") -> ProcessingParams:
-    angle_type, cross_angle = _ANGLE_MODE_MAP.get(angle_mode, _ANGLE_MODE_MAP["fixed"])
-    # ``repeat`` maps directly to the user's passes count regardless of
-    # angle_mode. An earlier version halved it under crosshatch on the
-    # assumption that XCS's ``crossAngle`` field automatically doubled
-    # each repeat into two burns (one at scanAngle, one at scanAngle+90°).
-    # That turned out to be wrong: xTool Studio displays + executes
-    # ``repeat`` literally — 1 repeat = 1 stroke. ``crossAngle`` only
-    # alternates the scan_angle between strokes when repeat ≥ 2; it does
-    # NOT double the count. So a user-facing "x2 crosshatch" must emit
-    # repeat=2 for the burn to actually run two strokes, and a
-    # "x4 crosshatch" must emit repeat=4 for four strokes alternating
-    # between 0° and 90°. Halving silently produced under-burned tests.
+def _to_processing_params(
+    bp: BaseParams,
+    *,
+    angle_mode: str = "fixed",
+    crosshatch: bool = False,
+) -> ProcessingParams:
+    angle_type = _ANGLE_TYPE_MAP.get(angle_mode, _ANGLE_TYPE_MAP["fixed"])
+    cross_angle = bool(crosshatch)
+    # ``repeat`` is the user-input pass count, written through 1:1.
+    # ``cross_angle`` is xTool's flag for "for every repeat, also burn
+    # one stroke at scan_angle+90°" — so passes=N + crosshatch=true
+    # produces 2N total strokes on the device. Halving used to happen
+    # here on the (wrong) assumption that XCS doubled the count
+    # automatically without `cross_angle`; the actual hardware
+    # behaviour has cross_angle do the doubling, so passes maps
+    # straight through.
     repeat = bp.passes
     return ProcessingParams(
         power=bp.power,
@@ -235,13 +255,17 @@ def project_to_xcs(project: Project, *, machine_id: str = "F2Ultra") -> XCSProje
         t = placement.test
         x_off, y_off = offsets[t.id]
 
-        # Suffix shown in the per-test summary line (e.g. "x3 crosshatch")
-        # when >1 passes are configured.
-        summary_suffix = ""
-        if t.base_params.passes > 1 and t.angle_mode != "fixed":
-            summary_suffix = f"x{t.base_params.passes} {t.angle_mode}"
-        elif t.base_params.passes > 1:
-            summary_suffix = f"x{t.base_params.passes}"
+        # Suffix sits on its own line below the fixed params. The pass
+        # count itself is already emitted on the fixed-params line by
+        # _build_summary_lines (as `x{repeat}`) — we only carry the
+        # angle behaviour qualifiers here so the suffix line can stay
+        # short on narrow workpieces.
+        suffix_bits: list[str] = []
+        if t.crosshatch:
+            suffix_bits.append("crosshatch")
+        if t.angle_mode != "fixed":
+            suffix_bits.append(t.angle_mode)
+        summary_suffix = " ".join(suffix_bits)
 
         generated = generate_gradient(
             x_param=t.x_param,
@@ -259,7 +283,9 @@ def project_to_xcs(project: Project, *, machine_id: str = "F2Ultra") -> XCSProje
             gap=t.gap_mm,
             start_x=CANVAS_ORIGIN_X + x_off,
             start_y=CANVAS_ORIGIN_Y + y_off,
-            base_params=_to_processing_params(t.base_params, angle_mode=t.angle_mode),
+            base_params=_to_processing_params(
+                t.base_params, angle_mode=t.angle_mode, crosshatch=t.crosshatch,
+            ),
             summary_suffix=summary_suffix,
             registration_mode=t.registration.mode,
             registration_qr_size_mm=t.registration.qr_size_mm,
