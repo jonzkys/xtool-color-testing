@@ -113,6 +113,20 @@ class ParamTest(BaseModel):
     # layer keeps working.
     retest_index: int = Field(default=0, ge=0)
 
+    # Test variety. ``"sweep"`` (default) is the legacy axis-sweep test;
+    # ``"validation"`` renders one cell per ``validation_cells`` entry,
+    # each with its own frozen processing params. The schema fields
+    # ``x_param``/``x_min``/``x_max``/``x_steps`` are still required for
+    # validation tests because the layout math (cell width, etc.) reuses
+    # the same wrapped-1D code path — ``services/xcs.bytes_for_test``
+    # synthesises sensible defaults at conversion time.
+    kind: Literal["sweep", "validation"] = "sweep"
+    # Per-cell snapshots for kind=validation tests. Each entry overlays
+    # its ``params`` dict onto ``base_params`` and emits one cell. None
+    # for sweep tests; required for validation tests at converter time
+    # (the converter raises if absent).
+    validation_cells: list[dict[str, Any]] | None = None
+
     @model_validator(mode="after")
     def validate_ranges(self) -> "ParamTest":
         if self.x_min == self.x_max:

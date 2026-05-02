@@ -1052,6 +1052,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             material_id=t["material_id"], spec=t["spec"],
             retest_index=t.get("retest_index", 0),
             machine_id=t.get("machine_id", "F2Ultra"),
+            kind=t.get("kind", "sweep") or "sweep",
+            validation_cells=t.get("validation_cells"),
         )
         safe_name = xcs_service._safe_project_name(t["name"], fallback=f"test-{t['id']}")
         return Response(

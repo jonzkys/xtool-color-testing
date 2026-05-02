@@ -127,16 +127,33 @@ def bytes_for_test(*, test_id: int, name: str, material_id: int,
             "spec": spec,
             "validation_cells": validation_cells or [],
         })
-        spec = {**spec, "hide_axis_labels": True}
+        # Pin sweep-only fields to values that keep the wrapped-1D layout
+        # math honest. ``x_steps`` becomes the cell count so cell-width
+        # checks (validate_beam_widths) and gradient sizing reflect the
+        # number of cells we're actually rendering. Y is ignored.
+        cells = validation_cells or []
+        spec = {
+            **spec,
+            "hide_axis_labels": True,
+            "x_steps": max(2, len(cells)),
+            "y_param": None,
+            "y_min": None,
+            "y_max": None,
+            "y_steps": None,
+        }
 
     project_name = _safe_project_name(name, fallback=f"test-{test_id}")
+    placement_test: dict[str, Any] = {
+        "id": str(test_id), "name": project_name, "material_id": str(material_id),
+        "retest_index": retest_index,
+        **spec,
+    }
+    if kind == "validation":
+        placement_test["kind"] = "validation"
+        placement_test["validation_cells"] = validation_cells or []
     placement = {
         "row": 0, "col": 0, "col_span": 1,
-        "test": {
-            "id": str(test_id), "name": project_name, "material_id": str(material_id),
-            "retest_index": retest_index,
-            **spec,
-        },
+        "test": placement_test,
     }
     project = {
         "name": project_name,
