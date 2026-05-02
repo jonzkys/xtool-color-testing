@@ -6,7 +6,7 @@ import json
 import math
 from xcs_gen.builder import build_xcs
 from xcs_gen.capture.layout import registration_reservation_mm
-from xcs_gen.generators import _set_param, generate_gradient
+from xcs_gen.generators import _PARAM_MAP, _set_param, generate_gradient
 from xcs_gen.model import Device, ProcessingParams, XCSProject
 from xcs_gen.text import text_height
 
@@ -255,7 +255,13 @@ def project_to_xcs(project: Project, *, machine_id: str = "F2Ultra") -> XCSProje
             per_cell_params = []
             for vc in cells:
                 p = _to_processing_params(t.base_params, angle_mode=t.angle_mode)
+                # Filter to keys the renderer can apply per-cell. Palette
+                # entries also carry top-level test attributes like ``laser``
+                # and ``scan_angle`` which live on the test itself, not on
+                # individual cells — silently skip them.
                 for key, value in (vc.get("params") or {}).items():
+                    if key not in _PARAM_MAP:
+                        continue
                     _set_param(p, key, value)
                 per_cell_params.append(p)
             # Override sweep-only fields so the wrapped-1D layout sizes

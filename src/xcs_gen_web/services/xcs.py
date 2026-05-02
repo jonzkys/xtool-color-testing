@@ -130,12 +130,20 @@ def bytes_for_test(*, test_id: int, name: str, material_id: int,
         # Pin sweep-only fields to values that keep the wrapped-1D layout
         # math honest. ``x_steps`` becomes the cell count so cell-width
         # checks (validate_beam_widths) and gradient sizing reflect the
-        # number of cells we're actually rendering. Y is ignored.
+        # number of cells we're actually rendering. Y is ignored. The
+        # x_min/x_max pair must be distinct to satisfy the Project
+        # validator — they're cosmetic for validation since
+        # ``per_cell_params`` overrides any sweep-derived value at render
+        # time. We pick x_min=0, x_max=cell_count-1 so the values map to
+        # cell indices for any tooling that introspects the spec.
         cells = validation_cells or []
+        cell_count = max(2, len(cells))
         spec = {
             **spec,
             "hide_axis_labels": True,
-            "x_steps": max(2, len(cells)),
+            "x_min": 0,
+            "x_max": cell_count - 1,
+            "x_steps": cell_count,
             "y_param": None,
             "y_min": None,
             "y_max": None,
