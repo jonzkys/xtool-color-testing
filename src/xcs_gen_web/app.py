@@ -724,6 +724,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         pal_repo.delete_by_test(test_id, owner_id=user_id)
         return Response(status_code=204)
 
+    @app.delete("/api/palette/by-material/{material_id}")
+    def palette_delete_by_material(
+        material_id: int, user_id: int = Depends(get_current_user),
+    ) -> dict[str, int]:
+        """Wipe every palette entry for a material. Tests, results, and
+        the material itself are untouched — re-ingest from the existing
+        results when ready. Returns the row count for the toast."""
+        deleted = pal_repo.delete_by_material(
+            material_id, owner_id=user_id,
+        )
+        return {"deleted": deleted}
+
     @app.delete("/api/palette/{entry_id}", status_code=204)
     def palette_delete(
         entry_id: int, user_id: int = Depends(get_current_user),
