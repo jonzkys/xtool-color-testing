@@ -104,8 +104,12 @@ export interface LayerSpec {
   processing_type: SvgProcessingType;
   scan_angle: number;
   base_params: BaseParams;
-  /** Same semantics as TestSpec.angle_mode. Ignored for HATCHED_LINES. */
-  angle_mode: "fixed" | "crosshatch" | "incremental";
+  /** Same semantics as TestSpec.angle_mode + TestSpec.crosshatch.
+   *  Ignored for HATCHED_LINES. */
+  angle_mode: "fixed" | "incremental";
+  /** Crosshatch — orthogonal to angle_mode; adds a 90°-rotated
+   *  companion stroke per pass (so passes=N + crosshatch = 2N strokes). */
+  crosshatch: boolean;
   material_id: string | null;   // layer's library-preset origin (optional)
   hatch_passes: HatchPassSpec[];   // non-empty iff processing_type === "HATCHED_LINES"
 }
@@ -161,7 +165,11 @@ export interface TestSpec {
    * back-compat with tests created before this field existed. */
   sample_aggregator?: SampleAggregator;
   square_cells: boolean;
-  angle_mode: "fixed" | "crosshatch" | "incremental";
+  angle_mode: "fixed" | "incremental";
+  /** Crosshatch — orthogonal to angle_mode; adds a 90°-rotated
+   *  companion stroke per pass (so passes=N + crosshatch = 2N strokes).
+   *  Stacks with incremental: rotates AND adds the perpendicular. */
+  crosshatch: boolean;
   unidirectional: boolean;
   /** When true, per-row tick + numeric axis labels are suppressed on
    *  the generated test. The summary header line is still drawn. */
