@@ -146,7 +146,11 @@ tests = Table(
     # each burn carries a label; ingest copies it onto the result row.
     Column("retest_index", Integer, nullable=False, server_default="0"),
     Column("machine_id", String(_MACHINE_ID_LEN), nullable=False, server_default="F2Ultra"),
+    Column(
+        "kind", String(_STATUS_LEN), nullable=False, server_default="sweep",
+    ),
     CheckConstraint("status IN ('created','tested','deleted')", name="tests_status_chk"),
+    CheckConstraint("kind IN ('sweep','validation')", name="tests_kind_chk"),
     CheckConstraint(_VISIBILITY_CHECK, name="tests_visibility_chk"),
     Index("ix_tests_material_id", "material_id"),
     Index("ix_tests_status", "status"),
@@ -219,4 +223,32 @@ palette_entries = Table(
     Index("ix_palette_entries_test_id", "test_id"),
     Index("ix_palette_entries_owner", "owner_id"),
     Index("ix_palette_entries_owner_machine", "owner_id", "machine_id"),
+)
+
+# One row per planned cell on a kind=validation test. Frozen at test-
+# create time from the user's palette pick: each cell carries its
+# source palette_entry_id (nullable for "manual" — we set ON DELETE
+# SET NULL so removing a palette entry doesn't kill validation
+# history), the Lab the burn is supposed to reproduce, and the param
+# bundle the xcs builder will write into the cell's job. Order on
+# the burn surface is `cell_index` ascending (sorted by L* at insert
+# time so the burn forms a luminance ramp).
+validation_cells = Table(
+    "validation_cells", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("test_id", Integer, ForeignKey("tests.id"), nullable=False),
+    Column("cell_index", Integer, nullable=False),
+    Column(
+        "palette_entry_id",
+        Integer,
+        ForeignKey("palette_entries.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column("expected_hex", String(_COLOR_HEX_LEN), nullable=False),
+    Column("expected_lab_l", Float, nullable=False),
+    Column("expected_lab_a", Float, nullable=False),
+    Column("expected_lab_b", Float, nullable=False),
+    Column("params_json", Text, nullable=False),
+    Index("ix_validation_cells_test_id", "test_id"),
+    Index("ix_validation_cells_palette_entry_id", "palette_entry_id"),
 )
