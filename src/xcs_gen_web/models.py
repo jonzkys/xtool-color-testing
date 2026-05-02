@@ -31,6 +31,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
 )
 
 metadata = MetaData()
@@ -146,9 +147,7 @@ tests = Table(
     # each burn carries a label; ingest copies it onto the result row.
     Column("retest_index", Integer, nullable=False, server_default="0"),
     Column("machine_id", String(_MACHINE_ID_LEN), nullable=False, server_default="F2Ultra"),
-    Column(
-        "kind", String(_STATUS_LEN), nullable=False, server_default="sweep",
-    ),
+    Column("kind", String(_STATUS_LEN), nullable=False, server_default="sweep"),
     CheckConstraint("status IN ('created','tested','deleted')", name="tests_status_chk"),
     CheckConstraint("kind IN ('sweep','validation')", name="tests_kind_chk"),
     CheckConstraint(_VISIBILITY_CHECK, name="tests_visibility_chk"),
@@ -249,6 +248,6 @@ validation_cells = Table(
     Column("expected_lab_a", Float, nullable=False),
     Column("expected_lab_b", Float, nullable=False),
     Column("params_json", Text, nullable=False),
-    Index("ix_validation_cells_test_id", "test_id"),
+    UniqueConstraint("test_id", "cell_index", name="uq_validation_cells_test_cell"),
     Index("ix_validation_cells_palette_entry_id", "palette_entry_id"),
 )
