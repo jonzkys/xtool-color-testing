@@ -553,6 +553,10 @@ class TestCreate(BaseModel):
     spec: TestSpec
     notes: str = ""
     machine_id: str = Field(default="F2Ultra", min_length=1, max_length=32)
+    # ``"validation"`` flags the test as a per-cell palette validation
+    # render — the cells themselves arrive via PATCH /validation-cells.
+    # Default keeps existing API consumers unchanged.
+    kind: Literal["sweep", "validation"] = "sweep"
 
     @field_validator("machine_id")
     @classmethod
@@ -592,6 +596,13 @@ class TestResponse(BaseModel):
     # Derived — true when the test has at least one palette entry
     # sourced from it. Drives the "ingested" badge on the test list.
     ingested: bool = False
+    # Test variety — "sweep" (legacy axis-sweep) or "validation"
+    # (per-cell palette validation). Defaults to sweep for legacy rows.
+    kind: Literal["sweep", "validation"] = "sweep"
+    # Frozen per-cell snapshots for kind=validation tests; empty list
+    # for sweep tests. Read-only on this schema — clients mutate the
+    # cell list via ``PATCH /api/tests/{id}/validation-cells``.
+    validation_cells: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ResultSwatch(BaseModel):
@@ -717,3 +728,24 @@ class RecentMobileUpload(BaseModel):
     test_id: int
     test_name: str
     uploaded_at: str   # ISO 8601
+
+
+# ── Validation cells (kind=validation tests) ─────────────────────────────────
+
+class ValidationCellIn(BaseModel):
+    """Single per-cell snapshot for a kind=validation test.
+
+    The frontend posts these as a list after the user finalises picks
+    (or after an auto-pick run). Cells are stored in the order received
+    and replayed by the builder in ``cell_index`` order — so the
+    frontend is responsible for L*-sorting before posting.
+    """
+    cell_index: int
+    palette_entry_id: int | None = None
+    expected_hex: str
+    expected_lab: list[float]   # [L*, a*, b*]
+    params: dict[str, float | int | str]
+
+
+class ValidationCellsPatch(BaseModel):
+    cells: list[ValidationCellIn]
