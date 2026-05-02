@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import { useIsDemo } from "../hooks/useIsDemo";
 import type { Material, Preset } from "../library";
-import type { TestRecord, TestSpec } from "../types";
+import type { PaletteEntry, TestRecord, TestSpec, ValidationCell } from "../types";
 import {
   getTest,
   updateTest,
@@ -108,6 +108,7 @@ export function TestDetailPage({ testId }: Props) {
   const [creating, setCreating] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [activeTab, setActiveTab] = useState<ParamTestEditorTab>("test");
+  const [palette, setPalette] = useState<PaletteEntry[]>([]);
   // True once the user has changed name / spec / material at least
   // once via the editor. Autosave is gated on this so the load
   // effect's re-renders never trigger a PATCH-back of the loaded
@@ -147,6 +148,48 @@ export function TestDetailPage({ testId }: Props) {
       }
     })().catch((e) => setError((e as Error).message));
   }, [testId]);
+
+  // Fetch the per-material palette for validation tests so the
+  // MaterialPalettePicker has something to render. Sweep tests don't
+  // need this, so we early-out on `kind`.
+  useEffect(() => {
+    if (!test || test.kind !== "validation" || !test.material_id) {
+      setPalette([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { listPaletteEntries } = await import("../api/palette");
+        const entries = await listPaletteEntries({
+          material_id: test.material_id,
+          machine_id: test.machine_id,
+        });
+        if (!cancelled) setPalette(entries);
+      } catch (err) {
+        console.error("Failed to fetch palette:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [test?.id, test?.material_id, test?.kind, test?.machine_id]);
+
+  // Mirror the palette-tab's optimistic cell updates into the test
+  // record so downstream consumers (preview, generate) see the new
+  // burn ordering without a refetch.
+  function handleValidationCellsChange(next: ValidationCell[]) {
+    setTest((prev) => (prev ? { ...prev, validation_cells: next } : prev));
+  }
+
+  // Snap the active tab back to "test" if the loaded record's kind
+  // makes the current tab unreachable (e.g. arriving on a `sweep`
+  // selection while the test turns out to be `validation`).
+  useEffect(() => {
+    if (!test) return;
+    if (test.kind === "validation" && activeTab === "sweep") setActiveTab("test");
+    if (test.kind !== "validation" && activeTab === "palette") setActiveTab("test");
+  }, [test?.kind, activeTab]);
 
   // Persist the current state to an existing test. No-ops when there's
   // no test yet (the Create button handles initial creation explicitly
@@ -433,12 +476,21 @@ export function TestDetailPage({ testId }: Props) {
         {/* LEFT: tabbed editor */}
         <div className="flex flex-col min-h-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-hidden">
           <TabBar<ParamTestEditorTab>
-            items={[
-              { id: "test", label: "Test" },
-              { id: "sweep", label: "Sweep" },
-              { id: "base", label: "Base params" },
-              { id: "registration", label: "Registration" },
-            ]}
+            items={
+              test?.kind === "validation"
+                ? [
+                    { id: "test", label: "Test" },
+                    { id: "palette", label: "Palette" },
+                    { id: "base", label: "Base params" },
+                    { id: "registration", label: "Registration" },
+                  ]
+                : [
+                    { id: "test", label: "Test" },
+                    { id: "sweep", label: "Sweep" },
+                    { id: "base", label: "Base params" },
+                    { id: "registration", label: "Registration" },
+                  ]
+            }
             value={activeTab}
             onChange={setActiveTab}
           />
@@ -451,6 +503,10 @@ export function TestDetailPage({ testId }: Props) {
               materials={materials}
               materialId={materialId}
               onMaterialChange={handleMaterialChange}
+              testId={test?.id ?? null}
+              validationCells={test?.validation_cells ?? []}
+              onValidationCellsChange={handleValidationCellsChange}
+              palette={palette}
             />
           </div>
         </div>

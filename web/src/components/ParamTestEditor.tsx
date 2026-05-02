@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Material } from "../library";
-import type { Machine, ModeId, ParamName, RegistrationMode, SampleAggregator, TestSpec, ValidationProfile } from "../types";
+import type { Machine, ModeId, ParamName, PaletteEntry, RegistrationMode, SampleAggregator, TestSpec, ValidationCell, ValidationProfile } from "../types";
 import { PARAM_NAMES } from "../types";
 import { squareCellHeight } from "../specUtils";
 import { computeAutoFitGrid, gridHeightToSpecHeight, squareCellAutoFit } from "../autofit";
@@ -13,6 +13,7 @@ import {
 } from "../laser/pulseWidths";
 import { DynamicParamForm } from "./dynamic-form/DynamicParamForm";
 import { useCurrentMachine, getValidationProfile } from "../state/machine";
+import { ValidationPaletteTab } from "./ValidationPaletteTab";
 
 function defaultAggregatorFor(cell_shape: string): SampleAggregator {
   return cell_shape === "circle" ? "median" : "saturation_median";
@@ -56,7 +57,7 @@ function sweptByCaption(
   return null;
 }
 
-export type ParamTestEditorTab = "test" | "sweep" | "base" | "registration";
+export type ParamTestEditorTab = "test" | "sweep" | "palette" | "base" | "registration";
 
 interface Props {
   spec: TestSpec;
@@ -69,6 +70,16 @@ interface Props {
   materials: Material[];
   materialId: number | null;
   onMaterialChange: (id: number) => void;
+  /** Validation-only: id of the persisted test row (`null` until create
+   *  has happened). The palette-tab uses this to PATCH cell selections. */
+  testId?: number | null;
+  /** Validation-only: persisted picks for this test. Caller mirrors
+   *  edits back via `onValidationCellsChange`. Defaults to []. */
+  validationCells?: ValidationCell[];
+  onValidationCellsChange?: (next: ValidationCell[]) => void;
+  /** Validation-only: full palette for the active material. Empty
+   *  array is fine — sweep tests don't need this. */
+  palette?: PaletteEntry[];
 }
 
 /** Default mode when none is stored — picks the most representative mode
@@ -103,7 +114,20 @@ function paramAxisRange(
   return null;
 }
 
-export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, materials, materialId, onMaterialChange }: Props) {
+export function ParamTestEditor({
+  spec,
+  onChange,
+  locked,
+  issues = [],
+  tab,
+  materials,
+  materialId,
+  onMaterialChange,
+  testId = null,
+  validationCells = [],
+  onValidationCellsChange,
+  palette = [],
+}: Props) {
   const t = spec;
 
   // Machine-aware validation profile — used to show/hide base param fields.
@@ -634,6 +658,16 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
             />
           </Section>
         </>
+      )}
+
+      {tab === "palette" && (
+        <ValidationPaletteTab
+          testId={testId}
+          materialId={materialId}
+          validationCells={validationCells}
+          onValidationCellsChange={onValidationCellsChange ?? (() => {})}
+          palette={palette}
+        />
       )}
 
       {tab === "base" && (
