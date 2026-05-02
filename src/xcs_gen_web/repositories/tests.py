@@ -31,11 +31,19 @@ def _now() -> str:
 
 
 def _row(r, *, ingested: bool = False) -> dict[str, Any]:
+    kind = getattr(r, "kind", "sweep") or "sweep"
+    if kind == "validation":
+        # Local import to avoid a repository-level import cycle.
+        from . import validation_cells as _vc_repo
+        cells = _vc_repo.list_for_test(test_id=r.id)
+    else:
+        cells = []
     return {
         "id": r.id,
         "name": r.name,
         "material_id": r.material_id,
         "status": r.status,
+        "kind": kind,
         "spec": json.loads(r.spec_json),
         "notes": r.notes,
         "created_at": r.created_at,
@@ -53,6 +61,9 @@ def _row(r, *, ingested: bool = False) -> dict[str, Any]:
         # ``_ingested_test_ids``. Defaults to False for safety on
         # paths that don't compute it.
         "ingested": ingested,
+        # Frozen per-cell snapshots for kind=validation tests.
+        # Always present; empty for sweep tests.
+        "validation_cells": cells,
     }
 
 
@@ -78,6 +89,7 @@ def create(
     notes: str = "", owner_id: int = STANDALONE_USER_ID,
     visibility: str = DEFAULT_VISIBILITY,
     machine_id: str = "F2Ultra",
+    kind: str = "sweep",
 ) -> dict[str, Any]:
     ts = _now()
     with session_scope() as s:
@@ -85,6 +97,7 @@ def create(
             name=name, material_id=material_id,
             machine_id=machine_id,
             status="created",
+            kind=kind,
             spec_json=json.dumps(spec, separators=(",", ":")),
             notes=notes, created_at=ts, updated_at=ts, locked=0,
             owner_id=owner_id, visibility=visibility,
