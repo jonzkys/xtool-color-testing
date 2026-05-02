@@ -279,6 +279,26 @@ def delete_by_test(test_id: int, *, owner_id: int = STANDALONE_USER_ID) -> int:
         return res.rowcount
 
 
+def delete_by_material(
+    material_id: int, *, owner_id: int = STANDALONE_USER_ID,
+) -> int:
+    """Wipe every palette entry for a material — both auto-ingested rows
+    (test-derived) and manual ones. Tests, results, and the material
+    itself stay untouched, so the user can re-ingest selectively from
+    the existing results afterward. Returns the number of rows
+    deleted."""
+    with session_scope() as s:
+        res = s.execute(
+            palette_entries.delete().where(
+                and_(
+                    palette_entries.c.material_id == material_id,
+                    palette_entries.c.owner_id == owner_id,
+                ),
+            )
+        )
+        return res.rowcount
+
+
 def get_source(eid: int, *, owner_id: int = STANDALONE_USER_ID) -> str | None:
     """Return the entry's `source` ('averaged', 'single_result', or 'manual'),
     or None if it doesn't exist / wrong owner. Used by the API layer to gate
