@@ -159,8 +159,13 @@ def test_beam_width_validation_rejects_sub_beam_elements():
         project_to_xcs(project)
 
 
-def test_crosshatch_mode_sets_cross_angle_flag_and_halves_repeat():
-    """angle_mode='crosshatch' → XCS-native cross_angle + repeat=passes/2 (XCS doubles each cycle)."""
+def test_crosshatch_mode_sets_cross_angle_flag_and_preserves_passes():
+    """angle_mode='crosshatch' → XCS-native ``cross_angle`` + ``repeat=passes``
+    (1:1, NOT halved). xTool Studio executes ``repeat`` literally:
+    each repeat is one stroke. ``cross_angle`` alternates the scan
+    angle between strokes — it does not double the burn count. The
+    earlier divide-by-2 was a guess that didn't match the device's
+    actual behaviour and produced under-burned tests."""
     t = _test().model_copy(update={"angle_mode": "crosshatch"})
     t = t.model_copy(update={"base_params": t.base_params.model_copy(update={"passes": 4})})
     project = Project(
@@ -172,8 +177,8 @@ def test_crosshatch_mode_sets_cross_angle_flag_and_halves_repeat():
     # 10 steps, ZERO duplication — XCS handles the passes.
     assert len(xcs.elements) == 10
     assert all(e.params.cross_angle for e in xcs.elements)
-    # With crosshatch, "4 passes" means 2 XCS cycles × 2 angles = 4 total burns.
-    assert all(e.params.repeat == 2 for e in xcs.elements)
+    # 4 passes → 4 strokes, alternating 0° and 90° via cross_angle.
+    assert all(e.params.repeat == 4 for e in xcs.elements)
 
 
 def test_incremental_mode_sets_angle_type_2():

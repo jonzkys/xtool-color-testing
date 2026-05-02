@@ -948,9 +948,9 @@ function BaseParamsSection({
             {/* Crosshatch pass hint */}
             {angle_mode === "crosshatch" && (
               <p className="text-[11.5px] text-[color:var(--color-ink-muted)] leading-relaxed">
-                In crosshatch mode each pass is one burn at scan angle and one
-                at +90°. Use even pass counts so the total burns match what you
-                enter.
+                In crosshatch mode the scan angle alternates between
+                successive passes (0° and +90°). Each pass is one stroke;
+                pick the total stroke count you want.
               </p>
             )}
 
@@ -1004,11 +1004,11 @@ function BaseParamsSection({
                 onChange={(v) => updateBase({ density: v })}
               />
               <NumberField
-                label={angle_mode === "crosshatch" ? "Passes (even)" : "Passes"}
+                label="Passes"
                 value={base_params.passes}
                 integer
-                min={angle_mode === "crosshatch" ? 2 : 1}
-                step={angle_mode === "crosshatch" ? 2 : 1}
+                min={1}
+                step={1}
                 onChange={(v) => updateBase({ passes: v })}
               />
               <PulseWidthSelect

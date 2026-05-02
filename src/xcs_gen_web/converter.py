@@ -146,14 +146,18 @@ _ANGLE_MODE_MAP: dict[str, tuple[int, bool]] = {
 
 def _to_processing_params(bp: BaseParams, *, angle_mode: str = "fixed") -> ProcessingParams:
     angle_type, cross_angle = _ANGLE_MODE_MAP.get(angle_mode, _ANGLE_MODE_MAP["fixed"])
-    # XCS applies crossAngle as "burn one pass at scanAngle and another at
-    # scanAngle+90° for every `repeat` cycle" — so each repeat = 2 actual
-    # burns. We expose "passes" to the user as total burns, so divide by 2
-    # (clamping to >=1) when crosshatch is active. Users should pick even
-    # passes in crosshatch mode to avoid rounding; the UI enforces this.
+    # ``repeat`` maps directly to the user's passes count regardless of
+    # angle_mode. An earlier version halved it under crosshatch on the
+    # assumption that XCS's ``crossAngle`` field automatically doubled
+    # each repeat into two burns (one at scanAngle, one at scanAngle+90°).
+    # That turned out to be wrong: xTool Studio displays + executes
+    # ``repeat`` literally — 1 repeat = 1 stroke. ``crossAngle`` only
+    # alternates the scan_angle between strokes when repeat ≥ 2; it does
+    # NOT double the count. So a user-facing "x2 crosshatch" must emit
+    # repeat=2 for the burn to actually run two strokes, and a
+    # "x4 crosshatch" must emit repeat=4 for four strokes alternating
+    # between 0° and 90°. Halving silently produced under-burned tests.
     repeat = bp.passes
-    if angle_mode == "crosshatch":
-        repeat = max(1, bp.passes // 2)
     return ProcessingParams(
         power=bp.power,
         speed=bp.speed,
