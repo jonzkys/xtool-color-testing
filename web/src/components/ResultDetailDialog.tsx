@@ -202,6 +202,7 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
             onCellClick={(row, col) => setInspectingCell({ row, col })}
             imageAlt={`Rectified burn-space view of result #${result.id}, inspect mode`}
             kind={testRecord?.kind}
+            validationCells={validationCells}
           />
         ) : blobUrl ? (
           <img

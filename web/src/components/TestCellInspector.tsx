@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import type { GridLayout, ResultSwatch, TestSpec } from "../types";
+import type {
+  GridLayout, ResultSwatch, TestSpec, ValidationCell,
+} from "../types";
 import {
   cellRectInImagePx,
   displayedImageRect,
@@ -22,6 +24,12 @@ export interface TestCellInspectorProps {
   /** Test kind. Validation tests render no x-axis labels — each cell
    *  carries its own params, there's no continuous axis to interpolate. */
   kind?: "sweep" | "validation";
+  /** Per-cell snapshots for ``kind="validation"`` tests. Empty / undefined
+   *  for sweep. When present, the hover tooltip swaps the bogus
+   *  swept-axis label out for the cell's actual params + expected
+   *  hex/Lab so a colour can be mapped back to the values that
+   *  produced it. */
+  validationCells?: ValidationCell[];
 }
 
 /**
@@ -37,7 +45,23 @@ export interface TestCellInspectorProps {
  */
 export function TestCellInspector({
   imageUrl, layout, spec, swatches, onCellClick, imageAlt, kind,
+  validationCells,
 }: TestCellInspectorProps) {
+  // Index validation cells by (row, col) once. The swatches' (row, col)
+  // is the physical-grid position, and `cell_index = row * per_row +
+  // col` so we can match cleanly. ``cells_per_physical_row`` lives on
+  // the layout the backend computed, so we don't have to re-derive it.
+  const validationByCell = useMemo(() => {
+    if (!validationCells || validationCells.length === 0) return null;
+    const perRow = layout.cells_per_physical_row;
+    const m = new Map<string, ValidationCell>();
+    for (const vc of validationCells) {
+      const r = Math.floor(vc.cell_index / perRow);
+      const c = vc.cell_index % perRow;
+      m.set(`${r}|${c}`, vc);
+    }
+    return m;
+  }, [validationCells, layout.cells_per_physical_row]);
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const [hoverCell, setHoverCell] = useState<PhysicalCell | null>(null);
@@ -58,6 +82,10 @@ export function TestCellInspector({
   const activeSwatch = activeIdx
     ? swatchByCell.get(`${activeIdx.row}|${activeIdx.col}`) ?? null
     : null;
+  const activeValidationCell =
+    activeIdx && validationByCell
+      ? validationByCell.get(`${activeIdx.row}|${activeIdx.col}`) ?? null
+      : null;
 
   function pointerCell(clientX: number, clientY: number): PhysicalCell | null {
     const img = imgRef.current;
@@ -162,6 +190,7 @@ export function TestCellInspector({
         <CellTooltip
           swatch={activeSwatch}
           spec={spec}
+          validationCell={activeValidationCell}
           containerRect={containerRef.current.getBoundingClientRect()}
           anchor={pointerPos}
           onInspect={
@@ -314,20 +343,66 @@ function formatParamValue(param: string, value: number): string {
   return value.toFixed(1);
 }
 
+// The seven keys we surface in the tooltip for validation cells, in
+// the order operators read them off the workbench. Anything else in
+// the cell's params dict (e.g. `mode`, `laser`, `crosshatch`) is
+// either redundant or already implied by the test, so showing it
+// would crowd the tooltip without adding signal.
+const _VALIDATION_PARAM_ORDER: readonly string[] = [
+  "power", "speed", "frequency", "density", "passes",
+  "pulse_width", "scan_angle",
+] as const;
+const _PARAM_LABEL: Readonly<Record<string, string>> = {
+  power: "P", speed: "S", frequency: "F", density: "L",
+  passes: "x", pulse_width: "PW", scan_angle: "θ",
+};
+
+function _formatValidationParam(key: string, value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const num = typeof value === "number" ? value : Number(value);
+  if (Number.isNaN(num)) return `${_PARAM_LABEL[key] ?? key}${value}`;
+  if (key === "power") return `${_PARAM_LABEL[key]}${num.toFixed(1)}%`;
+  if (key === "frequency") return `${_PARAM_LABEL[key]}${Math.round(num)}kHz`;
+  if (key === "pulse_width") return `${_PARAM_LABEL[key]}${Math.round(num)}ns`;
+  if (key === "scan_angle") return `${_PARAM_LABEL[key]}${Math.round(num)}°`;
+  // speed / density / passes — integer.
+  return `${_PARAM_LABEL[key] ?? key}${Math.round(num)}`;
+}
+
+function _deltaE76(
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+): number {
+  const dl = a[0] - b[0];
+  const da = a[1] - b[1];
+  const db = a[2] - b[2];
+  return Math.sqrt(dl * dl + da * da + db * db);
+}
+
 function CellTooltip({
   swatch, spec,
+  validationCell,
   containerRect, anchor,
   onInspect,
 }: {
   swatch: ResultSwatch;
   spec: TestSpec;
+  validationCell: ValidationCell | null;
   containerRect: DOMRect;
   anchor: { x: number; y: number };
   onInspect?: () => void;
 }) {
+  const isValidation = validationCell !== null;
+
   // Edge-aware positioning: prefer right + below, flip on overflow.
-  const TOOLTIP_W = 220;
-  const TOOLTIP_H = onInspect ? 138 : 110;
+  // Validation tooltip is wider so the param row + expected/actual
+  // colour row both fit on a single line each.
+  const TOOLTIP_W = isValidation ? 280 : 220;
+  // Height is dynamic; the picker just needs a reasonable upper bound
+  // for the flip-on-overflow heuristic.
+  const TOOLTIP_H = isValidation
+    ? (onInspect ? 188 : 160)
+    : (onInspect ? 138 : 110);
   let left = anchor.x - containerRect.left + 14;
   let top = anchor.y - containerRect.top + 14;
   if (left + TOOLTIP_W > containerRect.width) {
@@ -339,13 +414,105 @@ function CellTooltip({
   left = Math.max(4, left);
   top = Math.max(4, top);
 
+  const labText = swatch.lab.map((v) => v.toFixed(0)).join(" / ");
+
+  // ── Validation-mode body ────────────────────────────────────────────
+  // Tooltip swaps the bogus swept-axis label out for the cell's actual
+  // params (the values the burn was made with) plus an expected vs.
+  // actual chip pair so the user can see the colour delta at a glance.
+  if (isValidation && validationCell) {
+    const paramTokens = _VALIDATION_PARAM_ORDER
+      .map((k) => _formatValidationParam(k, validationCell.params[k]))
+      .filter((t): t is string => t !== null);
+    const expectedHex = validationCell.expected_hex;
+    const expectedLab = validationCell.expected_lab as
+      [number, number, number] | undefined;
+    const actualLab = swatch.lab as [number, number, number];
+    const dE = expectedLab !== undefined && expectedLab.length === 3
+      ? _deltaE76(expectedLab, actualLab)
+      : null;
+
+    return (
+      <div
+        role="tooltip"
+        className="absolute z-10 rounded-[6px] border border-[color:var(--color-border-strong)] bg-[color:var(--color-surface)] shadow-lg p-2.5 pointer-events-auto"
+        style={{ left, top, width: TOOLTIP_W }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header — cell index + small mono identifier. */}
+        <div className="flex items-baseline justify-between mb-2">
+          <div className="font-mono text-[10.5px] tracking-[0.16em] uppercase font-semibold text-[color:var(--color-ink-subtle)]">
+            cell #{validationCell.cell_index}
+          </div>
+          <div className="font-mono text-[10px] text-[color:var(--color-ink-subtle)]">
+            r{swatch.row}·c{swatch.col}
+          </div>
+        </div>
+
+        {/* Expected vs. actual chips with ΔE between them. */}
+        <div className="flex items-center gap-2 mb-2.5">
+          <div className="flex flex-col items-center gap-1">
+            <div
+              aria-hidden
+              className="h-9 w-9 rounded-[3px] border border-[color:var(--color-border-strong)]"
+              style={{ backgroundColor: expectedHex }}
+            />
+            <div className="font-mono text-[9px] tracking-[0.12em] uppercase text-[color:var(--color-ink-subtle)]">
+              expected
+            </div>
+            <div className="font-mono text-[10px] tabular-nums text-[color:var(--color-ink-muted)]">
+              {expectedHex}
+            </div>
+          </div>
+          <div className="flex-1 flex flex-col items-center justify-center">
+            <div className="font-mono text-[9px] tracking-[0.12em] uppercase text-[color:var(--color-ink-subtle)]">
+              {dE !== null ? "ΔE76" : "—"}
+            </div>
+            <div className="font-mono text-[14px] font-semibold tabular-nums text-[color:var(--color-ink)]">
+              {dE !== null ? dE.toFixed(1) : "—"}
+            </div>
+          </div>
+          <div className="flex flex-col items-center gap-1">
+            <div
+              aria-hidden
+              className="h-9 w-9 rounded-[3px] border border-[color:var(--color-border-strong)]"
+              style={{ backgroundColor: swatch.hex }}
+            />
+            <div className="font-mono text-[9px] tracking-[0.12em] uppercase text-[color:var(--color-ink-subtle)]">
+              actual
+            </div>
+            <div className="font-mono text-[10px] tabular-nums text-[color:var(--color-ink-muted)]">
+              {swatch.hex}
+            </div>
+          </div>
+        </div>
+
+        {/* Per-cell params — the values that actually drove this burn. */}
+        <div className="font-mono text-[10.5px] tabular-nums leading-relaxed text-[color:var(--color-ink)] break-words">
+          {paramTokens.join(" · ")}
+        </div>
+        <div className="font-mono text-[10px] leading-tight text-[color:var(--color-ink-subtle)] mt-1">
+          σ {swatch.sigma.toFixed(2)} · Lab {labText}
+        </div>
+
+        {onInspect && (
+          <button
+            type="button"
+            onClick={onInspect}
+            className="mt-2 w-full text-[11px] font-mono uppercase tracking-[0.1em] py-1 rounded-[4px] bg-[color:var(--color-primary)] text-white hover:bg-[color:var(--color-primary-tint)]"
+          >
+            Inspect →
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // ── Sweep-mode body (original) ───────────────────────────────────────
   const xLabel = `${spec.x_param} = ${formatParamValue(spec.x_param, swatch.x_value)}`;
   const yLabel = swatch.y_value !== null && spec.y_param
     ? `${spec.y_param} = ${formatParamValue(spec.y_param, swatch.y_value)}`
     : null;
-  const labText = swatch.lab
-    .map((v) => v.toFixed(0))
-    .join(" / ");
 
   return (
     <div
