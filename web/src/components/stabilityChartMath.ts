@@ -49,7 +49,18 @@ export type YAxis =
   | "delta_a"
   | "delta_b"
   | "delta_hue"
-  | "per_cell_sigma";
+  | "per_cell_sigma"
+  | "burn_delta_e"
+  | "burn_delta_hue";
+
+/** Axes that aggregate per-cell across all selected runs into a single
+ *  burn-true value. The scatter collapses its multi-series cloud into
+ *  one "burn mean" series when one of these is active; the heatmap
+ *  swaps in the burn-aware aggregator. Both views need ≥2 runs for the
+ *  numbers to be meaningful (otherwise the mean is just the run). */
+export function isBurnAxis(y: YAxis): boolean {
+  return y === "burn_delta_e" || y === "burn_delta_hue";
+}
 
 export interface AxisMeta {
   id: XAxis | YAxis;
@@ -73,6 +84,8 @@ export const Y_AXES: readonly AxisMeta[] = [
   { id: "delta_l", label: "ΔL", short: "ΔL", unit: "ΔL" },
   { id: "delta_a", label: "Δa", short: "Δa", unit: "Δa" },
   { id: "delta_b", label: "Δb", short: "Δb", unit: "Δb" },
+  { id: "burn_delta_e", label: "Burn ΔE (run-mean)", short: "BURN ΔE", unit: "ΔE" },
+  { id: "burn_delta_hue", label: "Burn Δh° (run-mean)", short: "BURN Δh°", unit: "deg" },
   { id: "measured_hue", label: "Measured hue", short: "h°", unit: "deg" },
   { id: "measured_l", label: "Measured L*", short: "L*", unit: "L*" },
   { id: "measured_a", label: "Measured a*", short: "a*", unit: "a*" },
@@ -133,8 +146,31 @@ export function computeYValue(
         hueDeg(measured[1], measured[2]) - hueDeg(exp[1], exp[2]),
       );
     case "per_cell_sigma":  return perCellSigma;
+    case "burn_delta_e":
+      // The chart collapses ``series`` to a synthetic single "burn
+      // mean" entry whose ``measured`` is the per-cell mean Lab —
+      // ``measured`` arriving here is therefore that mean, and the
+      // burn ΔE is simply ΔE76 against expected.
+      return deltaE76(exp, measured);
+    case "burn_delta_hue": {
+      // Same trick: ``measured`` is the per-cell mean. Suppress the
+      // value when the mean's chroma is too small for hue to read
+      // meaningfully (chart paints NaN as a missing dot).
+      if (chroma(measured[1], measured[2]) < BURN_HUE_CHROMA_THRESHOLD) {
+        return Number.NaN;
+      }
+      return wrapHueDelta(
+        hueDeg(measured[1], measured[2]) - hueDeg(exp[1], exp[2]),
+      );
+    }
   }
 }
+
+/** Match the per-cell helper in ``stabilityStatsMath.ts``. Cells whose
+ *  mean-measured chroma sits below this threshold render as gaps on the
+ *  burn-Δh° axis — hue-rotation can't be defined for a near-neutral
+ *  patch without amplifying noise. */
+const BURN_HUE_CHROMA_THRESHOLD = 3;
 
 /** Standard deviation (RMS Lab distance from the centroid) of measured
  *  values across the selected runs at this cell. Collapses each cell

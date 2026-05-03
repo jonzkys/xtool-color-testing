@@ -1,4 +1,5 @@
 import {
+  chroma,
   deltaE76,
   hueDeg,
   wrapHueDelta,
@@ -32,6 +33,31 @@ export interface AcrossRunsStats {
   medianSigma: number;
   worstSigma: { value: number; cellIndex: number | null };
   topVariable: { cellIndex: number; sigma: number }[];
+}
+
+/** Burn vs camera split — the iter-5 view that separates the systematic
+ *  burn drift (mean-of-runs vs expected) from the per-cell measurement
+ *  noise (spread between runs). Both are aggregated over the cells the
+ *  test sampled with at least one run; ``cameraSigma`` math additionally
+ *  needs ≥2 runs to mean anything, hence ``cameraSampleCount`` may be
+ *  smaller than ``burnSampleCount``. */
+export interface BurnVsCameraStats {
+  /** Number of cells contributing to the burn-side median. */
+  burnSampleCount: number;
+  /** Number of cells contributing to the camera-side median (≥2 runs). */
+  cameraSampleCount: number;
+  /** Per-cell BURN ΔE76 — distance from the per-run-mean Lab to the
+   *  expected Lab. Median across all sampled cells. */
+  medianBurnDeltaE: number;
+  /** Per-cell CAMERA σ — Euclidean ΔE76 spread across runs. Median
+   *  across cells with ≥2 runs. */
+  medianCameraSigma: number;
+  /** ``medianBurnDeltaE / medianCameraSigma`` when both are positive. */
+  ratio: number | null;
+  /** Cell with the largest BURN ΔE; null when no cells qualify. */
+  worstBurn: { cellIndex: number; value: number } | null;
+  /** Cell with the largest CAMERA σ; null when no cells have ≥2 runs. */
+  worstCamera: { cellIndex: number; value: number } | null;
 }
 
 export function computePerResultStats(
@@ -141,6 +167,137 @@ export function computeAcrossRunsStats(
       cellIndex: sortedDesc[0].cellIndex,
     },
     topVariable: sortedDesc.slice(0, 10),
+  };
+}
+
+/* ─── Burn vs camera per-cell helpers ──────────────────────────────────── */
+
+/** Minimum chroma for the per-cell hue rotation to read meaningfully.
+ *  Below this, atan2(b*, a*) wobbles with arbitrary noise so we suppress
+ *  the value rather than report a phantom rotation. Mirrors the
+ *  threshold the validation tooltip uses elsewhere on the page. */
+const HUE_CHROMA_THRESHOLD = 3;
+
+/** Best estimate of what the burn produced for this cell, given N
+ *  measurements: arithmetic mean Lab. ``null`` if no finite
+ *  measurements exist in the input. */
+export function meanLab(measurements: readonly Lab[]): Lab | null {
+  let n = 0;
+  let sL = 0;
+  let sA = 0;
+  let sB = 0;
+  for (const m of measurements) {
+    if (!m || m.length !== 3) continue;
+    if (!Number.isFinite(m[0]) || !Number.isFinite(m[1]) || !Number.isFinite(m[2])) {
+      continue;
+    }
+    sL += m[0];
+    sA += m[1];
+    sB += m[2];
+    n += 1;
+  }
+  if (n === 0) return null;
+  return [sL / n, sA / n, sB / n];
+}
+
+/** Burn-true ΔE76: distance between mean-Lab and expected_Lab. The
+ *  systematic, run-averaged error — the best guess at the burn's true
+ *  output independent of camera noise. ``null`` when ``meanLab`` is
+ *  null. */
+export function burnDeltaE(
+  measurements: readonly Lab[],
+  expected: Lab,
+): number | null {
+  const m = meanLab(measurements);
+  if (m == null) return null;
+  return deltaE76(m, expected);
+}
+
+/** Camera σ: mean of ``||lab_i − meanLab||`` (Euclidean ΔE76) across
+ *  the N measurements. Pure measurement noise — independent of how off
+ *  the burn is from expected. ``null`` if N<2 finite measurements. */
+export function cameraSigma(measurements: readonly Lab[]): number | null {
+  const finite: Lab[] = [];
+  for (const m of measurements) {
+    if (!m || m.length !== 3) continue;
+    if (!Number.isFinite(m[0]) || !Number.isFinite(m[1]) || !Number.isFinite(m[2])) {
+      continue;
+    }
+    finite.push([m[0], m[1], m[2]]);
+  }
+  if (finite.length < 2) return null;
+  const mean = meanLab(finite);
+  if (mean == null) return null;
+  let acc = 0;
+  for (const f of finite) {
+    acc += deltaE76(f, mean);
+  }
+  return acc / finite.length;
+}
+
+/** Burn-true signed Δh°: hue rotation from expected to mean-measured,
+ *  wrapped to [-180, 180]. ``null`` when mean-measured chroma is too
+ *  small to define hue meaningfully. */
+export function burnDeltaHue(
+  measurements: readonly Lab[],
+  expected: Lab,
+): number | null {
+  const m = meanLab(measurements);
+  if (m == null) return null;
+  if (chroma(m[1], m[2]) < HUE_CHROMA_THRESHOLD) return null;
+  return wrapHueDelta(hueDeg(m[1], m[2]) - hueDeg(expected[1], expected[2]));
+}
+
+/** Compute the BURN vs CAMERA card's content from the same
+ *  cells/series pair the rest of the strip consumes. Single-pass over
+ *  cells; runs each per-cell helper once and tracks the worst per
+ *  metric so the card can wire its cell-link tail. */
+export function computeBurnVsCameraStats(
+  cells: ValidationCell[],
+  series: StatsSeriesEntry[],
+): BurnVsCameraStats {
+  const burnDeltaEs: number[] = [];
+  const cameraSigmas: number[] = [];
+  let worstBurn: { cellIndex: number; value: number } | null = null;
+  let worstCamera: { cellIndex: number; value: number } | null = null;
+  for (const c of cells) {
+    const expArr = c.expected_lab as Lab | number[];
+    if (!Array.isArray(expArr) || expArr.length !== 3) continue;
+    const expected: Lab = [expArr[0], expArr[1], expArr[2]];
+    const labs: Lab[] = [];
+    for (const s of series) {
+      const m = s.cells.get(c.cell_index);
+      if (m) labs.push(m.lab);
+    }
+    const bDE = burnDeltaE(labs, expected);
+    if (bDE != null) {
+      burnDeltaEs.push(bDE);
+      if (worstBurn == null || bDE > worstBurn.value) {
+        worstBurn = { cellIndex: c.cell_index, value: bDE };
+      }
+    }
+    const cs = cameraSigma(labs);
+    if (cs != null) {
+      cameraSigmas.push(cs);
+      if (worstCamera == null || cs > worstCamera.value) {
+        worstCamera = { cellIndex: c.cell_index, value: cs };
+      }
+    }
+  }
+  const medianBurnDeltaE = burnDeltaEs.length > 0 ? median(burnDeltaEs) : 0;
+  const medianCameraSigma = cameraSigmas.length > 0 ? median(cameraSigmas) : 0;
+  const ratio =
+    medianBurnDeltaE > 0 && medianCameraSigma > 0
+      ? medianBurnDeltaE / medianCameraSigma
+      : null;
+  return {
+    burnSampleCount: burnDeltaEs.length,
+    cameraSampleCount: cameraSigmas.length,
+    medianBurnDeltaE,
+    medianCameraSigma,
+    ratio,
+    worstBurn,
+    worstCamera,
   };
 }
 

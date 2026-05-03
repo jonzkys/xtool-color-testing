@@ -173,8 +173,12 @@ export function StabilityPage() {
           for (const rec of sorted) next[rec.id] = rec;
           return next;
         });
+        // Tick every result by default — multi-lighting-angle uploads
+        // are the common case for validation, and the BURN-vs-CAMERA
+        // split + σ stats are only meaningful with ≥2 runs anyway.
+        // Users can untick the ones they don't want.
         if (sorted.length > 0) {
-          setSelectedResultIds([sorted[0].id]);
+          setSelectedResultIds(sorted.map((r) => r.id));
         }
       })
       .catch((e) => setResultsError((e as Error).message))

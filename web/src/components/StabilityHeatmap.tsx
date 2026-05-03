@@ -14,6 +14,7 @@ import {
   inferPhysicalRows,
   isDivergingMetric,
   isHeatmapMetric,
+  requiresMultiRun,
   type HeatmapCell,
   type HeatmapMetric,
 } from "./stabilityHeatmapMath";
@@ -81,8 +82,8 @@ export function StabilityHeatmap({
   const yMeta = Y_AXES.find((a) => a.id === safeMetric);
   const hasAnyData = data.some((d) => Number.isFinite(d.value));
   const hasAnySeries = series.length > 0;
-  const requiresMultiRun = safeMetric === "per_cell_sigma";
-  const tooFewRunsForSigma = requiresMultiRun && series.length < 2;
+  const needsMultiRun = requiresMultiRun(safeMetric);
+  const tooFewRunsForSigma = needsMultiRun && series.length < 2;
 
   if (!hasAnySeries) {
     return <EmptyHeatmap message="Select one or more results to compare" />;
@@ -290,7 +291,9 @@ function Grid({
       {tooFewRunsForSigma && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="font-mono text-[11px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)] bg-[color:var(--color-surface)]/85 px-3 py-2 rounded-[6px] border border-[color:var(--color-border)]">
-            σ across runs needs ≥ 2 results selected
+            {metric === "per_cell_sigma"
+              ? "σ across runs needs ≥ 2 results selected"
+              : "Burn-true metrics need ≥ 2 results selected"}
           </div>
         </div>
       )}

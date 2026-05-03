@@ -8,6 +8,7 @@ import {
   AxisMeta,
   computeXValue,
   computeYValue,
+  isBurnAxis,
   perCellSigmaFor,
   seriesColour,
   SeriesInput,
@@ -17,6 +18,7 @@ import {
   YAxis,
 } from "./stabilityChartMath";
 import { isHeatmapMetric } from "./stabilityHeatmapMath";
+import { meanLab } from "./stabilityStatsMath";
 
 // Re-export public surface so the page only needs to import from
 // `StabilityChart`.
@@ -89,6 +91,42 @@ export function StabilityChart({
   const xMeta = X_AXES.find((a) => a.id === xAxis)!;
   const yMeta = Y_AXES.find((a) => a.id === yAxis)!;
 
+  // When a burn axis is active and ≥2 runs are selected, the scatter
+  // collapses to a single synthetic series — each cell contributes one
+  // dot at its run-mean Lab. Below 2 runs the axis is meaningless, so
+  // the rows stay empty (the axis pill is also disabled in the header
+  // so the user shouldn't get here, but the chart degrades gracefully
+  // either way).
+  const burnMode = isBurnAxis(yAxis);
+  const burnUsable = burnMode && series.length >= 2;
+  const renderSeries = useMemo<SeriesInput[]>(() => {
+    if (!burnMode) return series;
+    if (!burnUsable) return [];
+    const collapsedCells = new Map<number, { hex: string; lab: Lab }>();
+    for (const c of cells) {
+      const labs: Lab[] = [];
+      let hex = "#000000";
+      for (const s of series) {
+        const m = s.cells.get(c.cell_index);
+        if (m) {
+          labs.push(m.lab);
+          hex = m.hex;
+        }
+      }
+      if (labs.length < 2) continue;
+      const m = meanLab(labs);
+      if (m == null) continue;
+      collapsedCells.set(c.cell_index, { hex, lab: m });
+    }
+    return [
+      {
+        resultId: -1,
+        label: "BURN MEAN",
+        cells: collapsedCells,
+      },
+    ];
+  }, [burnMode, burnUsable, series, cells]);
+
   const rows = useMemo<ScatterRow[]>(() => {
     const out: ScatterRow[] = [];
     for (const c of cells) {
@@ -97,7 +135,7 @@ export function StabilityChart({
       const exp: Lab = [expectedLab[0], expectedLab[1], expectedLab[2]];
       const x = computeXValue(xAxis, c.cell_index, exp);
       if (!Number.isFinite(x)) continue;
-      const perSeries: { measured: Lab | null; y: number }[] = series.map(
+      const perSeries: { measured: Lab | null; y: number }[] = renderSeries.map(
         (s) => {
           const m = s.cells.get(c.cell_index);
           if (!m) return { measured: null, y: NaN };
@@ -113,7 +151,7 @@ export function StabilityChart({
       out.push({ cell: c, expected: exp, x, perSeries });
     }
     return out;
-  }, [cells, series, xAxis, yAxis]);
+  }, [cells, series, renderSeries, xAxis, yAxis]);
 
   const hasAnySeries = series.length > 0;
   const hasAnyData = hasAnySeries && rows.some((r) =>
@@ -136,13 +174,15 @@ export function StabilityChart({
         series={series}
         mode={mode}
         onModeChange={onModeChange}
+        runCount={series.length}
+        burnActive={burnMode && burnUsable && mode === "scatter"}
       />
       <div className="flex-1 min-h-0 px-4 pb-4 flex flex-col">
         {mode === "scatter" ? (
           hasAnySeries && hasAnyData ? (
             <StabilityScatter
               rows={rows}
-              series={series}
+              series={renderSeries}
               xMeta={xMeta}
               yMeta={yMeta}
               xAxis={xAxis}
@@ -154,10 +194,20 @@ export function StabilityChart({
               onBackgroundClear={() => onBackgroundClear("scatter")}
             />
           ) : (
-            <EmptyChart xMeta={xMeta} yMeta={yMeta} hasSeries={hasAnySeries} />
+            <EmptyChart
+              xMeta={xMeta}
+              yMeta={yMeta}
+              hasSeries={hasAnySeries}
+              burnNeedsRuns={burnMode && !burnUsable && hasAnySeries}
+            />
           )
         ) : cellsPerRow == null ? (
-          <EmptyChart xMeta={xMeta} yMeta={yMeta} hasSeries={hasAnySeries} />
+          <EmptyChart
+            xMeta={xMeta}
+            yMeta={yMeta}
+            hasSeries={hasAnySeries}
+            burnNeedsRuns={false}
+          />
         ) : (
           <StabilityHeatmap
             cells={cells}
@@ -186,6 +236,8 @@ function ChartHeader({
   series,
   mode,
   onModeChange,
+  runCount,
+  burnActive,
 }: {
   xAxis: XAxis;
   yAxis: YAxis;
@@ -194,6 +246,8 @@ function ChartHeader({
   series: SeriesInput[];
   mode: ChartMode;
   onModeChange: (m: ChartMode) => void;
+  runCount: number;
+  burnActive: boolean;
 }) {
   // In spatial mode the X axis is meaningless (no abscissa to vary
   // along); the Y axis row keeps its segmented look but its options
@@ -204,6 +258,12 @@ function ChartHeader({
   const yAxes = mode === "spatial"
     ? Y_AXES.filter((a) => isHeatmapMetric(a.id as YAxis))
     : Y_AXES;
+  // Burn axes need ≥ 2 runs to be meaningful; when only one is on, the
+  // pill renders muted + non-clickable, with a single small caption
+  // explaining why.
+  const burnDisabled = runCount < 2;
+  const isAxisDisabled = (id: XAxis | YAxis) =>
+    isBurnAxis(id as YAxis) && burnDisabled;
   return (
     <div className="px-4 pt-4 pb-3 border-b border-[color:var(--color-border)]">
       <div className="flex flex-col gap-2">
@@ -213,6 +273,8 @@ function ChartHeader({
           axes={yAxes}
           value={yAxis}
           onChange={(v) => onYAxisChange(v as YAxis)}
+          isDisabled={isAxisDisabled}
+          disabledHint="needs ≥ 2 runs"
         />
         {mode === "scatter" && (
           <AxisRow
@@ -220,6 +282,8 @@ function ChartHeader({
             axes={X_AXES}
             value={xAxis}
             onChange={(v) => onXAxisChange(v as XAxis)}
+            isDisabled={() => false}
+            disabledHint=""
           />
         )}
       </div>
@@ -228,21 +292,37 @@ function ChartHeader({
           <span className="font-mono text-[9.5px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)]">
             Series
           </span>
-          {series.map((s, i) => (
+          {burnActive ? (
             <span
-              key={s.resultId}
               className="inline-flex items-center gap-1.5 rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-2 py-0.5"
+              title={`Per-cell mean across ${runCount} runs`}
             >
               <span
                 aria-hidden
                 className="h-2.5 w-2.5 rounded-full"
-                style={{ background: seriesColour(i) }}
+                style={{ background: seriesColour(0) }}
               />
               <span className="font-mono text-[10.5px] tabular-nums text-[color:var(--color-ink)]">
-                {s.label}
+                BURN MEAN · {runCount} runs
               </span>
             </span>
-          ))}
+          ) : (
+            series.map((s, i) => (
+              <span
+                key={s.resultId}
+                className="inline-flex items-center gap-1.5 rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-2 py-0.5"
+              >
+                <span
+                  aria-hidden
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ background: seriesColour(i) }}
+                />
+                <span className="font-mono text-[10.5px] tabular-nums text-[color:var(--color-ink)]">
+                  {s.label}
+                </span>
+              </span>
+            ))
+          )}
         </div>
       )}
     </div>
@@ -298,12 +378,17 @@ function AxisRow({
   axes,
   value,
   onChange,
+  isDisabled,
+  disabledHint,
 }: {
   legend: string;
   axes: readonly AxisMeta[];
   value: string;
   onChange: (v: string) => void;
+  isDisabled: (id: XAxis | YAxis) => boolean;
+  disabledHint: string;
 }) {
+  const anyDisabled = axes.some((a) => isDisabled(a.id));
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <span className="font-mono text-[9.5px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)] w-[44px] shrink-0">
@@ -312,26 +397,41 @@ function AxisRow({
       <div className="flex flex-wrap gap-1">
         {axes.map((a) => {
           const active = a.id === value;
+          const disabled = isDisabled(a.id);
           return (
             <button
               key={a.id}
               type="button"
-              onClick={() => onChange(a.id)}
+              onClick={() => {
+                if (disabled) return;
+                onChange(a.id);
+              }}
               aria-pressed={active}
+              aria-disabled={disabled}
+              disabled={disabled}
               className={cn(
                 "h-7 px-2.5 rounded-[6px] font-mono text-[10.5px] tracking-[0.12em] uppercase font-semibold tabular-nums",
                 "border transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
-                active
-                  ? "bg-[color:var(--color-primary)] text-white border-[color:var(--color-primary)]"
-                  : "bg-[color:var(--color-surface)] border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
+                disabled
+                  ? "bg-[color:var(--color-surface)]/60 border-[color:var(--color-border)]/60 text-[color:var(--color-ink-subtle)]/60 cursor-not-allowed"
+                  : active
+                    ? "bg-[color:var(--color-primary)] text-white border-[color:var(--color-primary)]"
+                    : "bg-[color:var(--color-surface)] border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
               )}
-              title={a.label}
+              title={
+                disabled ? `${a.label} — ${disabledHint}` : a.label
+              }
             >
               {a.short}
             </button>
           );
         })}
+        {anyDisabled && disabledHint && (
+          <span className="self-center font-mono text-[9.5px] tracking-[0.16em] uppercase text-[color:var(--color-ink-subtle)] pl-1">
+            {disabledHint}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -343,10 +443,12 @@ function EmptyChart({
   xMeta,
   yMeta,
   hasSeries,
+  burnNeedsRuns,
 }: {
   xMeta: AxisMeta;
   yMeta: AxisMeta;
   hasSeries: boolean;
+  burnNeedsRuns: boolean;
 }) {
   const W = 720;
   const H = 440;
@@ -431,9 +533,11 @@ function EmptyChart({
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
         <div className="text-center">
           <div className="font-mono text-[11px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
-            {hasSeries
-              ? "No comparable cells in the selected results"
-              : "Select one or more results to compare"}
+            {burnNeedsRuns
+              ? "Burn-true axes need ≥ 2 results selected"
+              : hasSeries
+                ? "No comparable cells in the selected results"
+                : "Select one or more results to compare"}
           </div>
         </div>
       </div>

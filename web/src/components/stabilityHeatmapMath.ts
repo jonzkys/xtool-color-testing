@@ -10,6 +10,7 @@ import {
   type SeriesInput,
   type YAxis,
 } from "./stabilityChartMath";
+import { burnDeltaE, burnDeltaHue } from "./stabilityStatsMath";
 
 /* ─── Heatmap metric vocabulary ────────────────────────────────────────── */
 
@@ -24,7 +25,9 @@ export type HeatmapMetric =
   | "delta_a"
   | "delta_b"
   | "delta_hue"
-  | "per_cell_sigma";
+  | "per_cell_sigma"
+  | "burn_delta_e"
+  | "burn_delta_hue";
 
 const HEATMAP_METRIC_SET: ReadonlySet<HeatmapMetric> = new Set<HeatmapMetric>([
   "delta_e",
@@ -33,7 +36,20 @@ const HEATMAP_METRIC_SET: ReadonlySet<HeatmapMetric> = new Set<HeatmapMetric>([
   "delta_b",
   "delta_hue",
   "per_cell_sigma",
+  "burn_delta_e",
+  "burn_delta_hue",
 ]);
+
+/** Burn-aware metrics need ≥2 runs to be meaningful (the per-cell mean
+ *  is the burn-true estimate; with one run there's nothing to average).
+ *  ``per_cell_sigma`` is the existing tenant of the same constraint. */
+export function requiresMultiRun(metric: HeatmapMetric): boolean {
+  return (
+    metric === "per_cell_sigma" ||
+    metric === "burn_delta_e" ||
+    metric === "burn_delta_hue"
+  );
+}
 
 /** Filter the scatter's full Y-axis list down to metrics meaningful on
  *  a heatmap. The rest (measured channel positions, etc.) make no sense
@@ -51,7 +67,8 @@ export function isDivergingMetric(metric: HeatmapMetric): boolean {
     metric === "delta_l" ||
     metric === "delta_a" ||
     metric === "delta_b" ||
-    metric === "delta_hue"
+    metric === "delta_hue" ||
+    metric === "burn_delta_hue"
   );
 }
 
@@ -123,6 +140,24 @@ function aggregateMetric(
     for (const m of measured) if (m) n++;
     return n >= 2 ? sigma : NaN;
   }
+  if (metric === "burn_delta_e" || metric === "burn_delta_hue") {
+    // Burn-true axes need ≥2 runs to be a real estimate of the burn —
+    // a single run still falls under the per-run aggregator below
+    // (which would just echo that one ΔE / Δh°).
+    let n = 0;
+    const labs: Lab[] = [];
+    for (const m of measured) {
+      if (!m) continue;
+      labs.push(m.lab);
+      n += 1;
+    }
+    if (n < 2) return NaN;
+    const v =
+      metric === "burn_delta_e"
+        ? burnDeltaE(labs, expected)
+        : burnDeltaHue(labs, expected);
+    return v == null ? NaN : v;
+  }
   // Mean across runs that sampled this cell.
   let acc = 0;
   let n = 0;
@@ -155,7 +190,10 @@ function singleResultMetric(
         hueDeg(measured[1], measured[2]) - hueDeg(exp[1], exp[2]),
       );
     case "per_cell_sigma":
-      // Aggregator handles σ separately (it's a series-level value).
+    case "burn_delta_e":
+    case "burn_delta_hue":
+      // The aggregator owns these — σ is a series-level value, burn-*
+      // are over the per-cell mean.
       return NaN;
   }
 }
@@ -199,12 +237,14 @@ export function computeHeatmapRange(
 export function defaultFloor(metric: HeatmapMetric): number {
   switch (metric) {
     case "delta_e":
+    case "burn_delta_e":
       return 1;
     case "delta_l":
     case "delta_a":
     case "delta_b":
       return 2;
     case "delta_hue":
+    case "burn_delta_hue":
       return 5;
     case "per_cell_sigma":
       return 1;

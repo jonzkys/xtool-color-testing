@@ -4,9 +4,11 @@ import { cn } from "../ui";
 import { seriesColour, type FocusedCell } from "./StabilityChart";
 import {
   AcrossRunsStats,
+  BurnVsCameraStats,
   PerResultStats,
   StatsSeriesEntry,
   computeAcrossRunsStats,
+  computeBurnVsCameraStats,
   computePerResultStats,
   signedNum,
 } from "./stabilityStatsMath";
@@ -49,6 +51,12 @@ export function StabilityStats({
     [cells, series],
   );
 
+  const burnVsCamera = useMemo(
+    () =>
+      series.length >= 2 ? computeBurnVsCameraStats(cells, series) : null,
+    [cells, series],
+  );
+
   return (
     <aside
       className={cn(
@@ -80,6 +88,15 @@ export function StabilityStats({
                 onClick={onClick}
               />
             ))}
+            {burnVsCamera && (
+              <BurnVsCameraCard
+                stats={burnVsCamera}
+                focusedCell={focusedCell}
+                onHover={onHover}
+                onHoverLeave={onHoverLeave}
+                onClick={onClick}
+              />
+            )}
             {acrossRuns && (
               <AcrossRunsCard
                 stats={acrossRuns}
@@ -188,6 +205,180 @@ function StatRow({
         {value}
       </dd>
     </div>
+  );
+}
+
+/* ─── Burn vs camera card ──────────────────────────────────────────────── */
+
+function BurnVsCameraCard({
+  stats,
+  focusedCell,
+  onHover,
+  onHoverLeave,
+  onClick,
+}: {
+  stats: BurnVsCameraStats;
+  focusedCell: FocusedCell;
+  onHover: (cellIndex: number) => void;
+  onHoverLeave: () => void;
+  onClick: (cellIndex: number) => void;
+}) {
+  // Burn-dominant ≥3:1 → the burn really is biased and a colour shift
+  // would help; camera-dominant ≤1:3 → the burn is fine and the camera
+  // is the noisy element. Anything in between reads as balanced —
+  // worth tuning either side, neither is the smoking gun.
+  let verdict: "BURN DOMINATES" | "CAMERA DOMINATES" | "BALANCED" = "BALANCED";
+  if (stats.ratio != null) {
+    if (stats.ratio >= 3) verdict = "BURN DOMINATES";
+    else if (stats.ratio <= 1 / 3) verdict = "CAMERA DOMINATES";
+  }
+  const burnSum = stats.medianBurnDeltaE;
+  const cameraSum = stats.medianCameraSigma;
+  const denom = burnSum + cameraSum;
+  const burnFrac = denom > 0 ? burnSum / denom : 0;
+  const burnPct = (burnFrac * 100).toFixed(1);
+  const cameraPct = (100 - burnFrac * 100).toFixed(1);
+  return (
+    <div className="rounded-[8px] border border-[color:var(--color-primary)]/40 bg-[color:var(--color-primary-tint)]/40 overflow-hidden">
+      <header className="px-2.5 py-1.5 border-b border-[color:var(--color-primary)]/30">
+        <div className="font-mono text-[10px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-primary)]">
+          Burn vs camera
+        </div>
+      </header>
+      <dl className="flex flex-col">
+        <StatRow
+          label="Burn ΔE"
+          value={`median ${stats.medianBurnDeltaE.toFixed(2)}`}
+        />
+        <StatRow
+          label="Camera σ"
+          value={`median ${stats.medianCameraSigma.toFixed(2)}`}
+        />
+        <StatRow
+          label="Ratio"
+          value={
+            stats.ratio == null
+              ? "—"
+              : `${stats.ratio.toFixed(1)} ×`
+          }
+        />
+      </dl>
+      <div className="px-2.5 pb-2 pt-1">
+        {/* 100 % stacked bar — the eye picks up "where is the error coming
+            from" before the user reads the numerical ratio. Width 100 %
+            of the card, 6 px tall, primary tint on the burn side, ink-
+            subtle on the camera side. */}
+        <div
+          className="flex h-[6px] w-full overflow-hidden rounded-[2px] border border-[color:var(--color-border)]"
+          aria-hidden
+          title={`burn ${burnPct}% · camera ${cameraPct}%`}
+        >
+          <div
+            className="h-full bg-[color:var(--color-primary)]"
+            style={{ width: `${burnPct}%` }}
+          />
+          <div
+            className="h-full bg-[color:var(--color-ink-subtle)]"
+            style={{ width: `${cameraPct}%` }}
+          />
+        </div>
+        <div className="mt-1 font-mono text-[9px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
+          {verdict}
+        </div>
+      </div>
+      {(stats.worstBurn || stats.worstCamera) && (
+        <div className="px-2.5 pt-1.5 pb-2.5 border-t border-[color:var(--color-primary)]/30 flex flex-col gap-0.5">
+          {stats.worstBurn && (
+            <WorstRow
+              label="Worst burn"
+              cellIndex={stats.worstBurn.cellIndex}
+              valueLabel={`ΔE ${stats.worstBurn.value.toFixed(2)}`}
+              focusedCell={focusedCell}
+              onHover={onHover}
+              onHoverLeave={onHoverLeave}
+              onClick={onClick}
+            />
+          )}
+          {stats.worstCamera && (
+            <WorstRow
+              label="Worst camera"
+              cellIndex={stats.worstCamera.cellIndex}
+              valueLabel={`σ ${stats.worstCamera.value.toFixed(2)}`}
+              focusedCell={focusedCell}
+              onHover={onHover}
+              onHoverLeave={onHoverLeave}
+              onClick={onClick}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WorstRow({
+  label,
+  cellIndex,
+  valueLabel,
+  focusedCell,
+  onHover,
+  onHoverLeave,
+  onClick,
+}: {
+  label: string;
+  cellIndex: number;
+  valueLabel: string;
+  focusedCell: FocusedCell;
+  onHover: (cellIndex: number) => void;
+  onHoverLeave: () => void;
+  onClick: (cellIndex: number) => void;
+}) {
+  const isFocused =
+    focusedCell != null && focusedCell.cellIndex === cellIndex;
+  const isPinned =
+    focusedCell?.kind === "pinned" && focusedCell.cellIndex === cellIndex;
+  return (
+    <button
+      type="button"
+      onMouseEnter={() => onHover(cellIndex)}
+      onMouseLeave={onHoverLeave}
+      onClick={() => onClick(cellIndex)}
+      aria-pressed={isPinned}
+      className={cn(
+        "w-full flex items-baseline justify-between gap-2",
+        "font-mono text-[10px] tabular-nums px-1.5 py-0.5 rounded-[3px]",
+        "transition-colors",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--color-primary)]/60",
+        isFocused
+          ? "bg-[color:var(--color-primary)]/12 text-[color:var(--color-primary)] border-l-2 border-[color:var(--color-primary)]"
+          : "border-l-2 border-transparent text-[color:var(--color-ink)] hover:text-[color:var(--color-primary)]",
+      )}
+    >
+      <span className="text-left font-mono text-[9px] tracking-[0.16em] uppercase text-[color:var(--color-ink-subtle)]">
+        {label}
+      </span>
+      <span className="flex items-baseline gap-1.5">
+        <span
+          className={cn(
+            "font-mono text-[10px] tabular-nums",
+            isFocused
+              ? "text-[color:var(--color-primary)]"
+              : "text-[color:var(--color-ink)]",
+          )}
+        >
+          cell #{cellIndex}
+        </span>
+        <span
+          className={cn(
+            isFocused
+              ? "text-[color:var(--color-primary)]/80"
+              : "text-[color:var(--color-ink-subtle)]",
+          )}
+        >
+          {valueLabel}
+        </span>
+      </span>
+    </button>
   );
 }
 
