@@ -225,3 +225,55 @@ export function formatYValue(v: number, unit: string): string {
   const isAngle = unit === "deg";
   return `${sign}${v.toFixed(decimals)}${isAngle ? "°" : ""}`;
 }
+
+/* ─── Marginal histograms ─────────────────────────────────────────────────
+ *
+ * Build a fixed-bin density histogram across a numeric range. Used by the
+ * scatter's bottom/right marginal strips to show where cells cluster on
+ * each axis. Pure: takes the same axis bounds the chart already nicened
+ * so bars line up with the plot area.
+ */
+
+export interface HistogramResult {
+  /** One count per bin, length === binCount. */
+  counts: number[];
+  /** Bin width in axis units (max - min) / binCount. */
+  binWidth: number;
+  /** Largest count across all bins; useful for normalising bar heights. */
+  maxCount: number;
+}
+
+/** Bin a stream of finite numbers into `binCount` equal-width buckets
+ *  spanning `[min, max]`. Values exactly at `max` land in the last bin
+ *  (closed-right edge). NaN/±Infinity entries are silently skipped so
+ *  callers can pass the same un-filtered arrays the chart consumes.
+ *  Values outside the range are also skipped — they shouldn't exist in
+ *  practice (axis bounds enclose all plotted points), but this keeps
+ *  the function defensive without polluting the edge bins. */
+export function binHistogram(
+  values: number[],
+  min: number,
+  max: number,
+  binCount: number,
+): HistogramResult {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || binCount <= 0) {
+    return { counts: [], binWidth: 0, maxCount: 0 };
+  }
+  const counts = new Array<number>(binCount).fill(0);
+  const range = max - min;
+  if (range <= 0) {
+    return { counts, binWidth: 0, maxCount: 0 };
+  }
+  const binWidth = range / binCount;
+  for (const v of values) {
+    if (!Number.isFinite(v)) continue;
+    if (v < min || v > max) continue;
+    let idx = Math.floor((v - min) / binWidth);
+    if (idx >= binCount) idx = binCount - 1; // close the right edge
+    if (idx < 0) idx = 0;
+    counts[idx] += 1;
+  }
+  let maxCount = 0;
+  for (const c of counts) if (c > maxCount) maxCount = c;
+  return { counts, binWidth, maxCount };
+}

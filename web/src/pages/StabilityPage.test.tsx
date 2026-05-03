@@ -153,8 +153,10 @@ describe("StabilityPage", () => {
           status: 200,
           headers: { "Content-Type": "application/json" },
         }),
+      // ``listResults`` already carries swatches; the page seeds the
+      // cache from this response and skips a per-id round-trip.
       "/api/tests/1/results": () =>
-        new Response(JSON.stringify([{ ...result, swatches: [] }]), {
+        new Response(JSON.stringify([result]), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         }),
