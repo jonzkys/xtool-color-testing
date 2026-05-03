@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { ValidationCell } from "../types";
 import { cn } from "../ui";
-import { seriesColour } from "./StabilityChart";
+import { seriesColour, type FocusedCell } from "./StabilityChart";
 import {
   AcrossRunsStats,
   PerResultStats,
@@ -16,7 +16,12 @@ export type { StatsSeriesEntry } from "./stabilityStatsMath";
 interface Props {
   cells: ValidationCell[];
   series: StatsSeriesEntry[];
-  onFocusCell?: (cellIndex: number) => void;
+  /** Page-wide focused cell. Drives the highlight on the TOP VARIABLE
+   *  list + the Max-ΔE links. ``null`` = no focus. */
+  focusedCell: FocusedCell;
+  onHover: (cellIndex: number) => void;
+  onHoverLeave: () => void;
+  onClick: (cellIndex: number) => void;
 }
 
 /**
@@ -26,7 +31,14 @@ interface Props {
  * card surfaces the most-variable cells so the user can chase
  * disagreements down to specific patches.
  */
-export function StabilityStats({ cells, series, onFocusCell }: Props) {
+export function StabilityStats({
+  cells,
+  series,
+  focusedCell,
+  onHover,
+  onHoverLeave,
+  onClick,
+}: Props) {
   const perResult = useMemo(
     () => series.map((s) => computePerResultStats(cells, s)),
     [cells, series],
@@ -62,11 +74,20 @@ export function StabilityStats({ cells, series, onFocusCell }: Props) {
                 key={stat.resultId}
                 stat={stat}
                 colour={seriesColour(i)}
-                onFocusCell={onFocusCell}
+                focusedCell={focusedCell}
+                onHover={onHover}
+                onHoverLeave={onHoverLeave}
+                onClick={onClick}
               />
             ))}
             {acrossRuns && (
-              <AcrossRunsCard stats={acrossRuns} onFocusCell={onFocusCell} />
+              <AcrossRunsCard
+                stats={acrossRuns}
+                focusedCell={focusedCell}
+                onHover={onHover}
+                onHoverLeave={onHoverLeave}
+                onClick={onClick}
+              />
             )}
           </>
         )}
@@ -80,11 +101,17 @@ export function StabilityStats({ cells, series, onFocusCell }: Props) {
 function ResultStatCard({
   stat,
   colour,
-  onFocusCell,
+  focusedCell,
+  onHover,
+  onHoverLeave,
+  onClick,
 }: {
   stat: PerResultStats;
   colour: string;
-  onFocusCell?: (cellIndex: number) => void;
+  focusedCell: FocusedCell;
+  onHover: (cellIndex: number) => void;
+  onHoverLeave: () => void;
+  onClick: (cellIndex: number) => void;
 }) {
   return (
     <div className="rounded-[8px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] overflow-hidden">
@@ -123,7 +150,10 @@ function ResultStatCard({
               <FocusButton
                 cellIndex={stat.worstCellIndex}
                 primary={stat.maxDeltaE.toFixed(2)}
-                onFocusCell={onFocusCell}
+                focusedCell={focusedCell}
+                onHover={onHover}
+                onHoverLeave={onHoverLeave}
+                onClick={onClick}
               />
             }
           />
@@ -165,10 +195,16 @@ function StatRow({
 
 function AcrossRunsCard({
   stats,
-  onFocusCell,
+  focusedCell,
+  onHover,
+  onHoverLeave,
+  onClick,
 }: {
   stats: AcrossRunsStats;
-  onFocusCell?: (cellIndex: number) => void;
+  focusedCell: FocusedCell;
+  onHover: (cellIndex: number) => void;
+  onHoverLeave: () => void;
+  onClick: (cellIndex: number) => void;
 }) {
   return (
     <div className="rounded-[8px] border border-[color:var(--color-primary)]/40 bg-[color:var(--color-primary-tint)]/40 overflow-hidden">
@@ -185,7 +221,10 @@ function AcrossRunsCard({
             <FocusButton
               cellIndex={stats.worstSigma.cellIndex}
               primary={stats.worstSigma.value.toFixed(2)}
-              onFocusCell={onFocusCell}
+              focusedCell={focusedCell}
+              onHover={onHover}
+              onHoverLeave={onHoverLeave}
+              onClick={onClick}
             />
           }
         />
@@ -196,25 +235,44 @@ function AcrossRunsCard({
             Top variable
           </div>
           <ul className="flex flex-col gap-0.5">
-            {stats.topVariable.map((row) => (
-              <li key={row.cellIndex}>
-                <button
-                  type="button"
-                  onClick={() => onFocusCell?.(row.cellIndex)}
-                  className={cn(
-                    "w-full flex items-baseline justify-between gap-2",
-                    "font-mono text-[10px] tabular-nums",
-                    "text-[color:var(--color-ink)] hover:text-[color:var(--color-primary)]",
-                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--color-primary)]/60 rounded-[3px]",
-                  )}
-                >
-                  <span className="text-left">cell #{row.cellIndex}</span>
-                  <span className="text-[color:var(--color-ink-subtle)]">
-                    σ {row.sigma.toFixed(2)}
-                  </span>
-                </button>
-              </li>
-            ))}
+            {stats.topVariable.map((row) => {
+              const isFocused =
+                focusedCell != null && focusedCell.cellIndex === row.cellIndex;
+              const isPinned =
+                focusedCell?.kind === "pinned" &&
+                focusedCell.cellIndex === row.cellIndex;
+              return (
+                <li key={row.cellIndex}>
+                  <button
+                    type="button"
+                    onMouseEnter={() => onHover(row.cellIndex)}
+                    onMouseLeave={onHoverLeave}
+                    onClick={() => onClick(row.cellIndex)}
+                    aria-pressed={isPinned}
+                    className={cn(
+                      "w-full flex items-baseline justify-between gap-2",
+                      "font-mono text-[10px] tabular-nums px-1.5 py-0.5 rounded-[3px]",
+                      "transition-colors",
+                      "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--color-primary)]/60",
+                      isFocused
+                        ? "bg-[color:var(--color-primary)]/12 text-[color:var(--color-primary)] border-l-2 border-[color:var(--color-primary)]"
+                        : "border-l-2 border-transparent text-[color:var(--color-ink)] hover:text-[color:var(--color-primary)]",
+                    )}
+                  >
+                    <span className="text-left">cell #{row.cellIndex}</span>
+                    <span
+                      className={cn(
+                        isFocused
+                          ? "text-[color:var(--color-primary)]/80"
+                          : "text-[color:var(--color-ink-subtle)]",
+                      )}
+                    >
+                      σ {row.sigma.toFixed(2)}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -225,28 +283,46 @@ function AcrossRunsCard({
 function FocusButton({
   cellIndex,
   primary,
-  onFocusCell,
+  focusedCell,
+  onHover,
+  onHoverLeave,
+  onClick,
 }: {
   cellIndex: number | null;
   primary: string;
-  onFocusCell?: (cellIndex: number) => void;
+  focusedCell: FocusedCell;
+  onHover: (cellIndex: number) => void;
+  onHoverLeave: () => void;
+  onClick: (cellIndex: number) => void;
 }) {
+  const isFocused =
+    cellIndex != null &&
+    focusedCell != null &&
+    focusedCell.cellIndex === cellIndex;
   return (
-    <button
-      type="button"
-      onClick={() => cellIndex != null && onFocusCell?.(cellIndex)}
-      className={cn(
-        "font-mono text-[10.5px] tabular-nums text-left",
-        "text-[color:var(--color-primary)] hover:underline",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--color-primary)]/60 rounded-[3px]",
-      )}
-    >
+    <span className="font-mono text-[10.5px] tabular-nums text-[color:var(--color-ink)]">
       {primary}
       {cellIndex != null && (
-        <span className="text-[color:var(--color-ink-subtle)]">
-          {" "}(cell #{cellIndex})
-        </span>
+        <>
+          {" "}
+          <button
+            type="button"
+            onMouseEnter={() => onHover(cellIndex)}
+            onMouseLeave={onHoverLeave}
+            onClick={() => onClick(cellIndex)}
+            className={cn(
+              "font-mono text-[10.5px] tabular-nums",
+              "underline-offset-2 hover:underline",
+              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--color-primary)]/60 rounded-[3px]",
+              isFocused
+                ? "text-[color:var(--color-primary)] font-semibold"
+                : "text-[color:var(--color-primary)]/85",
+            )}
+          >
+            (cell #{cellIndex})
+          </button>
+        </>
       )}
-    </button>
+    </span>
   );
 }

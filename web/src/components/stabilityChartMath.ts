@@ -209,6 +209,31 @@ export function niceTicks(min: number, max: number, count: number): number[] {
   return out;
 }
 
+/* ─── Grid index helpers ──────────────────────────────────────────────────
+ *
+ * The Stability page projects a 1-D `cell_index` (the canonical key on
+ * every result swatch and validation cell) onto a 2-D grid for the
+ * heatmap, and back again for click-targets. Centralised here so the
+ * scatter, heatmap, and stats list can all share the same arithmetic
+ * when wiring focus state without redoing it inline.
+ */
+
+/** Map a flat cell index to its (row, col) on the workpiece grid given
+ *  `cellsPerRow`. Mirrors the convention used everywhere else on the
+ *  page: row-major with the swatch's `row * cellsPerRow + col`. Returns
+ *  `null` for non-finite or negative indices, or when `cellsPerRow` is
+ *  not a positive integer. */
+export function cellIndexToRowCol(
+  cellIndex: number,
+  cellsPerRow: number,
+): { row: number; col: number } | null {
+  if (!Number.isFinite(cellIndex) || cellIndex < 0) return null;
+  if (!Number.isFinite(cellsPerRow) || cellsPerRow <= 0) return null;
+  const ci = Math.floor(cellIndex);
+  const cpr = Math.floor(cellsPerRow);
+  return { row: Math.floor(ci / cpr), col: ci % cpr };
+}
+
 export function fmtTick(v: number): string {
   if (!Number.isFinite(v)) return "—";
   const abs = Math.abs(v);

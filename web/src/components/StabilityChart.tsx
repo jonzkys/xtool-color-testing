@@ -25,6 +25,19 @@ export { seriesColour } from "./stabilityChartMath";
 
 export type ChartMode = "scatter" | "spatial";
 
+/** Surface a hover/click came from. Drives the page-level "should this
+ *  view's mouse-leave clear the transient focus?" decision so a
+ *  transient hover in one view never wipes a pinned focus in another. */
+export type FocusSource = "scatter" | "heatmap" | "stats";
+
+/** Page-level focus state shared between the scatter, the heatmap, and
+ *  the stats strip. ``transient`` is a hover; ``pinned`` is a click
+ *  that survives until cleared. ``null`` means no cell is in focus. */
+export type FocusedCell =
+  | { kind: "transient"; cellIndex: number; source: FocusSource }
+  | { kind: "pinned"; cellIndex: number; source: FocusSource }
+  | null;
+
 interface Props {
   cells: ValidationCell[];
   series: SeriesInput[];
@@ -40,6 +53,14 @@ interface Props {
    *  ``null`` when the test malformed; the heatmap mode then renders
    *  empty. */
   cellsPerRow: number | null;
+  /** Page-level focus state — see ``FocusedCell`` above. */
+  focusedCell: FocusedCell;
+  onHover: (cellIndex: number, source: FocusSource) => void;
+  onHoverLeave: (source: FocusSource) => void;
+  onClick: (cellIndex: number, source: FocusSource) => void;
+  /** Click on the chart background (not on a cell). Page decides
+   *  whether the source matches. */
+  onBackgroundClear: (source: FocusSource) => void;
 }
 
 /**
@@ -59,6 +80,11 @@ export function StabilityChart({
   mode,
   onModeChange,
   cellsPerRow,
+  focusedCell,
+  onHover,
+  onHoverLeave,
+  onClick,
+  onBackgroundClear,
 }: Props) {
   const xMeta = X_AXES.find((a) => a.id === xAxis)!;
   const yMeta = Y_AXES.find((a) => a.id === yAxis)!;
@@ -121,6 +147,11 @@ export function StabilityChart({
               yMeta={yMeta}
               xAxis={xAxis}
               yAxis={yAxis}
+              focusedCell={focusedCell}
+              onHover={(idx) => onHover(idx, "scatter")}
+              onHoverLeave={() => onHoverLeave("scatter")}
+              onClick={(idx) => onClick(idx, "scatter")}
+              onBackgroundClear={() => onBackgroundClear("scatter")}
             />
           ) : (
             <EmptyChart xMeta={xMeta} yMeta={yMeta} hasSeries={hasAnySeries} />
@@ -133,6 +164,11 @@ export function StabilityChart({
             series={series}
             metric={heatmapMetric}
             cellsPerRow={cellsPerRow}
+            focusedCell={focusedCell}
+            onHover={(idx) => onHover(idx, "heatmap")}
+            onHoverLeave={() => onHoverLeave("heatmap")}
+            onClick={(idx) => onClick(idx, "heatmap")}
+            onBackgroundClear={() => onBackgroundClear("heatmap")}
           />
         )}
       </div>

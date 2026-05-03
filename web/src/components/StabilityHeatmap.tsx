@@ -18,13 +18,20 @@ import {
   type HeatmapMetric,
 } from "./stabilityHeatmapMath";
 import { StabilityHeatmapHoverCard } from "./stabilityHeatmapTooltip";
+import { HeatmapCellRect } from "./stabilityHeatmapCell";
 import type { ValidationCell } from "../types";
+import type { FocusedCell } from "./StabilityChart";
 
 interface Props {
   cells: ValidationCell[];
   series: SeriesInput[];
   metric: YAxis;
   cellsPerRow: number;
+  focusedCell: FocusedCell;
+  onHover: (cellIndex: number) => void;
+  onHoverLeave: () => void;
+  onClick: (cellIndex: number) => void;
+  onBackgroundClear: () => void;
 }
 
 /**
@@ -44,6 +51,11 @@ export function StabilityHeatmap({
   series,
   metric,
   cellsPerRow,
+  focusedCell,
+  onHover,
+  onHoverLeave,
+  onClick,
+  onBackgroundClear,
 }: Props) {
   const safeMetric: HeatmapMetric = isHeatmapMetric(metric)
     ? metric
@@ -91,6 +103,11 @@ export function StabilityHeatmap({
         series={series}
         hasAnyData={hasAnyData && !tooFewRunsForSigma}
         tooFewRunsForSigma={tooFewRunsForSigma}
+        focusedCell={focusedCell}
+        onHover={onHover}
+        onHoverLeave={onHoverLeave}
+        onClick={onClick}
+        onBackgroundClear={onBackgroundClear}
       />
       {hasAnyData && !tooFewRunsForSigma && (
         <RampLegend metric={safeMetric} range={range} yMeta={yMeta} />
@@ -111,6 +128,11 @@ function Grid({
   series,
   hasAnyData,
   tooFewRunsForSigma,
+  focusedCell,
+  onHover,
+  onHoverLeave,
+  onClick,
+  onBackgroundClear,
 }: {
   cells: HeatmapCell[];
   cellsPerRow: number;
@@ -121,6 +143,11 @@ function Grid({
   series: SeriesInput[];
   hasAnyData: boolean;
   tooFewRunsForSigma: boolean;
+  focusedCell: FocusedCell;
+  onHover: (cellIndex: number) => void;
+  onHoverLeave: () => void;
+  onClick: (cellIndex: number) => void;
+  onBackgroundClear: () => void;
 }) {
   // Index by (row, col) so render is a single sweep.
   const grid = useMemo(() => {
@@ -146,6 +173,16 @@ function Grid({
   const [hoverKey, setHoverKey] = useState<string | null>(null);
   const hovered = hoverKey ? grid.get(hoverKey) ?? null : null;
 
+  // Tooltip prefers the focused cell when one is set so the right
+  // info card mirrors the same cell the halo / outline is on. Falls
+  // back to the iter-3 hover behaviour (last cell the cursor brushed)
+  // when nothing is focused.
+  const focusedHeatmapCell =
+    focusedCell != null
+      ? cells.find((c) => c.cellIndex === focusedCell.cellIndex) ?? null
+      : null;
+  const tooltipCell = focusedHeatmapCell ?? hovered;
+
   return (
     <div className="relative flex-1 min-h-0 rounded-[10px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] p-3">
 
@@ -153,7 +190,16 @@ function Grid({
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="xMidYMid meet"
         className="w-full h-full block"
-        onMouseLeave={() => setHoverKey(null)}
+        onMouseLeave={() => {
+          setHoverKey(null);
+          onHoverLeave();
+        }}
+        onClick={(e) => {
+          // Only fire background-clear when the click landed on the
+          // SVG itself (not on a child <g>); per-cell <g> handles
+          // stop propagation by re-firing onClick before this fires.
+          if (e.target === e.currentTarget) onBackgroundClear();
+        }}
       >
         <defs>
           <pattern
@@ -210,63 +256,32 @@ function Grid({
           </text>
         ))}
 
-        {/* One rect per (row, col); empty positions get the hatch. */}
+        {/* One rect per (row, col); empty positions get the hatch.
+            Per-cell rendering + hover/click handlers live in the
+            `HeatmapCellRect` helper to keep this file under budget. */}
         {Array.from({ length: physicalRows }, (_, r) =>
           Array.from({ length: cellsPerRow }, (_, c) => {
             const key = `${r}.${c}`;
-            const cell = grid.get(key);
-            const x = PAD_LEFT + c * CELL;
-            const y = PAD_TOP + r * CELL;
-            if (!cell) {
-              return (
-                <rect
-                  key={`bg-${key}`}
-                  x={x}
-                  y={y}
-                  width={CELL}
-                  height={CELL}
-                  fill="url(#heatmap-empty-hatch)"
-                  stroke="var(--color-border)"
-                  strokeWidth={0.5}
-                  opacity={0.7}
-                />
-              );
-            }
-            const tint =
-              hasAnyData && !tooFewRunsForSigma
-                ? cellTintCss(metric, cell.value, range) ?? "var(--color-surface)"
-                : "var(--color-surface)";
-            const focused = hoverKey === key;
             return (
-              <g
+              <HeatmapCellRect
                 key={`g-${key}`}
-                onMouseEnter={() => setHoverKey(key)}
-                style={{ cursor: "default" }}
-              >
-                <rect
-                  x={x}
-                  y={y}
-                  width={CELL}
-                  height={CELL}
-                  fill={tint}
-                  stroke={
-                    focused
-                      ? "var(--color-primary)"
-                      : "var(--color-border)"
-                  }
-                  strokeWidth={focused ? 1.5 : 0.5}
-                />
-                {/* Expected-hex bar — anchors the cell to its target colour. */}
-                <rect
-                  x={x + 1}
-                  y={y + CELL - 9}
-                  width={CELL - 2}
-                  height={8}
-                  fill={cell.expectedHex}
-                  stroke="rgba(0,0,0,0.25)"
-                  strokeWidth={0.5}
-                />
-              </g>
+                row={r}
+                col={c}
+                cell={grid.get(key) ?? null}
+                x={PAD_LEFT + c * CELL}
+                y={PAD_TOP + r * CELL}
+                size={CELL}
+                metric={metric}
+                range={range}
+                hasAnyData={hasAnyData}
+                tooFewRunsForSigma={tooFewRunsForSigma}
+                isHovered={hoverKey === key}
+                focusedCell={focusedCell}
+                onHover={onHover}
+                onClick={onClick}
+                onBackgroundClear={onBackgroundClear}
+                onSetHoverKey={setHoverKey}
+              />
             );
           }),
         )}
@@ -280,9 +295,9 @@ function Grid({
         </div>
       )}
 
-      {hovered && yMeta && (
+      {tooltipCell && yMeta && (
         <StabilityHeatmapHoverCard
-          cell={hovered}
+          cell={tooltipCell}
           series={series}
           metric={metric}
           yMeta={yMeta}

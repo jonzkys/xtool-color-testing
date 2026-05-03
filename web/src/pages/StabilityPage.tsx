@@ -5,6 +5,8 @@ import { getTest, listTests } from "../api/tests";
 import {
   StabilityChart,
   type ChartMode,
+  type FocusedCell,
+  type FocusSource,
   type XAxis,
   type YAxis,
 } from "../components/StabilityChart";
@@ -55,6 +57,58 @@ export function StabilityPage() {
   const [yAxis, setYAxis] = useState<YAxis>("delta_hue");
   const [xAxis, setXAxis] = useState<XAxis>("expected_hue");
   const [chartMode, setChartMode] = useState<ChartMode>("scatter");
+
+  // Unified focused-cell state. Conceptually one slot read by every
+  // view, but stored as two independent buckets so a transient hover
+  // can momentarily overshadow a pinned cell without clobbering it —
+  // when the cursor leaves the hovered surface, the pinned focus
+  // re-asserts. The exposed `focusedCell` collapses both into the
+  // shape consumers care about: transient wins, pinned is the
+  // fallback, null when both are empty.
+  const [pinnedCell, setPinnedCell] = useState<
+    { cellIndex: number; source: FocusSource } | null
+  >(null);
+  const [transientCell, setTransientCell] = useState<
+    { cellIndex: number; source: FocusSource } | null
+  >(null);
+
+  const focusedCell: FocusedCell = useMemo(() => {
+    if (transientCell) {
+      return {
+        kind: "transient",
+        cellIndex: transientCell.cellIndex,
+        source: transientCell.source,
+      };
+    }
+    if (pinnedCell) {
+      return {
+        kind: "pinned",
+        cellIndex: pinnedCell.cellIndex,
+        source: pinnedCell.source,
+      };
+    }
+    return null;
+  }, [transientCell, pinnedCell]);
+
+  // Esc anywhere on the page clears every focus state. Cheap window
+  // listener — the page only mounts once so we don't need to debounce.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setTransientCell(null);
+        setPinnedCell(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Switching base test → drop focus. The cell index is meaningless on
+  // a different test's grid.
+  useEffect(() => {
+    setTransientCell(null);
+    setPinnedCell(null);
+  }, [selectedTestId]);
 
   // Load materials + validation tests on mount; if a test id arrived
   // via the URL, ensure we hydrate its detail. Otherwise pre-select
@@ -193,6 +247,63 @@ export function StabilityPage() {
     [testDetail],
   );
 
+  // Drop focus when the cell index doesn't exist on the current grid
+  // (e.g. a stale focus carried over via state during a base-test
+  // change race). Cell indices are not strictly contiguous, so we do
+  // a lookup rather than a bounds check.
+  useEffect(() => {
+    if (cells.length === 0) return; // grid not loaded yet — preserve focus
+    if (transientCell) {
+      const exists = cells.some(
+        (c) => c.cell_index === transientCell.cellIndex,
+      );
+      if (!exists) setTransientCell(null);
+    }
+    if (pinnedCell) {
+      const exists = cells.some((c) => c.cell_index === pinnedCell.cellIndex);
+      if (!exists) setPinnedCell(null);
+    }
+  }, [cells, transientCell, pinnedCell]);
+
+  const handleHover = useCallback(
+    (cellIndex: number, source: FocusSource) => {
+      setTransientCell({ cellIndex, source });
+    },
+    [],
+  );
+
+  const handleHoverLeave = useCallback((source: FocusSource) => {
+    setTransientCell((prev) => {
+      if (prev == null) return prev;
+      if (prev.source !== source) return prev;
+      return null;
+    });
+  }, []);
+
+  const handleClick = useCallback((cellIndex: number, source: FocusSource) => {
+    // Clear any in-flight transient — the user just committed.
+    setTransientCell(null);
+    setPinnedCell((prev) => {
+      // Re-clicking the same cell in the same source toggles off.
+      if (
+        prev != null &&
+        prev.cellIndex === cellIndex &&
+        prev.source === source
+      ) {
+        return null;
+      }
+      return { cellIndex, source };
+    });
+  }, []);
+
+  const handleBackgroundClear = useCallback((source: FocusSource) => {
+    // Clear the transient owned by this view (if any). Pinned focus
+    // also clears — clicking the empty chart canvas reads as "I'm
+    // done with that cell".
+    setTransientCell((prev) => (prev?.source === source ? null : prev));
+    setPinnedCell(null);
+  }, []);
+
   return (
     <div className="flex flex-col h-full min-h-0">
       <PageHeader test={testDetail ?? null} cellsCount={cells.length} />
@@ -219,9 +330,21 @@ export function StabilityPage() {
             mode={chartMode}
             onModeChange={setChartMode}
             cellsPerRow={cellsPerRow}
+            focusedCell={focusedCell}
+            onHover={handleHover}
+            onHoverLeave={handleHoverLeave}
+            onClick={handleClick}
+            onBackgroundClear={handleBackgroundClear}
           />
         </main>
-        <StabilityStats cells={cells} series={statsSeries} />
+        <StabilityStats
+          cells={cells}
+          series={statsSeries}
+          focusedCell={focusedCell}
+          onHover={(idx) => handleHover(idx, "stats")}
+          onHoverLeave={() => handleHoverLeave("stats")}
+          onClick={(idx) => handleClick(idx, "stats")}
+        />
       </div>
     </div>
   );

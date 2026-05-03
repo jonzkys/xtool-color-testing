@@ -23,6 +23,11 @@ import {
   YAxis,
 } from "./stabilityChartMath";
 import { StabilityHoverCard } from "./stabilityChartTooltip";
+import {
+  ScatterFocusHalos,
+  ScatterFocusPinnedCard,
+} from "./stabilityScatterFocusOverlay";
+import type { FocusedCell } from "./StabilityChart";
 
 export interface ScatterRow {
   cell: ValidationCell;
@@ -38,6 +43,14 @@ interface Props {
   yMeta: AxisMeta;
   xAxis: XAxis;
   yAxis: YAxis;
+  /** Page-wide focused cell. Drives halos + (when pinned) a sticky
+   *  tooltip; null = no focus. */
+  focusedCell: FocusedCell;
+  onHover: (cellIndex: number) => void;
+  onHoverLeave: () => void;
+  onClick: (cellIndex: number) => void;
+  /** Click on the SVG outside any dot. */
+  onBackgroundClear: () => void;
 }
 
 /**
@@ -64,6 +77,11 @@ export function StabilityScatter({
   yMeta,
   xAxis,
   yAxis,
+  focusedCell,
+  onHover,
+  onHoverLeave,
+  onClick,
+  onBackgroundClear,
 }: Props) {
   // Padding grew on the right + bottom by 28 px (4 gap + 24 strip) to
   // host the marginal histograms outside the data area without
@@ -200,8 +218,18 @@ export function StabilityScatter({
 
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  // Threshold (squared, in viewBox px) for treating a cursor as "on" a
+  // dot for focus purposes. Set generously so the user doesn't need to
+  // pixel-hunt — the existing hover-tooltip already uses the
+  // nearest-dot convention with no threshold, so we keep that for
+  // tooltip detection but constrain focus dispatch.
+  const HIT_RADIUS_SQ = 22 * 22;
 
-  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+  // Cursor → nearest-dot lookup. Returns the row index (or -1) plus
+  // the squared distance so callers can decide whether the cursor was
+  // close enough for focus dispatch (HIT_RADIUS_SQ) versus the looser
+  // tooltip selection (always nearest).
+  const nearestRow = (e: React.MouseEvent<SVGSVGElement>) => {
     const rect = svgRef.current!.getBoundingClientRect();
     const px = ((e.clientX - rect.left) / rect.width) * W;
     const py = ((e.clientY - rect.top) / rect.height) * H;
@@ -219,7 +247,26 @@ export function StabilityScatter({
         }
       }
     }
-    setHoverIdx(bestI >= 0 ? bestI : null);
+    return { i: bestI, d: bestD };
+  };
+
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const { i, d } = nearestRow(e);
+    setHoverIdx(i >= 0 ? i : null);
+    if (i >= 0 && d <= HIT_RADIUS_SQ) {
+      onHover(rows[i].cell.cell_index);
+    } else {
+      onHoverLeave();
+    }
+  };
+
+  const onSvgClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    const { i, d } = nearestRow(e);
+    if (i >= 0 && d <= HIT_RADIUS_SQ) {
+      onClick(rows[i].cell.cell_index);
+    } else {
+      onBackgroundClear();
+    }
   };
 
   const hovered = hoverIdx != null ? rows[hoverIdx] : null;
@@ -228,6 +275,31 @@ export function StabilityScatter({
       ? { x: xToPx(hovered.x), y: yToPx(meanY(hovered)) }
       : null;
   const hoveredSpread = hoverIdx != null ? rowSpread[hoverIdx] : null;
+
+  // Focused cell projection. Looked up once per render so the halos /
+  // pinned tooltip / vertical guide all draw from the same arithmetic.
+  const focusInfo = useMemo(() => {
+    if (focusedCell == null) return null;
+    const rowIdx = rows.findIndex(
+      (r) => r.cell.cell_index === focusedCell.cellIndex,
+    );
+    if (rowIdx < 0) return null;
+    const r = rows[rowIdx];
+    const points: ({ x: number; y: number; sIdx: number } | null)[] = r
+      .perSeries.map((p, sIdx) => {
+        if (!Number.isFinite(p.y)) return null;
+        return { x: xToPx(r.x), y: yToPx(p.y), sIdx };
+      });
+    let topAnchor: { x: number; y: number } | null = null;
+    for (const p of points) {
+      if (p == null) continue;
+      if (topAnchor == null || p.y < topAnchor.y) topAnchor = { x: p.x, y: p.y };
+    }
+    return { rowIdx, points, topAnchor, spread: rowSpread[rowIdx] };
+  // xToPx/yToPx project from current bounds — same dependency set as
+  // the perSeriesPoints memo.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedCell, rows, rowSpread, xMin, xMax, yMin, yMax]);
   // Resolve which bin the hover sits inside so the tooltip can echo
   // each series' trend value at that X. Returns null when trend is off
   // or the cursor lands outside the binned range.
@@ -258,7 +330,11 @@ export function StabilityScatter({
         preserveAspectRatio="xMidYMid meet"
         className="w-full h-full block rounded-[10px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]"
         onMouseMove={onMove}
-        onMouseLeave={() => setHoverIdx(null)}
+        onMouseLeave={() => {
+          setHoverIdx(null);
+          onHoverLeave();
+        }}
+        onClick={onSvgClick}
       >
         {yTicks.map((t) => (
           <line
@@ -396,6 +472,30 @@ export function StabilityScatter({
             binCount={trendBinTotal}
             xToPx={xToPx}
             yToPx={yToPx}
+          />
+        )}
+
+        {/* Focus halos + vertical guide. Sit above dots so the primary
+            ring stays visible; pinned vs. transient is encoded in the
+            stroke opacity / dash inside the helper. */}
+        {focusInfo && (
+          <ScatterFocusHalos
+            rows={rows}
+            series={series}
+            xMeta={xMeta}
+            yMeta={yMeta}
+            focusedCell={focusedCell}
+            perSeriesPx={focusInfo.points}
+            topAnchor={focusInfo.topAnchor}
+            plotTop={PADT}
+            plotBottom={H - PADB}
+            plotLeft={PADL}
+            plotRight={W - PADR}
+            W={W}
+            H={H}
+            focusedSpread={
+              multiRun ? focusInfo.spread?.spread ?? null : null
+            }
           />
         )}
 
@@ -570,6 +670,25 @@ export function StabilityScatter({
           anchorPx={hoveredAnchor}
           plotW={W}
           plotH={H}
+        />
+      )}
+
+      {focusInfo && (
+        <ScatterFocusPinnedCard
+          rows={rows}
+          series={series}
+          xMeta={xMeta}
+          yMeta={yMeta}
+          focusedCell={focusedCell}
+          perSeriesPx={focusInfo.points}
+          topAnchor={focusInfo.topAnchor}
+          plotTop={PADT}
+          plotBottom={H - PADB}
+          plotLeft={PADL}
+          plotRight={W - PADR}
+          W={W}
+          H={H}
+          focusedSpread={multiRun ? focusInfo.spread?.spread ?? null : null}
         />
       )}
     </div>

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { binHistogram, binnedMean, seriesMeanY } from "./stabilityChartMath";
+import {
+  binHistogram,
+  binnedMean,
+  cellIndexToRowCol,
+  seriesMeanY,
+} from "./stabilityChartMath";
 
 describe("binHistogram", () => {
   it("buckets a small known input into the expected counts", () => {
@@ -71,6 +76,33 @@ describe("seriesMeanY", () => {
     expect(seriesMeanY([10, 20, 30, 40])).toBeCloseTo(25);
     // NaN is skipped, not propagated.
     expect(seriesMeanY([1, NaN, 2, 3])).toBeCloseTo(2);
+  });
+});
+
+describe("cellIndexToRowCol", () => {
+  it("maps the iter-1 σ-list anchors to their visual ladder positions", () => {
+    // Ladder #51, #41, #43, #54 on a 10-wide grid land at r5/c1, r4/c1,
+    // r4/c3, r5/c4 — same physical positions across all three views, so
+    // the unified focus signal lights the same cell across stats /
+    // scatter / heatmap.
+    expect(cellIndexToRowCol(51, 10)).toEqual({ row: 5, col: 1 });
+    expect(cellIndexToRowCol(41, 10)).toEqual({ row: 4, col: 1 });
+    expect(cellIndexToRowCol(43, 10)).toEqual({ row: 4, col: 3 });
+    expect(cellIndexToRowCol(54, 10)).toEqual({ row: 5, col: 4 });
+  });
+
+  it("handles the first row + the row boundary correctly", () => {
+    expect(cellIndexToRowCol(0, 10)).toEqual({ row: 0, col: 0 });
+    expect(cellIndexToRowCol(9, 10)).toEqual({ row: 0, col: 9 });
+    expect(cellIndexToRowCol(10, 10)).toEqual({ row: 1, col: 0 });
+  });
+
+  it("returns null for invalid inputs", () => {
+    expect(cellIndexToRowCol(-1, 10)).toBeNull();
+    expect(cellIndexToRowCol(NaN, 10)).toBeNull();
+    expect(cellIndexToRowCol(5, 0)).toBeNull();
+    expect(cellIndexToRowCol(5, -2)).toBeNull();
+    expect(cellIndexToRowCol(5, NaN)).toBeNull();
   });
 });
 
