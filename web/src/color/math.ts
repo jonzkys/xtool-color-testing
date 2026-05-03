@@ -92,6 +92,26 @@ export function deltaE76(a: Lab, b: Lab): number {
   return Math.sqrt(dL * dL + da * da + db * db);
 }
 
+/** Polar hue angle (degrees, 0..360) of a Lab (a, b) pair. */
+export function hueDeg(a: number, b: number): number {
+  const h = (Math.atan2(b, a) * 180) / Math.PI;
+  return ((h % 360) + 360) % 360;
+}
+
+/** Chroma — radial distance from the L* axis in Lab (sqrt(a² + b²)). */
+export function chroma(a: number, b: number): number {
+  return Math.sqrt(a * a + b * b);
+}
+
+/** Wrap a hue delta (degrees) into the signed [-180, 180] range so that
+ *  a +355° rotation reads as -5° (the visually closer rotation). */
+export function wrapHueDelta(d: number): number {
+  let x = d % 360;
+  if (x > 180) x -= 360;
+  if (x < -180) x += 360;
+  return x;
+}
+
 /** CIEDE2000 color difference (Sharma et al. 2005).
  *
  *  Ported verbatim from ``src/xcs_gen_web/palette.py::delta_e_2000``. Used on

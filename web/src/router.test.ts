@@ -19,6 +19,8 @@ describe("parseRoute", () => {
     expect(parseRoute("#/svg-layers")).toEqual({ name: "svg-layers" });
     expect(parseRoute("#/library")).toEqual({ name: "library" });
     expect(parseRoute("#/palette")).toEqual({ name: "palette" });
+    expect(parseRoute("#/stability")).toEqual({ name: "stability" });
+    expect(parseRoute("#/stability/42")).toEqual({ name: "stability", id: 42 });
   });
 });
 
@@ -31,6 +33,8 @@ describe("formatRoute", () => {
       { name: "loom" },
       { name: "library" },
       { name: "palette" },
+      { name: "stability" },
+      { name: "stability", id: 7 },
     ] as const) {
       expect(parseRoute(formatRoute(r))).toEqual(r);
     }
