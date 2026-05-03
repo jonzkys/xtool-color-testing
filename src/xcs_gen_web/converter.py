@@ -282,22 +282,36 @@ def project_to_xcs(project: Project, *, machine_id: str = "F2Ultra") -> XCSProje
                 )
             per_cell_params = []
             for vc in cells:
-                # Crosshatch + angle_mode are test-level — apply them
-                # to every cell's seed ProcessingParams so the renderer
-                # sees the same cross_angle / angle_type the user picked
-                # on the test (matches how the sweep path threads them
-                # in the call below).
+                # Per-cell angle behaviour: a palette entry remembers
+                # the angle_mode + crosshatch of the test that produced
+                # it (since PR #38 / 0017 backfill), so a validation
+                # cell can faithfully reproduce a colour even when
+                # other cells in the same test came from differently-
+                # configured palette entries. Test-level fields stay
+                # as the fallback for cells that predate the backfill
+                # or were entered manually without the flags.
+                cell_params_dict = vc.get("params") or {}
+                cell_angle_mode = cell_params_dict.get("angle_mode") or t.angle_mode
+                cell_crosshatch_raw = cell_params_dict.get("crosshatch")
+                cell_crosshatch = (
+                    bool(cell_crosshatch_raw)
+                    if cell_crosshatch_raw is not None
+                    else t.crosshatch
+                )
                 p = _to_processing_params(
                     t.base_params,
-                    angle_mode=t.angle_mode,
-                    crosshatch=t.crosshatch,
+                    angle_mode=cell_angle_mode,
+                    crosshatch=cell_crosshatch,
                 )
                 # Filter to keys the renderer can apply per-cell. Palette
                 # entries also carry top-level test attributes like ``laser``
                 # and ``scan_angle`` (test-level) and legacy ``mode`` which
                 # may round-trip as ``null`` — silently skip both unknown
-                # keys and null values.
-                for key, value in (vc.get("params") or {}).items():
+                # keys and null values. ``angle_mode`` / ``crosshatch`` were
+                # consumed above and are not numeric burn params, so they
+                # don't appear in ``_PARAM_MAP`` and would be skipped here
+                # anyway.
+                for key, value in cell_params_dict.items():
                     if key not in _PARAM_MAP or value is None:
                         continue
                     _set_param(p, key, value)

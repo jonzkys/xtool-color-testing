@@ -19,6 +19,9 @@ export interface TestCellInspectorProps {
   onCellClick: (row: number, col: number) => void;
   /** Optional alt text for the image. */
   imageAlt?: string;
+  /** Test kind. Validation tests render no x-axis labels — each cell
+   *  carries its own params, there's no continuous axis to interpolate. */
+  kind?: "sweep" | "validation";
 }
 
 /**
@@ -33,7 +36,7 @@ export interface TestCellInspectorProps {
  * rect agrees with what the sampler hit.
  */
 export function TestCellInspector({
-  imageUrl, layout, spec, swatches, onCellClick, imageAlt,
+  imageUrl, layout, spec, swatches, onCellClick, imageAlt, kind,
 }: TestCellInspectorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -89,13 +92,23 @@ export function TestCellInspector({
     if (!idx) return;
     const swatch = swatchByCell.get(`${idx.row}|${idx.col}`);
     if (!swatch) return;
-    // Mouse click → drill in. Touch → pin the tooltip; "Inspect" button inside
-    // the tooltip drives the hand-off so a tap doesn't jump straight to a
-    // new dialog.
-    setStickyCell(cell);
-    setPointerPos({ x: e.clientX, y: e.clientY });
-    if (e.detail !== 0 && (e.nativeEvent as PointerEvent).pointerType === "mouse") {
+    // Mouse click → hand off to the dialog and DON'T pin a sticky
+    // cell. The dialog owns the highlight while it's open; once it
+    // closes, hover takes over again. (The previous behaviour set
+    // stickyCell unconditionally, so closing the modal left the old
+    // cell highlighted and blocked hover on every other cell.)
+    //
+    // Touch / pen → no modal hand-off; pin the tooltip locally so
+    // the user can read values without their finger covering the cell.
+    // The "Inspect" button inside the pinned tooltip is what opens
+    // the dialog on touch.
+    const isMouse =
+      e.detail !== 0 && (e.nativeEvent as PointerEvent).pointerType === "mouse";
+    if (isMouse) {
       onCellClick(idx.row, idx.col);
+    } else {
+      setStickyCell(cell);
+      setPointerPos({ x: e.clientX, y: e.clientY });
     }
   }
 
@@ -135,7 +148,7 @@ export function TestCellInspector({
         draggable={false}
       />
 
-      <AxisOverlay layout={layout} spec={spec} />
+      <AxisOverlay layout={layout} spec={spec} kind={kind} />
 
       {highlightStyle && (
         <div
@@ -162,10 +175,21 @@ export function TestCellInspector({
   );
 }
 
-function AxisOverlay({ layout, spec }: { layout: GridLayout; spec: TestSpec }) {
+function AxisOverlay({
+  layout, spec, kind,
+}: {
+  layout: GridLayout; spec: TestSpec; kind?: "sweep" | "validation";
+}) {
   // SVG that overlays the image with viewBox = image-pixel space.
   // The image and SVG share the same parent, so the SVG scales to
   // fit identically — no manual scale math needed for the labels.
+  //
+  // Validation tests skip x-axis labels: every cell carries its own
+  // params (the source-sweep's x_min/x_max/x_steps are inherited but
+  // meaningless), so paramValueAt's interpolation produces nonsense.
+  // The y-axis row indices stay — they orient the user inside the
+  // wrapped grid even without a swept axis.
+  const isValidation = kind === "validation";
   return (
     <svg
       aria-hidden
@@ -174,7 +198,7 @@ function AxisOverlay({ layout, spec }: { layout: GridLayout; spec: TestSpec }) {
       preserveAspectRatio="xMidYMid meet"
     >
       <YAxisLabels layout={layout} spec={spec} />
-      <XAxisLabels layout={layout} spec={spec} />
+      {!isValidation && <XAxisLabels layout={layout} spec={spec} />}
     </svg>
   );
 }

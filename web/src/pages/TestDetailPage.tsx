@@ -188,6 +188,8 @@ export function TestDetailPage({ testId }: Props) {
   useEffect(() => {
     if (!test) return;
     if (test.kind === "validation" && activeTab === "sweep") setActiveTab("test");
+    // Validation tests don't show Base params — bounce there too.
+    if (test.kind === "validation" && activeTab === "base") setActiveTab("test");
     if (test.kind !== "validation" && activeTab === "palette") setActiveTab("test");
   }, [test?.kind, activeTab]);
 
@@ -476,12 +478,16 @@ export function TestDetailPage({ testId }: Props) {
         {/* LEFT: tabbed editor */}
         <div className="flex flex-col min-h-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-hidden">
           <TabBar<ParamTestEditorTab>
+            // Validation tests skip the Base params tab — every cell
+            // carries its own complete params overlay (power, speed,
+            // angle_mode, crosshatch, …) inherited from the palette
+            // entry it represents, so test-level base params would be
+            // shadowed for every burn anyway.
             items={
               test?.kind === "validation"
                 ? [
                     { id: "test", label: "Test" },
                     { id: "palette", label: "Palette" },
-                    { id: "base", label: "Base params" },
                     { id: "registration", label: "Registration" },
                   ]
                 : [
