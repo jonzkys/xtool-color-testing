@@ -40,6 +40,9 @@ from .schemas import (
     ResultResponse,
     ResultSwatch,
     InspectCellResponse,
+    SavedSpectrumCreate,
+    SavedSpectrumPatch,
+    SavedSpectrumResponse,
     SwatchPreviewResponse,
     SvgLayersRequest,
     SvgPreviewRequest,
@@ -1639,6 +1642,110 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         else:
             ids = pal_repo.insert_bulk(payload, owner_id=user_id)
         return {"added": len(ids), "ids": ids}
+
+    from .repositories import saved_spectrums as ss_repo
+
+    # ── Saved spectrums (stage 1: store + list, no predictor yet) ──
+
+    @app.post(
+        "/api/spectrums",
+        response_model=SavedSpectrumResponse,
+        status_code=201,
+    )
+    def saved_spectrums_create(
+        body: SavedSpectrumCreate,
+        user_id: int = Depends(get_current_user),
+    ) -> SavedSpectrumResponse:
+        # Pydantic guarantees fit_degree ∈ {1,2,3}, but it doesn't check
+        # that each channel's coefficient list is the right length —
+        # enforce here.
+        for channel in ("l", "a", "b"):
+            coeffs = body.fit_coefficients.get(channel)
+            if coeffs is None or len(coeffs) != body.fit_degree + 1:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"fit_coefficients[{channel!r}] must have length "
+                        f"{body.fit_degree + 1} for fit_degree={body.fit_degree}"
+                    ),
+                )
+
+        try:
+            rec = ss_repo.create(
+                body.model_dump(),
+                owner_id=user_id,
+            )
+        except LookupError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        return SavedSpectrumResponse(**rec)
+
+    @app.get(
+        "/api/spectrums",
+        response_model=list[SavedSpectrumResponse],
+    )
+    def saved_spectrums_list(
+        request: Request,
+        material_id: int | None = None,
+        min_r2: float | None = None,
+        source_test_id: int | None = None,
+        user_id: int = Depends(get_current_user),
+    ) -> list[SavedSpectrumResponse]:
+        machine_id = request.headers.get("X-Machine-Id", "F2Ultra")
+        rows = ss_repo.list_(
+            machine_id=machine_id,
+            material_id=material_id,
+            min_r2=min_r2,
+            source_test_id=source_test_id,
+            owner_id=user_id,
+        )
+        return [SavedSpectrumResponse(**r) for r in rows]
+
+    @app.get(
+        "/api/spectrums/{spectrum_id}",
+        response_model=SavedSpectrumResponse,
+    )
+    def saved_spectrums_get(
+        spectrum_id: int,
+        user_id: int = Depends(get_current_user),
+    ) -> SavedSpectrumResponse:
+        rec = ss_repo.get(spectrum_id)
+        if rec is None or rec["owner_id"] != user_id:
+            raise HTTPException(status_code=404, detail="saved spectrum not found")
+        return SavedSpectrumResponse(**rec)
+
+    @app.patch(
+        "/api/spectrums/{spectrum_id}",
+        response_model=SavedSpectrumResponse,
+    )
+    def saved_spectrums_patch(
+        spectrum_id: int,
+        patch_body: SavedSpectrumPatch,
+        user_id: int = Depends(get_current_user),
+    ) -> SavedSpectrumResponse:
+        existing = ss_repo.get(spectrum_id)
+        if existing is None or existing["owner_id"] != user_id:
+            raise HTTPException(status_code=404, detail="saved spectrum not found")
+        updated = ss_repo.patch(
+            spectrum_id, patch_body.model_dump(exclude_none=True)
+        )
+        # patch returns None only if the row vanished mid-call.
+        if updated is None:
+            raise HTTPException(status_code=404, detail="saved spectrum not found")
+        return SavedSpectrumResponse(**updated)
+
+    @app.delete(
+        "/api/spectrums/{spectrum_id}",
+        status_code=204,
+    )
+    def saved_spectrums_delete(
+        spectrum_id: int,
+        user_id: int = Depends(get_current_user),
+    ) -> Response:
+        existing = ss_repo.get(spectrum_id)
+        if existing is None or existing["owner_id"] != user_id:
+            raise HTTPException(status_code=404, detail="saved spectrum not found")
+        ss_repo.delete(spectrum_id)
+        return Response(status_code=204)
 
     # Per-machine product images live under web/public/machines/. Vite
     # copies them to web/dist/machines/ at build time, so they're served

@@ -4,19 +4,43 @@ import pytest
 
 from xcs_gen_web.repositories import palette as repo
 from xcs_gen_web.repositories import materials as m_repo
+from xcs_gen_web.repositories import tests as t_repo
+from xcs_gen_web.repositories import results as r_repo
+
+
+_SPEC = {"x_param": "speed", "x_min": 100, "x_max": 1000, "x_steps": 5,
+         "rows": 1, "width_mm": 20, "height_mm": 8, "gap_mm": 0.5,
+         "cell_shape": "rect", "square_cells": False, "angle_mode": "fixed",
+         "unidirectional": False,
+         "base_params": {"power": 50, "speed": 500, "frequency": 60,
+                         "density": 200, "passes": 1, "pulse_width": 200,
+                         "laser": "red"},
+         "registration": {"mode": "on"}}
 
 
 def _seed_material(name: str = "SS") -> int:
     return m_repo.create(name=name)["id"]
 
 
+def _seed_test(mid: int) -> int:
+    return t_repo.create(name="t", material_id=mid, spec=_SPEC)["id"]
+
+
+def _seed_result(tid: int) -> int:
+    return r_repo.create(
+        test_id=tid, image_path="/tmp/x.jpg", image_sha256="aa" * 32,
+        swatches=[],
+    )["id"]
+
+
 def test_insert_and_query(fresh_db):
     mid = _seed_material()
+    tid = _seed_test(mid)
     repo.insert_bulk([
-        dict(test_id=1, material_id=mid, x_value=500, y_value=None,
+        dict(test_id=tid, material_id=mid, x_value=500, y_value=None,
              hex="#ff0000", sigma=1.0, source="averaged", source_result_id=None,
              params={"power": 50}),
-        dict(test_id=1, material_id=mid, x_value=600, y_value=None,
+        dict(test_id=tid, material_id=mid, x_value=600, y_value=None,
              hex="#00ff00", sigma=1.0, source="averaged", source_result_id=None,
              params={"power": 60}),
     ])
@@ -28,10 +52,12 @@ def test_insert_and_query(fresh_db):
 def test_list_filter_by_material(fresh_db):
     m1 = _seed_material("A")
     m2 = _seed_material("B")
-    repo.insert_bulk([dict(test_id=1, material_id=m1, x_value=0, y_value=None,
+    t1 = _seed_test(m1)
+    t2 = _seed_test(m2)
+    repo.insert_bulk([dict(test_id=t1, material_id=m1, x_value=0, y_value=None,
                            hex="#000000", sigma=0.0, source="averaged",
                            source_result_id=None, params={})])
-    repo.insert_bulk([dict(test_id=2, material_id=m2, x_value=0, y_value=None,
+    repo.insert_bulk([dict(test_id=t2, material_id=m2, x_value=0, y_value=None,
                            hex="#111111", sigma=0.0, source="averaged",
                            source_result_id=None, params={})])
     assert [e["material_id"] for e in repo.list_all(material_id=m1)] == [m1]
@@ -39,24 +65,27 @@ def test_list_filter_by_material(fresh_db):
 
 def test_delete_by_test(fresh_db):
     mid = _seed_material()
-    repo.insert_bulk([dict(test_id=7, material_id=mid, x_value=0, y_value=None,
+    tid = _seed_test(mid)
+    repo.insert_bulk([dict(test_id=tid, material_id=mid, x_value=0, y_value=None,
                            hex="#abcdef", sigma=0.0, source="averaged",
                            source_result_id=None, params={})])
-    repo.delete_by_test(7)
+    repo.delete_by_test(tid)
     assert repo.list_all() == []
 
 
 def test_delete_by_material_only_touches_matching_material(fresh_db):
     m1 = _seed_material("A")
     m2 = _seed_material("B")
+    t1 = _seed_test(m1)
+    t2 = _seed_test(m2)
     repo.insert_bulk([
-        dict(test_id=1, material_id=m1, x_value=0, y_value=None,
+        dict(test_id=t1, material_id=m1, x_value=0, y_value=None,
              hex="#000000", sigma=0.0, source="averaged",
              source_result_id=None, params={}),
-        dict(test_id=1, material_id=m1, x_value=1, y_value=None,
+        dict(test_id=t1, material_id=m1, x_value=1, y_value=None,
              hex="#111111", sigma=0.0, source="averaged",
              source_result_id=None, params={}),
-        dict(test_id=2, material_id=m2, x_value=0, y_value=None,
+        dict(test_id=t2, material_id=m2, x_value=0, y_value=None,
              hex="#222222", sigma=0.0, source="averaged",
              source_result_id=None, params={}),
     ])
@@ -78,15 +107,16 @@ def test_delete_by_material_owner_scoped(fresh_db):
     untouched — the owner_id filter is part of the WHERE clause, not
     just a default."""
     mid = _seed_material()
+    tid = _seed_test(mid)
     # Default owner row.
     repo.insert_bulk([
-        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+        dict(test_id=tid, material_id=mid, x_value=0, y_value=None,
              hex="#aaaaaa", sigma=0.0, source="averaged",
              source_result_id=None, params={}),
     ])
     # Foreign owner row, same material.
     repo.insert_bulk([
-        dict(test_id=1, material_id=mid, x_value=1, y_value=None,
+        dict(test_id=tid, material_id=mid, x_value=1, y_value=None,
              hex="#bbbbbb", sigma=0.0, source="averaged",
              source_result_id=None, params={}),
     ], owner_id=999)
@@ -98,11 +128,13 @@ def test_delete_by_material_owner_scoped(fresh_db):
 
 def test_list_filters_by_source(fresh_db):
     mid = _seed_material()
+    t1 = _seed_test(mid)
+    t2 = _seed_test(mid)
     repo.insert_bulk([
-        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+        dict(test_id=t1, material_id=mid, x_value=0, y_value=None,
              hex="#abcdef", sigma=0.0, source="averaged",
              source_result_id=None, params={}),
-        dict(test_id=2, material_id=mid, x_value=0, y_value=None,
+        dict(test_id=t2, material_id=mid, x_value=0, y_value=None,
              hex="#fedcba", sigma=0.0, source="single_result",
              source_result_id=None, params={}),
     ])
@@ -112,8 +144,9 @@ def test_list_filters_by_source(fresh_db):
 
 def test_list_filters_by_favorites_only(fresh_db):
     mid = _seed_material()
+    tid = _seed_test(mid)
     repo.insert_bulk([
-        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+        dict(test_id=tid, material_id=mid, x_value=0, y_value=None,
              hex="#000000", sigma=0.0, source="averaged",
              source_result_id=None, params={}),
     ])
@@ -169,8 +202,9 @@ def test_update_entry_manual_partial_patch(fresh_db):
 
 def test_update_entry_rejects_param_mutation_on_ingested(fresh_db):
     mid = _seed_material()
+    tid = _seed_test(mid)
     repo.insert_bulk([
-        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+        dict(test_id=tid, material_id=mid, x_value=0, y_value=None,
              hex="#abcdef", sigma=0.0, source="averaged",
              source_result_id=None, params={"power": 10}),
     ])
@@ -182,8 +216,9 @@ def test_update_entry_rejects_param_mutation_on_ingested(fresh_db):
 def test_update_entry_notes_allowed_on_ingested(fresh_db):
     """Notes are mutable on any source (preserves today's behavior)."""
     mid = _seed_material()
+    tid = _seed_test(mid)
     repo.insert_bulk([
-        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+        dict(test_id=tid, material_id=mid, x_value=0, y_value=None,
              hex="#abcdef", sigma=0.0, source="averaged",
              source_result_id=None, params={}),
     ])
@@ -216,8 +251,9 @@ def test_set_favorited_idempotent(fresh_db):
 def test_set_favorited_works_on_any_source(fresh_db):
     """Stars are a personal pin — works on ingested rows too."""
     mid = _seed_material()
+    tid = _seed_test(mid)
     repo.insert_bulk([
-        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+        dict(test_id=tid, material_id=mid, x_value=0, y_value=None,
              hex="#abcdef", sigma=0.0, source="averaged",
              source_result_id=None, params={}),
     ])
@@ -235,11 +271,12 @@ def test_insert_bulk_is_idempotent_for_same_identity(fresh_db):
     the same rows — no duplicates. The second call returns the same
     ids as the first."""
     mid = _seed_material()
+    tid = _seed_test(mid)
     entries = [
-        dict(test_id=1, material_id=mid, x_value=500, y_value=None,
+        dict(test_id=tid, material_id=mid, x_value=500, y_value=None,
              hex="#ff0000", sigma=1.0, source="averaged",
              source_result_id=None, params={"power": 50}),
-        dict(test_id=1, material_id=mid, x_value=600, y_value=None,
+        dict(test_id=tid, material_id=mid, x_value=600, y_value=None,
              hex="#00ff00", sigma=1.0, source="averaged",
              source_result_id=None, params={"power": 60}),
     ]
@@ -255,8 +292,9 @@ def test_insert_bulk_refreshes_capture_fields_preserves_user_state(fresh_db):
     refreshing hex/lab/sigma/params but preserving notes, favorited,
     and created_at."""
     mid = _seed_material()
+    tid = _seed_test(mid)
     [rid] = repo.insert_bulk([
-        dict(test_id=1, material_id=mid, x_value=500, y_value=None,
+        dict(test_id=tid, material_id=mid, x_value=500, y_value=None,
              hex="#aa0000", sigma=1.0, source="averaged",
              source_result_id=None, params={"power": 40}),
     ])
@@ -268,7 +306,7 @@ def test_insert_bulk_refreshes_capture_fields_preserves_user_state(fresh_db):
 
     # Re-ingest with a different hex + sigma + params.
     [rid_again] = repo.insert_bulk([
-        dict(test_id=1, material_id=mid, x_value=500, y_value=None,
+        dict(test_id=tid, material_id=mid, x_value=500, y_value=None,
              hex="#bb1111", sigma=2.5, source="averaged",
              source_result_id=None, params={"power": 50}),
     ])
@@ -291,23 +329,26 @@ def test_insert_bulk_distinct_source_result_ids_stay_distinct(fresh_db):
     source_result_id are DIFFERENT logical entries — they must not
     merge."""
     mid = _seed_material()
+    tid = _seed_test(mid)
+    rid_a = _seed_result(tid)
+    rid_b = _seed_result(tid)
     [id_a] = repo.insert_bulk([
-        dict(test_id=1, material_id=mid, x_value=500, y_value=None,
+        dict(test_id=tid, material_id=mid, x_value=500, y_value=None,
              hex="#aa0000", sigma=1.0, source="single_result",
-             source_result_id=10, params={"power": 50}),
+             source_result_id=rid_a, params={"power": 50}),
     ])
     [id_b] = repo.insert_bulk([
-        dict(test_id=1, material_id=mid, x_value=500, y_value=None,
+        dict(test_id=tid, material_id=mid, x_value=500, y_value=None,
              hex="#bb0000", sigma=1.0, source="single_result",
-             source_result_id=11, params={"power": 50}),
+             source_result_id=rid_b, params={"power": 50}),
     ])
     assert id_a != id_b
     assert len(repo.list_all(material_id=mid)) == 2
     # Re-ingesting just one should refresh only that row.
     [id_a_again] = repo.insert_bulk([
-        dict(test_id=1, material_id=mid, x_value=500, y_value=None,
+        dict(test_id=tid, material_id=mid, x_value=500, y_value=None,
              hex="#cc0000", sigma=1.0, source="single_result",
-             source_result_id=10, params={"power": 50}),
+             source_result_id=rid_a, params={"power": 50}),
     ])
     assert id_a_again == id_a
     rows = {e["id"]: e for e in repo.list_all(material_id=mid)}

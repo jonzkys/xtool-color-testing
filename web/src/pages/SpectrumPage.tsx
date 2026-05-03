@@ -45,6 +45,7 @@ import {
 } from "../color/variability";
 import { StabilityChip } from "../components/StabilityChip";
 import { PerCellExplodeStrip } from "../components/PerCellExplodeStrip";
+import { SaveSpectrumDialog } from "../components/SaveSpectrumDialog";
 import { useRoute } from "../router";
 import {
   Badge,
@@ -489,8 +490,25 @@ function SpectrumBody({
       meanResidualDeltaE: totalDelta / samples.length,
       worstResidualDeltaE: worstDelta,
       perChannelR2: [fitL.r2, fitA.r2, fitB.r2] as const,
+      fitL,
+      fitA,
+      fitB,
     };
   }, [samples, fitDegree, fullXMin, fullXMax]);
+
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+
+  const canSave = useMemo(() => {
+    // Disable when nothing's worth saving:
+    // - full-range crop (nothing was filtered out),
+    // - degree 0 (no equation),
+    // - under-determined fit (need >= degree+1 points).
+    if (!clipped) return false;
+    if (fitDegree === 0) return false;
+    if (samples.length < fitDegree + 1) return false;
+    if (modeled === null) return false;
+    return true;
+  }, [clipped, fitDegree, samples.length, modeled]);
 
   // Step ΔE between consecutive swatches (of the clipped set).
   const stepDeltas = useMemo(() => {
@@ -694,6 +712,8 @@ function SpectrumBody({
               yUnit={proj.unit}
               proj={proj}
               projection={projection}
+              canSave={canSave}
+              onSave={() => setSaveDialogOpen(true)}
             />
           </div>
         ) : (
@@ -735,6 +755,37 @@ function SpectrumBody({
           xParam={test.spec.x_param}
         />
       </Section>
+      {modeled !== null && (
+        <SaveSpectrumDialog
+          open={saveDialogOpen}
+          onOpenChange={setSaveDialogOpen}
+          onSaved={() => { /* future: emit a toast or refresh */ }}
+          testName={test.name}
+          testId={test.id}
+          axisParam={test.spec.x_param}
+          axisMin={rangeStart}
+          axisMax={rangeEnd}
+          swatches={samples.map((s) => ({
+            swatch_row: s.swatch.row,
+            swatch_col: s.swatch.col,
+            x_value: s.x,
+            hex: s.hex,
+            lab: [s.lab[0], s.lab[1], s.lab[2]] as [number, number, number],
+          }))}
+          fitDegree={fitDegree as 1 | 2 | 3}
+          fitCoefficients={{
+            l: modeled.fitL.coeffs,
+            a: modeled.fitA.coeffs,
+            b: modeled.fitB.coeffs,
+          }}
+          fitR2={{
+            l: modeled.perChannelR2[0],
+            a: modeled.perChannelR2[1],
+            b: modeled.perChannelR2[2],
+          }}
+          displayedProjection={projection}
+        />
+      )}
     </div>
   );
 }
@@ -1994,6 +2045,8 @@ function FitPanel({
   yUnit,
   proj,
   projection,
+  canSave,
+  onSave,
 }: {
   fitDegree: 0 | 1 | 2 | 3;
   onChangeDegree: (d: 0 | 1 | 2 | 3) => void;
@@ -2002,6 +2055,8 @@ function FitPanel({
   yUnit: string;
   proj: ReturnType<typeof computeProjection>;
   projection: Projection;
+  canSave: boolean;
+  onSave: () => void;
 }) {
   return (
     <div className="rounded-[10px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] p-4 space-y-4">
@@ -2057,6 +2112,24 @@ function FitPanel({
           </p>
         </div>
       )}
+      <button
+        type="button"
+        disabled={!canSave}
+        onClick={onSave}
+        title={
+          canSave
+            ? "Save this cropped sub-spectrum + its fit equation"
+            : "Crop the range and pick a fit degree to save."
+        }
+        className={cn(
+          "w-full h-9 rounded-[6px] font-mono text-[11px] uppercase tracking-[0.18em] transition-colors",
+          canSave
+            ? "bg-[color:var(--color-primary)] text-white hover:bg-[color:var(--color-primary-tint)]"
+            : "bg-[color:var(--color-surface)] border border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)] cursor-not-allowed",
+        )}
+      >
+        Save spectrum
+      </button>
     </div>
   );
 }

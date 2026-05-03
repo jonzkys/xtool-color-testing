@@ -358,3 +358,61 @@ export interface InspectCellResponse {
   sampling_region: InspectSamplingRegion;
   aggregator_results: Record<SampleAggregator, string>;
 }
+
+// Saved Spectrums (stage 1) ───────────────────────────────────────────────
+
+export interface SavedSpectrumSwatch {
+  swatch_row: number;
+  swatch_col: number;
+  x_value: number;
+  hex: string;
+  lab: [number, number, number];
+}
+
+/** Per-channel polynomial coefficient list for a saved spectrum. Each
+ *  list is ordered c0, c1, c2, ... and length === fit_degree + 1. */
+export type SavedSpectrumCoefficients = {
+  l: number[];
+  a: number[];
+  b: number[];
+};
+
+export interface SavedSpectrum {
+  id: number;
+  name: string;
+  source_test_id: number | null;
+  machine_id: string;
+  material_id: number | null;
+  owner_id: number;
+  axis_param: string;
+  axis_min: number;
+  axis_max: number;
+  fit_form: "polynomial";
+  fit_degree: 1 | 2 | 3;
+  fit_coefficients: SavedSpectrumCoefficients;
+  fit_r2: { l: number; a: number; b: number };
+  fit_r2_min: number;
+  displayed_projection: string;
+  lab_l_min: number; lab_l_max: number;
+  lab_a_min: number; lab_a_max: number;
+  lab_b_min: number; lab_b_max: number;
+  lab_l_centroid: number;
+  lab_a_centroid: number;
+  lab_b_centroid: number;
+  swatches: SavedSpectrumSwatch[];
+  created_at: string;
+}
+
+export interface SavedSpectrumCreate {
+  name: string;
+  source_test_id: number;
+  axis_param: string;
+  axis_min: number;
+  axis_max: number;
+  fit_form: "polynomial";
+  fit_degree: 1 | 2 | 3;
+  fit_coefficients: SavedSpectrumCoefficients;
+  fit_r2: { l: number; a: number; b: number };
+  displayed_projection: string;
+  swatches: SavedSpectrumSwatch[];
+}
