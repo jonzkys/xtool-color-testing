@@ -50,6 +50,26 @@ def _effective_row_gap_mm(hide_axis_labels: bool) -> float:
     return max(_ROW_GAP_DEFAULT_MM, ann_space)
 
 
+def effective_spec(test: dict[str, Any]) -> dict[str, Any]:
+    """Return the test's spec with wrapped-1D layout fields derived for
+    ``kind="validation"`` rows.
+
+    Validation tests inherit ``rows=1`` from their source sweep but
+    actually burn ``ceil(cell_count / cells_per_row)`` physical rows.
+    Capture/inspect/debug renderers all read ``spec["rows"]`` to size
+    the sampling grid — pass them this effective spec and the grid
+    lands on every row, not just the top one.
+
+    Sweep tests pass through unchanged.
+    """
+    from . import xcs as xcs_service
+    return xcs_service.effective_spec_for_layout(
+        spec=test["spec"],
+        kind=test.get("kind") or "sweep",
+        validation_cells=test.get("validation_cells"),
+    )
+
+
 class CaptureError(Exception):
     """Raised by run_capture when the image can't be processed."""
 

@@ -101,7 +101,8 @@ def _compute_and_cache_warped(
         raise CacheError("source image no longer available")
     try:
         cap = capture_service.run_capture(
-            image_bytes=raw, test_id=r["test_id"], spec=t["spec"],
+            image_bytes=raw, test_id=r["test_id"],
+            spec=capture_service.effective_spec(t),
         )
     except capture_service.CaptureError as e:
         raise CaptureError(str(e)) from e
