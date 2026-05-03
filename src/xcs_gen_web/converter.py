@@ -234,8 +234,20 @@ def _compute_grid_offsets(project: Project) -> dict[str, tuple[float, float]]:
     return offsets
 
 
-def project_to_xcs(project: Project, *, machine_id: str = "F2Ultra") -> XCSProject:
+def project_to_xcs(
+    project: Project,
+    *,
+    machine_id: str = "F2Ultra",
+    annotation_params: ProcessingParams | None = None,
+) -> XCSProject:
     """Convert a Project into a single merged XCSProject.
+
+    ``annotation_params`` overrides the defaults used for QR + ArUco
+    fiducials, axis ticks, axis labels, and the summary text strip.
+    Pass the value resolved from ``text_reg_defaults`` (per material →
+    per machine fallback) so each burn carries the right calibration
+    for the substrate. ``None`` means "use the built-in constants" —
+    sensible for fresh installs and tests.
 
     Raises:
         ValueError: If any grid placements overlap or any element width
@@ -341,6 +353,10 @@ def project_to_xcs(project: Project, *, machine_id: str = "F2Ultra") -> XCSProje
             base_params=_to_processing_params(
                 t.base_params, angle_mode=t.angle_mode, crosshatch=t.crosshatch,
             ),
+            # Resolved per-material/machine annotation params override
+            # the renderer's hardcoded fallback. ``None`` lets the
+            # generator keep its built-in default for fresh installs.
+            annotation_params=annotation_params,
             summary_suffix=summary_suffix,
             registration_mode=t.registration.mode,
             registration_qr_size_mm=t.registration.qr_size_mm,
@@ -366,8 +382,15 @@ def project_to_xcs(project: Project, *, machine_id: str = "F2Ultra") -> XCSProje
     return merged
 
 
-def project_to_xcs_bytes(project: Project, *, machine_id: str = "F2Ultra") -> bytes:
+def project_to_xcs_bytes(
+    project: Project,
+    *,
+    machine_id: str = "F2Ultra",
+    annotation_params: ProcessingParams | None = None,
+) -> bytes:
     """Convert a Project to .xcs file bytes."""
-    xcs = project_to_xcs(project, machine_id=machine_id)
+    xcs = project_to_xcs(
+        project, machine_id=machine_id, annotation_params=annotation_params,
+    )
     data = build_xcs(xcs)
     return json.dumps(data, separators=(",", ":")).encode("utf-8")

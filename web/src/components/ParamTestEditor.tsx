@@ -14,6 +14,7 @@ import {
 import { DynamicParamForm } from "./dynamic-form/DynamicParamForm";
 import { useCurrentMachine, getValidationProfile } from "../state/machine";
 import { ValidationPaletteTab } from "./ValidationPaletteTab";
+import { AnnotationParamsSection } from "./AnnotationParamsSection";
 
 function defaultAggregatorFor(cell_shape: string): SampleAggregator {
   return cell_shape === "circle" ? "median" : "saturation_median";
@@ -765,6 +766,7 @@ export function ParamTestEditor({
       )}
 
       {tab === "registration" && (
+        <>
         <Section title="Registration marker">
           <Field label="Registration">
             <Select
@@ -833,6 +835,14 @@ export function ParamTestEditor({
             camera resolution.
           </p>
         </Section>
+        <AnnotationParamsSection
+          machineId={machineId}
+          machineDisplayName={machine?.display_name ?? machineId}
+          materialId={materialId}
+          materialName={activeMaterial?.name ?? null}
+          locked={locked}
+        />
+        </>
       )}
     </div>
   );

@@ -21,6 +21,7 @@ import { formatRoute } from "../router";
 import { getCurrentMachineId, useCurrentMachine, getValidationProfile } from "../state/machine";
 import { useIsDemo } from "../hooks/useIsDemo";
 import { MaterialEditDialog, type SubmitValues } from "./MaterialEditDialog";
+import { MaterialTextRegPanel } from "./MaterialTextRegPanel";
 import {
   Badge,
   Button,
@@ -33,7 +34,16 @@ import {
   PageContainer,
   Section,
   Select,
+  TabBar,
+  type TabItem,
 } from "../ui";
+
+type LibraryRightTab = "presets" | "text-reg";
+
+const LIBRARY_RIGHT_TABS: TabItem<LibraryRightTab>[] = [
+  { id: "presets", label: "Presets" },
+  { id: "text-reg", label: "Text & Registration" },
+];
 
 interface Props {
   onMaterialsChange?: (m: Material[]) => void;
@@ -49,6 +59,7 @@ export function LibraryPage({ onMaterialsChange }: Props) {
   const [error, setError] = useState<string | undefined>();
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [byMaterial, setByMaterial] = useState<Record<number, TestRecord[]>>({});
+  const [rightTab, setRightTab] = useState<LibraryRightTab>("presets");
 
   const selectedMaterial =
     activeMaterialId !== null
@@ -364,56 +375,84 @@ export function LibraryPage({ onMaterialsChange }: Props) {
           </Section>
         </div>
 
-        {/* RIGHT — presets for the selected material */}
+        {/* RIGHT — presets / text & registration for the selected material */}
         <div>
           {selectedMaterial ? (
-            <Section
-              title={selectedMaterial.name}
-              description={`${materialPresets.length} preset${materialPresets.length === 1 ? "" : "s"}`}
-              actions={
-                <DemoLock label="Presets are read-only in the demo.">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void onAddPreset()}
-                    disabled={loading}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    New preset
-                  </Button>
-                </DemoLock>
-              }
-            >
-              {materialPresets.length === 0 ? (
-                <Card className="border-dashed">
-                  <EmptyState
-                    title="No presets yet"
-                    description='Presets hold reusable parameter bundles. Click "New preset" to start one — they seed new tests and SVG layers for this material.'
-                    action={
-                      <DemoLock label="Presets are read-only in the demo.">
-                        <Button variant="primary" onClick={() => void onAddPreset()}>
-                          <Plus className="h-4 w-4" />
-                          New preset
-                        </Button>
-                      </DemoLock>
-                    }
-                  />
-                </Card>
-              ) : (
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
-                  {materialPresets.map((p) => (
-                    <PresetCard
-                      key={p.id}
-                      preset={p}
-                      onPatch={(patch) => void onUpdatePreset(p.id, patch)}
-                      onSetDefault={() => void onSetDefault(p.id)}
-                      onDelete={() => void onDeletePreset(p.id)}
-                      isDemo={isDemo}
-                    />
-                  ))}
+            <div className="flex flex-col">
+              {/* Header with tab strip — keeps the Section title as a
+                  small uppercase eyebrow over the tab bar so the right
+                  column reads as one coherent block. */}
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
+                <div className="flex-1 min-w-0 basis-[180px]">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
+                    {selectedMaterial.name}
+                  </div>
+                  <p className="mt-1 text-[12px] text-[color:var(--color-ink-muted)]">
+                    {rightTab === "presets"
+                      ? `${materialPresets.length} preset${materialPresets.length === 1 ? "" : "s"}`
+                      : "Per-machine engraved annotation params"}
+                  </p>
                 </div>
+                {rightTab === "presets" && (
+                  <div className="flex items-center gap-2 shrink-0 ml-auto">
+                    <DemoLock label="Presets are read-only in the demo.">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void onAddPreset()}
+                        disabled={loading}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        New preset
+                      </Button>
+                    </DemoLock>
+                  </div>
+                )}
+              </div>
+              <TabBar<LibraryRightTab>
+                items={LIBRARY_RIGHT_TABS}
+                value={rightTab}
+                onChange={setRightTab}
+                className="mb-4"
+              />
+              {rightTab === "presets" ? (
+                materialPresets.length === 0 ? (
+                  <Card className="border-dashed">
+                    <EmptyState
+                      title="No presets yet"
+                      description='Presets hold reusable parameter bundles. Click "New preset" to start one — they seed new tests and SVG layers for this material.'
+                      action={
+                        <DemoLock label="Presets are read-only in the demo.">
+                          <Button variant="primary" onClick={() => void onAddPreset()}>
+                            <Plus className="h-4 w-4" />
+                            New preset
+                          </Button>
+                        </DemoLock>
+                      }
+                    />
+                  </Card>
+                ) : (
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
+                    {materialPresets.map((p) => (
+                      <PresetCard
+                        key={p.id}
+                        preset={p}
+                        onPatch={(patch) => void onUpdatePreset(p.id, patch)}
+                        onSetDefault={() => void onSetDefault(p.id)}
+                        onDelete={() => void onDeletePreset(p.id)}
+                        isDemo={isDemo}
+                      />
+                    ))}
+                  </div>
+                )
+              ) : (
+                <MaterialTextRegPanel
+                  materialId={selectedMaterial.id}
+                  materialName={selectedMaterial.name}
+                  isDemo={isDemo}
+                />
               )}
-            </Section>
+            </div>
           ) : (
             <EmptyState
               title="Select a material"

@@ -357,3 +357,81 @@ validation_cells = Table(
     UniqueConstraint("test_id", "cell_index", name="uq_validation_cells_test_cell"),
     Index("ix_validation_cells_palette_entry_id", "palette_entry_id"),
 )
+
+# Text/registration default ProcessingParams — drive QR + ArUco
+# fiducials, axis-tick + label glyphs, and the summary-text strip
+# burned above the cell grid. Hardcoded constants in xcs_gen used
+# to drive every burn; different materials (anodised aluminium vs.
+# stainless vs. coated brass) want different speed/power/density
+# combos for these marks to come out crisp.
+#
+# Two tables, kept separate so neither needs a partial-unique-index
+# (MySQL doesn't support those), and a NULL ``material_id`` doesn't
+# have to mean "machine default" via a sentinel:
+#
+# * machine = (owner_id, machine_id) — fallback for any material
+#   that doesn't have its own override. UNIQUE on (owner_id, machine_id).
+# * material = (owner_id, machine_id, material_id) — wins over the
+#   machine fallback when present. UNIQUE on the triple.
+#
+# Resolution at burn time:
+#   test override → material default → machine default → built-in constants
+#
+# Param columns mirror xcs_gen.model.ProcessingParams. First-class
+# columns (not a JSON blob) so future "list every material I've
+# calibrated for the F2" lookups stay in SQL.
+text_reg_defaults_machine = Table(
+    "text_reg_defaults_machine", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("owner_id", Integer, nullable=False),
+    Column("machine_id", String(_MACHINE_ID_LEN), nullable=False),
+    Column("speed", Integer, nullable=False),
+    Column("power", Float, nullable=False),
+    Column("density", Integer, nullable=False),
+    Column("repeat", Integer, nullable=False),
+    Column("pulse_width", Integer, nullable=False),
+    Column("mopa_frequency", Integer, nullable=False),
+    Column(
+        "processing_light_source", String(16), nullable=False,
+        server_default="red",
+    ),
+    Column("created_at", String(_ISO_TS_LEN), nullable=False),
+    Column("updated_at", String(_ISO_TS_LEN), nullable=False),
+    UniqueConstraint(
+        "owner_id", "machine_id", name="uq_text_reg_defaults_machine",
+    ),
+    Index("ix_text_reg_defaults_machine_owner", "owner_id"),
+)
+
+text_reg_defaults_material = Table(
+    "text_reg_defaults_material", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("owner_id", Integer, nullable=False),
+    Column("machine_id", String(_MACHINE_ID_LEN), nullable=False),
+    Column(
+        "material_id", Integer,
+        ForeignKey("materials.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("speed", Integer, nullable=False),
+    Column("power", Float, nullable=False),
+    Column("density", Integer, nullable=False),
+    Column("repeat", Integer, nullable=False),
+    Column("pulse_width", Integer, nullable=False),
+    Column("mopa_frequency", Integer, nullable=False),
+    Column(
+        "processing_light_source", String(16), nullable=False,
+        server_default="red",
+    ),
+    Column("created_at", String(_ISO_TS_LEN), nullable=False),
+    Column("updated_at", String(_ISO_TS_LEN), nullable=False),
+    UniqueConstraint(
+        "owner_id", "machine_id", "material_id",
+        name="uq_text_reg_defaults_material",
+    ),
+    Index("ix_text_reg_defaults_material_owner", "owner_id"),
+    Index(
+        "ix_text_reg_defaults_material_lookup",
+        "owner_id", "machine_id", "material_id",
+    ),
+)
