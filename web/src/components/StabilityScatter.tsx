@@ -28,10 +28,9 @@ import {
   YAxis,
 } from "./stabilityChartMath";
 import { StabilityHoverCard } from "./stabilityChartTooltip";
-import {
-  ScatterFocusHalos,
-  ScatterFocusPinnedCard,
-} from "./stabilityScatterFocusOverlay";
+import { HelpTip } from "./StabilityHelpTip";
+import { TOOLBAR_HELP } from "./stabilityHelpCopy";
+import { ScatterFocusHalos } from "./stabilityScatterFocusOverlay";
 import type { FocusedCell } from "./StabilityChart";
 
 export interface ScatterRow {
@@ -696,22 +695,26 @@ export function StabilityScatter({
           </span>
         )}
         {trendApplicable(xAxis) && rows.length > 0 && (
-          <ToolbarPill
-            label="Trend"
-            on={showTrend}
-            onChange={setShowTrend}
-            titleOn="Hide hue-binned trend"
-            titleOff="Show hue-binned trend"
-          />
+          <HelpTip help={TOOLBAR_HELP.trend}>
+            <ToolbarPill
+              label="Trend"
+              on={showTrend}
+              onChange={setShowTrend}
+              titleOn="Hide hue-binned trend"
+              titleOff="Show hue-binned trend"
+            />
+          </HelpTip>
         )}
         {multiRun && hasAnySpread && (
-          <ToolbarPill
-            label="Connectors"
-            on={showConnectors}
-            onChange={setShowConnectors}
-            titleOn="Hide spread connectors"
-            titleOff="Show spread connectors"
-          />
+          <HelpTip help={TOOLBAR_HELP.connectors}>
+            <ToolbarPill
+              label="Connectors"
+              on={showConnectors}
+              onChange={setShowConnectors}
+              titleOn="Hide spread connectors"
+              titleOff="Show spread connectors"
+            />
+          </HelpTip>
         )}
       </div>
 
@@ -737,24 +740,15 @@ export function StabilityScatter({
         />
       )}
 
-      {focusInfo && (
-        <ScatterFocusPinnedCard
-          rows={rows}
-          series={series}
-          xMeta={xMeta}
-          yMeta={yMeta}
-          focusedCell={focusedCell}
-          perSeriesPx={focusInfo.points}
-          topAnchor={focusInfo.topAnchor}
-          plotTop={PADT}
-          plotBottom={H - PADB}
-          plotLeft={PADL}
-          plotRight={W - PADR}
-          W={W}
-          H={H}
-          focusedSpread={multiRun ? focusInfo.spread?.spread ?? null : null}
-        />
-      )}
+      {/* The chart's only tooltip is the cursor-tracked
+          ``StabilityHoverCard`` above. Pinned focus is already
+          communicated by the on-chart halo + vertical guide AND the
+          deep ``StabilityFocusedCellPanel`` in the right strip — the
+          previous ``ScatterFocusPinnedCard`` here was a third copy of
+          the same info that anchored to the cursor, producing the
+          user-reported "two tooltips, content drifts off the dot"
+          confusion. The focused-cell panel is the place to read deep
+          per-cell data; the chart tooltip is purely hover-preview. */}
     </div>
   );
 }

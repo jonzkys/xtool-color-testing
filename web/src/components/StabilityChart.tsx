@@ -22,6 +22,13 @@ import {
 } from "./stabilityChartMath";
 import { isHeatmapMetric } from "./stabilityHeatmapMath";
 import { meanLab } from "./stabilityStatsMath";
+import { HelpTip } from "./StabilityHelpTip";
+import {
+  TOOLBAR_HELP,
+  X_AXIS_HELP,
+  Y_AXIS_HELP,
+  type AxisHelp,
+} from "./stabilityHelpCopy";
 
 // Re-export public surface so the page only needs to import from
 // `StabilityChart`.
@@ -307,6 +314,12 @@ function ChartHeader({
     isBurnAxis(id as YAxis) && burnDisabled;
   const isXAxisDisabled = (id: XAxis | YAxis) =>
     isComputedXAxis(id as XAxis) && burnDisabled;
+  // Row-level help: the legend's `?` icon explains what *the row*
+  // answers, not what any one pill does. Spatial mode swaps Y axis for
+  // METRIC so the help entry switches too.
+  const yRowHelp = mode === "spatial" ? TOOLBAR_HELP.metricRow : TOOLBAR_HELP.yRow;
+  const helpForY = (id: XAxis | YAxis): AxisHelp => Y_AXIS_HELP[id as YAxis];
+  const helpForX = (id: XAxis | YAxis): AxisHelp => X_AXIS_HELP[id as XAxis];
   return (
     <div className="px-4 pt-4 pb-3 border-b border-[color:var(--color-border)]">
       <div className="flex flex-col gap-2">
@@ -318,6 +331,8 @@ function ChartHeader({
           onChange={(v) => onYAxisChange(v as YAxis)}
           isDisabled={isYAxisDisabled}
           disabledHint="needs ≥ 2 runs"
+          rowHelp={yRowHelp}
+          helpFor={helpForY}
         />
         {mode === "scatter" && (
           <AxisRow
@@ -327,6 +342,8 @@ function ChartHeader({
             onChange={(v) => onXAxisChange(v as XAxis)}
             isDisabled={isXAxisDisabled}
             disabledHint="needs ≥ 2 runs"
+            rowHelp={TOOLBAR_HELP.xRow}
+            helpFor={helpForX}
           />
         )}
       </div>
@@ -385,34 +402,61 @@ function ModeToggleRow({
   ];
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="font-mono text-[9.5px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)] w-[44px] shrink-0">
-        Mode
-      </span>
-      <div className="inline-flex rounded-[6px] border border-[color:var(--color-border)] overflow-hidden">
-        {options.map((o, i) => {
-          const active = o.id === mode;
-          return (
-            <button
-              key={o.id}
-              type="button"
-              onClick={() => onChange(o.id)}
-              aria-pressed={active}
-              className={cn(
-                "h-7 px-3 font-mono text-[10.5px] tracking-[0.12em] uppercase font-semibold tabular-nums",
-                "transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
-                i > 0 && "border-l border-[color:var(--color-border)]",
-                active
-                  ? "bg-[color:var(--color-primary)] text-white"
-                  : "bg-[color:var(--color-surface)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
-              )}
-            >
-              {o.label}
-            </button>
-          );
-        })}
-      </div>
+      <RowLabel label="Mode" help={TOOLBAR_HELP.mode} />
+      <HelpTip help={TOOLBAR_HELP.mode}>
+        <div className="inline-flex rounded-[6px] border border-[color:var(--color-border)] overflow-hidden">
+          {options.map((o, i) => {
+            const active = o.id === mode;
+            return (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => onChange(o.id)}
+                aria-pressed={active}
+                className={cn(
+                  "h-7 px-3 font-mono text-[10.5px] tracking-[0.12em] uppercase font-semibold tabular-nums",
+                  "transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
+                  i > 0 && "border-l border-[color:var(--color-border)]",
+                  active
+                    ? "bg-[color:var(--color-primary)] text-white"
+                    : "bg-[color:var(--color-surface)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
+                )}
+              >
+                {o.label}
+              </button>
+            );
+          })}
+        </div>
+      </HelpTip>
     </div>
+  );
+}
+
+/* ─── Row label with `?` info icon ─────────────────────────────────────── */
+
+function RowLabel({ label, help }: { label: string; help: AxisHelp }) {
+  return (
+    <span className="inline-flex items-center gap-1 w-[44px] shrink-0">
+      <span className="font-mono text-[9.5px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)]">
+        {label}
+      </span>
+      <HelpTip help={help}>
+        <button
+          type="button"
+          aria-label={`${label} info`}
+          className={cn(
+            "h-3.5 w-3.5 rounded-full inline-flex items-center justify-center",
+            "border border-[color:var(--color-border-strong)] text-[color:var(--color-ink-subtle)]",
+            "font-mono text-[8px] font-semibold leading-none",
+            "hover:text-[color:var(--color-ink)] hover:border-[color:var(--color-ink)]",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
+          )}
+        >
+          ?
+        </button>
+      </HelpTip>
+    </span>
   );
 }
 
@@ -423,6 +467,8 @@ function AxisRow({
   onChange,
   isDisabled,
   disabledHint,
+  rowHelp,
+  helpFor,
 }: {
   legend: string;
   axes: readonly AxisMeta[];
@@ -430,18 +476,19 @@ function AxisRow({
   onChange: (v: string) => void;
   isDisabled: (id: XAxis | YAxis) => boolean;
   disabledHint: string;
+  rowHelp: AxisHelp;
+  helpFor: (id: XAxis | YAxis) => AxisHelp;
 }) {
   const anyDisabled = axes.some((a) => isDisabled(a.id));
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="font-mono text-[9.5px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)] w-[44px] shrink-0">
-        {legend}
-      </span>
+      <RowLabel label={legend} help={rowHelp} />
       <div className="flex flex-wrap gap-1">
         {axes.map((a) => {
           const active = a.id === value;
           const disabled = isDisabled(a.id);
-          return (
+          const help = helpFor(a.id);
+          const button = (
             <button
               key={a.id}
               type="button"
@@ -462,12 +509,16 @@ function AxisRow({
                     ? "bg-[color:var(--color-primary)] text-white border-[color:var(--color-primary)]"
                     : "bg-[color:var(--color-surface)] border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
               )}
-              title={
-                disabled ? `${a.label} — ${disabledHint}` : a.label
-              }
             >
               {a.short}
             </button>
+          );
+          return help ? (
+            <HelpTip key={a.id} help={help}>
+              {button}
+            </HelpTip>
+          ) : (
+            button
           );
         })}
         {anyDisabled && disabledHint && (
