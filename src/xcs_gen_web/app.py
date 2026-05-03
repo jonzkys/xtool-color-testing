@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
@@ -1627,15 +1628,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             spec_angle_mode = "fixed"
             spec_crosshatch = True
 
+        # Validation tests don't sweep an axis — every cell carries its
+        # own frozen params. ``swatch.x_value`` is the cell index (the
+        # capture sampler uses x_min=0, x_max=cell_count-1), so the
+        # sweep-style `params[x_param] = x_value` projection writes
+        # nonsense values like power=N for cell N. Build an index from
+        # validation_cells so we can reach in for the actual params
+        # the burn used. ``cells_per_row`` is set by the picker;
+        # fallback derives it from x_steps / rows so older validation
+        # tests created before the column existed still work.
+        is_validation = (t.get("kind") or "sweep") == "validation"
+        validation_cells = t.get("validation_cells") or []
+        cells_per_row: int | None = None
+        if is_validation:
+            cells_per_row = t["spec"].get("cells_per_row")
+            if not cells_per_row or cells_per_row <= 0:
+                rows = max(1, t["spec"].get("rows") or 1)
+                cell_count = max(1, len(validation_cells))
+                cells_per_row = max(1, math.ceil(cell_count / rows))
+        validation_by_index: dict[int, dict] = {
+            int(vc["cell_index"]): vc for vc in validation_cells
+        }
+
         payload = []
         for s in picked:
             params = dict(base)
             params["angle_mode"] = spec_angle_mode
             params["crosshatch"] = spec_crosshatch
-            if s.get("x_value") is not None:
-                params[x_param] = s["x_value"]
-            if y_param and s.get("y_value") is not None:
-                params[y_param] = s["y_value"]
+            if is_validation and cells_per_row:
+                # Match swatch (row, col) → cell_index → frozen params.
+                # `swatch.x_value` for validation tests is itself the
+                # cell index because of the bytes_for_test override —
+                # but we round-trip through (row, col) anyway so older
+                # results that lack the override still resolve cleanly.
+                cell_idx = int(s["row"]) * cells_per_row + int(s["col"])
+                vc = validation_by_index.get(cell_idx)
+                if vc is not None:
+                    # Override with the cell's frozen params; this is
+                    # the only truth-source for what was actually burned.
+                    # Filter ``None`` values so legacy `mode: null`
+                    # entries don't poison new palette rows.
+                    for k, v in (vc.get("params") or {}).items():
+                        if v is not None:
+                            params[k] = v
+            else:
+                if s.get("x_value") is not None:
+                    params[x_param] = s["x_value"]
+                if y_param and s.get("y_value") is not None:
+                    params[y_param] = s["y_value"]
             payload.append({
                 "test_id": tid, "material_id": t["material_id"],
                 "x_value": s.get("x_value"), "y_value": s.get("y_value"),
