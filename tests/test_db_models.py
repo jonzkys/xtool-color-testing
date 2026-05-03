@@ -15,6 +15,7 @@ def test_metadata_has_all_tables():
         "saved_spectrums", "saved_spectrum_swatches",
         "saved_spectrum_fit_coefficients",
         "validation_cells",
+        "text_reg_defaults_machine", "text_reg_defaults_material",
     }
 
 
@@ -28,7 +29,9 @@ def test_metadata_create_all_on_sqlite_memory():
     assert [r[0] for r in rows] == [
         "materials", "palette_entries", "presets", "results",
         "saved_spectrum_fit_coefficients", "saved_spectrum_swatches",
-        "saved_spectrums", "tests", "users", "validation_cells",
+        "saved_spectrums",
+        "tests", "text_reg_defaults_machine", "text_reg_defaults_material",
+        "users", "validation_cells",
     ]
 
 

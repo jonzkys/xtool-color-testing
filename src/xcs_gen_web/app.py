@@ -48,6 +48,10 @@ from .schemas import (
     SvgPreviewRequest,
     SvgPreviewResponse,
     SvgStackRequest,
+    TextRegMachineDefault,
+    TextRegMaterialDefault,
+    TextRegParamsBody,
+    TextRegResolveResponse,
     TestCreate,
     TestUpdate,
     TestResponse,
@@ -1072,6 +1076,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             machine_id=t.get("machine_id", "F2Ultra"),
             kind=t.get("kind", "sweep") or "sweep",
             validation_cells=t.get("validation_cells"),
+            owner_id=user_id,
         )
         safe_name = xcs_service._safe_project_name(t["name"], fallback=f"test-{t['id']}")
         return Response(
@@ -1752,6 +1757,162 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if existing is None or existing["owner_id"] != user_id:
             raise HTTPException(status_code=404, detail="saved spectrum not found")
         ss_repo.delete(spectrum_id)
+        return Response(status_code=204)
+
+    # ── Text/registration default ProcessingParams ───────────────────────────
+    #
+    # These power QR + ArUco fiducials, axis ticks, axis labels, and
+    # the summary text strip. Two endpoints write (machine vs material
+    # level), one resolves the effective triple back for the caller +
+    # tags which level it came from so the UI can surface "from material"
+    # vs "from machine" vs "built-in fallback".
+
+    from .repositories import text_reg_defaults as treg_repo
+    from xcs_gen.generators import _DEFAULT_ANNOTATION_PARAMS
+
+    @app.get(
+        "/api/text-registration-defaults/resolve",
+        response_model=TextRegResolveResponse,
+    )
+    def text_reg_resolve(
+        machine_id: str,
+        material_id: int | None = None,
+        user_id: int = Depends(get_current_user),
+    ) -> TextRegResolveResponse:
+        """Effective annotation params for ``(machine, material)`` plus
+        a ``source`` tag describing which layer they came from. Mirrors
+        the resolver the converter uses at burn time."""
+        # Try material first to get the precise source label, then fall
+        # back to machine, then to the renderer's built-in constants.
+        if material_id is not None:
+            material_row = treg_repo.get_material(
+                owner_id=user_id, machine_id=machine_id,
+                material_id=material_id,
+            )
+            if material_row is not None:
+                return TextRegResolveResponse(
+                    speed=material_row["speed"],
+                    power=material_row["power"],
+                    density=material_row["density"],
+                    repeat=material_row["repeat"],
+                    pulse_width=material_row["pulse_width"],
+                    mopa_frequency=material_row["mopa_frequency"],
+                    processing_light_source=material_row["processing_light_source"],
+                    source="material",
+                )
+        machine_row = treg_repo.get_machine(
+            owner_id=user_id, machine_id=machine_id,
+        )
+        if machine_row is not None:
+            return TextRegResolveResponse(
+                speed=machine_row["speed"],
+                power=machine_row["power"],
+                density=machine_row["density"],
+                repeat=machine_row["repeat"],
+                pulse_width=machine_row["pulse_width"],
+                mopa_frequency=machine_row["mopa_frequency"],
+                processing_light_source=machine_row["processing_light_source"],
+                source="machine",
+            )
+        fb = _DEFAULT_ANNOTATION_PARAMS
+        return TextRegResolveResponse(
+            speed=fb.speed,
+            power=fb.power,
+            density=fb.density,
+            repeat=fb.repeat,
+            pulse_width=fb.pulse_width,
+            mopa_frequency=fb.mopa_frequency,
+            processing_light_source=fb.processing_light_source,
+            source="fallback",
+        )
+
+    @app.get(
+        "/api/text-registration-defaults/machine/{machine_id}",
+        response_model=TextRegMachineDefault | None,
+    )
+    def text_reg_machine_get(
+        machine_id: str, user_id: int = Depends(get_current_user),
+    ) -> TextRegMachineDefault | None:
+        row = treg_repo.get_machine(owner_id=user_id, machine_id=machine_id)
+        return TextRegMachineDefault(**row) if row else None
+
+    @app.put(
+        "/api/text-registration-defaults/machine/{machine_id}",
+        response_model=TextRegMachineDefault,
+    )
+    def text_reg_machine_put(
+        machine_id: str,
+        body: TextRegParamsBody,
+        user_id: int = Depends(get_current_user),
+    ) -> TextRegMachineDefault:
+        row = treg_repo.upsert_machine(
+            owner_id=user_id, machine_id=machine_id,
+            params=body.model_dump(),
+        )
+        return TextRegMachineDefault(**row)
+
+    @app.delete(
+        "/api/text-registration-defaults/machine/{machine_id}",
+        status_code=204,
+    )
+    def text_reg_machine_delete(
+        machine_id: str, user_id: int = Depends(get_current_user),
+    ) -> Response:
+        treg_repo.delete_machine(owner_id=user_id, machine_id=machine_id)
+        return Response(status_code=204)
+
+    @app.get(
+        "/api/text-registration-defaults/material/{material_id}",
+        response_model=list[TextRegMaterialDefault],
+    )
+    def text_reg_material_list(
+        material_id: int, user_id: int = Depends(get_current_user),
+    ) -> list[TextRegMaterialDefault]:
+        """Every per-machine override the user has for this material —
+        powers the Library page's "Text & Registration" cards."""
+        # Material visibility check: only the owner's material row is
+        # walked. The repo already scopes by owner_id, but we 404 here
+        # if the material itself doesn't exist for this user so the
+        # caller gets a precise error.
+        if m_repo.get(material_id, owner_id=user_id) is None:
+            raise HTTPException(status_code=404, detail="material not found")
+        return [
+            TextRegMaterialDefault(**r)
+            for r in treg_repo.list_for_material(
+                owner_id=user_id, material_id=material_id,
+            )
+        ]
+
+    @app.put(
+        "/api/text-registration-defaults/material/{material_id}/{machine_id}",
+        response_model=TextRegMaterialDefault,
+    )
+    def text_reg_material_put(
+        material_id: int, machine_id: str,
+        body: TextRegParamsBody,
+        user_id: int = Depends(get_current_user),
+    ) -> TextRegMaterialDefault:
+        if m_repo.get(material_id, owner_id=user_id) is None:
+            raise HTTPException(status_code=404, detail="material not found")
+        row = treg_repo.upsert_material(
+            owner_id=user_id, machine_id=machine_id,
+            material_id=material_id, params=body.model_dump(),
+        )
+        return TextRegMaterialDefault(**row)
+
+    @app.delete(
+        "/api/text-registration-defaults/material/{material_id}/{machine_id}",
+        status_code=204,
+    )
+    def text_reg_material_delete(
+        material_id: int, machine_id: str,
+        user_id: int = Depends(get_current_user),
+    ) -> Response:
+        if m_repo.get(material_id, owner_id=user_id) is None:
+            raise HTTPException(status_code=404, detail="material not found")
+        treg_repo.delete_material(
+            owner_id=user_id, machine_id=machine_id, material_id=material_id,
+        )
         return Response(status_code=204)
 
     # Per-machine product images live under web/public/machines/. Vite

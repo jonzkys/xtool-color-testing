@@ -416,3 +416,43 @@ export interface SavedSpectrumCreate {
   displayed_projection: string;
   swatches: SavedSpectrumSwatch[];
 }
+
+// ── Text/registration default ProcessingParams ───────────────────────────────
+//
+// Mirrors the seven-field ProcessingParams shape the .xcs renderer reads
+// for QR + ArUco fiducials, axis ticks/labels, and the summary text strip.
+// The persisted rows extend with id/timestamps; the resolver tags the
+// effective triple with which layer it came from.
+
+/** Wire shape for `PUT /api/text-registration-defaults/...` request body
+ *  and the seven-field common subset of every persisted row. */
+export interface TextRegParamsBody {
+  speed: number;
+  power: number;
+  density: number;
+  repeat: number;
+  pulse_width: number;
+  mopa_frequency: number;
+  processing_light_source: string;
+}
+
+export interface TextRegMachineDefault extends TextRegParamsBody {
+  id: number;
+  machine_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TextRegMaterialDefault extends TextRegParamsBody {
+  id: number;
+  machine_id: string;
+  material_id: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TextRegSource = "material" | "machine" | "fallback";
+
+export interface TextRegResolveResponse extends TextRegParamsBody {
+  source: TextRegSource;
+}

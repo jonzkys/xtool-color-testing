@@ -147,7 +147,8 @@ def bytes_for_test(*, test_id: int, name: str, material_id: int,
                    spec: dict[str, Any], retest_index: int = 0,
                    machine_id: str = "F2Ultra",
                    kind: str = "sweep",
-                   validation_cells: list[dict[str, Any]] | None = None) -> bytes:
+                   validation_cells: list[dict[str, Any]] | None = None,
+                   owner_id: int | None = None) -> bytes:
     # Build a throwaway Project with exactly one placement so the existing
     # converter machinery keeps working. When the frontend project wrapper
     # is removed we'll fold this into a cleaner single-test path.
@@ -202,6 +203,18 @@ def bytes_for_test(*, test_id: int, name: str, material_id: int,
         "focus_mm": 1.5,
         "tests": [placement],
     }
+    # Resolve per-material/machine annotation params; the converter
+    # falls back to the renderer's hardcoded constants when this is
+    # ``None`` (i.e. no defaults configured yet for this owner).
+    annotation_params = None
+    if owner_id is not None:
+        from ..repositories import text_reg_defaults as treg_repo
+        annotation_params = treg_repo.resolve_params(
+            owner_id=owner_id,
+            machine_id=machine_id,
+            material_id=material_id,
+        )
     return converter.project_to_xcs_bytes(
         Project.model_validate(project), machine_id=machine_id,
+        annotation_params=annotation_params,
     )

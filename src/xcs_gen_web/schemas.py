@@ -871,3 +871,53 @@ class ValidationCellIn(BaseModel):
 
 class ValidationCellsPatch(BaseModel):
     cells: list[ValidationCellIn]
+
+
+# ── Text/registration default ProcessingParams ───────────────────────────────
+
+
+class TextRegParamsBody(BaseModel):
+    """Inbound shape for `PUT /api/text-registration-defaults/...`.
+
+    Mirrors the seven `ProcessingParams` fields the renderer reads for
+    fiducials + axis labels + summary text. Stored as first-class
+    columns; this schema is the public-facing wrapper."""
+    speed: int = Field(ge=1)
+    power: float = Field(ge=0, le=100)
+    density: int = Field(ge=1)
+    repeat: int = Field(ge=1, le=99)
+    pulse_width: int = Field(ge=2, le=350)
+    mopa_frequency: int = Field(ge=1)
+    processing_light_source: str = Field(min_length=1, max_length=16)
+
+
+class TextRegMachineDefault(TextRegParamsBody):
+    """Persisted machine-level defaults row (`text_reg_defaults_machine`)."""
+    id: int
+    machine_id: str
+    created_at: str
+    updated_at: str
+
+
+class TextRegMaterialDefault(TextRegParamsBody):
+    """Persisted material-level defaults row (`text_reg_defaults_material`)."""
+    id: int
+    machine_id: str
+    material_id: int
+    created_at: str
+    updated_at: str
+
+
+class TextRegResolveResponse(BaseModel):
+    """Effective params for a `(machine, material)` pair plus a tag
+    describing where they came from. The frontend uses the tag to label
+    the field block ("from material default", "from machine default",
+    "built-in fallback") and to enable/disable the relevant Save buttons."""
+    speed: int
+    power: float
+    density: int
+    repeat: int
+    pulse_width: int
+    mopa_frequency: int
+    processing_light_source: str
+    source: Literal["material", "machine", "fallback"]
