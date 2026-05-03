@@ -48,6 +48,9 @@ export interface StabilitySpectrumsProps {
   onHoverLeave: () => void;
   onClick: (cellIndex: number) => void;
   onBackgroundClear: () => void;
+  /** Adds a ``· simulated`` suffix to the Y axis label so the user
+   *  reads "this metric is post-correction". */
+  simulationActive?: boolean;
 }
 
 export function StabilitySpectrums({
@@ -60,6 +63,7 @@ export function StabilitySpectrums({
   onHoverLeave,
   onClick,
   onBackgroundClear,
+  simulationActive,
 }: StabilitySpectrumsProps) {
   const yMeta = Y_AXES.find((a) => a.id === metric)!;
   const orderMeta = SPECTRUM_ORDERS.find((o) => o.id === order)!;
@@ -114,6 +118,7 @@ export function StabilitySpectrums({
         onClick={onClick}
         onBackgroundClear={onBackgroundClear}
         series={series}
+        simulationActive={simulationActive ?? false}
       />
     </div>
   );
@@ -142,6 +147,7 @@ function SpectrumsCanvas({
   onClick,
   onBackgroundClear,
   series,
+  simulationActive,
 }: {
   sorted: CellSpectrum[];
   yMeta: AxisMeta;
@@ -154,6 +160,7 @@ function SpectrumsCanvas({
   onClick: (cellIndex: number) => void;
   onBackgroundClear: () => void;
   series: SeriesInput[];
+  simulationActive: boolean;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -391,7 +398,7 @@ function SpectrumsCanvas({
             textTransform: "uppercase",
           }}
         >
-          {yMeta.label}
+          {yMeta.label}{simulationActive ? " · simulated" : ""}
         </text>
         {/* X axis label band. */}
         <text

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listMaterials } from "../api/library";
 import { listResults } from "../api/results";
 import { getTest, listTests } from "../api/tests";
@@ -10,6 +10,10 @@ import {
   type XAxis,
   type YAxis,
 } from "../components/StabilityChart";
+import {
+  fitAffineTransform,
+  type AffineTransform,
+} from "../components/stabilityCalibrateMath";
 import { StabilityFocusedCellPanel } from "../components/StabilityFocusedCellPanel";
 import { StabilityPicker } from "../components/StabilityPicker";
 import { StabilityResultModal } from "../components/StabilityResultModal";
@@ -59,6 +63,14 @@ export function StabilityPage() {
   const [yAxis, setYAxis] = useState<YAxis>("delta_hue");
   const [xAxis, setXAxis] = useState<XAxis>("expected_hue");
   const [chartMode, setChartMode] = useState<ChartMode>("scatter");
+  // Calibrate state. ``referenceResultId === null`` means "fall back
+  // to the first selected result"; the chart resolves the default
+  // there. ``applyToChart`` is the toggle that pipes the fitted
+  // transform back through SCATTER / SPATIAL / SPECTRUMS.
+  const [referenceResultId, setReferenceResultId] = useState<number | null>(
+    null,
+  );
+  const [applyToChart, setApplyToChart] = useState(false);
 
   // Unified focused-cell state. Conceptually one slot read by every
   // view, but stored as two independent buckets so a transient hover
@@ -269,6 +281,62 @@ export function StabilityPage() {
     [testDetail],
   );
 
+  // Resolve the reference run for the calibration fit. Defaults to the
+  // first selected result when the user hasn't picked an explicit run
+  // (or the picked one has been unticked). Recomputed any time the
+  // pick or the selection changes.
+  const resolvedReferenceId = useMemo<number | null>(() => {
+    if (chartSeries.length === 0) return null;
+    if (
+      referenceResultId != null &&
+      chartSeries.some((s) => s.resultId === referenceResultId)
+    ) {
+      return referenceResultId;
+    }
+    return chartSeries[0].resultId;
+  }, [chartSeries, referenceResultId]);
+
+  // Fit the affine transform on the reference run's measured cells so
+  // we can pass it down when ``applyToChart`` is on. ``null`` whenever
+  // the fit can't be produced (no reference / under-determined /
+  // singular) — the calibrate canvas surfaces the same error UI.
+  const simulationTransform = useMemo<AffineTransform | null>(() => {
+    if (!applyToChart) return null;
+    if (resolvedReferenceId == null) return null;
+    const ref = chartSeries.find(
+      (s) => s.resultId === resolvedReferenceId,
+    );
+    if (ref == null) return null;
+    const pairs: { measured: Lab; expected: Lab }[] = [];
+    for (const c of cells) {
+      const exp = c.expected_lab as Lab | number[];
+      if (!Array.isArray(exp) || exp.length !== 3) continue;
+      const m = ref.cells.get(c.cell_index);
+      if (m == null) continue;
+      pairs.push({
+        measured: [m.lab[0], m.lab[1], m.lab[2]],
+        expected: [exp[0], exp[1], exp[2]],
+      });
+    }
+    const fit = fitAffineTransform(pairs);
+    if (!fit.ok) return null;
+    return fit.fit.transform;
+  }, [applyToChart, resolvedReferenceId, chartSeries, cells]);
+
+  // Changing the reference run while APPLY-TO-CHART is on shouldn't
+  // leave the user staring at a stale transform — the spec calls for a
+  // hard reset of the toggle. We compare the resolved id between
+  // renders so an initial null → id transition doesn't clobber the
+  // toggle.
+  const lastResolvedRef = useRef<number | null>(null);
+  useEffect(() => {
+    const prev = lastResolvedRef.current;
+    if (prev != null && prev !== resolvedReferenceId && applyToChart) {
+      setApplyToChart(false);
+    }
+    lastResolvedRef.current = resolvedReferenceId;
+  }, [resolvedReferenceId, applyToChart]);
+
   // Count distinct retest_index values across the selected results.
   // 1 = "all photos of the same burn" (CAMERA σ is pure measurement
   // noise). ≥2 = "different burns" (the same σ also captures
@@ -372,6 +440,11 @@ export function StabilityPage() {
             onHoverLeave={handleHoverLeave}
             onClick={handleClick}
             onBackgroundClear={handleBackgroundClear}
+            simulationTransform={simulationTransform}
+            referenceResultId={resolvedReferenceId}
+            onReferenceResultIdChange={setReferenceResultId}
+            applyToChart={applyToChart}
+            onApplyToChartChange={setApplyToChart}
           />
         </main>
         <StabilityStats

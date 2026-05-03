@@ -33,6 +33,10 @@ interface Props {
   onHoverLeave: () => void;
   onClick: (cellIndex: number) => void;
   onBackgroundClear: () => void;
+  /** When true, the canvas's metric label gets a small ``· simulated``
+   *  suffix to flag the underlying measurements have been pushed
+   *  through the calibrate transform. */
+  simulationActive?: boolean;
 }
 
 /**
@@ -57,6 +61,7 @@ export function StabilityHeatmap({
   onHoverLeave,
   onClick,
   onBackgroundClear,
+  simulationActive,
 }: Props) {
   const safeMetric: HeatmapMetric = isHeatmapMetric(metric)
     ? metric
@@ -111,7 +116,12 @@ export function StabilityHeatmap({
         onBackgroundClear={onBackgroundClear}
       />
       {hasAnyData && !tooFewRunsForSigma && (
-        <RampLegend metric={safeMetric} range={range} yMeta={yMeta} />
+        <RampLegend
+          metric={safeMetric}
+          range={range}
+          yMeta={yMeta}
+          suffix={simulationActive ? " · simulated" : ""}
+        />
       )}
     </div>
   );
@@ -316,10 +326,12 @@ function RampLegend({
   metric,
   range,
   yMeta,
+  suffix,
 }: {
   metric: HeatmapMetric;
   range: { min: number; max: number };
   yMeta: AxisMeta | undefined;
+  suffix?: string;
 }) {
   const stops = useMemo(() => {
     const n = 16;
@@ -336,7 +348,7 @@ function RampLegend({
   return (
     <div className="shrink-0 flex items-center gap-3 px-1">
       <span className="font-mono text-[9.5px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)]">
-        {yMeta ? yMeta.short : metric}
+        {(yMeta ? yMeta.short : metric) + (suffix ?? "")}
       </span>
       <div className="flex h-3 flex-1 overflow-hidden rounded-[2px] border border-[color:var(--color-border)]">
         {stops.map((s, i) => (

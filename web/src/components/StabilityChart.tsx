@@ -5,6 +5,7 @@ import { cn } from "../ui";
 import { ScatterRow, StabilityScatter } from "./StabilityScatter";
 import { StabilityHeatmap } from "./StabilityHeatmap";
 import { StabilitySpectrums, SpectrumOrderRow } from "./StabilitySpectrums";
+import { StabilityCalibrate } from "./StabilityCalibrate";
 import type { SpectrumOrder } from "./stabilitySpectrumsMath";
 import {
   AxisMeta,
@@ -22,6 +23,11 @@ import {
   Y_AXES,
   YAxis,
 } from "./stabilityChartMath";
+import {
+  applyTransform,
+  simulateTransform,
+  type AffineTransform,
+} from "./stabilityCalibrateMath";
 import { isHeatmapMetric } from "./stabilityHeatmapMath";
 import { meanLab } from "./stabilityStatsMath";
 import { HelpTip } from "./StabilityHelpTip";
@@ -37,7 +43,7 @@ import {
 export type { SeriesInput, XAxis, YAxis } from "./stabilityChartMath";
 export { seriesColour } from "./stabilityChartMath";
 
-export type ChartMode = "scatter" | "spatial" | "spectrums";
+export type ChartMode = "scatter" | "spatial" | "spectrums" | "calibrate";
 
 /** Surface a hover/click came from. Drives the page-level "should this
  *  view's mouse-leave clear the transient focus?" decision so a
@@ -60,7 +66,8 @@ interface Props {
   onXAxisChange: (a: XAxis) => void;
   onYAxisChange: (a: YAxis) => void;
   /** Active visualisation. ``scatter`` keeps the existing colour-space
-   *  view; ``spatial`` swaps to a (row, col) heatmap. */
+   *  view; ``spatial`` swaps to a (row, col) heatmap. ``calibrate``
+   *  shows the affine-fit canvas + apply toggle. */
   mode: ChartMode;
   onModeChange: (m: ChartMode) => void;
   /** Width of the test's physical row, used by the spatial heatmap.
@@ -75,6 +82,20 @@ interface Props {
   /** Click on the chart background (not on a cell). Page decides
    *  whether the source matches. */
   onBackgroundClear: (source: FocusSource) => void;
+  /** When non-null the SCATTER / SPATIAL / SPECTRUMS modes render
+   *  measurements after applying this affine transform — the
+   *  "what would calibration buy me?" preview. The CALIBRATE mode
+   *  always shows the un-corrected fit information regardless. */
+  simulationTransform: AffineTransform | null;
+  /** Reference run id the calibration fit is computed against. ``null``
+   *  defaults to the first selected result. */
+  referenceResultId: number | null;
+  onReferenceResultIdChange: (id: number | null) => void;
+  /** Whether the calibrate canvas has the "apply to chart" toggle on.
+   *  Mirrored at the page so it survives mode toggles; the chart only
+   *  reads it when CALIBRATE is active. */
+  applyToChart: boolean;
+  onApplyToChartChange: (on: boolean) => void;
 }
 
 /**
@@ -99,9 +120,38 @@ export function StabilityChart({
   onHoverLeave,
   onClick,
   onBackgroundClear,
+  simulationTransform,
+  referenceResultId,
+  onReferenceResultIdChange,
+  applyToChart,
+  onApplyToChartChange,
 }: Props) {
   const xMeta = X_AXES.find((a) => a.id === xAxis)!;
   const yMeta = Y_AXES.find((a) => a.id === yAxis)!;
+  // Whether the SCATTER / SPATIAL / SPECTRUMS modes should render
+  // simulated (post-correction) measurements. The CALIBRATE canvas is
+  // always raw — the user is reading the fit there, not the preview.
+  const simulationActive = simulationTransform != null;
+  // Run the live transform over the chart series so every downstream
+  // axis math (ΔE / Δh° / σ) sees the post-correction Lab. Identity
+  // mapping when no transform is set, so non-calibrate flows are
+  // unaffected.
+  const projectedSeries = useMemo<SeriesInput[]>(() => {
+    if (!simulationActive || simulationTransform == null) return series;
+    return series.map((s) => ({
+      ...s,
+      cells: new Map(
+        Array.from(s.cells.entries()).map(([idx, m]) => [
+          idx,
+          { hex: m.hex, lab: applyTransform(simulationTransform, m.lab) },
+        ]),
+      ),
+    }));
+  }, [series, simulationActive, simulationTransform]);
+  // The CALIBRATE canvas always gets the raw series (the fit is
+  // recomputed against unprocessed measurements every render). Other
+  // modes consume ``effectiveSeries`` so the toggle "applies".
+  const effectiveSeries = mode === "calibrate" ? series : projectedSeries;
 
   // SPECTRUMS view's ordering is local to the chart — the page doesn't
   // need to round-trip it (no other view consumes it). Default
@@ -130,17 +180,19 @@ export function StabilityChart({
   // series whenever a burn-Y axis is active OR both axes are
   // computed-per-cell (the quadrant view). In either case each cell
   // becomes one dot; below-threshold combinations render an empty
-  // chart via ``renderSeries === []``.
+  // chart via ``renderSeries === []``. We use ``effectiveSeries`` here
+  // so a simulated "what would calibration buy me?" view collapses
+  // through the corrected cells, not the raw ones.
   const bothComputed = computedX && computedY;
   const collapseEligible = burnMode || bothComputed;
   const renderSeries = useMemo<SeriesInput[]>(() => {
-    if (!collapseEligible) return series;
-    if (series.length < 2) return [];
+    if (!collapseEligible) return effectiveSeries;
+    if (effectiveSeries.length < 2) return [];
     const collapsedCells = new Map<number, { hex: string; lab: Lab }>();
     for (const c of cells) {
       const labs: Lab[] = [];
       let hex = "#000000";
-      for (const s of series) {
+      for (const s of effectiveSeries) {
         const m = s.cells.get(c.cell_index);
         if (m) {
           labs.push(m.lab);
@@ -159,7 +211,7 @@ export function StabilityChart({
         cells: collapsedCells,
       },
     ];
-  }, [collapseEligible, series, cells]);
+  }, [collapseEligible, effectiveSeries, cells]);
   const collapseSeries = collapseEligible && series.length >= 2;
 
   const rows = useMemo<ScatterRow[]>(() => {
@@ -176,7 +228,7 @@ export function StabilityChart({
         // gated by low chroma, or camera σ with <2 runs) — we skip
         // the cell rather than draw a phantom dot.
         const labs: Lab[] = [];
-        for (const s of series) {
+        for (const s of effectiveSeries) {
           const m = s.cells.get(c.cell_index);
           if (m) labs.push(m.lab);
         }
@@ -195,7 +247,7 @@ export function StabilityChart({
             yAxis,
             exp,
             m.lab,
-            perCellSigmaFor(c.cell_index, series),
+            perCellSigmaFor(c.cell_index, effectiveSeries),
           );
           return { measured: m.lab, y };
         },
@@ -203,7 +255,7 @@ export function StabilityChart({
       out.push({ cell: c, expected: exp, x, perSeries });
     }
     return out;
-  }, [cells, series, renderSeries, xAxis, yAxis, computedX]);
+  }, [cells, effectiveSeries, renderSeries, xAxis, yAxis, computedX]);
 
   const hasAnySeries = series.length > 0;
   const hasAnyData = hasAnySeries && rows.some((r) =>
@@ -216,6 +268,22 @@ export function StabilityChart({
   // toggle back to scatter restores their original choice.
   const heatmapMetric = isHeatmapMetric(yAxis) ? yAxis : "delta_e";
 
+  // Suffix appended to the canvas's axis labels when the simulation
+  // transform is active. The CALIBRATE canvas owns the fit; the other
+  // three modes get the suffix to remind the user the dots have been
+  // shifted by the transform.
+  const axisLabelSuffix = simulationActive && mode !== "calibrate"
+    ? " · simulated"
+    : "";
+  // ``yMeta`` / ``xMeta`` are read-only pill metadata so we don't
+  // mutate them — render-side overrides keep the suffix concern local
+  // to the chart.
+  const xMetaSim: AxisMeta = simulationActive && mode !== "calibrate"
+    ? { ...xMeta, label: `${xMeta.label}${axisLabelSuffix}` }
+    : xMeta;
+  const yMetaSim: AxisMeta = simulationActive && mode !== "calibrate"
+    ? { ...yMeta, label: `${yMeta.label}${axisLabelSuffix}` }
+    : yMeta;
   return (
     <div className="flex-1 min-w-0 min-h-0 flex flex-col">
       <ChartHeader
@@ -230,6 +298,9 @@ export function StabilityChart({
         burnActive={collapseSeries && mode === "scatter"}
         spectrumOrder={spectrumOrder}
         onSpectrumOrderChange={setSpectrumOrder}
+        simulationActive={simulationActive}
+        referenceResultId={referenceResultId}
+        onReferenceResultIdChange={onReferenceResultIdChange}
       />
       <div className="flex-1 min-h-0 px-4 pb-4 flex flex-col">
         {mode === "scatter" ? (
@@ -237,8 +308,8 @@ export function StabilityChart({
             <StabilityScatter
               rows={rows}
               series={renderSeries}
-              xMeta={xMeta}
-              yMeta={yMeta}
+              xMeta={xMetaSim}
+              yMeta={yMetaSim}
               xAxis={xAxis}
               yAxis={yAxis}
               focusedCell={focusedCell}
@@ -249,8 +320,8 @@ export function StabilityChart({
             />
           ) : (
             <EmptyChart
-              xMeta={xMeta}
-              yMeta={yMeta}
+              xMeta={xMetaSim}
+              yMeta={yMetaSim}
               hasSeries={hasAnySeries}
               burnNeedsRuns={
                 ((burnMode && !yUsable) || (computedX && !xUsable)) &&
@@ -261,15 +332,15 @@ export function StabilityChart({
         ) : mode === "spatial" ? (
           cellsPerRow == null ? (
             <EmptyChart
-              xMeta={xMeta}
-              yMeta={yMeta}
+              xMeta={xMetaSim}
+              yMeta={yMetaSim}
               hasSeries={hasAnySeries}
               burnNeedsRuns={false}
             />
           ) : (
             <StabilityHeatmap
               cells={cells}
-              series={series}
+              series={effectiveSeries}
               metric={heatmapMetric}
               cellsPerRow={cellsPerRow}
               focusedCell={focusedCell}
@@ -277,12 +348,13 @@ export function StabilityChart({
               onHoverLeave={() => onHoverLeave("heatmap")}
               onClick={(idx) => onClick(idx, "heatmap")}
               onBackgroundClear={() => onBackgroundClear("heatmap")}
+              simulationActive={simulationActive}
             />
           )
-        ) : (
+        ) : mode === "spectrums" ? (
           <StabilitySpectrums
             cells={cells}
-            series={series}
+            series={effectiveSeries}
             metric={yAxis}
             onMetricChange={onYAxisChange}
             order={spectrumOrder}
@@ -292,12 +364,49 @@ export function StabilityChart({
             onHoverLeave={() => onHoverLeave("spectrums")}
             onClick={(idx) => onClick(idx, "spectrums")}
             onBackgroundClear={() => onBackgroundClear("spectrums")}
+            simulationActive={simulationActive}
+          />
+        ) : (
+          <StabilityCalibrate
+            cells={cells}
+            series={series}
+            referenceResultId={referenceResultId}
+            applyToChart={applyToChart}
+            onApplyToChartChange={onApplyToChartChange}
           />
         )}
       </div>
     </div>
   );
 }
+
+// Compose a corrected map of cell_index → Lab from a series' raw
+// measurements. Re-exported so the page can build the simulation
+// transform's preview map without redoing the loop.
+export function projectSeriesCells(
+  s: SeriesInput,
+  t: AffineTransform,
+): SeriesInput {
+  return {
+    ...s,
+    cells: simulateLabMap(s.cells, t),
+  };
+}
+
+function simulateLabMap(
+  cells: ReadonlyMap<number, { hex: string; lab: Lab }>,
+  t: AffineTransform,
+): Map<number, { hex: string; lab: Lab }> {
+  const out = new Map<number, { hex: string; lab: Lab }>();
+  cells.forEach((m, idx) => {
+    out.set(idx, { hex: m.hex, lab: applyTransform(t, m.lab) });
+  });
+  return out;
+}
+
+// Re-export so the page can pre-build a simulated cell map for the
+// stats-strip / focused-cell drilldown if it ever wants to.
+export { simulateTransform };
 
 /* ─── Header (axis pills + legend) ────────────────────────────────────── */
 
@@ -313,6 +422,9 @@ function ChartHeader({
   burnActive,
   spectrumOrder,
   onSpectrumOrderChange,
+  simulationActive,
+  referenceResultId,
+  onReferenceResultIdChange,
 }: {
   xAxis: XAxis;
   yAxis: YAxis;
@@ -325,6 +437,9 @@ function ChartHeader({
   burnActive: boolean;
   spectrumOrder: SpectrumOrder;
   onSpectrumOrderChange: (o: SpectrumOrder) => void;
+  simulationActive: boolean;
+  referenceResultId: number | null;
+  onReferenceResultIdChange: (id: number | null) => void;
 }) {
   // In spatial mode the X axis is meaningless (no abscissa to vary
   // along); the Y axis row keeps its segmented look but its options
@@ -357,17 +472,29 @@ function ChartHeader({
   return (
     <div className="px-4 pt-4 pb-3 border-b border-[color:var(--color-border)]">
       <div className="flex flex-col gap-2">
-        <ModeToggleRow mode={mode} onChange={onModeChange} />
-        <AxisRow
-          legend={yLegend}
-          axes={yAxes}
-          value={yAxis}
-          onChange={(v) => onYAxisChange(v as YAxis)}
-          isDisabled={isYAxisDisabled}
-          disabledHint="needs ≥ 2 runs"
-          rowHelp={yRowHelp}
-          helpFor={helpForY}
+        <ModeToggleRow
+          mode={mode}
+          onChange={onModeChange}
+          simulationActive={simulationActive}
         />
+        {mode === "calibrate" ? (
+          <ReferenceRunRow
+            series={series}
+            referenceResultId={referenceResultId}
+            onChange={onReferenceResultIdChange}
+          />
+        ) : (
+          <AxisRow
+            legend={yLegend}
+            axes={yAxes}
+            value={yAxis}
+            onChange={(v) => onYAxisChange(v as YAxis)}
+            isDisabled={isYAxisDisabled}
+            disabledHint="needs ≥ 2 runs"
+            rowHelp={yRowHelp}
+            helpFor={helpForY}
+          />
+        )}
         {mode === "scatter" && (
           <AxisRow
             legend="X axis"
@@ -432,44 +559,127 @@ function ChartHeader({
 function ModeToggleRow({
   mode,
   onChange,
+  simulationActive,
 }: {
   mode: ChartMode;
   onChange: (m: ChartMode) => void;
+  simulationActive: boolean;
 }) {
-  const options: { id: ChartMode; label: string }[] = [
-    { id: "scatter", label: "Scatter" },
-    { id: "spatial", label: "Spatial" },
-    { id: "spectrums", label: "Spectrums" },
+  // Each pill is wrapped in its own ``HelpTip`` so the hover help reads
+  // the pill-specific copy. The CALIBRATE pill carries a small dot when
+  // the "apply to chart" toggle is active so users see at a glance that
+  // the other modes are showing simulated values.
+  const options: {
+    id: ChartMode;
+    label: string;
+    help: AxisHelp;
+  }[] = [
+    { id: "scatter", label: "Scatter", help: TOOLBAR_HELP.mode },
+    { id: "spatial", label: "Spatial", help: TOOLBAR_HELP.mode },
+    { id: "spectrums", label: "Spectrums", help: TOOLBAR_HELP.mode },
+    { id: "calibrate", label: "Calibrate", help: TOOLBAR_HELP.calibrate },
   ];
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <RowLabel label="Mode" help={TOOLBAR_HELP.mode} />
-      <HelpTip help={TOOLBAR_HELP.mode}>
-        <div className="inline-flex rounded-[6px] border border-[color:var(--color-border)] overflow-hidden">
-          {options.map((o, i) => {
-            const active = o.id === mode;
-            return (
-              <button
-                key={o.id}
-                type="button"
-                onClick={() => onChange(o.id)}
-                aria-pressed={active}
-                className={cn(
-                  "h-7 px-3 font-mono text-[10.5px] tracking-[0.12em] uppercase font-semibold tabular-nums",
-                  "transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
-                  i > 0 && "border-l border-[color:var(--color-border)]",
-                  active
-                    ? "bg-[color:var(--color-primary)] text-white"
-                    : "bg-[color:var(--color-surface)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
-                )}
-              >
-                {o.label}
-              </button>
-            );
-          })}
-        </div>
-      </HelpTip>
+      <div className="inline-flex rounded-[6px] border border-[color:var(--color-border)] overflow-hidden">
+        {options.map((o, i) => {
+          const active = o.id === mode;
+          const decorate =
+            o.id === "calibrate" && simulationActive && !active;
+          const button = (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => onChange(o.id)}
+              aria-pressed={active}
+              className={cn(
+                "h-7 px-3 font-mono text-[10.5px] tracking-[0.12em] uppercase font-semibold tabular-nums",
+                "inline-flex items-center gap-1.5 transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
+                i > 0 && "border-l border-[color:var(--color-border)]",
+                active
+                  ? "bg-[color:var(--color-primary)] text-white"
+                  : "bg-[color:var(--color-surface)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
+              )}
+            >
+              {o.label}
+              {decorate && (
+                <span
+                  aria-hidden
+                  className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-primary)]"
+                />
+              )}
+            </button>
+          );
+          return (
+            <HelpTip key={o.id} help={o.help}>
+              {button}
+            </HelpTip>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Reference-run picker (CALIBRATE only) ────────────────────────────── */
+
+function ReferenceRunRow({
+  series,
+  referenceResultId,
+  onChange,
+}: {
+  series: SeriesInput[];
+  referenceResultId: number | null;
+  onChange: (id: number | null) => void;
+}) {
+  // The first selected result is the implicit default — surface that in
+  // the option list so the dropdown's value is always meaningful, even
+  // before the user has explicitly picked a reference. Disabled state
+  // appears when no result is selected (the calibrate canvas itself
+  // shows the empty-caption then).
+  const empty = series.length === 0;
+  const value =
+    referenceResultId != null &&
+    series.some((s) => s.resultId === referenceResultId)
+      ? String(referenceResultId)
+      : series[0]?.resultId != null
+        ? String(series[0].resultId)
+        : "";
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="inline-flex items-center gap-1 w-[64px] shrink-0">
+        <span className="font-mono text-[9.5px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)]">
+          Fit from
+        </span>
+      </span>
+      <div className="inline-flex">
+        <select
+          value={value}
+          disabled={empty}
+          onChange={(e) => {
+            const v = e.target.value;
+            const id = v === "" ? null : Number(v);
+            onChange(Number.isFinite(id as number) ? (id as number) : null);
+          }}
+          aria-label="Reference run for the calibration fit"
+          className={cn(
+            "h-7 rounded-[6px] border bg-[color:var(--color-surface)]",
+            "border-[color:var(--color-border)] px-2.5 pr-7",
+            "font-mono text-[10.5px] tracking-[0.06em] tabular-nums text-[color:var(--color-ink)]",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
+            empty && "opacity-50 cursor-not-allowed",
+          )}
+        >
+          {empty && <option value="">No runs selected</option>}
+          {series.map((s) => (
+            <option key={s.resultId} value={s.resultId}>
+              {s.label} (id {s.resultId})
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 }

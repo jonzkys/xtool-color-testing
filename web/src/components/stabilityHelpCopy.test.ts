@@ -42,6 +42,7 @@ describe("stabilityHelpCopy", () => {
       "yRow",
       "xRow",
       "metricRow",
+      "calibrate",
     ];
     for (const k of keys) {
       const h = TOOLBAR_HELP[k];

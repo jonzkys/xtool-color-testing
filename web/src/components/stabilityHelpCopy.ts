@@ -204,7 +204,8 @@ export type ToolbarHelpKey =
   | "trend"
   | "yRow"
   | "xRow"
-  | "metricRow";
+  | "metricRow"
+  | "calibrate";
 
 export const TOOLBAR_HELP: Record<ToolbarHelpKey, AxisHelp> = {
   mode: {
@@ -248,5 +249,12 @@ export const TOOLBAR_HELP: Record<ToolbarHelpKey, AxisHelp> = {
       "Pick the per-cell metric the workpiece grid is tinted by. Diverging metrics (Δ-axes) split at zero; magnitude metrics (ΔE, σ) ramp from low to high.",
     long: "Only metrics that aggregate per-cell across runs appear here. ΔE and σ catch overall trouble; Δh° / ΔL / Δa / Δb localise the kind of trouble.",
     schematic: "spread",
+  },
+  calibrate: {
+    heading: "Calibrate transform",
+    short:
+      "Fit a 12-parameter Lab→Lab affine that maps one reference run's measurements back toward expected, then preview the post-correction ΔE.",
+    long: "Least-squares fit of A·measured + b ≈ expected on the chosen reference run. Toggle APPLY TO CHART to see SCATTER / SPATIAL / SPECTRUMS as if the same correction was applied to every selected run — useful for asking 'how much better would my prints be after one calibration pass?'.",
+    schematic: "pair",
   },
 };
