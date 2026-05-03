@@ -190,3 +190,132 @@ def test_project_to_xcs_bytes_validation_kind_serialises():
     payload = json.loads(raw.decode("utf-8"))
     rects = [d for d in payload["canvas"][0]["displays"] if d.get("type") == "RECT"]
     assert len(rects) == 3
+
+
+def test_validation_cell_angle_mode_overrides_test_level():
+    """When a cell's params blob carries ``angle_mode``/``crosshatch``
+    (palette entries since PR #38), the converter must use those per
+    cell and ignore the test-level values. This is what makes
+    palettes a faithful "recipe card" — a colour burned with
+    crosshatch reproduces with crosshatch even if the validation
+    test's top-level field says otherwise."""
+    cells = [
+        # Cell 0 inherits from the test level (no cell-level override).
+        {"cell_index": 0, "params": {"power": 10}},
+        # Cell 1 turns crosshatch ON despite test-level being off.
+        {"cell_index": 1, "params": {"power": 20, "crosshatch": True}},
+        # Cell 2 swaps angle_mode to incremental.
+        {"cell_index": 2, "params": {
+            "power": 30, "angle_mode": "incremental",
+        }},
+    ]
+    project = Project.model_validate({
+        "name": "v", "grid_gap_mm": 0, "focus_mm": 1.5,
+        "tests": [{
+            "row": 0, "col": 0, "col_span": 1,
+            "test": {
+                "id": "1", "name": "v", "material_id": "1",
+                "x_param": "power", "x_min": 0, "x_max": 100, "x_steps": 3,
+                "rows": 1, "width_mm": 30, "height_mm": 10, "gap_mm": 0,
+                "cell_shape": "rect",
+                # Test-level: fixed + no crosshatch — these should NOT
+                # override the per-cell values for cells 1 and 2.
+                "angle_mode": "fixed", "crosshatch": False,
+                "unidirectional": False, "hide_axis_labels": True,
+                "base_params": _BASE,
+                "kind": "validation", "validation_cells": cells,
+            },
+        }],
+    })
+    xcs = project_to_xcs(project)
+    elems = xcs.elements
+    assert len(elems) == 3
+
+    # Cell 0: test-level fallback (fixed, no crosshatch).
+    assert elems[0].params.angle_type == 1, "cell 0 should be angle_type=1 (fixed)"
+    assert elems[0].params.cross_angle is False
+
+    # Cell 1: crosshatch=True, angle_mode still fixed (only crosshatch overridden).
+    assert elems[1].params.angle_type == 1
+    assert elems[1].params.cross_angle is True, (
+        "cell 1's per-cell crosshatch=True must win over test-level False"
+    )
+
+    # Cell 2: angle_mode=incremental → angle_type=2.
+    assert elems[2].params.angle_type == 2, (
+        "cell 2's per-cell angle_mode=incremental must map to angle_type=2"
+    )
+    assert elems[2].params.cross_angle is False
+
+
+def test_validation_cell_angle_mode_falls_back_to_test_level():
+    """A cell whose params blob lacks angle_mode/crosshatch (a manual
+    entry, or one ingested before the field was persisted) falls back
+    to the test-level values. Backwards-compat for legacy palette
+    entries that 0017 hasn't backfilled yet."""
+    # Two cells, neither carries angle_mode/crosshatch.
+    cells = [
+        {"cell_index": 0, "params": {"power": 10}},
+        {"cell_index": 1, "params": {"power": 20}},
+    ]
+    project = Project.model_validate({
+        "name": "v", "grid_gap_mm": 0, "focus_mm": 1.5,
+        "tests": [{
+            "row": 0, "col": 0, "col_span": 1,
+            "test": {
+                "id": "1", "name": "v", "material_id": "1",
+                "x_param": "power", "x_min": 0, "x_max": 100, "x_steps": 2,
+                "rows": 1, "width_mm": 30, "height_mm": 10, "gap_mm": 0,
+                "cell_shape": "rect",
+                # Test-level says crosshatch + incremental.
+                "angle_mode": "incremental", "crosshatch": True,
+                "unidirectional": False, "hide_axis_labels": True,
+                "base_params": _BASE,
+                "kind": "validation", "validation_cells": cells,
+            },
+        }],
+    })
+    xcs = project_to_xcs(project)
+    assert len(xcs.elements) == 2
+    for elem in xcs.elements:
+        assert elem.params.angle_type == 2, (
+            "test-level angle_mode=incremental should apply when cells lack it"
+        )
+        assert elem.params.cross_angle is True, (
+            "test-level crosshatch=True should apply when cells lack it"
+        )
+
+
+def test_validation_cell_filters_unknown_keys_quietly():
+    """Cells from the palette occasionally carry top-level fields that
+    aren't burn params (``laser``, ``mode``, ``scan_angle``). They
+    must be silently dropped, not raise."""
+    cells = [
+        {"cell_index": 0, "params": {
+            "power": 12,
+            "laser": "red",          # test-level, not _PARAM_MAP
+            "mode": "color_engrave", # test-level
+            "scan_angle": 90,        # test-level
+            "angle_mode": "fixed",   # consumed by per-cell branch
+            "crosshatch": False,     # consumed by per-cell branch
+        }},
+        {"cell_index": 1, "params": {"power": 18}},
+    ]
+    project = Project.model_validate({
+        "name": "v", "grid_gap_mm": 0, "focus_mm": 1.5,
+        "tests": [{
+            "row": 0, "col": 0, "col_span": 1,
+            "test": {
+                "id": "1", "name": "v", "material_id": "1",
+                "x_param": "power", "x_min": 0, "x_max": 100, "x_steps": 2,
+                "rows": 1, "width_mm": 30, "height_mm": 10, "gap_mm": 0,
+                "cell_shape": "rect", "angle_mode": "fixed",
+                "unidirectional": False, "hide_axis_labels": True,
+                "base_params": _BASE,
+                "kind": "validation", "validation_cells": cells,
+            },
+        }],
+    })
+    # Should not raise.
+    xcs = project_to_xcs(project)
+    assert xcs.elements[0].params.power == 12
