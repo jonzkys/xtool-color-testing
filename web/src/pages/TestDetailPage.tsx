@@ -530,6 +530,14 @@ export function TestDetailPage({ testId }: Props) {
                   ? {
                       cellCount: (test?.validation_cells ?? []).length || 1,
                       cellsPerRow: spec.cells_per_row,
+                      // Per-cell colours from the picked palette
+                      // entries — cell_index is already L*-sorted on
+                      // save, matching the renderer's burn order, so
+                      // we can index the array directly.
+                      cellColors: (test?.validation_cells ?? [])
+                        .slice()
+                        .sort((a, b) => a.cell_index - b.cell_index)
+                        .map((c) => c.expected_hex),
                     }
                   : undefined
               }

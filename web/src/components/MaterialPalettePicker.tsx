@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, RotateCw, X as XIcon } from "lucide-react";
+import { Check, Eye, RotateCw, X as XIcon } from "lucide-react";
 import { Button, MetalBar, cn } from "../ui";
 import { seedFarthestPointSample } from "../svg/colorSelection";
 import type { PaletteEntry } from "../types";
@@ -73,9 +73,20 @@ export function MaterialPalettePicker({
     [entries],
   );
   const [hoveredId, setHoveredId] = useState<number | null>(null);
+  // "Show only selected" filter — scoped to the grid; the scatter
+  // keeps the full gamut so the user retains spatial context for what
+  // they've picked vs. what's still available.
+  const [showSelectedOnly, setShowSelectedOnly] = useState(false);
 
   const selectedCount = entries.filter((e) => selectedIds.has(e.id)).length;
   const totalCount = entries.length;
+  const visibleGridEntries = useMemo(
+    () =>
+      showSelectedOnly
+        ? sortedEntries.filter((e) => selectedIds.has(e.id))
+        : sortedEntries,
+    [showSelectedOnly, sortedEntries, selectedIds],
+  );
 
   const toggle = (id: number) => {
     const next = new Set(selectedIds);
@@ -107,6 +118,9 @@ export function MaterialPalettePicker({
         onClear={clear}
         autoPickDisabled={entries.length === 0}
         clearDisabled={selectedCount === 0}
+        showSelectedOnly={showSelectedOnly}
+        onToggleSelectedOnly={() => setShowSelectedOnly((v) => !v)}
+        toggleDisabled={selectedCount === 0 && !showSelectedOnly}
         rightSlot={rightSlot}
       />
 
@@ -140,10 +154,18 @@ export function MaterialPalettePicker({
           {/* Right: swatch grid — scrolls internally to fill column. */}
           <div className="bg-[color:var(--color-surface)] px-4 py-3 flex flex-col gap-2 min-w-0 min-h-0">
             <PanelLabel
-              title="Palette · sorted by L*"
-              hint={selectedCount > 0
-                ? `${selectedCount} picked`
-                : `click any tile`}
+              title={
+                showSelectedOnly
+                  ? "Palette · selected only"
+                  : "Palette · sorted by L*"
+              }
+              hint={
+                showSelectedOnly
+                  ? `${selectedCount} of ${totalCount}`
+                  : selectedCount > 0
+                    ? `${selectedCount} picked`
+                    : `click any tile`
+              }
             />
             <div
               className={cn(
@@ -162,7 +184,7 @@ export function MaterialPalettePicker({
                   "[grid-template-columns:repeat(auto-fill,minmax(56px,1fr))]",
                 )}
               >
-                {sortedEntries.map((e) => (
+                {visibleGridEntries.map((e) => (
                   <SwatchPickerTile
                     key={e.id}
                     entry={e}
@@ -173,6 +195,12 @@ export function MaterialPalettePicker({
                   />
                 ))}
               </div>
+              {showSelectedOnly && visibleGridEntries.length === 0 && (
+                <div className="py-6 text-center font-mono text-[11px] text-[color:var(--color-ink-subtle)]">
+                  No entries selected yet — auto-pick or click a tile
+                  on the gamut scatter.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -201,6 +229,9 @@ function PickerHeader({
   onClear,
   autoPickDisabled,
   clearDisabled,
+  showSelectedOnly,
+  onToggleSelectedOnly,
+  toggleDisabled,
   rightSlot,
 }: {
   materialLabel?: string;
@@ -212,6 +243,9 @@ function PickerHeader({
   onClear: () => void;
   autoPickDisabled: boolean;
   clearDisabled: boolean;
+  showSelectedOnly: boolean;
+  onToggleSelectedOnly: () => void;
+  toggleDisabled: boolean;
   rightSlot?: React.ReactNode;
 }) {
   return (
@@ -273,6 +307,24 @@ function PickerHeader({
             <XIcon className="h-3 w-3" strokeWidth={2.2} />
             <span className="font-mono tracking-[0.12em] uppercase text-[11px]">
               Clear
+            </span>
+          </Button>
+          <Button
+            variant={showSelectedOnly ? "secondary" : "ghost"}
+            size="sm"
+            onClick={onToggleSelectedOnly}
+            disabled={toggleDisabled}
+            aria-pressed={showSelectedOnly}
+            title={
+              showSelectedOnly
+                ? "Show all palette entries"
+                : "Show only the entries you've picked"
+            }
+            className="gap-1.5"
+          >
+            <Eye className="h-3 w-3" strokeWidth={2.2} />
+            <span className="font-mono tracking-[0.12em] uppercase text-[11px]">
+              {showSelectedOnly ? "Showing picked" : "Picked only"}
             </span>
           </Button>
         </div>

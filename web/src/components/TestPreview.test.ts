@@ -54,4 +54,22 @@ describe("computePreviewGeometry", () => {
     const cell = g.rows[0].cells[0];
     expect(cell.w).toBeCloseTo(cell.h, 2);
   });
+
+  test("cells carry a row-major flat index", () => {
+    // 14 cells across 3 rows of cells_per_row=5 → first two rows have
+    // 5 cells each, last row has 4. Flat index runs 0..13 in
+    // row-major order (the same order .xcs builder iterates in).
+    const g = computePreviewGeometry(
+      { ...DEFAULT_SPEC, x_steps: 14, rows: 3 },
+      { cellCount: 14, cellsPerRow: 5 },
+    );
+    expect(g.rows.map((r) => r.cells.length)).toEqual([5, 5, 4]);
+    // First cell of each row.
+    expect(g.rows[0].cells[0].idx).toBe(0);
+    expect(g.rows[1].cells[0].idx).toBe(5);
+    expect(g.rows[2].cells[0].idx).toBe(10);
+    // Last cell overall.
+    const lastRow = g.rows[2].cells;
+    expect(lastRow[lastRow.length - 1].idx).toBe(13);
+  });
 });

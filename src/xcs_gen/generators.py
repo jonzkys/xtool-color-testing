@@ -200,11 +200,21 @@ def generate_gradient(
     # lines, wide ones get fewer. Reservation tracks the actual count.
     summary_font_size = label_font_size
     summary_line_h = text_height(summary_font_size) + 0.1
-    sweep_line, fixed_line = _build_summary_lines(
-        x_param=x_param, x_min=x_min, x_max=x_max, x_steps=x_steps,
-        y_param=y_param, y_min=y_min, y_max=y_max, y_steps=y_steps,
-        base_params=base_params,
-    )
+    if per_cell_params is not None:
+        # Validation tests have no sweep — every cell carries its own
+        # params, so the legacy "param x-y / Sn Fn ..." line would be
+        # the *original sweep's* params (the spec we inherited from),
+        # which is meaningless on the burn. Replace it with a header
+        # that names the test by id and announces the cell count.
+        ident = f"#{test_id}" if test_id is not None else ""
+        sweep_line = f"Validation {ident}".strip()
+        fixed_line = f"{len(per_cell_params)} cells"
+    else:
+        sweep_line, fixed_line = _build_summary_lines(
+            x_param=x_param, x_min=x_min, x_max=x_max, x_steps=x_steps,
+            y_param=y_param, y_min=y_min, y_max=y_max, y_steps=y_steps,
+            base_params=base_params,
+        )
     summary_lines = _wrap_summary_to_width(
         sections=[sweep_line, fixed_line, summary_suffix],
         max_width_mm=total_width,
