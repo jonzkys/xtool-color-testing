@@ -319,3 +319,33 @@ def test_validation_cell_filters_unknown_keys_quietly():
     # Should not raise.
     xcs = project_to_xcs(project)
     assert xcs.elements[0].params.power == 12
+
+
+def test_validation_summary_replaces_sweep_header():
+    """The engraved title above the cells must NOT carry the original
+    sweep's params (those are meaningless once each cell has its own
+    overlay). A validation test should engrave a header naming the
+    test by id and announcing the cell count instead.
+
+    Regression: a 3-cell validation test inheriting "power 0-17 S1000
+    F200kHz 1x" from the source sweep was burning that misleading
+    line on every workpiece."""
+    project = _validation_project()  # 3 cells, test id "1"
+    xcs = project_to_xcs(project)
+
+    text_strings = [
+        d.get("text") for d in xcs.extra_displays if d.get("type") == "TEXT"
+    ]
+    joined = " | ".join(s for s in text_strings if isinstance(s, str))
+
+    # Validation marker: test id + cell count both surface somewhere
+    # in the (possibly wrapped) summary.
+    assert "Validation" in joined, f"expected 'Validation' header, got {joined!r}"
+    assert "#1" in joined, f"expected test id #1 in header, got {joined!r}"
+    assert "3 cells" in joined, f"expected '3 cells', got {joined!r}"
+
+    # The original sweep's per-cell tokens must NOT leak through —
+    # power/speed/frequency would be a confusing legacy of the
+    # validation's source sweep, not the actual burn.
+    assert "S1000" not in joined, f"sweep speed leaked into validation header: {joined!r}"
+    assert "F60Hz" not in joined, f"sweep freq leaked into validation header: {joined!r}"

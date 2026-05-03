@@ -11,7 +11,13 @@ const LABEL_FONT_MM = 1.4;
 const TICK_MM = 0.5;
 const ROW_ANNOTATION_MM = TICK_MM + 0.1 + LABEL_FONT_MM + 0.1;
 
-interface Cell { x: number; y: number; w: number; h: number; }
+interface Cell {
+  x: number; y: number; w: number; h: number;
+  /** Row-major flat index across the whole grid. Matches the order
+   *  the .xcs builder iterates cells in, so it's the right key for
+   *  any per-cell payload (e.g. ``cellColors`` for validation tests). */
+  idx: number;
+}
 interface Row { yMm: number; heightMm: number; cells: Cell[]; labelMin: string; labelMax: string; }
 
 export interface PreviewGeometry {
@@ -33,6 +39,13 @@ export interface PreviewOverride {
    *  ``spec.cells_per_row`` when set, else falls back to
    *  ``ceil(x_steps / spec.rows)``. */
   cellsPerRow?: number;
+  /** Per-cell fill colours (#rrggbb), indexed by row-major cell
+   *  position — same iteration order the preview uses to lay cells
+   *  out. For validation tests, pass each cell's ``expected_hex``
+   *  here so the preview reflects what the burn will actually look
+   *  like. ``undefined`` entries fall back to the default substrate
+   *  fill, so a partially-filled palette still draws cleanly. */
+  cellColors?: (string | undefined)[];
 }
 
 export function computePreviewGeometry(
@@ -91,6 +104,7 @@ export function computePreviewGeometry(
   // from a single x_steps pool that we hand out row by row.
   let cellsLeft = effectiveSteps;
   let cellIdx = 0;
+  let flatIdx = 0;
   for (let r = 0; r < rowCount; r++) {
     const take = is2D ? cellsPerRow : Math.min(cellsPerRow, cellsLeft);
     const cells: Cell[] = [];
@@ -100,6 +114,7 @@ export function computePreviewGeometry(
         x: gridX + c * (cellW + spec.gap_mm),
         y: rowY,
         w: cellW, h: rowHeight,
+        idx: flatIdx++,
       });
     }
     // In 2D, every row shares the same x range. Only label the bottom
@@ -146,9 +161,19 @@ export function TestPreview({
 }) {
   const g = computePreviewGeometry(spec, override);
 
-  // Token-backed substrate panel — flips in dark mode via --color-substrate.
-  const cellFill = "#C78F3E";
+  // Default substrate-tinted fill — used for sweep tests, and for
+  // any validation cell whose ``cellColors`` entry is missing.
+  const defaultCellFill = "#C78F3E";
   const cellStroke = "#7A5322";
+  // When per-cell colours are provided, use a darker stroke so the
+  // outline reads against any palette colour (the substrate-amber
+  // stroke vanishes against warm-toned cells).
+  const colours = override?.cellColors;
+  const hasColours = Array.isArray(colours) && colours.some((c) => !!c);
+  const strokeFor = (idx: number): string =>
+    hasColours && colours?.[idx] ? "rgba(0,0,0,0.45)" : cellStroke;
+  const fillFor = (idx: number): string =>
+    colours?.[idx] ?? defaultCellFill;
 
   return (
     <div className="w-full flex flex-col gap-2">
@@ -189,8 +214,8 @@ export function TestPreview({
                     cx={cell.x + cell.w / 2}
                     cy={cell.y + cell.h / 2}
                     r={Math.min(cell.w, cell.h) / 2}
-                    fill={cellFill}
-                    stroke={cellStroke}
+                    fill={fillFor(cell.idx)}
+                    stroke={strokeFor(cell.idx)}
                     strokeWidth={0.1}
                   />
                 ) : (
@@ -200,8 +225,8 @@ export function TestPreview({
                     y={cell.y}
                     width={cell.w}
                     height={cell.h}
-                    fill={cellFill}
-                    stroke={cellStroke}
+                    fill={fillFor(cell.idx)}
+                    stroke={strokeFor(cell.idx)}
                     strokeWidth={0.08}
                   />
                 ),
