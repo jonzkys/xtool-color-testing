@@ -75,9 +75,19 @@ export function TestCellInspector({
     return m;
   }, [swatches]);
 
+  // Validation tests inherit ``spec.x_steps = 1`` from their source
+  // sweep (the renderer overrides it via ``effective_spec_for_layout``
+  // at burn time but the *stored* spec on the test row keeps the
+  // original sweep shape). ``resolveSwatchIndex`` would then bail on
+  // every cell past (0, 0) — meaning hover only worked for the first
+  // cell of a 100-cell grid. Use the validation cell count when in
+  // validation mode so the wrap math accepts the real grid.
+  const effectiveCols = validationCells && validationCells.length > 0
+    ? validationCells.length
+    : spec.x_steps;
   const activeCell = stickyCell ?? hoverCell;
   const activeIdx = activeCell
-    ? resolveSwatchIndex(layout, activeCell, spec.x_steps)
+    ? resolveSwatchIndex(layout, activeCell, effectiveCols)
     : null;
   const activeSwatch = activeIdx
     ? swatchByCell.get(`${activeIdx.row}|${activeIdx.col}`) ?? null
@@ -116,7 +126,7 @@ export function TestCellInspector({
       setStickyCell(null);
       return;
     }
-    const idx = resolveSwatchIndex(layout, cell, spec.x_steps);
+    const idx = resolveSwatchIndex(layout, cell, effectiveCols);
     if (!idx) return;
     const swatch = swatchByCell.get(`${idx.row}|${idx.col}`);
     if (!swatch) return;
