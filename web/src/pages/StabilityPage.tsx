@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { listMaterials } from "../api/library";
 import { listResults } from "../api/results";
 import { getTest, listTests } from "../api/tests";
-import { StabilityChart, type XAxis, type YAxis } from "../components/StabilityChart";
+import {
+  StabilityChart,
+  type ChartMode,
+  type XAxis,
+  type YAxis,
+} from "../components/StabilityChart";
 import { StabilityPicker } from "../components/StabilityPicker";
 import { StabilityStats } from "../components/StabilityStats";
 import type { Material } from "../library";
@@ -49,6 +54,7 @@ export function StabilityPage() {
   );
   const [yAxis, setYAxis] = useState<YAxis>("delta_hue");
   const [xAxis, setXAxis] = useState<XAxis>("expected_hue");
+  const [chartMode, setChartMode] = useState<ChartMode>("scatter");
 
   // Load materials + validation tests on mount; if a test id arrived
   // via the URL, ensure we hydrate its detail. Otherwise pre-select
@@ -182,6 +188,10 @@ export function StabilityPage() {
   }, [chartSeries, resultCache]);
 
   const cells = testDetail?.validation_cells ?? [];
+  const cellsPerRow = useMemo(
+    () => (testDetail ? inferCellsPerRow(testDetail) : null),
+    [testDetail],
+  );
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -206,6 +216,9 @@ export function StabilityPage() {
             yAxis={yAxis}
             onXAxisChange={setXAxis}
             onYAxisChange={setYAxis}
+            mode={chartMode}
+            onModeChange={setChartMode}
+            cellsPerRow={cellsPerRow}
           />
         </main>
         <StabilityStats cells={cells} series={statsSeries} />

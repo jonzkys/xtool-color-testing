@@ -3,6 +3,7 @@ import type { Lab } from "../color/math";
 import type { ValidationCell } from "../types";
 import { cn } from "../ui";
 import { ScatterRow, StabilityScatter } from "./StabilityScatter";
+import { StabilityHeatmap } from "./StabilityHeatmap";
 import {
   AxisMeta,
   computeXValue,
@@ -15,11 +16,14 @@ import {
   Y_AXES,
   YAxis,
 } from "./stabilityChartMath";
+import { isHeatmapMetric } from "./stabilityHeatmapMath";
 
 // Re-export public surface so the page only needs to import from
 // `StabilityChart`.
 export type { SeriesInput, XAxis, YAxis } from "./stabilityChartMath";
 export { seriesColour } from "./stabilityChartMath";
+
+export type ChartMode = "scatter" | "spatial";
 
 interface Props {
   cells: ValidationCell[];
@@ -28,6 +32,14 @@ interface Props {
   yAxis: YAxis;
   onXAxisChange: (a: XAxis) => void;
   onYAxisChange: (a: YAxis) => void;
+  /** Active visualisation. ``scatter`` keeps the existing colour-space
+   *  view; ``spatial`` swaps to a (row, col) heatmap. */
+  mode: ChartMode;
+  onModeChange: (m: ChartMode) => void;
+  /** Width of the test's physical row, used by the spatial heatmap.
+   *  ``null`` when the test malformed; the heatmap mode then renders
+   *  empty. */
+  cellsPerRow: number | null;
 }
 
 /**
@@ -44,6 +56,9 @@ export function StabilityChart({
   yAxis,
   onXAxisChange,
   onYAxisChange,
+  mode,
+  onModeChange,
+  cellsPerRow,
 }: Props) {
   const xMeta = X_AXES.find((a) => a.id === xAxis)!;
   const yMeta = Y_AXES.find((a) => a.id === yAxis)!;
@@ -79,6 +94,12 @@ export function StabilityChart({
     r.perSeries.some((p) => Number.isFinite(p.y)),
   );
 
+  // In spatial mode, only metrics that aggregate per-cell make sense.
+  // If the user's chosen yAxis isn't one of those, fall back to ΔE for
+  // the heatmap render — but don't mutate the page's stored axis, so a
+  // toggle back to scatter restores their original choice.
+  const heatmapMetric = isHeatmapMetric(yAxis) ? yAxis : "delta_e";
+
   return (
     <div className="flex-1 min-w-0 min-h-0 flex flex-col">
       <ChartHeader
@@ -87,19 +108,32 @@ export function StabilityChart({
         onXAxisChange={onXAxisChange}
         onYAxisChange={onYAxisChange}
         series={series}
+        mode={mode}
+        onModeChange={onModeChange}
       />
-      <div className="flex-1 min-h-0 px-4 pb-4">
-        {hasAnySeries && hasAnyData ? (
-          <StabilityScatter
-            rows={rows}
-            series={series}
-            xMeta={xMeta}
-            yMeta={yMeta}
-            xAxis={xAxis}
-            yAxis={yAxis}
-          />
-        ) : (
+      <div className="flex-1 min-h-0 px-4 pb-4 flex flex-col">
+        {mode === "scatter" ? (
+          hasAnySeries && hasAnyData ? (
+            <StabilityScatter
+              rows={rows}
+              series={series}
+              xMeta={xMeta}
+              yMeta={yMeta}
+              xAxis={xAxis}
+              yAxis={yAxis}
+            />
+          ) : (
+            <EmptyChart xMeta={xMeta} yMeta={yMeta} hasSeries={hasAnySeries} />
+          )
+        ) : cellsPerRow == null ? (
           <EmptyChart xMeta={xMeta} yMeta={yMeta} hasSeries={hasAnySeries} />
+        ) : (
+          <StabilityHeatmap
+            cells={cells}
+            series={series}
+            metric={heatmapMetric}
+            cellsPerRow={cellsPerRow}
+          />
         )}
       </div>
     </div>
@@ -114,28 +148,44 @@ function ChartHeader({
   onXAxisChange,
   onYAxisChange,
   series,
+  mode,
+  onModeChange,
 }: {
   xAxis: XAxis;
   yAxis: YAxis;
   onXAxisChange: (a: XAxis) => void;
   onYAxisChange: (a: YAxis) => void;
   series: SeriesInput[];
+  mode: ChartMode;
+  onModeChange: (m: ChartMode) => void;
 }) {
+  // In spatial mode the X axis is meaningless (no abscissa to vary
+  // along); the Y axis row keeps its segmented look but its options
+  // narrow to per-cell-aggregable metrics, and the row label switches
+  // from "Y axis" to "metric" so the visual register matches the
+  // actual mental model.
+  const yLegend = mode === "spatial" ? "Metric" : "Y axis";
+  const yAxes = mode === "spatial"
+    ? Y_AXES.filter((a) => isHeatmapMetric(a.id as YAxis))
+    : Y_AXES;
   return (
     <div className="px-4 pt-4 pb-3 border-b border-[color:var(--color-border)]">
       <div className="flex flex-col gap-2">
+        <ModeToggleRow mode={mode} onChange={onModeChange} />
         <AxisRow
-          legend="Y axis"
-          axes={Y_AXES}
+          legend={yLegend}
+          axes={yAxes}
           value={yAxis}
           onChange={(v) => onYAxisChange(v as YAxis)}
         />
-        <AxisRow
-          legend="X axis"
-          axes={X_AXES}
-          value={xAxis}
-          onChange={(v) => onXAxisChange(v as XAxis)}
-        />
+        {mode === "scatter" && (
+          <AxisRow
+            legend="X axis"
+            axes={X_AXES}
+            value={xAxis}
+            onChange={(v) => onXAxisChange(v as XAxis)}
+          />
+        )}
       </div>
       {series.length > 0 && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -159,6 +209,50 @@ function ChartHeader({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function ModeToggleRow({
+  mode,
+  onChange,
+}: {
+  mode: ChartMode;
+  onChange: (m: ChartMode) => void;
+}) {
+  const options: { id: ChartMode; label: string }[] = [
+    { id: "scatter", label: "Scatter" },
+    { id: "spatial", label: "Spatial" },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="font-mono text-[9.5px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)] w-[44px] shrink-0">
+        Mode
+      </span>
+      <div className="inline-flex rounded-[6px] border border-[color:var(--color-border)] overflow-hidden">
+        {options.map((o, i) => {
+          const active = o.id === mode;
+          return (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => onChange(o.id)}
+              aria-pressed={active}
+              className={cn(
+                "h-7 px-3 font-mono text-[10.5px] tracking-[0.12em] uppercase font-semibold tabular-nums",
+                "transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
+                i > 0 && "border-l border-[color:var(--color-border)]",
+                active
+                  ? "bg-[color:var(--color-primary)] text-white"
+                  : "bg-[color:var(--color-surface)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
+              )}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
