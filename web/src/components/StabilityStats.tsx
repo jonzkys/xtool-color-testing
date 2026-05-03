@@ -32,6 +32,14 @@ interface Props {
    *  the page to inject the focused-cell drilldown so it shares the
    *  strip's scroll context with the long-form stat cards. */
   prependSlot?: React.ReactNode;
+  /** Number of distinct burns (``retest_index`` values) the selected
+   *  results span. 1 = "all photos of the same burn"; the
+   *  σ-across-runs / CAMERA σ stats are then pure measurement noise.
+   *  ≥2 = "different burns" — the same σ also captures burn-to-burn
+   *  variability, which the BurnVsCameraCard now flags so the verdict
+   *  is read with the right caveat. ``undefined`` falls back to 1
+   *  (single-burn assumption) so legacy callers don't need to thread it. */
+  burnsSpanned?: number;
 }
 
 /**
@@ -50,6 +58,7 @@ export function StabilityStats({
   onClick,
   onResultCardClick,
   prependSlot,
+  burnsSpanned = 1,
 }: Props) {
   const perResult = useMemo(
     () => series.map((s) => computePerResultStats(cells, s)),
@@ -120,6 +129,7 @@ export function StabilityStats({
                 onHover={onHover}
                 onHoverLeave={onHoverLeave}
                 onClick={onClick}
+                burnsSpanned={burnsSpanned}
               />
             )}
             {acrossRuns && (
@@ -278,13 +288,22 @@ function BurnVsCameraCard({
   onHover,
   onHoverLeave,
   onClick,
+  burnsSpanned,
 }: {
   stats: BurnVsCameraStats;
   focusedCell: FocusedCell;
   onHover: (cellIndex: number) => void;
   onHoverLeave: () => void;
   onClick: (cellIndex: number) => void;
+  burnsSpanned: number;
 }) {
+  // When the selected results span more than one burn (different
+  // ``retest_index`` values), the σ stat captures camera + burn-to-
+  // burn variance combined. When they're all the same burn, σ is
+  // pure camera/lighting noise. The verdict is the same arithmetic
+  // either way; the caption flags the interpretation so the reader
+  // doesn't mis-attribute.
+  const mixedBurns = burnsSpanned >= 2;
   // Burn-dominant ≥3:1 → the burn really is biased and a colour shift
   // would help; camera-dominant ≤1:3 → the burn is fine and the camera
   // is the noisy element. Anything in between reads as balanced —
@@ -313,7 +332,7 @@ function BurnVsCameraCard({
           value={`median ${stats.medianBurnDeltaE.toFixed(2)}`}
         />
         <StatRow
-          label="Camera σ"
+          label={mixedBurns ? "Run σ" : "Camera σ"}
           value={`median ${stats.medianCameraSigma.toFixed(2)}`}
         />
         <StatRow
@@ -347,6 +366,13 @@ function BurnVsCameraCard({
         <div className="mt-1 font-mono text-[9px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
           {verdict}
         </div>
+        {mixedBurns && (
+          <div className="mt-1 font-mono text-[9.5px] leading-snug text-[color:var(--color-ink-muted)] normal-case tracking-normal">
+            Mixed burns selected — σ captures camera + burn-to-burn
+            variance combined. Pick photos of a single burn for a
+            pure-camera read.
+          </div>
+        )}
       </div>
       {(stats.worstBurn || stats.worstCamera) && (
         <div className="px-2.5 pt-1.5 pb-2.5 border-t border-[color:var(--color-primary)]/30 flex flex-col gap-0.5">

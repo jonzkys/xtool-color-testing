@@ -198,14 +198,32 @@ export function StabilityPicker({
             </div>
           ) : (
             <ul className="flex flex-col">
-              {results.map((r, i) => (
-                <ResultRow
-                  key={r.id}
-                  result={r}
-                  index={results.length - i}
-                  selected={selectedResultIds.includes(r.id)}
-                  onToggle={() => onToggleResult(r.id)}
-                />
+              {/* Group results by retest_index so the user can see
+                  "different photos of the same burn" vs "different
+                  burns" at a glance. Each retest = a fresh burn of
+                  the test; multiple results within a retest = the
+                  same burn photographed multiple times. The
+                  BURN-vs-CAMERA stat math depends on which case
+                  is which. */}
+              {groupResultsByRetest(results).map((group) => (
+                <li key={`group-${group.retestIndex}`}>
+                  {showRetestHeader(results) && (
+                    <div className="px-3 py-1 border-b border-[color:var(--color-border)]/60 bg-[color:var(--color-surface-elevated)]/60 font-mono text-[9px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)]">
+                      burn #{group.retestIndex + 1} · {group.results.length} photo{group.results.length === 1 ? "" : "s"}
+                    </div>
+                  )}
+                  <ul className="flex flex-col">
+                    {group.results.map((r) => (
+                      <ResultRow
+                        key={r.id}
+                        result={r}
+                        index={group.indexFor(r.id)}
+                        selected={selectedResultIds.includes(r.id)}
+                        onToggle={() => onToggleResult(r.id)}
+                      />
+                    ))}
+                  </ul>
+                </li>
               ))}
             </ul>
           )}
@@ -289,6 +307,61 @@ function ResultThumb({ result }: { result: ResultRecord }) {
       )}
     </div>
   );
+}
+
+interface RetestGroup {
+  retestIndex: number;
+  results: ResultRecord[];
+  indexFor: (id: number) => number;
+}
+
+/** Group results by ``retest_index``, descending. Each group's
+ *  ``results`` are sorted newest-first within the burn, and
+ *  ``indexFor(id)`` returns the within-group "photo #N" label so
+ *  rows aren't tagged with mismatched indices when a single picker
+ *  contains multiple burns.
+ *
+ *  Treats missing retest_index as 0 (legacy results from the very
+ *  first burn before the column existed).
+ */
+function groupResultsByRetest(results: ResultRecord[]): RetestGroup[] {
+  const buckets = new Map<number, ResultRecord[]>();
+  for (const r of results) {
+    const k = r.retest_index ?? 0;
+    let arr = buckets.get(k);
+    if (!arr) {
+      arr = [];
+      buckets.set(k, arr);
+    }
+    arr.push(r);
+  }
+  // Newest burn (highest retest_index) on top.
+  const keys = [...buckets.keys()].sort((a, b) => b - a);
+  return keys.map((k) => {
+    const arr = buckets.get(k)!;
+    // Within a burn: newest photo on top.
+    arr.sort(
+      (a, b) =>
+        new Date(b.uploaded_at).getTime() -
+        new Date(a.uploaded_at).getTime(),
+    );
+    const idMap = new Map<number, number>();
+    arr.forEach((r, i) => idMap.set(r.id, arr.length - i));
+    return {
+      retestIndex: k,
+      results: arr,
+      indexFor: (id) => idMap.get(id) ?? 0,
+    };
+  });
+}
+
+/** Show the retest header rows only when results actually span more
+ *  than one burn — single-burn tests are the common case and the
+ *  ``BURN #1`` chrome would just be noise. */
+function showRetestHeader(results: ResultRecord[]): boolean {
+  const set = new Set<number>();
+  for (const r of results) set.add(r.retest_index ?? 0);
+  return set.size >= 2;
 }
 
 function formatStamp(iso: string): string {

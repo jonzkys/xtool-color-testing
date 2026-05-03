@@ -269,6 +269,21 @@ export function StabilityPage() {
     [testDetail],
   );
 
+  // Count distinct retest_index values across the selected results.
+  // 1 = "all photos of the same burn" (CAMERA σ is pure measurement
+  // noise). ≥2 = "different burns" (the same σ also captures
+  // burn-to-burn variability). Drives the BurnVsCameraCard's
+  // verdict caveat.
+  const burnsSpanned = useMemo(() => {
+    const seen = new Set<number>();
+    for (const id of selectedResultIds) {
+      const r = resultCache[id];
+      if (!r) continue;
+      seen.add(r.retest_index ?? 0);
+    }
+    return Math.max(1, seen.size);
+  }, [selectedResultIds, resultCache]);
+
   // Drop focus when the cell index doesn't exist on the current grid
   // (e.g. a stale focus carried over via state during a base-test
   // change race). Cell indices are not strictly contiguous, so we do
@@ -367,6 +382,7 @@ export function StabilityPage() {
           onHoverLeave={() => handleHoverLeave("stats")}
           onClick={(idx) => handleClick(idx, "stats")}
           onResultCardClick={setSelectedResultIdForModal}
+          burnsSpanned={burnsSpanned}
           prependSlot={
             focusedCell != null && testDetail != null ? (
               <StabilityFocusedCellPanel
