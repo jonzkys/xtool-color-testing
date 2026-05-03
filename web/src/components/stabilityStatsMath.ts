@@ -248,6 +248,39 @@ export function burnDeltaHue(
   return wrapHueDelta(hueDeg(m[1], m[2]) - hueDeg(expected[1], expected[2]));
 }
 
+/** Per-cell residual breakdown: signed component-wise distance from
+ *  expected to mean-measured Lab plus a hue rotation. Used by the
+ *  focused-cell drilldown to show "what direction did this cell drift".
+ *  ``deltaHue`` is null when the mean-measured chroma is below the
+ *  HUE_CHROMA_THRESHOLD (same gate as ``burnDeltaHue``).
+ *  Returns null when there are no finite measurements at all. */
+export interface CellResidual {
+  deltaL: number;
+  deltaA: number;
+  deltaB: number;
+  deltaE: number;
+  deltaHue: number | null;
+}
+
+export function cellResidual(
+  measurements: readonly Lab[],
+  expected: Lab,
+): CellResidual | null {
+  const m = meanLab(measurements);
+  if (m == null) return null;
+  const dL = m[0] - expected[0];
+  const dA = m[1] - expected[1];
+  const dB = m[2] - expected[2];
+  const dE = deltaE76(m, expected);
+  let dHue: number | null = null;
+  if (chroma(m[1], m[2]) >= HUE_CHROMA_THRESHOLD) {
+    dHue = wrapHueDelta(
+      hueDeg(m[1], m[2]) - hueDeg(expected[1], expected[2]),
+    );
+  }
+  return { deltaL: dL, deltaA: dA, deltaB: dB, deltaE: dE, deltaHue: dHue };
+}
+
 /** Compute the BURN vs CAMERA card's content from the same
  *  cells/series pair the rest of the strip consumes. Single-pass over
  *  cells; runs each per-cell helper once and tracks the worst per

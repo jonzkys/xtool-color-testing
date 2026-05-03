@@ -4,6 +4,7 @@ import {
   burnDeltaE,
   burnDeltaHue,
   cameraSigma,
+  cellResidual,
   meanLab,
 } from "./stabilityStatsMath";
 
@@ -95,5 +96,36 @@ describe("burnDeltaHue", () => {
 
   it("returns null with no finite measurements", () => {
     expect(burnDeltaHue([], [50, 30, 0])).toBeNull();
+  });
+});
+
+describe("cellResidual", () => {
+  it("breaks down signed Lab deltas + ΔE + Δhue between mean and expected", () => {
+    const expected: Lab = [50, 30, 0]; // chroma 30, hue 0°
+    const measurements: Lab[] = [
+      [52, 28, 4],
+      [54, 32, 8],
+    ];
+    // mean = [53, 30, 6]
+    const r = cellResidual(measurements, expected);
+    expect(r).not.toBeNull();
+    expect(r!.deltaL).toBeCloseTo(3);
+    expect(r!.deltaA).toBeCloseTo(0);
+    expect(r!.deltaB).toBeCloseTo(6);
+    expect(r!.deltaE).toBeCloseTo(deltaE76([53, 30, 6], expected));
+    // hue rotation from (a*=30, b*=0) to (a*=30, b*=6) is atan2(6,30) ≈ 11.31°
+    expect(r!.deltaHue).not.toBeNull();
+    expect(r!.deltaHue!).toBeCloseTo(Math.atan2(6, 30) * (180 / Math.PI));
+  });
+
+  it("suppresses Δhue when the measured chroma is below the threshold", () => {
+    // mean [50, 0.5, 0.5] → chroma ≈ 0.7 < 3
+    const r = cellResidual([[50, 0.5, 0.5]], [50, 30, 0]);
+    expect(r).not.toBeNull();
+    expect(r!.deltaHue).toBeNull();
+  });
+
+  it("returns null when there are no finite measurements", () => {
+    expect(cellResidual([], [50, 30, 0])).toBeNull();
   });
 });

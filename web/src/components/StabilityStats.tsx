@@ -24,6 +24,10 @@ interface Props {
   onHover: (cellIndex: number) => void;
   onHoverLeave: () => void;
   onClick: (cellIndex: number) => void;
+  /** Slot rendered at the top of the scrollable card stack — used by
+   *  the page to inject the focused-cell drilldown so it shares the
+   *  strip's scroll context with the long-form stat cards. */
+  prependSlot?: React.ReactNode;
 }
 
 /**
@@ -40,6 +44,7 @@ export function StabilityStats({
   onHover,
   onHoverLeave,
   onClick,
+  prependSlot,
 }: Props) {
   const perResult = useMemo(
     () => series.map((s) => computePerResultStats(cells, s)),
@@ -71,23 +76,33 @@ export function StabilityStats({
         </span>
       </div>
       <div className="flex-1 min-h-0 overflow-auto p-3 flex flex-col gap-3">
+        {prependSlot}
         {series.length === 0 ? (
           <div className="px-1 py-6 text-center font-mono text-[10px] tracking-[0.16em] uppercase text-[color:var(--color-ink-subtle)]">
             No results selected
           </div>
         ) : (
           <>
-            {perResult.map((stat, i) => (
-              <ResultStatCard
-                key={stat.resultId}
-                stat={stat}
-                colour={seriesColour(i)}
-                focusedCell={focusedCell}
-                onHover={onHover}
-                onHoverLeave={onHoverLeave}
-                onClick={onClick}
-              />
-            ))}
+            {/* Per-result cards are aggregate-per-run (mean Δ, median
+                ΔE…). When the user has zoomed into a single cell via
+                the focused-cell panel above, those run-level
+                aggregates are no longer the question and they drown
+                the strip on a 280 px-wide column. Hide them while
+                focused — BURN vs CAMERA + Σ across-runs still
+                provide the run-level context the user needs without
+                eating four card-heights. */}
+            {focusedCell == null &&
+              perResult.map((stat, i) => (
+                <ResultStatCard
+                  key={stat.resultId}
+                  stat={stat}
+                  colour={seriesColour(i)}
+                  focusedCell={focusedCell}
+                  onHover={onHover}
+                  onHoverLeave={onHoverLeave}
+                  onClick={onClick}
+                />
+              ))}
             {burnVsCamera && (
               <BurnVsCameraCard
                 stats={burnVsCamera}

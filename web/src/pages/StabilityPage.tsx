@@ -10,6 +10,7 @@ import {
   type XAxis,
   type YAxis,
 } from "../components/StabilityChart";
+import { StabilityFocusedCellPanel } from "../components/StabilityFocusedCellPanel";
 import { StabilityPicker } from "../components/StabilityPicker";
 import { StabilityStats } from "../components/StabilityStats";
 import type { Material } from "../library";
@@ -72,19 +73,26 @@ export function StabilityPage() {
     { cellIndex: number; source: FocusSource } | null
   >(null);
 
+  // Priority: pinned beats transient. The earlier order (transient
+  // first) caused the user-reported bug where clicking a cell to pin
+  // it, then moving the cursor over a neighbouring cell, silently
+  // moved the cross-view highlight to the neighbour — making "click
+  // to investigate this cell" feel slippery. Pinned wins everywhere
+  // except its own source view's cursor-tracked tooltip, which the
+  // child components handle locally without touching this slot.
   const focusedCell: FocusedCell = useMemo(() => {
-    if (transientCell) {
-      return {
-        kind: "transient",
-        cellIndex: transientCell.cellIndex,
-        source: transientCell.source,
-      };
-    }
     if (pinnedCell) {
       return {
         kind: "pinned",
         cellIndex: pinnedCell.cellIndex,
         source: pinnedCell.source,
+      };
+    }
+    if (transientCell) {
+      return {
+        kind: "transient",
+        cellIndex: transientCell.cellIndex,
+        source: transientCell.source,
       };
     }
     return null;
@@ -348,6 +356,24 @@ export function StabilityPage() {
           onHover={(idx) => handleHover(idx, "stats")}
           onHoverLeave={() => handleHoverLeave("stats")}
           onClick={(idx) => handleClick(idx, "stats")}
+          prependSlot={
+            focusedCell != null && testDetail != null ? (
+              <StabilityFocusedCellPanel
+                test={testDetail}
+                results={selectedResultIds
+                  .map((id) => resultCache[id])
+                  .filter((r): r is NonNullable<typeof r> => r != null)}
+                cellIndex={focusedCell.cellIndex}
+                cellsPerRow={cellsPerRow}
+                focusedCell={focusedCell}
+                onCellClick={(idx) => handleClick(idx, "stats")}
+                onClose={() => {
+                  setTransientCell(null);
+                  setPinnedCell(null);
+                }}
+              />
+            ) : null
+          }
         />
       </div>
     </div>
