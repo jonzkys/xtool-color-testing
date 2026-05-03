@@ -5,6 +5,7 @@ import { cn } from "../ui";
 import {
   computeTrendBins,
   MeanLineLayer,
+  QuadrantGuides,
   TrendLineLayer,
   trendApplicable,
   trendBinCount,
@@ -14,7 +15,11 @@ import {
   AxisMeta,
   binHistogram,
   fmtTick,
+  isBurnAxis,
+  isComputedXAxis,
+  isComputedYAxis,
   isDeltaAxis,
+  medianCross,
   niceBounds,
   niceTicks,
   seriesColour,
@@ -135,6 +140,11 @@ export function StabilityScatter({
   const xTicks = niceTicks(xMin, xMax, 6);
   const yTicks = niceTicks(yMin, yMax, 6);
 
+  // Identity diagonal helps the eye read distance-from-perfect when X
+  // and Y are the same dimension family (expected hue × measured hue,
+  // etc.). The iter-6 computed axes (burn ΔE / burn Δh° / camera σ)
+  // never match a measured-* Y, so they fall through to "no diagonal"
+  // automatically — including the degenerate same-axis case.
   const showDiagonal =
     (xAxis === "expected_hue" && yAxis === "measured_hue") ||
     (xAxis === "expected_l" && yAxis === "measured_l") ||
@@ -215,6 +225,35 @@ export function StabilityScatter({
     () => binHistogram(allYs, yMin, yMax, 24),
     [allYs, yMin, yMax],
   );
+
+  // Median-cross fires whenever Y is computed-per-cell — at that
+  // point each cell ladders to a single Y value. Burn-Y axes already
+  // overlay a mean + trend reference, so the cross is suppressed
+  // there. Corner labels need both axes computed and the canonical
+  // BURN ΔE × CAMERA σ pair to read cleanly.
+  const computedX = isComputedXAxis(xAxis);
+  const computedY = isComputedYAxis(yAxis);
+  const showMedianCross = computedY && !isBurnAxis(yAxis);
+  const median = useMemo(() => {
+    if (!showMedianCross) return { medianX: null, medianY: null, count: 0 };
+    // De-dupe by (x, y) — when X is per-run-expected and Y is the
+    // per-cell σ, every run at a cell carries the same Y at the same
+    // X, so collapsing keeps the median honest.
+    const pairs: { x: number; y: number }[] = [];
+    const seen = new Set<string>();
+    for (const r of rows) {
+      const p = r.perSeries.find((q) => Number.isFinite(q.y));
+      if (!p || !Number.isFinite(r.x)) continue;
+      const key = `${r.x.toFixed(6)}|${p.y.toFixed(6)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pairs.push({ x: r.x, y: p.y });
+    }
+    return medianCross(pairs);
+  }, [showMedianCross, rows]);
+  const showQuadrantLabels =
+    computedX && computedY &&
+    xAxis === "burn_delta_e" && yAxis === "per_cell_sigma";
 
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -382,6 +421,22 @@ export function StabilityScatter({
             stroke="var(--color-ink-subtle)"
             strokeDasharray="4 3"
             opacity={0.5}
+          />
+        )}
+
+        {/* Median-cross + (canonical) quadrant labels. */}
+        {showMedianCross && (
+          <QuadrantGuides
+            median={median}
+            xMeta={xMeta}
+            yMeta={yMeta}
+            xToPx={xToPx}
+            yToPx={yToPx}
+            plotLeft={PADL}
+            plotRight={W - PADR}
+            plotTop={PADT}
+            plotBottom={H - PADB}
+            showCanonicalLabels={showQuadrantLabels}
           />
         )}
 

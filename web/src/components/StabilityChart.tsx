@@ -6,9 +6,12 @@ import { ScatterRow, StabilityScatter } from "./StabilityScatter";
 import { StabilityHeatmap } from "./StabilityHeatmap";
 import {
   AxisMeta,
+  computeComputedXValue,
   computeXValue,
   computeYValue,
   isBurnAxis,
+  isComputedXAxis,
+  isComputedYAxis,
   perCellSigmaFor,
   seriesColour,
   SeriesInput,
@@ -96,12 +99,28 @@ export function StabilityChart({
   // dot at its run-mean Lab. Below 2 runs the axis is meaningless, so
   // the rows stay empty (the axis pill is also disabled in the header
   // so the user shouldn't get here, but the chart degrades gracefully
-  // either way).
+  // either way). Iter-6: the same collapse fires when BOTH axes are
+  // computed-per-cell metrics (e.g. BURN ΔE × CAMERA σ) — quadrant
+  // mode should show one dot per cell, no per-run colour cycling.
+  const computedX = isComputedXAxis(xAxis);
+  const computedY = isComputedYAxis(yAxis);
   const burnMode = isBurnAxis(yAxis);
-  const burnUsable = burnMode && series.length >= 2;
+  // When a burn-Y or computed-X axis is active and ≥2 runs aren't
+  // selected, the chart can't produce meaningful values. ``xUsable`` /
+  // ``yUsable`` mark each axis as below-threshold so the chart can
+  // route to the empty state.
+  const xUsable = !computedX || series.length >= 2;
+  const yUsable = !burnMode || series.length >= 2;
+  // Collapse the per-run cloud into a single synthetic "BURN MEAN"
+  // series whenever a burn-Y axis is active OR both axes are
+  // computed-per-cell (the quadrant view). In either case each cell
+  // becomes one dot; below-threshold combinations render an empty
+  // chart via ``renderSeries === []``.
+  const bothComputed = computedX && computedY;
+  const collapseEligible = burnMode || bothComputed;
   const renderSeries = useMemo<SeriesInput[]>(() => {
-    if (!burnMode) return series;
-    if (!burnUsable) return [];
+    if (!collapseEligible) return series;
+    if (series.length < 2) return [];
     const collapsedCells = new Map<number, { hex: string; lab: Lab }>();
     for (const c of cells) {
       const labs: Lab[] = [];
@@ -125,7 +144,8 @@ export function StabilityChart({
         cells: collapsedCells,
       },
     ];
-  }, [burnMode, burnUsable, series, cells]);
+  }, [collapseEligible, series, cells]);
+  const collapseSeries = collapseEligible && series.length >= 2;
 
   const rows = useMemo<ScatterRow[]>(() => {
     const out: ScatterRow[] = [];
@@ -133,8 +153,25 @@ export function StabilityChart({
       const expectedLab = c.expected_lab as Lab | number[];
       if (!Array.isArray(expectedLab) || expectedLab.length !== 3) continue;
       const exp: Lab = [expectedLab[0], expectedLab[1], expectedLab[2]];
-      const x = computeXValue(xAxis, c.cell_index, exp);
-      if (!Number.isFinite(x)) continue;
+      let x: number;
+      if (computedX) {
+        // Gather the original (un-collapsed) per-run measurements at
+        // this cell; pass them through the computed-X helper. Returns
+        // null when the helper can't produce a value (e.g. burn-Δh°
+        // gated by low chroma, or camera σ with <2 runs) — we skip
+        // the cell rather than draw a phantom dot.
+        const labs: Lab[] = [];
+        for (const s of series) {
+          const m = s.cells.get(c.cell_index);
+          if (m) labs.push(m.lab);
+        }
+        const v = computeComputedXValue(xAxis, exp, labs);
+        if (v == null || !Number.isFinite(v)) continue;
+        x = v;
+      } else {
+        x = computeXValue(xAxis, c.cell_index, exp);
+        if (!Number.isFinite(x)) continue;
+      }
       const perSeries: { measured: Lab | null; y: number }[] = renderSeries.map(
         (s) => {
           const m = s.cells.get(c.cell_index);
@@ -151,7 +188,7 @@ export function StabilityChart({
       out.push({ cell: c, expected: exp, x, perSeries });
     }
     return out;
-  }, [cells, series, renderSeries, xAxis, yAxis]);
+  }, [cells, series, renderSeries, xAxis, yAxis, computedX]);
 
   const hasAnySeries = series.length > 0;
   const hasAnyData = hasAnySeries && rows.some((r) =>
@@ -175,7 +212,7 @@ export function StabilityChart({
         mode={mode}
         onModeChange={onModeChange}
         runCount={series.length}
-        burnActive={burnMode && burnUsable && mode === "scatter"}
+        burnActive={collapseSeries && mode === "scatter"}
       />
       <div className="flex-1 min-h-0 px-4 pb-4 flex flex-col">
         {mode === "scatter" ? (
@@ -198,7 +235,10 @@ export function StabilityChart({
               xMeta={xMeta}
               yMeta={yMeta}
               hasSeries={hasAnySeries}
-              burnNeedsRuns={burnMode && !burnUsable && hasAnySeries}
+              burnNeedsRuns={
+                ((burnMode && !yUsable) || (computedX && !xUsable)) &&
+                hasAnySeries
+              }
             />
           )
         ) : cellsPerRow == null ? (
@@ -258,12 +298,15 @@ function ChartHeader({
   const yAxes = mode === "spatial"
     ? Y_AXES.filter((a) => isHeatmapMetric(a.id as YAxis))
     : Y_AXES;
-  // Burn axes need ≥ 2 runs to be meaningful; when only one is on, the
-  // pill renders muted + non-clickable, with a single small caption
-  // explaining why.
+  // Burn / computed axes need ≥ 2 runs to be meaningful; when only one
+  // is on, the pill renders muted + non-clickable, with a single small
+  // caption explaining why. The same gating applies on both rows: Y
+  // covers BURN ΔE / BURN Δh°, X covers BURN ΔE / BURN Δh° / CAMERA σ.
   const burnDisabled = runCount < 2;
-  const isAxisDisabled = (id: XAxis | YAxis) =>
+  const isYAxisDisabled = (id: XAxis | YAxis) =>
     isBurnAxis(id as YAxis) && burnDisabled;
+  const isXAxisDisabled = (id: XAxis | YAxis) =>
+    isComputedXAxis(id as XAxis) && burnDisabled;
   return (
     <div className="px-4 pt-4 pb-3 border-b border-[color:var(--color-border)]">
       <div className="flex flex-col gap-2">
@@ -273,7 +316,7 @@ function ChartHeader({
           axes={yAxes}
           value={yAxis}
           onChange={(v) => onYAxisChange(v as YAxis)}
-          isDisabled={isAxisDisabled}
+          isDisabled={isYAxisDisabled}
           disabledHint="needs ≥ 2 runs"
         />
         {mode === "scatter" && (
@@ -282,8 +325,8 @@ function ChartHeader({
             axes={X_AXES}
             value={xAxis}
             onChange={(v) => onXAxisChange(v as XAxis)}
-            isDisabled={() => false}
-            disabledHint=""
+            isDisabled={isXAxisDisabled}
+            disabledHint="needs ≥ 2 runs"
           />
         )}
       </div>

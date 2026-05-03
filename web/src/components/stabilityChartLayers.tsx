@@ -1,10 +1,11 @@
-import { Fragment } from "react";
+import { Fragment, type CSSProperties } from "react";
 import {
   binnedMean,
   formatYValue,
   seriesColour,
   seriesMeanY,
   type AxisMeta,
+  type MedianCrossResult,
   type SeriesInput,
   type XAxis,
 } from "./stabilityChartMath";
@@ -239,4 +240,151 @@ function smoothPath(points: { x: number; y: number }[]): string {
     segs.push(`C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`);
   }
   return segs.join(" ");
+}
+
+/* ─── Quadrant guides ─────────────────────────────────────────────────────
+ *
+ * When BOTH the X and Y axes are computed-per-cell metrics, the
+ * scatter draws a faint median-cross at (median X, median Y) so the
+ * user can see at a glance which cells fall into each quadrant. For
+ * the canonical BURN ΔE × CAMERA σ pair, four corner labels add a
+ * one-glance verdict. Both layers sit between the grid and the dots
+ * so the dot cloud always reads as the primary signal.
+ */
+
+interface QuadrantGuidesProps {
+  median: MedianCrossResult;
+  xMeta: AxisMeta;
+  yMeta: AxisMeta;
+  xToPx: (x: number) => number;
+  yToPx: (y: number) => number;
+  plotLeft: number;
+  plotRight: number;
+  plotTop: number;
+  plotBottom: number;
+  /** When ``true``, renders the canonical BURN/CAMERA/OK/BOTH labels
+   *  in each quadrant corner. Other computed-vs-computed pairs hide
+   *  them — the four-way verdict only reads cleanly here. */
+  showCanonicalLabels: boolean;
+}
+
+export function QuadrantGuides({
+  median,
+  xMeta,
+  yMeta,
+  xToPx,
+  yToPx,
+  plotLeft,
+  plotRight,
+  plotTop,
+  plotBottom,
+  showCanonicalLabels,
+}: QuadrantGuidesProps) {
+  const drawCross = median.medianX != null && median.medianY != null;
+  if (!drawCross && !showCanonicalLabels) return null;
+  return (
+    <g aria-hidden>
+      {drawCross && (
+        <g>
+          <line
+            x1={xToPx(median.medianX!)}
+            x2={xToPx(median.medianX!)}
+            y1={plotTop}
+            y2={plotBottom}
+            stroke="var(--color-ink-subtle)"
+            strokeDasharray="6 4"
+            opacity={0.3}
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={plotLeft}
+            x2={plotRight}
+            y1={yToPx(median.medianY!)}
+            y2={yToPx(median.medianY!)}
+            stroke="var(--color-ink-subtle)"
+            strokeDasharray="6 4"
+            opacity={0.3}
+            vectorEffect="non-scaling-stroke"
+          />
+          <text
+            x={xToPx(median.medianX!) + 4}
+            y={plotTop + 10}
+            className="fill-[color:var(--color-ink-subtle)]"
+            opacity={0.6}
+            style={QUADRANT_MED_STYLE}
+          >
+            MED {stripPlus(formatYValue(median.medianX!, xMeta.unit))}
+          </text>
+          <text
+            x={plotRight - 4}
+            y={yToPx(median.medianY!) - 4}
+            textAnchor="end"
+            className="fill-[color:var(--color-ink-subtle)]"
+            opacity={0.6}
+            style={QUADRANT_MED_STYLE}
+          >
+            MED {stripPlus(formatYValue(median.medianY!, yMeta.unit))}
+          </text>
+        </g>
+      )}
+      {showCanonicalLabels && (
+        <g>
+          <text
+            x={plotRight - 8}
+            y={plotTop + 12}
+            textAnchor="end"
+            className="fill-[color:var(--color-ink-subtle)]"
+            opacity={0.5}
+            style={QUADRANT_LABEL_STYLE}
+          >
+            BOTH ↗
+          </text>
+          <text
+            x={plotLeft + 8}
+            y={plotTop + 12}
+            className="fill-[color:var(--color-ink-subtle)]"
+            opacity={0.5}
+            style={QUADRANT_LABEL_STYLE}
+          >
+            CAMERA ↖
+          </text>
+          <text
+            x={plotRight - 8}
+            y={plotBottom - 6}
+            textAnchor="end"
+            className="fill-[color:var(--color-ink-subtle)]"
+            opacity={0.5}
+            style={QUADRANT_LABEL_STYLE}
+          >
+            BURN ↘
+          </text>
+          <text
+            x={plotLeft + 8}
+            y={plotBottom - 6}
+            className="fill-[color:var(--color-ink-subtle)]"
+            opacity={0.5}
+            style={QUADRANT_LABEL_STYLE}
+          >
+            OK ↙
+          </text>
+        </g>
+      )}
+    </g>
+  );
+}
+
+const QUADRANT_MED_STYLE: CSSProperties = {
+  font: "600 9.5px var(--font-mono)",
+  letterSpacing: "0.16em",
+  textTransform: "uppercase",
+};
+
+const QUADRANT_LABEL_STYLE: CSSProperties = {
+  font: "600 10px var(--font-mono)",
+  letterSpacing: "0.16em",
+  textTransform: "uppercase",
+};
+
+function stripPlus(s: string): string {
+  return s.replace(/^\+/, "");
 }

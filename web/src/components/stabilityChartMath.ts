@@ -5,6 +5,11 @@ import {
   wrapHueDelta,
   type Lab,
 } from "../color/math";
+import {
+  burnDeltaE,
+  burnDeltaHue,
+  cameraSigma,
+} from "./stabilityStatsMath";
 
 /* ─── Series palette ──────────────────────────────────────────────────────
  *
@@ -36,7 +41,10 @@ export type XAxis =
   | "expected_a"
   | "expected_b"
   | "expected_chroma"
-  | "cell_index";
+  | "cell_index"
+  | "burn_delta_e"
+  | "burn_delta_hue"
+  | "camera_sigma";
 
 export type YAxis =
   | "measured_hue"
@@ -62,6 +70,34 @@ export function isBurnAxis(y: YAxis): boolean {
   return y === "burn_delta_e" || y === "burn_delta_hue";
 }
 
+/** Computed-per-cell X axes: each cell's X position is one number
+ *  derived from all selected runs (burn ΔE vs expected, burn Δh° vs
+ *  expected, or camera σ across runs). When active, the scatter
+ *  collapses or routes positioning through the cell's computed value
+ *  rather than its expected_lab. All three need ≥2 runs to produce a
+ *  meaningful number — the X-axis pill mirrors the burn-Y pill's
+ *  disabled treatment when only one run is selected. */
+export function isComputedXAxis(x: XAxis): boolean {
+  return (
+    x === "burn_delta_e" ||
+    x === "burn_delta_hue" ||
+    x === "camera_sigma"
+  );
+}
+
+/** Y axes that aggregate across runs into one number per cell — the
+ *  burn-true axes plus per-cell σ. Used together with
+ *  ``isComputedXAxis`` to detect the "both axes are computed" case
+ *  where the scatter collapses to one dot per cell and the median-
+ *  cross + quadrant labels apply. */
+export function isComputedYAxis(y: YAxis): boolean {
+  return (
+    y === "burn_delta_e" ||
+    y === "burn_delta_hue" ||
+    y === "per_cell_sigma"
+  );
+}
+
 export interface AxisMeta {
   id: XAxis | YAxis;
   label: string;
@@ -76,6 +112,9 @@ export const X_AXES: readonly AxisMeta[] = [
   { id: "expected_b", label: "Expected b*", short: "EXP b*", unit: "b*" },
   { id: "expected_chroma", label: "Expected chroma", short: "EXP C*", unit: "C*" },
   { id: "cell_index", label: "Cell index", short: "CELL #", unit: "n" },
+  { id: "burn_delta_e", label: "Burn ΔE (run-mean)", short: "BURN ΔE", unit: "ΔE" },
+  { id: "burn_delta_hue", label: "Burn Δh° (run-mean)", short: "BURN Δh°", unit: "deg" },
+  { id: "camera_sigma", label: "Camera σ (across runs)", short: "CAMERA σ", unit: "ΔE" },
 ] as const;
 
 export const Y_AXES: readonly AxisMeta[] = [
@@ -91,7 +130,7 @@ export const Y_AXES: readonly AxisMeta[] = [
   { id: "measured_a", label: "Measured a*", short: "a*", unit: "a*" },
   { id: "measured_b", label: "Measured b*", short: "b*", unit: "b*" },
   { id: "measured_chroma", label: "Measured chroma", short: "C*", unit: "C*" },
-  { id: "per_cell_sigma", label: "Per-cell σ (across runs)", short: "σ", unit: "ΔE" },
+  { id: "per_cell_sigma", label: "Camera σ (across runs)", short: "CAMERA σ", unit: "ΔE" },
 ] as const;
 
 /** A series carries one selected result's measured cells, labelled by
@@ -122,6 +161,14 @@ export function computeXValue(axis: XAxis, cellIndex: number, exp: Lab): number 
     case "expected_b":      return exp[2];
     case "expected_chroma": return chroma(exp[1], exp[2]);
     case "cell_index":      return cellIndex;
+    // Computed X axes are derived from all selected runs at this cell.
+    // Callers should route those through ``computeComputedXValue`` so
+    // they can pass the per-run measurements; falling through here
+    // returns NaN so the dot is filtered out rather than landing at 0.
+    case "burn_delta_e":
+    case "burn_delta_hue":
+    case "camera_sigma":
+      return Number.NaN;
   }
 }
 
@@ -171,6 +218,25 @@ export function computeYValue(
  *  burn-Δh° axis — hue-rotation can't be defined for a near-neutral
  *  patch without amplifying noise. */
 const BURN_HUE_CHROMA_THRESHOLD = 3;
+
+/** Computed-X projection. Returns ``null`` when the axis can't produce
+ *  a value for this cell (low-chroma gating on ``burn_delta_hue``;
+ *  fewer than 2 finite measurements for ``camera_sigma``); the scatter
+ *  treats null as a missing dot. Routed through the existing
+ *  ``stabilityStatsMath`` helpers so the X-axis projection and the
+ *  BURN-vs-CAMERA stats card stay in lockstep. */
+export function computeComputedXValue(
+  axis: XAxis,
+  expected: Lab,
+  measurements: readonly Lab[],
+): number | null {
+  switch (axis) {
+    case "burn_delta_e":   return burnDeltaE(measurements, expected);
+    case "burn_delta_hue": return burnDeltaHue(measurements, expected);
+    case "camera_sigma":   return cameraSigma(measurements);
+    default:               return null;
+  }
+}
 
 /** Standard deviation (RMS Lab distance from the centroid) of measured
  *  values across the selected runs at this cell. Collapses each cell
@@ -410,4 +476,59 @@ export function binnedMean(
     out.push({ center, n, mean: n < 2 ? NaN : sums[i] / n });
   }
   return out;
+}
+
+/* ─── Quadrant median-cross ───────────────────────────────────────────────
+ *
+ * When both axes are computed-per-cell metrics, the scatter draws faint
+ * dashed reference lines at the median X and median Y across the
+ * plotted points so the user can read each cell's quadrant at a
+ * glance. Hidden below the minimum cell count to avoid wobbly lines.
+ */
+
+/** Minimum plotted-point count before the median-cross renders. Below
+ *  this, the median is too noisy to anchor a reference line. */
+export const MEDIAN_CROSS_MIN_POINTS = 4;
+
+export interface MedianCrossResult {
+  /** ``null`` when the input has fewer than ``MEDIAN_CROSS_MIN_POINTS``
+   *  finite-on-both pairs — the caller hides the layer. */
+  medianX: number | null;
+  medianY: number | null;
+  count: number;
+}
+
+/** Compute median X / median Y across (x, y) pairs, ignoring entries
+ *  with non-finite coordinates. Returns ``null`` medians when fewer
+ *  than ``MEDIAN_CROSS_MIN_POINTS`` pairs survive the finite filter so
+ *  the scatter can hide the cross. Uses the lower-mid for even-length
+ *  inputs (matches the existing ``median`` helper in
+ *  ``stabilityStatsMath`` so chart and stats agree on the bisector). */
+export function medianCross(
+  pairs: readonly { x: number; y: number }[],
+): MedianCrossResult {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const p of pairs) {
+    if (Number.isFinite(p.x) && Number.isFinite(p.y)) {
+      xs.push(p.x);
+      ys.push(p.y);
+    }
+  }
+  if (xs.length < MEDIAN_CROSS_MIN_POINTS) {
+    return { medianX: null, medianY: null, count: xs.length };
+  }
+  return {
+    medianX: medianOf(xs),
+    medianY: medianOf(ys),
+    count: xs.length,
+  };
+}
+
+function medianOf(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
 }

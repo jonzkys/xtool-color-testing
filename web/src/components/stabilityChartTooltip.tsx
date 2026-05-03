@@ -145,6 +145,14 @@ export function StabilityHoverCard({
             </span>
           </div>
         )}
+        {isXMetricRowVisible(xMeta) && Number.isFinite(row.x) && (
+          <div className="mt-1 pt-1 border-t border-[color:var(--color-border)] flex items-center justify-between font-mono text-[10px] tracking-[0.12em] uppercase text-[color:var(--color-ink-subtle)]">
+            <span className="truncate pr-2">{xMeta.short}</span>
+            <span className="tabular-nums normal-case tracking-normal text-[10.5px] text-[color:var(--color-ink-muted)]">
+              {formatComputedX(row.x, xMeta.unit)}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -154,6 +162,25 @@ export function StabilityHoverCard({
  *  leading "+" so the value reads as a magnitude, not a directional
  *  delta. */
 function formatSpread(v: number, unit: string): string {
+  return formatYValue(Math.abs(v), unit).replace(/^\+/, "");
+}
+
+/** True for the iter-6 computed X axes (BURN ΔE / BURN Δh° / CAMERA σ).
+ *  Narrows the AxisMeta's ``id`` discriminated union for the
+ *  ``isComputedXAxis`` helper without introducing an unsafe cast. */
+function isXMetricRowVisible(meta: AxisMeta): boolean {
+  return (
+    meta.id === "burn_delta_e" ||
+    meta.id === "burn_delta_hue" ||
+    meta.id === "camera_sigma"
+  );
+}
+
+/** Magnitude metrics (ΔE / σ) read as unsigned numbers; the burn-Δh°
+ *  axis is signed and benefits from the "+" prefix that
+ *  ``formatYValue`` already produces. */
+function formatComputedX(v: number, unit: string): string {
+  if (unit === "deg") return formatYValue(v, unit);
   return formatYValue(Math.abs(v), unit).replace(/^\+/, "");
 }
 
