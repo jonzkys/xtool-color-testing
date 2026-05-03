@@ -779,38 +779,54 @@ export function PairedSwatchTile({
           style={{ background: expectedHex }}
           className="border-t border-[color:var(--color-substrate)]/40"
         />
-        {/* Tiny labels — top "MEAS", bottom "EXP" */}
+        {/* meas / exp tags surface only on hover or focus — at 100-cell
+            density they otherwise smother the colour pair they label.
+            The two-tone chip + ring colour already communicates which
+            half is measured vs. expected; the labels are a hover-time
+            confirmation rather than always-on chrome. */}
         <span
           aria-hidden
-          className="absolute top-0.5 left-1 font-mono text-[8px] tabular-nums uppercase tracking-[0.16em] leading-none"
+          className={cn(
+            "absolute top-0.5 left-1 font-mono text-[8px] tabular-nums",
+            "uppercase tracking-[0.16em] leading-none",
+            "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100",
+            "transition-opacity duration-100",
+          )}
           style={{ color: "white", mixBlendMode: "difference" }}
         >
           meas
         </span>
         <span
           aria-hidden
-          className="absolute bottom-0.5 left-1 font-mono text-[8px] tabular-nums uppercase tracking-[0.16em] leading-none"
+          className={cn(
+            "absolute bottom-0.5 left-1 font-mono text-[8px] tabular-nums",
+            "uppercase tracking-[0.16em] leading-none",
+            "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100",
+            "transition-opacity duration-100",
+          )}
           style={{ color: "white", mixBlendMode: "difference" }}
         >
           exp
         </span>
       </div>
-      <div className="px-1.5 py-1 flex items-center justify-between border-t border-[color:var(--color-border)]">
-        <span className="font-mono text-[9.5px] text-[color:var(--color-ink)] truncate uppercase">
-          ΔE&nbsp;{delta.toFixed(1)}
+      {/* Compact bottom strip — single tabular ΔE in the threshold-aware
+          colour. The pass/warn/fail status is already encoded in the
+          ring around the chip; bringing it back as text on every tile
+          double-stamped the same signal and crowded the strip. The
+          number alone reads well at 44 px. */}
+      <div className="px-1.5 py-1 flex items-center justify-center border-t border-[color:var(--color-border)]">
+        <span
+          className={cn(
+            "font-mono text-[9.5px] tabular-nums truncate",
+            delta > threshold * 2
+              ? "text-[color:var(--color-destructive)]"
+              : delta > threshold
+                ? "text-[color:var(--color-warning)]"
+                : "text-[color:var(--color-ink-muted)]",
+          )}
+        >
+          {delta.toFixed(1)}
         </span>
-        {delta > threshold && (
-          <span
-            className={cn(
-              "font-mono text-[8.5px] tabular-nums shrink-0",
-              delta > threshold * 2
-                ? "text-[color:var(--color-destructive)]"
-                : "text-[color:var(--color-warning)]",
-            )}
-          >
-            {delta > threshold * 2 ? "FAIL" : "WARN"}
-          </span>
-        )}
       </div>
     </button>
   );
