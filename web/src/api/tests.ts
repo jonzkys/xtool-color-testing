@@ -17,6 +17,7 @@ export async function getTest(id: number): Promise<TestRecord> {
 export async function createTest(body: {
   name: string; material_id: number; spec: TestSpec; notes?: string;
   machine_id: string;
+  kind?: "sweep" | "validation";
 }): Promise<TestRecord> {
   return j(await fetch("/api/tests", {
     method: "POST",

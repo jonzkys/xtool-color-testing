@@ -117,6 +117,25 @@ class ParamTest(BaseModel):
     # layer keeps working.
     retest_index: int = Field(default=0, ge=0)
 
+    # Test variety. ``"sweep"`` (default) is the legacy axis-sweep test;
+    # ``"validation"`` renders one cell per ``validation_cells`` entry,
+    # each with its own frozen processing params. The schema fields
+    # ``x_param``/``x_min``/``x_max``/``x_steps`` are still required for
+    # validation tests because the layout math (cell width, etc.) reuses
+    # the same wrapped-1D code path — ``services/xcs.bytes_for_test``
+    # synthesises sensible defaults at conversion time.
+    kind: Literal["sweep", "validation"] = "sweep"
+    # Per-cell snapshots for kind=validation tests. Each entry overlays
+    # its ``params`` dict onto ``base_params`` and emits one cell. None
+    # for sweep tests; required for validation tests at converter time
+    # (the converter raises if absent).
+    validation_cells: list[dict[str, Any]] | None = None
+    # Wrap-1D layout knob — only meaningful for kind=validation. Caller
+    # can leave this None and let bytes_for_test compute it from
+    # ``rows`` / cell count, but the frontend persists an explicit
+    # value so the editor's preview reflects what the user picked.
+    cells_per_row: int | None = None
+
     @model_validator(mode="before")
     @classmethod
     def _snap_legacy_crosshatch(cls, data: Any) -> Any:
@@ -560,6 +579,11 @@ class TestSpec(BaseModel):
     # When true, per-row tick + axis-label elements are suppressed on the
     # generated test so multi-row layouts pack tighter. Summary header stays.
     hide_axis_labels: bool = False
+    # Validation tests only — how many cells per physical row. ``rows``
+    # is derived (ceil(cell_count / cells_per_row)) at xcs-build time,
+    # and the frontend's square-cells logic + preview both honour it.
+    # Sweep tests ignore this field. Persists across the API round-trip.
+    cells_per_row: int | None = None
     base_params: BaseParams
     registration: RegistrationConfig = Field(default_factory=RegistrationConfig)
 
@@ -577,6 +601,10 @@ class TestCreate(BaseModel):
     spec: TestSpec
     notes: str = ""
     machine_id: str = Field(default="F2Ultra", min_length=1, max_length=32)
+    # ``"validation"`` flags the test as a per-cell palette validation
+    # render — the cells themselves arrive via PATCH /validation-cells.
+    # Default keeps existing API consumers unchanged.
+    kind: Literal["sweep", "validation"] = "sweep"
 
     @field_validator("machine_id")
     @classmethod
@@ -616,6 +644,13 @@ class TestResponse(BaseModel):
     # Derived — true when the test has at least one palette entry
     # sourced from it. Drives the "ingested" badge on the test list.
     ingested: bool = False
+    # Test variety — "sweep" (legacy axis-sweep) or "validation"
+    # (per-cell palette validation). Defaults to sweep for legacy rows.
+    kind: Literal["sweep", "validation"] = "sweep"
+    # Frozen per-cell snapshots for kind=validation tests; empty list
+    # for sweep tests. Read-only on this schema — clients mutate the
+    # cell list via ``PATCH /api/tests/{id}/validation-cells``.
+    validation_cells: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ResultSwatch(BaseModel):
@@ -741,3 +776,31 @@ class RecentMobileUpload(BaseModel):
     test_id: int
     test_name: str
     uploaded_at: str   # ISO 8601
+
+
+# ── Validation cells (kind=validation tests) ─────────────────────────────────
+
+class ValidationCellIn(BaseModel):
+    """Single per-cell snapshot for a kind=validation test.
+
+    The frontend posts these as a list after the user finalises picks
+    (or after an auto-pick run). Cells are stored in the order received
+    and replayed by the builder in ``cell_index`` order — so the
+    frontend is responsible for L*-sorting before posting.
+    """
+    cell_index: int
+    palette_entry_id: int | None = None
+    expected_hex: str
+    expected_lab: list[float]   # [L*, a*, b*]
+    # ``None`` is permitted because palette entries occasionally carry
+    # legacy fields (e.g. ``mode``) that round-trip from the database
+    # as ``null``. The renderer's per-cell overlay filters to the keys
+    # ``_PARAM_MAP`` recognises, so unknown or null values get dropped
+    # before they hit ``_set_param``. Matches the project's tolerant
+    # input-validator convention (CLAUDE.md "Pydantic validators snap
+    # legacy values rather than rejecting").
+    params: dict[str, float | int | str | None]
+
+
+class ValidationCellsPatch(BaseModel):
+    cells: list[ValidationCellIn]

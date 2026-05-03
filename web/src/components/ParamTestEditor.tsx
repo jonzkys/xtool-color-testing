@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Material } from "../library";
-import type { Machine, ModeId, ParamName, RegistrationMode, SampleAggregator, TestSpec, ValidationProfile } from "../types";
+import type { Machine, ModeId, ParamName, PaletteEntry, RegistrationMode, SampleAggregator, TestSpec, ValidationCell, ValidationProfile } from "../types";
 import { PARAM_NAMES } from "../types";
 import { squareCellHeight } from "../specUtils";
 import { computeAutoFitGrid, gridHeightToSpecHeight, squareCellAutoFit } from "../autofit";
@@ -13,6 +13,7 @@ import {
 } from "../laser/pulseWidths";
 import { DynamicParamForm } from "./dynamic-form/DynamicParamForm";
 import { useCurrentMachine, getValidationProfile } from "../state/machine";
+import { ValidationPaletteTab } from "./ValidationPaletteTab";
 
 function defaultAggregatorFor(cell_shape: string): SampleAggregator {
   return cell_shape === "circle" ? "median" : "saturation_median";
@@ -56,7 +57,7 @@ function sweptByCaption(
   return null;
 }
 
-export type ParamTestEditorTab = "test" | "sweep" | "base" | "registration";
+export type ParamTestEditorTab = "test" | "sweep" | "palette" | "base" | "registration";
 
 interface Props {
   spec: TestSpec;
@@ -65,10 +66,23 @@ interface Props {
   issues?: { field: string; message: string; severity: "error" | "warning" }[];
   /** Which tab to render. Caller (TestDetailPage) owns the selection. */
   tab: ParamTestEditorTab;
+  /** Test kind. Drives validation-only fields on the Test tab and the
+   *  tab list itself. Defaults to "sweep" when omitted. */
+  kind?: "sweep" | "validation";
   /** Material picker lives in the Test tab — caller passes options + value + handler. */
   materials: Material[];
   materialId: number | null;
   onMaterialChange: (id: number) => void;
+  /** Validation-only: id of the persisted test row (`null` until create
+   *  has happened). The palette-tab uses this to PATCH cell selections. */
+  testId?: number | null;
+  /** Validation-only: persisted picks for this test. Caller mirrors
+   *  edits back via `onValidationCellsChange`. Defaults to []. */
+  validationCells?: ValidationCell[];
+  onValidationCellsChange?: (next: ValidationCell[]) => void;
+  /** Validation-only: full palette for the active material. Empty
+   *  array is fine — sweep tests don't need this. */
+  palette?: PaletteEntry[];
 }
 
 /** Default mode when none is stored — picks the most representative mode
@@ -103,8 +117,23 @@ function paramAxisRange(
   return null;
 }
 
-export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, materials, materialId, onMaterialChange }: Props) {
+export function ParamTestEditor({
+  spec,
+  onChange,
+  locked,
+  issues = [],
+  tab,
+  kind = "sweep",
+  materials,
+  materialId,
+  onMaterialChange,
+  testId = null,
+  validationCells = [],
+  onValidationCellsChange,
+  palette = [],
+}: Props) {
   const t = spec;
+  const isValidation = kind === "validation";
 
   // Machine-aware validation profile — used to show/hide base param fields.
   const { registry, machineId, machine } = useCurrentMachine();
@@ -222,6 +251,11 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
         gap_mm: t.gap_mm,
         hide_axis_labels: t.hide_axis_labels,
         is_2d: is2D,
+        // For validation tests, the wrap is driven by ``cells_per_row``
+        // and the cell count comes from the picked palette, not the
+        // placeholder ``x_steps=1`` we keep on the spec.
+        cells_per_row: isValidation ? t.cells_per_row ?? undefined : undefined,
+        cell_count: isValidation ? validationCells.length : undefined,
       });
       if (!sq) return;
       width_mm = sq.width_mm;
@@ -415,6 +449,18 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
                 disabled={locked}
               />
             </div>
+            {isValidation && (
+              <NumberField
+                label="Cells per row"
+                value={t.cells_per_row ?? 6}
+                min={1}
+                max={50}
+                integer
+                onChange={(v) => updateSpec({ cells_per_row: v })}
+                disabled={locked}
+                hint="Wrap the picked palette cells across this many columns. Rows = ceil(cells / cells-per-row)."
+              />
+            )}
             <label className="flex items-center gap-2 text-[12.5px] text-[color:var(--color-ink-muted)]">
               <input
                 type="checkbox"
@@ -634,6 +680,16 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
             />
           </Section>
         </>
+      )}
+
+      {tab === "palette" && (
+        <ValidationPaletteTab
+          testId={testId}
+          materialId={materialId}
+          validationCells={validationCells}
+          onValidationCellsChange={onValidationCellsChange ?? (() => {})}
+          palette={palette}
+        />
       )}
 
       {tab === "base" && (

@@ -339,6 +339,11 @@ def inspect_cell(
     # `per_row` cells per physical row; the swatch grid's row index goes
     # 0..rows_total-1 and col index 0..per_row-1. Sticking with the raw
     # y_steps=1 here was the bug — it rejected any non-row-0 click.
+    #
+    # ``flat_idx`` is the position of this cell within ``x_values`` —
+    # for wrapped 1D it's row*per_row + col (matching the storage in
+    # capture_sampling.py); for sweep / 2D it's just col since each row
+    # spans the full x range.
     if spec.get("y_param") is None and rows_total > 1:
         per_row = math.ceil(x_steps / rows_total)
         max_row, max_col = rows_total, per_row
@@ -346,12 +351,14 @@ def inspect_cell(
         cell_h_mm = row_height_mm
         cx_mm = grid_origin_mm[0] + (col + 0.5) * cell_w_mm
         cy_mm = grid_origin_mm[1] + row * row_stride_mm + row_height_mm / 2
+        flat_idx = row * per_row + col
     else:
         max_row, max_col = (y_steps or 1), x_steps
         cell_w_mm = grid_w / x_steps
         cell_h_mm = grid_h / (y_steps or 1)
         cx_mm = grid_origin_mm[0] + (col + 0.5) * cell_w_mm
         cy_mm = grid_origin_mm[1] + (row + 0.5) * cell_h_mm
+        flat_idx = col
 
     if not (0 <= row < max_row) or not (0 <= col < max_col):
         raise CaptureError(
@@ -437,9 +444,12 @@ def inspect_cell(
         lab = _bgr_to_lab(bbox_pixels)
         sigma = float(np.sqrt(np.sum(np.var(lab, axis=0))))
 
-    # Compute x_value / y_value for the inspector header.
+    # Compute x_value / y_value for the inspector header. Use the flat
+    # index (which already accounts for wrapped 1D row offsets); a bare
+    # ``col`` lookup would round-trip the row-0 value for every row,
+    # which was the bug this fix addresses.
     from xcs_gen_web.capture_sampling import _linspace, _round_param
-    x_val = _round_param(spec["x_param"], _linspace(spec["x_min"], spec["x_max"], x_steps)[col])
+    x_val = _round_param(spec["x_param"], _linspace(spec["x_min"], spec["x_max"], x_steps)[flat_idx])
     y_val: float | None
     if spec.get("y_param") is not None and y_steps:
         y_val = _round_param(spec["y_param"], _linspace(spec.get("y_min", 0.0), spec.get("y_max", 0.0), y_steps)[row])

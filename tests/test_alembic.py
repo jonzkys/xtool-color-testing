@@ -37,6 +37,7 @@ def test_initial_migration_creates_all_tables(alembic_sqlite):
         "alembic_version",
         "materials", "presets", "tests",
         "results", "palette_entries", "users",
+        "validation_cells",
     }
 
 

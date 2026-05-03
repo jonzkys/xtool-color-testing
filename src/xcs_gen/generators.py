@@ -114,6 +114,7 @@ def generate_gradient(
     retest_index: int = 0,
     material_id: str | None = None,
     hide_axis_labels: bool = False,
+    per_cell_params: list[ProcessingParams] | None = None,
 ) -> XCSProject:
     """Generate a gradient test pattern with axis annotations.
 
@@ -141,11 +142,36 @@ def generate_gradient(
 
     Returns:
         XCSProject ready to be written.
+
+    When ``per_cell_params`` is provided, it must have exactly ``x_steps``
+    entries; each cell uses its own params row instead of the
+    ``base_params`` + swept-x_param math. Single-axis (1D / wrapped) only —
+    the dual-axis path still expects a sweep. Axis labels are suppressed
+    in this mode regardless of ``hide_axis_labels`` because the swept x
+    axis is meaningless when each cell's params are independent.
     """
     if base_params is None:
         base_params = ProcessingParams()
     if annotation_params is None:
         annotation_params = _DEFAULT_ANNOTATION_PARAMS
+
+    if per_cell_params is not None:
+        # Per-cell params is a 1D-only feature (validation tests). Force
+        # the axis-label suppression on so callers don't need to remember
+        # to do it themselves; downstream the wrapped generator skips the
+        # label block entirely when per_cell_params is set, so this flag
+        # also keeps summary-line/registration math consistent.
+        hide_axis_labels = True
+        if y_param is not None:
+            raise ValueError(
+                "per_cell_params is only supported for single-axis (1D) "
+                "tests; got y_param=%r" % (y_param,),
+            )
+        if len(per_cell_params) != x_steps:
+            raise ValueError(
+                f"per_cell_params has {len(per_cell_params)} entries but "
+                f"x_steps={x_steps}",
+            )
 
     # Apply the uni/bi scan-mode toggle to both the gradient cells and the
     # annotation layer so the whole test burns consistently. Copy first to
@@ -234,6 +260,7 @@ def generate_gradient(
             annotation_params=annotation_params,
             cell_shape=cell_shape,
             hide_axis_labels=hide_axis_labels,
+            per_cell_params=per_cell_params,
         )
 
     if registration_mode != "off" and test_id is not None:
@@ -408,16 +435,28 @@ def _generate_wrapped(
     annotation_params: ProcessingParams,
     cell_shape: str = "rect",
     hide_axis_labels: bool = False,
+    per_cell_params: list[ProcessingParams] | None = None,
 ) -> None:
-    """Generate a single-axis gradient, optionally wrapped across rows."""
+    """Generate a single-axis gradient, optionally wrapped across rows.
+
+    When ``per_cell_params`` is provided, each cell uses ``per_cell_params[i]``
+    verbatim instead of copying ``base_params`` and overlaying ``x_values[i]``
+    onto ``x_param``. The axis-label block is also skipped — the swept x
+    axis carries no meaning in this mode.
+    """
     per_row = math.ceil(x_steps / rows)
     elem_w = (total_width - max(0, per_row - 1) * gap) / per_row
 
     ann_layer = ANNOTATION_LAYER_COLOR
 
+    # Per-cell-params mode is the validation-test path: cells are
+    # independent samples, not points along a sweep, so axis labels make
+    # no sense. Suppress them regardless of the caller's flag.
+    suppress_labels = hide_axis_labels or per_cell_params is not None
+
     # For multi-row: compute the space needed for labels below each row
     # and ensure row_gap is large enough (only matters for non-last rows)
-    ann_space = 0.0 if hide_axis_labels else (
+    ann_space = 0.0 if suppress_labels else (
         tick_length + 0.05 + text_height(label_font_size) + 0.05
     )
     effective_row_gap = max(row_gap, ann_space) if rows > 1 else 0
@@ -434,8 +473,11 @@ def _generate_wrapped(
         # Generate elements for this row
         for i in range(row_start, row_end):
             col = i - row_start
-            params = _copy_params(base_params)
-            _set_param(params, x_param, x_values[i])
+            if per_cell_params is not None:
+                params = per_cell_params[i]
+            else:
+                params = _copy_params(base_params)
+                _set_param(params, x_param, x_values[i])
 
             _append_cell(
                 project,
@@ -446,7 +488,7 @@ def _generate_wrapped(
                 processing_type=processing_type,
             )
 
-        if not hide_axis_labels:
+        if not suppress_labels:
             # Labels below each row
             bottom_y = row_y + row_height
             label_y = bottom_y + tick_length + 0.05

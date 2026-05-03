@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ChevronDown, X } from "lucide-react";
 import { DialogClose } from "@radix-ui/react-dialog";
 import {
@@ -9,13 +9,16 @@ import {
   cn,
 } from "../ui";
 import type {
-  GridLayout, ResultRecord, ResultSwatch, SampleAggregator, TestSpec,
+  GridLayout, ResultRecord, ResultSwatch, SampleAggregator, TestRecord,
+  TestSpec, ValidationCell,
 } from "../types";
 import { useAuthedImage } from "../hooks/useAuthedImage";
 import { useIsDemo } from "../hooks/useIsDemo";
 import { formatMissingCorners } from "./captureWarnings";
 import { InspectMatchDialog } from "./InspectMatchDialog";
 import { TestCellInspector } from "./TestCellInspector";
+import { PairedSwatchTile, ValidationSummaryStrip } from "./MaterialPalettePicker";
+import { deltaE76 } from "../svg/colorSelection";
 
 export interface ResultDetailDialogProps {
   open: boolean;
@@ -60,6 +63,7 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
   const [savingDefault, setSavingDefault] = useState(false);
   const [inspectingCell, setInspectingCell] = useState<{ row: number; col: number } | null>(null);
   const [testSpec, setTestSpec] = useState<TestSpec | null>(null);
+  const [testRecord, setTestRecord] = useState<TestRecord | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,9 +71,12 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
       try {
         const { getTest } = await import("../api/tests");
         const test = await getTest(result.test_id);
-        if (!cancelled) setTestSpec(test.spec);
+        if (!cancelled) {
+          setTestRecord(test);
+          setTestSpec(test.spec);
+        }
       } catch (err) {
-        console.error("Failed to fetch test spec:", err);
+        console.error("Failed to fetch test:", err);
       }
     })();
     return () => { cancelled = true; };
@@ -104,6 +111,30 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
   // collapses the y dimension entirely. Hide it in that case — the
   // swatch grid below already shows the full 2D structure.
   const is2D = testSpec?.y_param != null && (testSpec?.y_steps ?? 1) > 1;
+
+  // Validation-result branch: pair every swatch with its expected cell
+  // by `cell_index`, render a summary strip + warn/fail rings on the
+  // tile grid. For sweep tests `validation_cells` is empty so this
+  // whole branch is inert.
+  const isValidation = testRecord?.kind === "validation";
+  const validationCells = testRecord?.validation_cells ?? [];
+  const expectedByIndex = useMemo<Map<number, ValidationCell>>(() => {
+    const m = new Map<number, ValidationCell>();
+    for (const c of validationCells) m.set(c.cell_index, c);
+    return m;
+  }, [validationCells]);
+  // Cell index for a swatch = its position in `displayedSwatches`. The
+  // burn order matches `validation_cells.cell_index ascending` because
+  // both are emitted from the same row-major sweep.
+  const validationDeltas = useMemo<number[]>(() => {
+    if (!isValidation) return [];
+    return displayedSwatches.map((s, i) => {
+      const expected = expectedByIndex.get(i);
+      if (!expected || !s.lab || s.lab.length < 3) return 0;
+      return deltaE76(s.lab, expected.expected_lab);
+    });
+  }, [isValidation, displayedSwatches, expectedByIndex]);
+  const [threshold, setThreshold] = useState(3.0);
 
   async function onAggregatorChange(agg: SampleAggregator) {
     setPreviewAggregator(agg);
@@ -315,6 +346,15 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
           isDemo={isDemo}
           isSaving={savingDefault}
         />
+        {isValidation && (
+          <div className="mb-3">
+            <ValidationSummaryStrip
+              deltas={validationDeltas}
+              threshold={threshold}
+              onThresholdChange={setThreshold}
+            />
+          </div>
+        )}
         <ChartLabel title={`Swatches (${displayedSwatches.length})`} />
         {(result.missing_markers?.length ?? 0) > 0 && (
           <div
@@ -346,14 +386,30 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
                 : "[grid-template-columns:repeat(auto-fill,minmax(72px,1fr))]",
           )}
         >
-          {displayedSwatches.map((s, i) => (
-            <SwatchTile
-              key={`${s.row}-${s.col}-${i}`}
-              swatch={s}
-              compact={displayedSwatches.length > 60}
-              onClick={() => setInspectingCell({ row: s.row, col: s.col })}
-            />
-          ))}
+          {displayedSwatches.map((s, i) => {
+            const expected = expectedByIndex.get(i);
+            if (isValidation && expected) {
+              return (
+                <PairedSwatchTile
+                  key={`${s.row}-${s.col}-${i}`}
+                  measuredHex={s.hex}
+                  expectedHex={expected.expected_hex}
+                  delta={validationDeltas[i] ?? 0}
+                  threshold={threshold}
+                  sigma={s.sigma}
+                  onClick={() => setInspectingCell({ row: s.row, col: s.col })}
+                />
+              );
+            }
+            return (
+              <SwatchTile
+                key={`${s.row}-${s.col}-${i}`}
+                swatch={s}
+                compact={displayedSwatches.length > 60}
+                onClick={() => setInspectingCell({ row: s.row, col: s.col })}
+              />
+            );
+          })}
         </div>
       </div>
 

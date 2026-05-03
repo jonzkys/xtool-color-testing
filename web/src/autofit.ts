@@ -147,10 +147,26 @@ export function squareCellAutoFit(args: {
   gap_mm: number;
   hide_axis_labels: boolean;
   is_2d: boolean;
+  /** Validation tests only — overrides ``ceil(x_steps / rows)`` so the
+   *  cell-per-row count comes from the user's wrap setting rather than
+   *  the placeholder ``x_steps=1`` we use for kind=validation. When
+   *  set, ``rows`` is derived as ``ceil(cell_count / cells_per_row)``
+   *  using ``cell_count`` (or ``x_steps`` if not set). */
+  cells_per_row?: number;
+  /** Validation tests only — actual cell count from
+   *  ``validation_cells.length``. Defaults to ``x_steps``. */
+  cell_count?: number;
 }): { width_mm: number; height_mm: number } | null {
   const { grid_w, grid_h, x_steps, gap_mm, hide_axis_labels, is_2d } = args;
-  const rows = Math.max(1, args.rows);
   const ySteps = Math.max(1, args.y_steps);
+  const cellCount = args.cell_count != null && args.cell_count > 0
+    ? args.cell_count
+    : x_steps;
+  // For validation tests with a wrap setting, derive rows from
+  // (count / cells_per_row); otherwise fall back to the spec's ``rows``.
+  const rows = args.cells_per_row != null && args.cells_per_row > 0
+    ? Math.max(1, Math.ceil(cellCount / args.cells_per_row))
+    : Math.max(1, args.rows);
 
   if (is_2d) {
     const cellW_max = (grid_w - Math.max(0, x_steps - 1) * gap_mm) / x_steps;
@@ -163,7 +179,9 @@ export function squareCellAutoFit(args: {
   }
 
   // 1D (single-row or wrapped).
-  const perRow = Math.max(1, Math.ceil(x_steps / rows));
+  const perRow = args.cells_per_row != null && args.cells_per_row > 0
+    ? args.cells_per_row
+    : Math.max(1, Math.ceil(cellCount / rows));
   const cellW_max = (grid_w - Math.max(0, perRow - 1) * gap_mm) / perRow;
   let cellH_max: number;
   if (rows > 1) {

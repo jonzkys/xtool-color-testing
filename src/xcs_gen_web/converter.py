@@ -6,7 +6,7 @@ import json
 import math
 from xcs_gen.builder import build_xcs
 from xcs_gen.capture.layout import registration_reservation_mm
-from xcs_gen.generators import generate_gradient
+from xcs_gen.generators import _PARAM_MAP, _set_param, generate_gradient
 from xcs_gen.model import Device, ProcessingParams, XCSProject
 from xcs_gen.text import text_height
 
@@ -267,12 +267,53 @@ def project_to_xcs(project: Project, *, machine_id: str = "F2Ultra") -> XCSProje
             suffix_bits.append(t.angle_mode)
         summary_suffix = " ".join(suffix_bits)
 
+        # Validation tests render one cell per validation_cells entry,
+        # each with its own frozen params overlay. Compute the per-cell
+        # ProcessingParams list here so the renderer can iterate it
+        # directly instead of computing values from a sweep.
+        per_cell_params: list[ProcessingParams] | None = None
+        x_steps = t.x_steps
+        y_param = t.y_param
+        if t.kind == "validation":
+            cells = t.validation_cells or []
+            if not cells:
+                raise ValueError(
+                    f"validation test '{t.name}' has no validation_cells",
+                )
+            per_cell_params = []
+            for vc in cells:
+                # Crosshatch + angle_mode are test-level — apply them
+                # to every cell's seed ProcessingParams so the renderer
+                # sees the same cross_angle / angle_type the user picked
+                # on the test (matches how the sweep path threads them
+                # in the call below).
+                p = _to_processing_params(
+                    t.base_params,
+                    angle_mode=t.angle_mode,
+                    crosshatch=t.crosshatch,
+                )
+                # Filter to keys the renderer can apply per-cell. Palette
+                # entries also carry top-level test attributes like ``laser``
+                # and ``scan_angle`` (test-level) and legacy ``mode`` which
+                # may round-trip as ``null`` — silently skip both unknown
+                # keys and null values.
+                for key, value in (vc.get("params") or {}).items():
+                    if key not in _PARAM_MAP or value is None:
+                        continue
+                    _set_param(p, key, value)
+                per_cell_params.append(p)
+            # Override sweep-only fields so the wrapped-1D layout sizes
+            # the gradient to exactly len(cells) elements. The dual-axis
+            # path is intentionally bypassed (validation is 1D-only).
+            x_steps = len(per_cell_params)
+            y_param = None
+
         generated = generate_gradient(
             x_param=t.x_param,
             x_min=t.x_min,
             x_max=t.x_max,
-            x_steps=t.x_steps,
-            y_param=t.y_param,
+            x_steps=x_steps,
+            y_param=y_param,
             # y_* sentinels are ignored when y_param is None (see generate_gradient).
             y_min=t.y_min if t.y_min is not None else 0,
             y_max=t.y_max if t.y_max is not None else 0,
@@ -296,6 +337,7 @@ def project_to_xcs(project: Project, *, machine_id: str = "F2Ultra") -> XCSProje
             retest_index=t.retest_index,
             material_id=t.material_id,
             hide_axis_labels=t.hide_axis_labels,
+            per_cell_params=per_cell_params,
         )
 
         if i == 0:
