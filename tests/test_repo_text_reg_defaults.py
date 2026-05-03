@@ -40,7 +40,6 @@ def _seed_material(name: str = "M") -> int:
 
 
 def test_machine_upsert_round_trips(fresh_db):
-    mid = _seed_material()  # noqa: F841 — just to seed FK target
     row = repo.upsert_machine(machine_id="F2Ultra", params=_BASE_PARAMS)
     assert row["machine_id"] == "F2Ultra"
     assert row["speed"] == 400
