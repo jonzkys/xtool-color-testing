@@ -41,6 +41,14 @@ export async function deletePaletteByTest(testId: number): Promise<void> {
   await j(await fetch(`/api/palette/by-test/${testId}`, { method: "DELETE" }));
 }
 
+export async function deletePaletteByMaterial(
+  materialId: number,
+): Promise<{ deleted: number }> {
+  return j(await fetch(`/api/palette/by-material/${materialId}`, {
+    method: "DELETE",
+  }));
+}
+
 export interface PaletteEntryPatch {
   hex?: string;
   material_id?: number;

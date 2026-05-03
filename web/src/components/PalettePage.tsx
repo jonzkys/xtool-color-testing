@@ -281,6 +281,15 @@ function BrowseView({ materials }: { materials: Material[] }) {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [materialId]);
+  // Refetch when MaterialEditDialog wipes a material's palette. The
+  // event carries no test-id specificity since palette identity is
+  // material-keyed; we just always refetch (cheap on this page).
+  useEffect(() => {
+    const onRefetch = () => { void refresh(); };
+    window.addEventListener("palette:refetch", onRefetch);
+    return () => window.removeEventListener("palette:refetch", onRefetch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [materialId]);
   useEffect(() => {
     listTests({ machine_id: getCurrentMachineId() })
       .then((ts: TestRecord[]) => {

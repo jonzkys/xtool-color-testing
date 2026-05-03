@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Material } from "../library";
-import type { Machine, ModeId, ParamName, RegistrationMode, SampleAggregator, TestSpec, ValidationProfile } from "../types";
+import type { Machine, ModeId, ParamName, PaletteEntry, RegistrationMode, SampleAggregator, TestSpec, ValidationCell, ValidationProfile } from "../types";
 import { PARAM_NAMES } from "../types";
 import { squareCellHeight } from "../specUtils";
 import { computeAutoFitGrid, gridHeightToSpecHeight, squareCellAutoFit } from "../autofit";
@@ -13,6 +13,7 @@ import {
 } from "../laser/pulseWidths";
 import { DynamicParamForm } from "./dynamic-form/DynamicParamForm";
 import { useCurrentMachine, getValidationProfile } from "../state/machine";
+import { ValidationPaletteTab } from "./ValidationPaletteTab";
 
 function defaultAggregatorFor(cell_shape: string): SampleAggregator {
   return cell_shape === "circle" ? "median" : "saturation_median";
@@ -56,7 +57,7 @@ function sweptByCaption(
   return null;
 }
 
-export type ParamTestEditorTab = "test" | "sweep" | "base" | "registration";
+export type ParamTestEditorTab = "test" | "sweep" | "palette" | "base" | "registration";
 
 interface Props {
   spec: TestSpec;
@@ -65,10 +66,23 @@ interface Props {
   issues?: { field: string; message: string; severity: "error" | "warning" }[];
   /** Which tab to render. Caller (TestDetailPage) owns the selection. */
   tab: ParamTestEditorTab;
+  /** Test kind. Drives validation-only fields on the Test tab and the
+   *  tab list itself. Defaults to "sweep" when omitted. */
+  kind?: "sweep" | "validation";
   /** Material picker lives in the Test tab — caller passes options + value + handler. */
   materials: Material[];
   materialId: number | null;
   onMaterialChange: (id: number) => void;
+  /** Validation-only: id of the persisted test row (`null` until create
+   *  has happened). The palette-tab uses this to PATCH cell selections. */
+  testId?: number | null;
+  /** Validation-only: persisted picks for this test. Caller mirrors
+   *  edits back via `onValidationCellsChange`. Defaults to []. */
+  validationCells?: ValidationCell[];
+  onValidationCellsChange?: (next: ValidationCell[]) => void;
+  /** Validation-only: full palette for the active material. Empty
+   *  array is fine — sweep tests don't need this. */
+  palette?: PaletteEntry[];
 }
 
 /** Default mode when none is stored — picks the most representative mode
@@ -103,8 +117,23 @@ function paramAxisRange(
   return null;
 }
 
-export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, materials, materialId, onMaterialChange }: Props) {
+export function ParamTestEditor({
+  spec,
+  onChange,
+  locked,
+  issues = [],
+  tab,
+  kind = "sweep",
+  materials,
+  materialId,
+  onMaterialChange,
+  testId = null,
+  validationCells = [],
+  onValidationCellsChange,
+  palette = [],
+}: Props) {
   const t = spec;
+  const isValidation = kind === "validation";
 
   // Machine-aware validation profile — used to show/hide base param fields.
   const { registry, machineId, machine } = useCurrentMachine();
@@ -222,6 +251,11 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
         gap_mm: t.gap_mm,
         hide_axis_labels: t.hide_axis_labels,
         is_2d: is2D,
+        // For validation tests, the wrap is driven by ``cells_per_row``
+        // and the cell count comes from the picked palette, not the
+        // placeholder ``x_steps=1`` we keep on the spec.
+        cells_per_row: isValidation ? t.cells_per_row ?? undefined : undefined,
+        cell_count: isValidation ? validationCells.length : undefined,
       });
       if (!sq) return;
       width_mm = sq.width_mm;
@@ -415,6 +449,18 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
                 disabled={locked}
               />
             </div>
+            {isValidation && (
+              <NumberField
+                label="Cells per row"
+                value={t.cells_per_row ?? 6}
+                min={1}
+                max={50}
+                integer
+                onChange={(v) => updateSpec({ cells_per_row: v })}
+                disabled={locked}
+                hint="Wrap the picked palette cells across this many columns. Rows = ceil(cells / cells-per-row)."
+              />
+            )}
             <label className="flex items-center gap-2 text-[12.5px] text-[color:var(--color-ink-muted)]">
               <input
                 type="checkbox"
@@ -636,6 +682,16 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
         </>
       )}
 
+      {tab === "palette" && (
+        <ValidationPaletteTab
+          testId={testId}
+          materialId={materialId}
+          validationCells={validationCells}
+          onValidationCellsChange={onValidationCellsChange ?? (() => {})}
+          palette={palette}
+        />
+      )}
+
       {tab === "base" && (
         <>
           <BaseParamsSection
@@ -645,7 +701,6 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
             setMode={setMode}
             profile={profile}
             base_params={t.base_params}
-            angle_mode={t.angle_mode}
             updateBase={updateBase}
             x_param={t.x_param}
             y_param={t.y_param}
@@ -678,15 +733,32 @@ export function ParamTestEditor({ spec, onChange, locked, issues = [], tab, mate
                 }
               >
                 <option value="fixed">Fixed — all passes at scan angle</option>
-                <option value="crosshatch">Crosshatch — alternate ±90°</option>
                 <option value="incremental">Incremental — XCS rotates per pass</option>
               </Select>
             </Field>
+            <label className="flex items-start gap-2 text-[12.5px] text-[color:var(--color-ink-muted)]">
+              <input
+                type="checkbox"
+                checked={t.crosshatch}
+                disabled={locked}
+                onChange={(e) => updateSpec({ crosshatch: e.target.checked })}
+                className="mt-0.5"
+              />
+              <span>
+                Crosshatch
+                <span className="block text-[11px] text-[color:var(--color-ink-subtle)]">
+                  For every pass, also burn a stroke at scan angle + 90°.
+                  Stacks with the angle mode above; the device fires
+                  twice as many strokes when this is on.
+                </span>
+              </span>
+            </label>
             <p className="text-[11.5px] text-[color:var(--color-ink-muted)] leading-relaxed">
-              Pass count comes from <strong>Base parameters → Passes</strong>. XCS
-              handles the stacking natively; no rect duplication. Crosshatch uses
-              pairs of burns (scan angle + 90°), so every two "passes" counts as
-              one XCS cycle — pick even values.
+              Pass count comes from <strong>Base parameters → Passes</strong>.
+              Each pass is one stroke at the current scan angle — XCS
+              handles the stacking natively, no rect duplication.
+              Crosshatch <strong>doubles</strong> that count: passes=2 +
+              crosshatch ⇒ 4 total strokes (alternating 0°/90°).
             </p>
           </Section>
         </>
@@ -882,7 +954,6 @@ function BaseParamsSection({
   setMode,
   profile,
   base_params,
-  angle_mode,
   updateBase,
   x_param,
   y_param,
@@ -893,7 +964,6 @@ function BaseParamsSection({
   setMode: (id: ModeId) => void;
   profile: ValidationProfile | null;
   base_params: TestSpec["base_params"];
-  angle_mode: TestSpec["angle_mode"];
   updateBase: (patch: Partial<TestSpec["base_params"]>) => void;
   x_param: TestSpec["x_param"];
   y_param: TestSpec["y_param"];
@@ -945,14 +1015,6 @@ function BaseParamsSection({
               fieldOverrides={fieldOverrides}
             />
 
-            {/* Crosshatch pass hint */}
-            {angle_mode === "crosshatch" && (
-              <p className="text-[11.5px] text-[color:var(--color-ink-muted)] leading-relaxed">
-                In crosshatch mode each pass is one burn at scan angle and one
-                at +90°. Use even pass counts so the total burns match what you
-                enter.
-              </p>
-            )}
 
             {/* Scan angle — a compact inline readout row */}
             {(() => {
@@ -1004,11 +1066,11 @@ function BaseParamsSection({
                 onChange={(v) => updateBase({ density: v })}
               />
               <NumberField
-                label={angle_mode === "crosshatch" ? "Passes (even)" : "Passes"}
+                label="Passes"
                 value={base_params.passes}
                 integer
-                min={angle_mode === "crosshatch" ? 2 : 1}
-                step={angle_mode === "crosshatch" ? 2 : 1}
+                min={1}
+                step={1}
                 onChange={(v) => updateBase({ passes: v })}
               />
               <PulseWidthSelect

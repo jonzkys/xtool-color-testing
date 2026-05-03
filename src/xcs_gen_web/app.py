@@ -54,6 +54,7 @@ from .schemas import (
     UserMePatch,
     UserRegisterRequest,
     UserResponse,
+    ValidationCellsPatch,
 )
 from .svg_converter import svg_stack_to_xcs_bytes
 from .svg_layers_converter import (
@@ -727,6 +728,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         pal_repo.delete_by_test(test_id, owner_id=user_id)
         return Response(status_code=204)
 
+    @app.delete("/api/palette/by-material/{material_id}")
+    def palette_delete_by_material(
+        material_id: int, user_id: int = Depends(get_current_user),
+    ) -> dict[str, int]:
+        """Wipe every palette entry for a material. Tests, results, and
+        the material itself are untouched — re-ingest from the existing
+        results when ready. Returns the row count for the toast."""
+        deleted = pal_repo.delete_by_material(
+            material_id, owner_id=user_id,
+        )
+        return {"deleted": deleted}
+
     @app.delete("/api/palette/{entry_id}", status_code=204)
     def palette_delete(
         entry_id: int, user_id: int = Depends(get_current_user),
@@ -984,6 +997,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             spec=spec_dict, notes=body.notes,
             owner_id=user_id,
             machine_id=body.machine_id,
+            kind=body.kind,
         )
         return TestResponse(**t)
 
@@ -1055,6 +1069,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             material_id=t["material_id"], spec=t["spec"],
             retest_index=t.get("retest_index", 0),
             machine_id=t.get("machine_id", "F2Ultra"),
+            kind=t.get("kind", "sweep") or "sweep",
+            validation_cells=t.get("validation_cells"),
         )
         safe_name = xcs_service._safe_project_name(t["name"], fallback=f"test-{t['id']}")
         return Response(
@@ -1079,6 +1095,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError:
             raise HTTPException(status_code=404, detail="test not found")
         return TestResponse(**row)
+
+    from .repositories import validation_cells as vc_repo
+
+    @app.patch("/api/tests/{tid}/validation-cells")
+    def tests_patch_validation_cells(
+        tid: int,
+        body: ValidationCellsPatch,
+        user_id: int = Depends(get_current_user),
+    ) -> dict:
+        """Replace the validation-cell list for a kind=validation test.
+
+        Frontend calls this after the user finishes adjusting picks
+        (or after an auto-pick). Cells are stored in the order
+        received; the builder iterates them by ``cell_index`` ascending,
+        so the frontend is responsible for L*-sorting before posting.
+        """
+        t = t_repo.get(tid, owner_id=user_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        if t.get("kind") != "validation":
+            raise HTTPException(
+                status_code=409, detail="test kind is not 'validation'",
+            )
+        if t.get("locked"):
+            raise HTTPException(status_code=409, detail="test is locked")
+        vc_repo.replace_for_test(
+            test_id=tid,
+            cells=[c.model_dump() for c in body.cells],
+        )
+        return {"ok": True, "count": len(body.cells)}
 
     from .services import capture as capture_service
     from .services import warped_cache
@@ -1563,10 +1609,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         base = t["spec"]["base_params"]
         x_param = t["spec"]["x_param"]
         y_param = t["spec"].get("y_param")
+        # Test-level angle behaviour determines the actual stroke count
+        # and pattern for every cell — without it stored, a palette entry
+        # can't be reproduced (a "fixed x2" colour is not a "crosshatch x2"
+        # colour). Persist alongside the per-cell params dict; legacy
+        # ``angle_mode="crosshatch"`` is snapped at write time too.
+        spec_angle_mode = t["spec"].get("angle_mode", "fixed")
+        spec_crosshatch = bool(t["spec"].get("crosshatch", False))
+        if spec_angle_mode == "crosshatch":
+            spec_angle_mode = "fixed"
+            spec_crosshatch = True
 
         payload = []
         for s in picked:
             params = dict(base)
+            params["angle_mode"] = spec_angle_mode
+            params["crosshatch"] = spec_crosshatch
             if s.get("x_value") is not None:
                 params[x_param] = s["x_value"]
             if y_param and s.get("y_value") is not None:

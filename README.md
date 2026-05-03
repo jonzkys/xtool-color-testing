@@ -1,5 +1,7 @@
 # xcs-gen - XTool Creative Space File Generator
 
+**Website:** [engraving.media](https://engraving.media) · **Live demo:** [engraving.media/demo](https://engraving.media/demo)
+
 Programmatic generation of `.xcs` files for XTool laser cutters (XTool Creative Space / XCS Studio).
 
 ## Why

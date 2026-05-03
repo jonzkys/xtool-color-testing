@@ -100,6 +100,7 @@ function defaultLayerFromDetected(
     scan_angle: 90,
     base_params: seed.baseParams,
     angle_mode: "fixed",
+    crosshatch: false,
     material_id: seed.materialId,
     hatch_passes: [],
   };
@@ -1505,13 +1506,29 @@ function LayerEditor({
               }
             >
               <option value="fixed">Fixed — all passes at scan angle</option>
-              <option value="crosshatch">Crosshatch — alternate ±90°</option>
               <option value="incremental">Incremental — XCS rotates per pass</option>
             </Select>
           </Field>
+          <label className="flex items-start gap-2 text-[12.5px] text-[color:var(--color-ink-muted)]">
+            <input
+              type="checkbox"
+              checked={layer.crosshatch}
+              onChange={(e) => onPatch({ crosshatch: e.target.checked })}
+              className="mt-0.5"
+            />
+            <span>
+              Crosshatch
+              <span className="block text-[11px] text-[color:var(--color-ink-subtle)]">
+                For every pass, also burn a stroke at scan angle + 90°.
+                Stacks with the angle mode above; the device fires
+                twice as many strokes when this is on.
+              </span>
+            </span>
+          </label>
           <p className="text-[11.5px] text-[color:var(--color-ink-muted)] leading-relaxed">
-            Pass count comes from <strong>Base parameters → Passes</strong>. XCS
-            handles the stacking natively; no rect duplication.
+            Pass count comes from <strong>Base parameters → Passes</strong>.
+            XCS handles the stacking natively, no rect duplication.
+            Crosshatch <strong>doubles</strong> that count.
           </p>
         </Section>
       )}

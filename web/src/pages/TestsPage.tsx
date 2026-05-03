@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Beaker, Lock, Plus } from "lucide-react";
 import type { Material, Preset } from "../library";
 import type { BaseParams, ParamName, TestRecord, TestSpec } from "../types";
@@ -55,7 +55,7 @@ export function TestsPage() {
     refresh();
   }, [materialId, status]); // eslint-disable-line
 
-  async function onNew() {
+  async function onNew(kind: "sweep" | "validation" = "sweep") {
     if (materials.length === 0) {
       setError("Create a material on the Library tab first.");
       return;
@@ -68,15 +68,38 @@ export function TestsPage() {
     const defaultMode = machineId === "F2Ultra" ? "color_engrave" : "engrave";
     const profile = getValidationProfile(registry, machineId, defaultMode) ?? undefined;
     const baseSpec = defaultSpec(profile);
+    // Validation tests don't sweep — cells come from the palette pick. We
+    // collapse the X axis to a single step and seed cells_per_row so the
+    // editor can render a sensible placeholder grid before any picks.
+    const seedSpec = kind === "validation"
+      ? {
+          ...baseSpec,
+          x_param: "power" as ParamName,
+          x_min: baseSpec.base_params.power,
+          x_max: baseSpec.base_params.power,
+          x_steps: 1,
+          rows: 1,
+          width_mm: 30,
+          height_mm: 30,
+          hide_axis_labels: true,
+          cells_per_row: 6,
+        }
+      : baseSpec;
     const spec = normalizeSpec({
-      ...baseSpec,
+      ...seedSpec,
       base_params: {
-        ...baseSpec.base_params,
+        ...seedSpec.base_params,
         ...(preset?.base_params ?? {}),
         mode: defaultMode,
       },
     });
-    const t = await createTest({ name: "New test", material_id: mid, spec, machine_id: getCurrentMachineId() });
+    const t = await createTest({
+      name: kind === "validation" ? "New validation" : "New test",
+      material_id: mid,
+      spec,
+      machine_id: getCurrentMachineId(),
+      kind,
+    });
     window.location.hash = formatRoute({ name: "test-detail", id: t.id });
   }
 
@@ -97,10 +120,7 @@ export function TestsPage() {
           </p>
         </div>
         <DemoLock label="Creating tests is disabled in the demo.">
-          <Button variant="primary" onClick={onNew}>
-            <Plus className="h-4 w-4" />
-            New test
-          </Button>
+          <NewTestMenu onCreate={onNew} />
         </DemoLock>
       </header>
 
@@ -151,10 +171,7 @@ export function TestsPage() {
                 }
                 action={
                   <DemoLock label="Creating tests is disabled in the demo.">
-                    <Button variant="primary" onClick={onNew}>
-                      <Plus className="h-4 w-4" />
-                      New test
-                    </Button>
+                    <NewTestMenu onCreate={onNew} />
                   </DemoLock>
                 }
               />
@@ -177,6 +194,113 @@ export function TestsPage() {
         </div>
       </div>
     </PageContainer>
+  );
+}
+
+/* --- New-test kind chooser ------------------------------------------- */
+/* A small dropdown so users can pick between a parameter sweep (the
+ * existing flow) and a palette-validation burn. Both options POST to
+ * /api/tests via the same handler, only differing in the seed spec
+ * and `kind` field. */
+
+function NewTestMenu({
+  onCreate,
+}: {
+  onCreate: (kind: "sweep" | "validation") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  // Close on outside click and on Escape so keyboard users can dismiss
+  // the menu without making a selection.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current) return;
+      if (!ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative inline-flex">
+      <Button
+        variant="primary"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <Plus className="h-4 w-4" />
+        New test
+      </Button>
+      {open && (
+        <div
+          role="menu"
+          className={cn(
+            "absolute top-full right-0 mt-1 z-10",
+            "rounded-[6px] border border-[color:var(--color-border)]",
+            "bg-[color:var(--color-surface)] shadow-[var(--shadow-card)]",
+            "min-w-[260px] overflow-hidden",
+          )}
+        >
+          <KindOption
+            label="Sweep"
+            hint="Vary parameters across a grid"
+            onClick={() => {
+              setOpen(false);
+              onCreate("sweep");
+            }}
+          />
+          <KindOption
+            label="Validation"
+            hint="Verify a material's palette reproduces"
+            onClick={() => {
+              setOpen(false);
+              onCreate("validation");
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KindOption({
+  label,
+  hint,
+  onClick,
+}: {
+  label: string;
+  hint: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className={cn(
+        "block w-full text-left px-3 py-2",
+        "hover:bg-[color:var(--color-surface-elevated)]",
+        "border-b border-[color:var(--color-border)] last:border-b-0",
+        "focus:outline-none focus:bg-[color:var(--color-surface-elevated)]",
+      )}
+    >
+      <div className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[color:var(--color-ink)]">
+        {label}
+      </div>
+      <div className="text-[11px] text-[color:var(--color-ink-muted)] mt-0.5 leading-snug">
+        {hint}
+      </div>
+    </button>
   );
 }
 

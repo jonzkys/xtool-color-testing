@@ -24,7 +24,20 @@ export interface PreviewGeometry {
   shape: "rect" | "circle";
 }
 
-export function computePreviewGeometry(spec: TestSpec): PreviewGeometry {
+export interface PreviewOverride {
+  /** Override the cell count from `spec.x_steps`. Used for
+   *  ``kind=validation`` tests where the cell list is the
+   *  ``validation_cells`` length, not a swept axis. */
+  cellCount?: number;
+  /** Override how many cells per physical row. Defaults to
+   *  ``spec.cells_per_row`` when set, else falls back to
+   *  ``ceil(x_steps / spec.rows)``. */
+  cellsPerRow?: number;
+}
+
+export function computePreviewGeometry(
+  spec: TestSpec, override?: PreviewOverride,
+): PreviewGeometry {
   const regOn = spec.registration.mode === "on";
   const qrSize = spec.registration.qr_size_mm ?? QR_DEFAULT;
   const arucoSize = spec.registration.aruco_size_mm ?? ARUCO_DEFAULT;
@@ -39,8 +52,20 @@ export function computePreviewGeometry(spec: TestSpec): PreviewGeometry {
   //   1D (single or wrapped):     height_mm = per-row cell height
   const ySteps = spec.y_steps ?? 1;
   const is2D = spec.y_param !== null && ySteps > 1;
-  const rowCount = is2D ? ySteps : Math.max(1, spec.rows);
-  const cellsPerRow = is2D ? spec.x_steps : Math.ceil(spec.x_steps / rowCount);
+  // ``effectiveSteps`` is the actual number of cells we need to lay
+  // out. For sweep tests it's spec.x_steps; for validation tests it
+  // comes from the override (count of picked palette swatches).
+  const effectiveSteps = Math.max(1, override?.cellCount ?? spec.x_steps);
+  const explicitCellsPerRow =
+    override?.cellsPerRow ?? spec.cells_per_row;
+  const rowCount = is2D
+    ? ySteps
+    : explicitCellsPerRow != null && explicitCellsPerRow > 0
+      ? Math.max(1, Math.ceil(effectiveSteps / explicitCellsPerRow))
+      : Math.max(1, spec.rows);
+  const cellsPerRow = is2D
+    ? effectiveSteps
+    : explicitCellsPerRow ?? Math.ceil(effectiveSteps / rowCount);
   const cellW = (gridW - Math.max(0, cellsPerRow - 1) * spec.gap_mm) / cellsPerRow;
   const rowHeight = is2D
     ? (spec.height_mm - Math.max(0, ySteps - 1) * spec.gap_mm) / ySteps
@@ -60,11 +85,11 @@ export function computePreviewGeometry(spec: TestSpec): PreviewGeometry {
   const viewW = gridX + gridW + (regOn ? arucoSize + MARGIN : 0);
   const viewH = gridY + gridH + (regOn ? arucoSize + MARGIN : 0);
 
-  const step = (spec.x_max - spec.x_min) / Math.max(1, spec.x_steps - 1);
+  const step = (spec.x_max - spec.x_min) / Math.max(1, effectiveSteps - 1);
   const rows: Row[] = [];
   // 2D: every row spans the full x range (no wrapping). 1D: cells come
   // from a single x_steps pool that we hand out row by row.
-  let cellsLeft = spec.x_steps;
+  let cellsLeft = effectiveSteps;
   let cellIdx = 0;
   for (let r = 0; r < rowCount; r++) {
     const take = is2D ? cellsPerRow : Math.min(cellsPerRow, cellsLeft);
@@ -108,8 +133,18 @@ export function computePreviewGeometry(spec: TestSpec): PreviewGeometry {
   return { viewW, viewH, gridX, gridY, gridW, gridH, rows, qr, arucos, shape: spec.cell_shape };
 }
 
-export function TestPreview({ spec, testId: _testId, compact = false }: { spec: TestSpec; testId: number | null; compact?: boolean }) {
-  const g = computePreviewGeometry(spec);
+export function TestPreview({
+  spec, testId: _testId, compact = false, override,
+}: {
+  spec: TestSpec;
+  testId: number | null;
+  compact?: boolean;
+  /** Optional cell-count override for ``kind=validation`` tests where
+   *  the layout is driven by the picked palette subset rather than a
+   *  swept axis. */
+  override?: PreviewOverride;
+}) {
+  const g = computePreviewGeometry(spec, override);
 
   // Token-backed substrate panel — flips in dark mode via --color-substrate.
   const cellFill = "#C78F3E";

@@ -73,12 +73,16 @@ def test_disabled_layer_is_skipped():
     assert "#000000" not in colors
 
 
-def test_layer_crosshatch_sets_cross_angle_flag_and_halves_repeat():
-    """angle_mode='crosshatch' maps to XCS-native cross_angle; passes is halved because XCS doubles each repeat."""
+def test_layer_crosshatch_sets_cross_angle_flag_and_preserves_passes():
+    """``crosshatch=True`` maps to XCS-native ``cross_angle``; ``repeat``
+    equals the user's passes count (1:1, NOT halved). xTool Studio runs
+    ``repeat`` literally and ``cross_angle`` adds a 90°-rotated companion
+    stroke per pass — so passes=4 + crosshatch fires 8 strokes (4 at
+    scan_angle, 4 at scan_angle+90°)."""
     yellow_base = _base().model_copy(update={"passes": 4})
     layers = [
-        _layer("#ffd73e", angle_mode="crosshatch", base_params=yellow_base),
-        _layer("#000000"),  # default angle_mode="fixed"
+        _layer("#ffd73e", crosshatch=True, base_params=yellow_base),
+        _layer("#000000"),  # default angle_mode="fixed", crosshatch=False
     ]
     req = SvgLayersRequest(
         name="t", svg_content=PIKACHU_SVG.read_text(),
@@ -92,8 +96,8 @@ def test_layer_crosshatch_sets_cross_angle_flag_and_halves_repeat():
     # No per-pass path duplication: yellow layer emits once per SVG shape,
     # and XCS stacks the passes natively.
     assert all(p.params.cross_angle for p in yellow_paths)
-    # Crosshatch: user asked for 4 total burns → XCS repeat=2 (× 2 angles each).
-    assert all(p.params.repeat == 2 for p in yellow_paths)
+    # 4 passes → 4 strokes, alternating 0° and 90° via cross_angle.
+    assert all(p.params.repeat == 4 for p in yellow_paths)
     # Fixed black layer: angle_type=1, no cross.
     assert all(p.params.angle_type == 1 for p in black_paths)
     assert all(not p.params.cross_angle for p in black_paths)

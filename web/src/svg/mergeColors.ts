@@ -224,5 +224,10 @@ function canonicalKey(l: LayerSpec) {
   if (l.processing_type === "HATCHED_LINES") {
     return { ...base, hatch_passes: l.hatch_passes };
   }
-  return { ...base, scan_angle: l.scan_angle, angle_mode: l.angle_mode };
+  return {
+    ...base,
+    scan_angle: l.scan_angle,
+    angle_mode: l.angle_mode,
+    crosshatch: l.crosshatch,
+  };
 }

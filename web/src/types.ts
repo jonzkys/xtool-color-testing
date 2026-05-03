@@ -104,8 +104,12 @@ export interface LayerSpec {
   processing_type: SvgProcessingType;
   scan_angle: number;
   base_params: BaseParams;
-  /** Same semantics as TestSpec.angle_mode. Ignored for HATCHED_LINES. */
-  angle_mode: "fixed" | "crosshatch" | "incremental";
+  /** Same semantics as TestSpec.angle_mode + TestSpec.crosshatch.
+   *  Ignored for HATCHED_LINES. */
+  angle_mode: "fixed" | "incremental";
+  /** Crosshatch — orthogonal to angle_mode; adds a 90°-rotated
+   *  companion stroke per pass (so passes=N + crosshatch = 2N strokes). */
+  crosshatch: boolean;
   material_id: string | null;   // layer's library-preset origin (optional)
   hatch_passes: HatchPassSpec[];   // non-empty iff processing_type === "HATCHED_LINES"
 }
@@ -161,11 +165,18 @@ export interface TestSpec {
    * back-compat with tests created before this field existed. */
   sample_aggregator?: SampleAggregator;
   square_cells: boolean;
-  angle_mode: "fixed" | "crosshatch" | "incremental";
+  angle_mode: "fixed" | "incremental";
+  /** Crosshatch — orthogonal to angle_mode; adds a 90°-rotated
+   *  companion stroke per pass (so passes=N + crosshatch = 2N strokes).
+   *  Stacks with incremental: rotates AND adds the perpendicular. */
+  crosshatch: boolean;
   unidirectional: boolean;
   /** When true, per-row tick + numeric axis labels are suppressed on
    *  the generated test. The summary header line is still drawn. */
   hide_axis_labels: boolean;
+  /** Validation tests only — how many cells per physical row on the
+   *  burn. Sweep tests ignore this. */
+  cells_per_row?: number;
   base_params: BaseParams;
   registration: RegistrationConfig;
 }
@@ -176,7 +187,9 @@ export interface TestRecord {
   name: string;
   material_id: number;
   status: "created" | "tested" | "deleted";
+  kind: "sweep" | "validation";
   spec: TestSpec;
+  validation_cells: ValidationCell[];
   notes: string;
   created_at: string;
   updated_at: string;
@@ -189,6 +202,16 @@ export interface TestRecord {
    *  test_id. Server-side computation; defaults to false on older
    *  API responses that don't carry the field. */
   ingested?: boolean;
+}
+
+export interface ValidationCell {
+  id: number;
+  test_id: number;
+  cell_index: number;
+  palette_entry_id: number | null;
+  expected_hex: string;
+  expected_lab: number[];   // [L*, a*, b*]
+  params: Record<string, string | number>;
 }
 
 export interface ResultSwatch {

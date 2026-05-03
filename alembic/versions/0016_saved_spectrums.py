@@ -7,8 +7,8 @@ saved_spectrum_fit_coefficients (child, one row per (channel, degree)).
 Indexed Lab bounding box on the parent supports the future colour-to-
 spectrum predictor's per-material prefilter.
 
-Revision ID: 0015
-Revises: 0014
+Revision ID: 0016
+Revises: 0015
 """
 
 from __future__ import annotations
@@ -17,8 +17,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision = "0015"
-down_revision = "0014"
+revision = "0016"
+down_revision = "0015"
 branch_labels = None
 depends_on = None
 

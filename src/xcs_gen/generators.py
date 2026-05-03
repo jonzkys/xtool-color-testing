@@ -114,6 +114,7 @@ def generate_gradient(
     retest_index: int = 0,
     material_id: str | None = None,
     hide_axis_labels: bool = False,
+    per_cell_params: list[ProcessingParams] | None = None,
 ) -> XCSProject:
     """Generate a gradient test pattern with axis annotations.
 
@@ -141,11 +142,36 @@ def generate_gradient(
 
     Returns:
         XCSProject ready to be written.
+
+    When ``per_cell_params`` is provided, it must have exactly ``x_steps``
+    entries; each cell uses its own params row instead of the
+    ``base_params`` + swept-x_param math. Single-axis (1D / wrapped) only —
+    the dual-axis path still expects a sweep. Axis labels are suppressed
+    in this mode regardless of ``hide_axis_labels`` because the swept x
+    axis is meaningless when each cell's params are independent.
     """
     if base_params is None:
         base_params = ProcessingParams()
     if annotation_params is None:
         annotation_params = _DEFAULT_ANNOTATION_PARAMS
+
+    if per_cell_params is not None:
+        # Per-cell params is a 1D-only feature (validation tests). Force
+        # the axis-label suppression on so callers don't need to remember
+        # to do it themselves; downstream the wrapped generator skips the
+        # label block entirely when per_cell_params is set, so this flag
+        # also keeps summary-line/registration math consistent.
+        hide_axis_labels = True
+        if y_param is not None:
+            raise ValueError(
+                "per_cell_params is only supported for single-axis (1D) "
+                "tests; got y_param=%r" % (y_param,),
+            )
+        if len(per_cell_params) != x_steps:
+            raise ValueError(
+                f"per_cell_params has {len(per_cell_params)} entries but "
+                f"x_steps={x_steps}",
+            )
 
     # Apply the uni/bi scan-mode toggle to both the gradient cells and the
     # annotation layer so the whole test burns consistently. Copy first to
@@ -168,9 +194,23 @@ def generate_gradient(
 
     project = XCSProject()
 
-    # Reserve space above gradient for summary text
+    # Build summary lines first so we know how much vertical space to
+    # reserve. Width-aware wrapping packs tokens into lines that fit
+    # within ``total_width`` — narrow workpieces (50 mm coins) get more
+    # lines, wide ones get fewer. Reservation tracks the actual count.
     summary_font_size = label_font_size
-    summary_h = text_height(summary_font_size) + 0.05  # text + minimal padding
+    summary_line_h = text_height(summary_font_size) + 0.1
+    sweep_line, fixed_line = _build_summary_lines(
+        x_param=x_param, x_min=x_min, x_max=x_max, x_steps=x_steps,
+        y_param=y_param, y_min=y_min, y_max=y_max, y_steps=y_steps,
+        base_params=base_params,
+    )
+    summary_lines = _wrap_summary_to_width(
+        sections=[sweep_line, fixed_line, summary_suffix],
+        max_width_mm=total_width,
+        font_size_pt=summary_font_size,
+    )
+    summary_h = len(summary_lines) * summary_line_h + 0.05
     gradient_start_y = start_y + summary_h
 
     # Registration markers (when enabled) sit at the corners of the grid.
@@ -187,16 +227,8 @@ def generate_gradient(
         start_y += _shift_y
         gradient_start_y += _shift_y
 
-    # Build summary line
-    summary = _build_summary(
-        x_param=x_param, x_min=x_min, x_max=x_max, x_steps=x_steps,
-        y_param=y_param, y_min=y_min, y_max=y_max, y_steps=y_steps,
-        base_params=base_params,
-    )
-    if summary_suffix:
-        summary = f"{summary} / {summary_suffix}"
     _add_summary_text(
-        project, summary,
+        project, summary_lines,
         x=start_x, y=start_y,
         font_size=summary_font_size,
         annotation_params=annotation_params,
@@ -228,6 +260,7 @@ def generate_gradient(
             annotation_params=annotation_params,
             cell_shape=cell_shape,
             hide_axis_labels=hide_axis_labels,
+            per_cell_params=per_cell_params,
         )
 
     if registration_mode != "off" and test_id is not None:
@@ -265,7 +298,47 @@ def generate_gradient(
     return project
 
 
-def _build_summary(
+def _wrap_summary_to_width(
+    *,
+    sections: list[str],
+    max_width_mm: float,
+    font_size_pt: float,
+) -> list[str]:
+    """Pack semantic sections into lines that fit within ``max_width_mm``.
+
+    Each section is allowed to spill onto multiple lines when its
+    rendered width exceeds the budget — words are broken on spaces,
+    greedily packed. Empty sections are dropped. A new section never
+    shares a line with the previous one (the user-facing register —
+    sweep / fixed / suffix — is preserved as line breaks even when
+    width is generous, so the label reads consistently across narrow
+    and wide workpieces).
+    """
+    out: list[str] = []
+    for section in sections:
+        if not section:
+            continue
+        if text_width(section, font_size_pt) <= max_width_mm:
+            out.append(section)
+            continue
+        # Greedy word-wrap: pack tokens until the next one would tip
+        # the rendered width past the budget, then start a fresh line.
+        tokens = section.split()
+        current: list[str] = []
+        for tok in tokens:
+            candidate = " ".join(current + [tok]) if current else tok
+            if text_width(candidate, font_size_pt) <= max_width_mm:
+                current.append(tok)
+            else:
+                if current:
+                    out.append(" ".join(current))
+                current = [tok]
+        if current:
+            out.append(" ".join(current))
+    return out
+
+
+def _build_summary_lines(
     *,
     x_param: str,
     x_min: float,
@@ -276,15 +349,23 @@ def _build_summary(
     y_max: float,
     y_steps: int,
     base_params: ProcessingParams,
-) -> str:
-    """Build a 1-2 line summary string of the gradient parameters."""
-    parts = [
+) -> tuple[str, str]:
+    """Build a 2-line summary of the gradient parameters.
+
+    Line 1: sweep description (x range, optional y range).
+    Line 2: fixed params (the ones not being swept).
+
+    Splitting like this keeps the summary on narrow workpieces (e.g.
+    50 mm coins) — the joined single line would overflow the grid.
+    """
+    sweep_parts = [
         f"{x_param} {_format_value(x_param, x_min)}-{_format_value(x_param, x_max)}",
     ]
     if y_param:
-        parts.append(f"{y_param} {_format_value(y_param, y_min)}-{_format_value(y_param, y_max)}")
+        sweep_parts.append(
+            f"{y_param} {_format_value(y_param, y_min)}-{_format_value(y_param, y_max)}",
+        )
 
-    # Add fixed params (skip the one being varied)
     x_field = _PARAM_MAP.get(x_param, x_param)
     y_field = _PARAM_MAP.get(y_param, y_param) if y_param else None
 
@@ -302,31 +383,36 @@ def _build_summary(
     if x_field != "repeat" and y_field != "repeat" and base_params.repeat > 1:
         fixed.append(f"x{base_params.repeat}")
 
-    parts.append(" ".join(fixed))
-    return " / ".join(parts)
+    return " / ".join(sweep_parts), " ".join(fixed)
 
 
 def _add_summary_text(
     project: XCSProject,
-    summary: str,
+    lines: list[str],
     *,
     x: float,
     y: float,
     font_size: float,
     annotation_params: ProcessingParams,
 ) -> None:
-    """Add a summary text element above the gradient."""
+    """Add summary text element(s) above the gradient. Each entry in
+    ``lines`` is rendered as its own TEXT display, stacked vertically
+    with ``text_height(font_size) + 0.1`` mm of leading."""
     ann_layer = ANNOTATION_LAYER_COLOR
-    text_disp = make_text_display(
-        summary, x=x, y=y,
-        font_size=font_size, layer_color=ann_layer,
-    )
-    project.extra_displays.append(text_disp)
-    project.extra_device_entries.append(
-        build_device_entry(
-            text_disp["id"], "TEXT", "COLOR_FILL_ENGRAVE", annotation_params
+    line_h = text_height(font_size) + 0.1
+    for i, line in enumerate(lines):
+        if not line:
+            continue
+        text_disp = make_text_display(
+            line, x=x, y=y + i * line_h,
+            font_size=font_size, layer_color=ann_layer,
         )
-    )
+        project.extra_displays.append(text_disp)
+        project.extra_device_entries.append(
+            build_device_entry(
+                text_disp["id"], "TEXT", "COLOR_FILL_ENGRAVE", annotation_params
+            )
+        )
 
 
 def _generate_wrapped(
@@ -349,16 +435,28 @@ def _generate_wrapped(
     annotation_params: ProcessingParams,
     cell_shape: str = "rect",
     hide_axis_labels: bool = False,
+    per_cell_params: list[ProcessingParams] | None = None,
 ) -> None:
-    """Generate a single-axis gradient, optionally wrapped across rows."""
+    """Generate a single-axis gradient, optionally wrapped across rows.
+
+    When ``per_cell_params`` is provided, each cell uses ``per_cell_params[i]``
+    verbatim instead of copying ``base_params`` and overlaying ``x_values[i]``
+    onto ``x_param``. The axis-label block is also skipped — the swept x
+    axis carries no meaning in this mode.
+    """
     per_row = math.ceil(x_steps / rows)
     elem_w = (total_width - max(0, per_row - 1) * gap) / per_row
 
     ann_layer = ANNOTATION_LAYER_COLOR
 
+    # Per-cell-params mode is the validation-test path: cells are
+    # independent samples, not points along a sweep, so axis labels make
+    # no sense. Suppress them regardless of the caller's flag.
+    suppress_labels = hide_axis_labels or per_cell_params is not None
+
     # For multi-row: compute the space needed for labels below each row
     # and ensure row_gap is large enough (only matters for non-last rows)
-    ann_space = 0.0 if hide_axis_labels else (
+    ann_space = 0.0 if suppress_labels else (
         tick_length + 0.05 + text_height(label_font_size) + 0.05
     )
     effective_row_gap = max(row_gap, ann_space) if rows > 1 else 0
@@ -375,8 +473,11 @@ def _generate_wrapped(
         # Generate elements for this row
         for i in range(row_start, row_end):
             col = i - row_start
-            params = _copy_params(base_params)
-            _set_param(params, x_param, x_values[i])
+            if per_cell_params is not None:
+                params = per_cell_params[i]
+            else:
+                params = _copy_params(base_params)
+                _set_param(params, x_param, x_values[i])
 
             _append_cell(
                 project,
@@ -387,7 +488,7 @@ def _generate_wrapped(
                 processing_type=processing_type,
             )
 
-        if not hide_axis_labels:
+        if not suppress_labels:
             # Labels below each row
             bottom_y = row_y + row_height
             label_y = bottom_y + tick_length + 0.05
@@ -761,11 +862,11 @@ def generate_from_image(
     # Summary text
     import os
     filename = os.path.basename(image_path)
-    summary = f"{filename} / {param} {_format_value(param, param_min)}-{_format_value(param, param_max)} / {cols}x{rows}"
     summary_font_size = 1.2
     summary_h = text_height(summary_font_size) + 0.05
     _add_summary_text(
-        project, summary,
+        project,
+        [f"{filename} / {param} {_format_value(param, param_min)}-{_format_value(param, param_max)} / {cols}x{rows}"],
         x=start_x, y=start_y,
         font_size=summary_font_size,
         annotation_params=annotation_params,

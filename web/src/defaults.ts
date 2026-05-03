@@ -58,6 +58,7 @@ export function defaultSpec(profile?: ValidationProfile): TestSpec {
     y_param: null, y_min: null, y_max: null, y_steps: null,
     rows: 1, width_mm: 50, height_mm: 10, gap_mm: 0.5,
     cell_shape: "rect", square_cells: true, angle_mode: "fixed",
+    crosshatch: false,
     unidirectional: false,
     hide_axis_labels: false,
     base_params: defaultBaseParams(profile),
