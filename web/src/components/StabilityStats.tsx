@@ -24,6 +24,10 @@ interface Props {
   onHover: (cellIndex: number) => void;
   onHoverLeave: () => void;
   onClick: (cellIndex: number) => void;
+  /** Click handler for the per-result card body — opens the per-result
+   *  modal on the page. Optional so a future caller without modal
+   *  state still gets the bare cards. */
+  onResultCardClick?: (resultId: number) => void;
   /** Slot rendered at the top of the scrollable card stack — used by
    *  the page to inject the focused-cell drilldown so it shares the
    *  strip's scroll context with the long-form stat cards. */
@@ -44,6 +48,7 @@ export function StabilityStats({
   onHover,
   onHoverLeave,
   onClick,
+  onResultCardClick,
   prependSlot,
 }: Props) {
   const perResult = useMemo(
@@ -101,6 +106,11 @@ export function StabilityStats({
                   onHover={onHover}
                   onHoverLeave={onHoverLeave}
                   onClick={onClick}
+                  onCardClick={
+                    onResultCardClick
+                      ? () => onResultCardClick(stat.resultId)
+                      : undefined
+                  }
                 />
               ))}
             {burnVsCamera && (
@@ -137,6 +147,7 @@ function ResultStatCard({
   onHover,
   onHoverLeave,
   onClick,
+  onCardClick,
 }: {
   stat: PerResultStats;
   colour: string;
@@ -144,16 +155,43 @@ function ResultStatCard({
   onHover: (cellIndex: number) => void;
   onHoverLeave: () => void;
   onClick: (cellIndex: number) => void;
+  /** Open this result in the per-result modal. ``undefined`` keeps the
+   *  card non-clickable (legacy behaviour). */
+  onCardClick?: () => void;
 }) {
+  // Using a wrapping <div> so the existing Max-ΔE button can still bind
+  // its own click without nested-button issues. The card-level click
+  // bubbles up from a transparent backdrop button rendered inside the
+  // header so the per-cell focus link in the body keeps working.
+  const interactive = onCardClick != null;
   return (
-    <div className="rounded-[8px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] overflow-hidden">
-      <header className="flex items-center gap-2 px-2.5 py-1.5 border-b border-[color:var(--color-border)]/60">
+    <div
+      className={cn(
+        "relative rounded-[8px] border bg-[color:var(--color-surface-elevated)] overflow-hidden",
+        "border-[color:var(--color-border)]",
+        interactive &&
+          "transition-colors hover:border-[color:var(--color-primary)]/50 hover:bg-[color:var(--color-primary-tint)]/30",
+      )}
+    >
+      <header className="relative flex items-center gap-2 px-2.5 py-1.5 border-b border-[color:var(--color-border)]/60">
+        {interactive && (
+          <button
+            type="button"
+            onClick={onCardClick}
+            aria-label={`Open result ${stat.resultId} modal`}
+            title="Open warped photo + stats"
+            className={cn(
+              "absolute inset-0 z-0",
+              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[color:var(--color-primary)]/60",
+            )}
+          />
+        )}
         <span
           aria-hidden
-          className="h-2.5 w-2.5 rounded-full shrink-0"
+          className="relative z-[1] h-2.5 w-2.5 rounded-full shrink-0"
           style={{ background: colour }}
         />
-        <div className="flex-1 min-w-0">
+        <div className="relative z-[1] flex-1 min-w-0 pointer-events-none">
           <div className="font-mono text-[10.5px] tabular-nums text-[color:var(--color-ink)] truncate">
             {stat.label}
           </div>
@@ -161,6 +199,15 @@ function ResultStatCard({
             id {stat.resultId} · {stat.sampleCount}/{stat.totalCells} cells
           </div>
         </div>
+        {interactive && (
+          <span
+            aria-hidden
+            className="relative z-[1] font-mono text-[10px] leading-none text-[color:var(--color-ink-subtle)] pointer-events-none"
+            title="open"
+          >
+            ⤴
+          </span>
+        )}
       </header>
       {stat.sampleCount === 0 ? (
         <div className="px-2.5 py-3 text-center font-mono text-[9.5px] tracking-[0.14em] uppercase text-[color:var(--color-ink-subtle)]">

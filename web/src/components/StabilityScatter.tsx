@@ -258,11 +258,13 @@ export function StabilityScatter({
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   // Threshold (squared, in viewBox px) for treating a cursor as "on" a
-  // dot for focus purposes. Set generously so the user doesn't need to
-  // pixel-hunt — the existing hover-tooltip already uses the
-  // nearest-dot convention with no threshold, so we keep that for
-  // tooltip detection but constrain focus dispatch.
-  const HIT_RADIUS_SQ = 22 * 22;
+  // dot. Tightened to ~14 px because at 22 px the threshold reached
+  // farther than the typical inter-cell gap on a dense scatter — the
+  // cursor would "snap" onto cell B while pointing at empty space
+  // between B and C, and the cross-view halo would jump confusingly.
+  // 14 px is roughly the dot's own radius + a small forgiving margin,
+  // small enough that empty-space hovers stay empty.
+  const HIT_RADIUS_SQ = 14 * 14;
 
   // Cursor → nearest-dot lookup. Returns the row index (or -1) plus
   // the squared distance so callers can decide whether the cursor was
@@ -291,10 +293,17 @@ export function StabilityScatter({
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const { i, d } = nearestRow(e);
-    setHoverIdx(i >= 0 ? i : null);
+    // Local hover (drives the tooltip + crosshair) honours the same
+    // hit radius the cross-view dispatch uses. The previous version
+    // set hoverIdx unconditionally on the nearest dot — even when the
+    // cursor was 50 px out in empty space — which made the tooltip
+    // appear to "follow" your cursor with stale data and caused the
+    // user-reported "snapping from too far away" feel.
     if (i >= 0 && d <= HIT_RADIUS_SQ) {
+      setHoverIdx(i);
       onHover(rows[i].cell.cell_index);
     } else {
+      setHoverIdx(null);
       onHoverLeave();
     }
   };

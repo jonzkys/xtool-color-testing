@@ -12,6 +12,7 @@ import {
 } from "../components/StabilityChart";
 import { StabilityFocusedCellPanel } from "../components/StabilityFocusedCellPanel";
 import { StabilityPicker } from "../components/StabilityPicker";
+import { StabilityResultModal } from "../components/StabilityResultModal";
 import { StabilityStats } from "../components/StabilityStats";
 import type { Material } from "../library";
 import { useRoute } from "../router";
@@ -73,6 +74,12 @@ export function StabilityPage() {
     { cellIndex: number; source: FocusSource } | null
   >(null);
 
+  // Per-result modal: id of the result whose warped photo + stats are
+  // currently visible. Lifted to the page so the modal survives focus
+  // toggles further down the strip. ``null`` = closed.
+  const [selectedResultIdForModal, setSelectedResultIdForModal] =
+    useState<number | null>(null);
+
   // Priority: pinned beats transient. The earlier order (transient
   // first) caused the user-reported bug where clicking a cell to pin
   // it, then moving the cursor over a neighbouring cell, silently
@@ -112,10 +119,13 @@ export function StabilityPage() {
   }, []);
 
   // Switching base test → drop focus. The cell index is meaningless on
-  // a different test's grid.
+  // a different test's grid; the modal ties to a specific result id so
+  // it would point at a row from the wrong test once the picker
+  // changes.
   useEffect(() => {
     setTransientCell(null);
     setPinnedCell(null);
+    setSelectedResultIdForModal(null);
   }, [selectedTestId]);
 
   // Load materials + validation tests on mount; if a test id arrived
@@ -356,6 +366,7 @@ export function StabilityPage() {
           onHover={(idx) => handleHover(idx, "stats")}
           onHoverLeave={() => handleHoverLeave("stats")}
           onClick={(idx) => handleClick(idx, "stats")}
+          onResultCardClick={setSelectedResultIdForModal}
           prependSlot={
             focusedCell != null && testDetail != null ? (
               <StabilityFocusedCellPanel
@@ -367,6 +378,7 @@ export function StabilityPage() {
                 cellsPerRow={cellsPerRow}
                 focusedCell={focusedCell}
                 onCellClick={(idx) => handleClick(idx, "stats")}
+                onRunOpen={setSelectedResultIdForModal}
                 onClose={() => {
                   setTransientCell(null);
                   setPinnedCell(null);
@@ -376,6 +388,18 @@ export function StabilityPage() {
           }
         />
       </div>
+      {testDetail != null && (
+        <StabilityResultModal
+          open={selectedResultIdForModal != null}
+          result={
+            selectedResultIdForModal != null
+              ? resultCache[selectedResultIdForModal] ?? null
+              : null
+          }
+          test={testDetail}
+          onClose={() => setSelectedResultIdForModal(null)}
+        />
+      )}
     </div>
   );
 }

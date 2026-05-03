@@ -13,6 +13,9 @@ interface FocusedCellPanelProps {
   /** Re-pin focus on the same cell — used by the close button (clears)
    *  and chip clicks (re-asserts). */
   onCellClick: (cellIndex: number) => void;
+  /** Open this run in the per-result modal. ``undefined`` = no
+   *  affordance is rendered (legacy behaviour). */
+  onRunOpen?: (resultId: number) => void;
   /** Clear focus everywhere. */
   onClose: () => void;
   /** Used purely for the `aria-pressed` styling — when ``true`` we
@@ -38,6 +41,7 @@ export function StabilityFocusedCellPanel({
   results,
   cellIndex,
   onCellClick,
+  onRunOpen,
   onClose,
   cellsPerRow,
 }: FocusedCellPanelProps) {
@@ -173,6 +177,9 @@ export function StabilityFocusedCellPanel({
                   label={shortStamp(m.result.uploaded_at)}
                   dE={dE}
                   primary={isSingleton}
+                  onOpen={
+                    onRunOpen ? () => onRunOpen(m.result.id) : undefined
+                  }
                 />
               );
             })}
@@ -277,7 +284,13 @@ function Section({
 }) {
   return (
     <div className="px-2.5 py-2 border-t border-[color:var(--color-primary)]/20 first-of-type:border-t-0">
-      <div className="font-mono text-[9px] font-semibold tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)] mb-1.5">
+      {/* Allow wrap: long labels like "Residual · vs expected
+          (burn-mean)" overflow the 280-px right column when forced
+          single-line with letter tracking. break-words handles the
+          parenthetical token cleanly. Slightly tighter tracking
+          (0.14em vs 0.18em) buys back space without losing the
+          mono-caps register the rest of the strip uses. */}
+      <div className="font-mono text-[9px] font-semibold tracking-[0.14em] uppercase text-[color:var(--color-ink-subtle)] mb-1.5 break-words leading-snug">
         {label}
       </div>
       {children}
@@ -295,12 +308,18 @@ function RunChipRow({
   label,
   dE,
   primary,
+  onOpen,
 }: {
   hex: string;
   colour: string;
   label: string;
   dE: number;
   primary: boolean;
+  /** When provided, renders a small "→" pip on the right that opens
+   *  this run in the per-result modal. The chip + hex stay dedicated
+   *  to their existing copy-on-click affordance so this stays
+   *  discoverable rather than hijacking the row. */
+  onOpen?: () => void;
 }) {
   return (
     <li className="flex items-center gap-2 min-w-0">
@@ -321,6 +340,23 @@ function RunChipRow({
           <span className="font-mono text-[10px] tabular-nums text-[color:var(--color-ink-subtle)]">
             ΔE {dE.toFixed(1)}
           </span>
+          {onOpen && (
+            <button
+              type="button"
+              onClick={onOpen}
+              aria-label={`Open run ${label} in result modal`}
+              title="Open warped photo + stats"
+              className={cn(
+                "font-mono text-[11px] leading-none px-1 -mr-0.5 rounded-[3px]",
+                "text-[color:var(--color-primary)]/70 hover:text-[color:var(--color-primary)]",
+                "hover:bg-[color:var(--color-primary)]/10",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--color-primary)]/60",
+                "transition-colors",
+              )}
+            >
+              →
+            </button>
+          )}
         </span>
       </div>
     </li>
@@ -344,8 +380,14 @@ function BurnMeanRow({
         ariaLabel={`burn mean swatch ${hex}`}
       />
       <div className="flex-1 min-w-0 flex items-baseline justify-between gap-2">
-        <span className="font-mono text-[10px] font-semibold tracking-[0.18em] uppercase text-[color:var(--color-primary)] truncate">
-          Burn mean
+        {/* Tighter tracking + shorter label so the chip + label +
+            hex + ΔE all fit on the 280-px column without the label
+            ellipsing into "BURN ME…". The primary-tinted chip ring
+            already encodes "this is the burn-mean estimate"; the
+            word "MEAN" with its primary tint reads unambiguously
+            in context. */}
+        <span className="font-mono text-[10px] font-semibold tracking-[0.12em] uppercase text-[color:var(--color-primary)] truncate">
+          Mean
         </span>
         <span className="flex items-baseline gap-1.5 shrink-0">
           <CopyableHex hex={hex} compact />
