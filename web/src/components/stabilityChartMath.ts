@@ -277,3 +277,76 @@ export function binHistogram(
   for (const c of counts) if (c > maxCount) maxCount = c;
   return { counts, binWidth, maxCount };
 }
+
+/* ─── Reference lines (mean + binned trend) ───────────────────────────────
+ *
+ * Two summaries we draw on top of the dot cloud:
+ *  - `seriesMeanY` collapses a series to one horizontal line so users can
+ *    eyeball the systematic per-run shift (run 1 ran +10° hot, run 2 +8°).
+ *  - `binnedMean` slices the X axis into equal-width buckets and averages
+ *    Y inside each, producing a per-run trend trace. Bins with too few
+ *    samples are returned with NaN so the renderer can break the line.
+ */
+
+/** Series mean Y. Skips NaN. Returns null if < 3 finite values — the
+ *  caller treats that as "too noisy to draw confidently". */
+export function seriesMeanY(values: number[]): number | null {
+  let n = 0;
+  let s = 0;
+  for (const v of values) {
+    if (!Number.isFinite(v)) continue;
+    s += v;
+    n += 1;
+  }
+  if (n < 3) return null;
+  return s / n;
+}
+
+/** One bin in a binned-mean trend line. */
+export interface BinnedMeanBin {
+  /** Bin centre in axis units. */
+  center: number;
+  /** Number of points contributed to this bin. */
+  n: number;
+  /** Mean Y of the bin's points; NaN when n < 2 so the polyline can
+   *  break across sparse regions instead of extrapolating. */
+  mean: number;
+}
+
+/** Bin `(x, y)` pairs by X into `binCount` equal-width buckets spanning
+ *  `[xMin, xMax]`. Returns one entry per bin in left-to-right order.
+ *  Bins with fewer than 2 contributing points carry `mean = NaN` so the
+ *  renderer can break the trend line across them; bins with no points
+ *  also report `n = 0`. NaN coordinates and out-of-range X are skipped.
+ *  Values exactly at `xMax` land in the last bin (closed-right edge). */
+export function binnedMean(
+  points: { x: number; y: number }[],
+  xMin: number,
+  xMax: number,
+  binCount: number,
+): BinnedMeanBin[] {
+  if (!Number.isFinite(xMin) || !Number.isFinite(xMax) || binCount <= 0) {
+    return [];
+  }
+  const range = xMax - xMin;
+  if (range <= 0) return [];
+  const binWidth = range / binCount;
+  const sums = new Array<number>(binCount).fill(0);
+  const counts = new Array<number>(binCount).fill(0);
+  for (const p of points) {
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+    if (p.x < xMin || p.x > xMax) continue;
+    let idx = Math.floor((p.x - xMin) / binWidth);
+    if (idx >= binCount) idx = binCount - 1;
+    if (idx < 0) idx = 0;
+    sums[idx] += p.y;
+    counts[idx] += 1;
+  }
+  const out: BinnedMeanBin[] = [];
+  for (let i = 0; i < binCount; i++) {
+    const center = xMin + (i + 0.5) * binWidth;
+    const n = counts[i];
+    out.push({ center, n, mean: n < 2 ? NaN : sums[i] / n });
+  }
+  return out;
+}

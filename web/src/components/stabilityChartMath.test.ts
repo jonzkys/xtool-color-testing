@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { binHistogram } from "./stabilityChartMath";
+import { binHistogram, binnedMean, seriesMeanY } from "./stabilityChartMath";
 
 describe("binHistogram", () => {
   it("buckets a small known input into the expected counts", () => {
@@ -54,5 +54,68 @@ describe("binHistogram", () => {
     const h = binHistogram([10, 12.5, 14, 19, 20], 10, 20, 4);
     expect(h.counts).toEqual([1, 2, 0, 2]);
     expect(h.binWidth).toBeCloseTo(2.5);
+  });
+});
+
+describe("seriesMeanY", () => {
+  it("returns null for empty, all-NaN, or single-element input", () => {
+    expect(seriesMeanY([])).toBeNull();
+    expect(seriesMeanY([NaN, NaN])).toBeNull();
+    expect(seriesMeanY([5])).toBeNull();
+    // Two finite values still aren't enough to draw confidently.
+    expect(seriesMeanY([1, 2])).toBeNull();
+  });
+
+  it("returns the arithmetic mean of finite values for normal input", () => {
+    expect(seriesMeanY([1, 2, 3])).toBeCloseTo(2);
+    expect(seriesMeanY([10, 20, 30, 40])).toBeCloseTo(25);
+    // NaN is skipped, not propagated.
+    expect(seriesMeanY([1, NaN, 2, 3])).toBeCloseTo(2);
+  });
+});
+
+describe("binnedMean", () => {
+  it("places each point at its bin's centre", () => {
+    // Range [0, 10], 5 bins of width 2 → centres at 1, 3, 5, 7, 9.
+    const bins = binnedMean(
+      [
+        { x: 0.5, y: 1 },
+        { x: 1.5, y: 3 },
+        { x: 2.5, y: 10 },
+        { x: 3.5, y: 20 },
+        { x: 8.5, y: 100 },
+        { x: 9.5, y: 200 },
+      ],
+      0,
+      10,
+      5,
+    );
+    expect(bins.map((b) => b.center)).toEqual([1, 3, 5, 7, 9]);
+    expect(bins[0].n).toBe(2);
+    expect(bins[0].mean).toBeCloseTo(2);
+    expect(bins[1].n).toBe(2);
+    expect(bins[1].mean).toBeCloseTo(15);
+    expect(bins[4].n).toBe(2);
+    expect(bins[4].mean).toBeCloseTo(150);
+  });
+
+  it("collapses to NaN mean for empty bins (and bins with a single point)", () => {
+    const bins = binnedMean(
+      [
+        { x: 1, y: 5 },
+        { x: 5, y: 5 }, // alone in its bin
+      ],
+      0,
+      10,
+      5,
+    );
+    // Bin 0: 2 points required → NaN since only 1 sits there.
+    expect(bins[0].n).toBe(1);
+    expect(Number.isNaN(bins[0].mean)).toBe(true);
+    // Bins 1, 3, 4 are entirely empty.
+    expect(bins[1].n).toBe(0);
+    expect(Number.isNaN(bins[1].mean)).toBe(true);
+    expect(bins[3].n).toBe(0);
+    expect(Number.isNaN(bins[3].mean)).toBe(true);
   });
 });

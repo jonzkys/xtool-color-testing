@@ -3,10 +3,17 @@ import type { Lab } from "../color/math";
 import type { ValidationCell } from "../types";
 import { cn } from "../ui";
 import {
+  computeTrendBins,
+  MeanLineLayer,
+  TrendLineLayer,
+  trendApplicable,
+  trendBinCount,
+  type TrendBinSummary,
+} from "./stabilityChartLayers";
+import {
   AxisMeta,
   binHistogram,
   fmtTick,
-  formatYValue,
   isDeltaAxis,
   niceBounds,
   niceTicks,
@@ -15,6 +22,7 @@ import {
   XAxis,
   YAxis,
 } from "./stabilityChartMath";
+import { StabilityHoverCard } from "./stabilityChartTooltip";
 
 export interface ScatterRow {
   cell: ValidationCell;
@@ -138,7 +146,46 @@ export function StabilityScatter({
   const multiRun = series.length >= 2;
   const hasAnySpread = rowSpread.some((s) => s != null);
   const [showConnectors, setShowConnectors] = useState(true);
+  const [showTrend, setShowTrend] = useState(false);
   const connectorsActive = multiRun && hasAnySpread && showConnectors;
+
+  // Per-series flat list of finite (x, y) + projected pixels. Reused by
+  // the mean line layer, the trend line layer, and the tooltip's
+  // "trend at h=B°" lookup so we only walk `rows` once.
+  const perSeriesPoints = useMemo(() => {
+    return series.map((_, sIdx) => {
+      const points: { x: number; y: number; xPx: number; yPx: number }[] = [];
+      for (const r of rows) {
+        const p = r.perSeries[sIdx];
+        if (!p || !Number.isFinite(p.y)) continue;
+        points.push({
+          x: r.x,
+          y: p.y,
+          xPx: xToPx(r.x),
+          yPx: yToPx(p.y),
+        });
+      }
+      return { points };
+    });
+    // xToPx/yToPx are pure projections of the scale state — refreshing
+    // when bounds or rows change is sufficient.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [series, rows, xMin, xMax, yMin, yMax]);
+
+  const trendBins = useMemo<TrendBinSummary[][]>(() => {
+    if (!trendApplicable(xAxis)) return [];
+    return computeTrendBins(
+      perSeriesPoints,
+      xMin,
+      xMax,
+      trendBinCount(xAxis, rows.length),
+    );
+  }, [perSeriesPoints, xAxis, xMin, xMax, rows.length]);
+
+  const trendActive = showTrend && trendApplicable(xAxis) && rows.length > 0;
+  const trendBinTotal = trendApplicable(xAxis)
+    ? trendBinCount(xAxis, rows.length)
+    : 0;
 
   // Marginal histograms project onto the same axis bounds as the
   // scatter so bars align with the plot grid.
@@ -181,6 +228,19 @@ export function StabilityScatter({
       ? { x: xToPx(hovered.x), y: yToPx(meanY(hovered)) }
       : null;
   const hoveredSpread = hoverIdx != null ? rowSpread[hoverIdx] : null;
+  // Resolve which bin the hover sits inside so the tooltip can echo
+  // each series' trend value at that X. Returns null when trend is off
+  // or the cursor lands outside the binned range.
+  const hoveredBinIdx = useMemo(() => {
+    if (!trendActive || hovered == null) return null;
+    if (trendBinTotal <= 0) return null;
+    const range = xMax - xMin;
+    if (range <= 0) return null;
+    let idx = Math.floor(((hovered.x - xMin) / range) * trendBinTotal);
+    if (idx >= trendBinTotal) idx = trendBinTotal - 1;
+    if (idx < 0) idx = 0;
+    return idx;
+  }, [trendActive, hovered, xMin, xMax, trendBinTotal]);
 
   // Bottom strip baseline sits at the bottom edge of the strip; bars
   // grow upward toward the plot area.
@@ -285,6 +345,19 @@ export function StabilityScatter({
             );
           })}
 
+        {/* Per-series mean line. Always on; sits below dots so a faint
+            reference doesn't outshout the cell-level cloud. Caption is
+            suppressed when it would land on the right marginal strip. */}
+        <MeanLineLayer
+          series={series}
+          perSeriesPoints={perSeriesPoints}
+          yMeta={yMeta}
+          yToPx={yToPx}
+          plotLeft={PADL}
+          plotRight={W - PADR}
+          captionMaxX={yStripLeft - 2}
+        />
+
         {series.map((s, sIdx) => {
           const colour = seriesColour(sIdx);
           return (
@@ -311,6 +384,20 @@ export function StabilityScatter({
             </g>
           );
         })}
+
+        {/* Smoothed binned-mean trend line — sits above dots so the line
+            reads as the answer to "where is each run going on average?". */}
+        {trendActive && trendBinTotal > 0 && (
+          <TrendLineLayer
+            series={series}
+            perSeriesPoints={perSeriesPoints}
+            xMin={xMin}
+            xMax={xMax}
+            binCount={trendBinTotal}
+            xToPx={xToPx}
+            yToPx={yToPx}
+          />
+        )}
 
         {hoveredAnchor && (
           <line
@@ -435,21 +522,51 @@ export function StabilityScatter({
         </text>
       </svg>
 
-      {multiRun && hasAnySpread && (
-        <div className="absolute top-2 right-2 z-10">
-          <ConnectorsToggle
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
+        {trendActive && (
+          <span
+            aria-hidden
+            className="font-mono text-[9.5px] tracking-[0.22em] uppercase font-semibold text-[color:var(--color-ink-subtle)]"
+          >
+            Trend · {trendBinTotal} bins
+          </span>
+        )}
+        {trendApplicable(xAxis) && rows.length > 0 && (
+          <ToolbarPill
+            label="Trend"
+            on={showTrend}
+            onChange={setShowTrend}
+            titleOn="Hide hue-binned trend"
+            titleOff="Show hue-binned trend"
+          />
+        )}
+        {multiRun && hasAnySpread && (
+          <ToolbarPill
+            label="Connectors"
             on={showConnectors}
             onChange={setShowConnectors}
+            titleOn="Hide spread connectors"
+            titleOff="Show spread connectors"
           />
-        </div>
-      )}
+        )}
+      </div>
 
       {hovered && hoveredAnchor && (
-        <HoverCard
+        <StabilityHoverCard
           row={hovered}
           series={series}
+          xMeta={xMeta}
           yMeta={yMeta}
           spread={multiRun ? hoveredSpread?.spread ?? null : null}
+          trendRows={
+            trendActive && hoveredBinIdx != null
+              ? series.map((_, sIdx) => {
+                  const bin = trendBins[sIdx]?.[hoveredBinIdx];
+                  if (!bin || !Number.isFinite(bin.mean)) return null;
+                  return { center: bin.center, mean: bin.mean };
+                })
+              : null
+          }
           anchorPx={hoveredAnchor}
           plotW={W}
           plotH={H}
@@ -471,28 +588,27 @@ function meanY(row: ScatterRow): number {
   return n > 0 ? s / n : 0;
 }
 
-/** Spread is always non-negative (max - min); strip the formatter's
- *  leading "+" so the value reads as a magnitude, not a directional
- *  delta. */
-function formatSpread(v: number, unit: string): string {
-  return formatYValue(Math.abs(v), unit).replace(/^\+/, "");
-}
-
 /* ─── Toolbar ─────────────────────────────────────────────────────────── */
 
-function ConnectorsToggle({
+function ToolbarPill({
+  label,
   on,
   onChange,
+  titleOn,
+  titleOff,
 }: {
+  label: string;
   on: boolean;
   onChange: (next: boolean) => void;
+  titleOn: string;
+  titleOff: string;
 }) {
   return (
     <button
       type="button"
       onClick={() => onChange(!on)}
       aria-pressed={on}
-      title={on ? "Hide spread connectors" : "Show spread connectors"}
+      title={on ? titleOn : titleOff}
       className={cn(
         "h-7 px-2.5 rounded-[6px] font-mono text-[10.5px] tracking-[0.12em] uppercase font-semibold tabular-nums border transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
@@ -501,114 +617,8 @@ function ConnectorsToggle({
           : "bg-[color:var(--color-surface)] border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
       )}
     >
-      Connectors
+      {label}
     </button>
   );
 }
 
-function HoverCard({
-  row,
-  series,
-  yMeta,
-  spread,
-  anchorPx,
-  plotW,
-  plotH,
-}: {
-  row: ScatterRow;
-  series: SeriesInput[];
-  yMeta: AxisMeta;
-  spread: number | null;
-  anchorPx: { x: number; y: number };
-  plotW: number;
-  plotH: number;
-}) {
-  // Edge-aware: prefer right + below, flip on overflow. Anchor is
-  // expressed in viewBox space so we use percent positioning to stay
-  // honest under preserveAspectRatio="xMidYMid meet".
-  const TOOLTIP_W = 280;
-  const TOOLTIP_H = 56 + series.length * 22 + (spread != null ? 18 : 0);
-  const leftPct = (anchorPx.x / plotW) * 100;
-  const topPct = (anchorPx.y / plotH) * 100;
-  const rightOverflow = leftPct > 60;
-  const bottomOverflow = topPct > 60;
-  const transform = `translate(${rightOverflow ? `calc(-100% - 14px)` : `14px`}, ${bottomOverflow ? `calc(-100% - 14px)` : `14px`})`;
-  return (
-    <div
-      role="tooltip"
-      className="absolute z-10 rounded-[6px] border border-[color:var(--color-border-strong)] bg-[color:var(--color-surface)] shadow-lg p-2.5 pointer-events-none"
-      style={{
-        left: `${leftPct}%`,
-        top: `${topPct}%`,
-        width: TOOLTIP_W,
-        minHeight: TOOLTIP_H,
-        transform,
-      }}
-    >
-      <div className="flex items-baseline justify-between mb-1.5">
-        <div className="font-mono text-[10.5px] tracking-[0.16em] uppercase font-semibold text-[color:var(--color-ink-subtle)]">
-          cell #{row.cell.cell_index}
-        </div>
-        <div className="font-mono text-[10px] tabular-nums text-[color:var(--color-ink-subtle)]">
-          {row.cell.expected_hex}
-        </div>
-      </div>
-      <div className="flex items-center gap-2 mb-2">
-        <div
-          aria-hidden
-          className="h-7 w-7 rounded-[3px] border border-[color:var(--color-border-strong)] shrink-0"
-          style={{ backgroundColor: row.cell.expected_hex }}
-        />
-        <div className="font-mono text-[10px] tracking-[0.12em] uppercase text-[color:var(--color-ink-subtle)]">
-          expected
-        </div>
-      </div>
-      <div className="flex flex-col gap-1">
-        {series.map((s, i) => {
-          const p = row.perSeries[i];
-          if (!p) return null;
-          const colour = seriesColour(i);
-          const measuredHex = s.cells.get(row.cell.cell_index)?.hex ?? null;
-          return (
-            <div
-              key={s.resultId}
-              className="flex items-center gap-2 font-mono text-[10.5px] tabular-nums text-[color:var(--color-ink)]"
-            >
-              <span
-                aria-hidden
-                className="h-2.5 w-2.5 rounded-full shrink-0"
-                style={{ background: colour }}
-              />
-              {measuredHex ? (
-                <span
-                  aria-hidden
-                  className="h-4 w-4 rounded-[2px] border border-[color:var(--color-border-strong)] shrink-0"
-                  style={{ background: measuredHex }}
-                />
-              ) : (
-                <span
-                  aria-hidden
-                  className="h-4 w-4 rounded-[2px] border border-dashed border-[color:var(--color-border-strong)] shrink-0"
-                />
-              )}
-              <span className="text-[color:var(--color-ink-subtle)] truncate flex-1">
-                {s.label}
-              </span>
-              <span>
-                {Number.isFinite(p.y) ? formatYValue(p.y, yMeta.unit) : "—"}
-              </span>
-            </div>
-          );
-        })}
-        {spread != null && (
-          <div className="mt-1 pt-1 border-t border-[color:var(--color-border)] flex items-center justify-between font-mono text-[10px] tracking-[0.12em] uppercase text-[color:var(--color-ink-subtle)]">
-            <span>spread</span>
-            <span className="tabular-nums normal-case tracking-normal text-[10.5px] text-[color:var(--color-ink-muted)]">
-              {formatSpread(spread, yMeta.unit)}
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
