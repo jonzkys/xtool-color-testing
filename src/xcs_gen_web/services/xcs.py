@@ -97,6 +97,52 @@ def _cell_list_for_test(*, test: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def effective_spec_for_layout(
+    *,
+    spec: dict[str, Any],
+    kind: str = "sweep",
+    validation_cells: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Return a spec where wrapped-1D layout fields reflect the test's
+    *true* burn-time geometry.
+
+    For ``kind="validation"`` the stored spec carries the original
+    sweep's ``rows=1`` / ``x_steps``, but the burn renders one cell per
+    validation entry, wrapped onto ``ceil(cell_count / cells_per_row)``
+    physical rows. Capture, inspect, and the renderer all need to see
+    those derived values; otherwise the sampling grid hits one row even
+    though the photo has three. Mirrors the override block inside
+    :func:`bytes_for_test` so both the .xcs builder and the analysis
+    pipeline use identical layout numbers.
+
+    For ``kind="sweep"`` the spec is returned unchanged (apart from
+    ``dict(spec)`` so callers don't accidentally mutate the caller's
+    copy).
+    """
+    if kind != "validation":
+        return spec
+    import math
+    cells = validation_cells or []
+    cell_count = max(2, len(cells))
+    cells_per_row = spec.get("cells_per_row")
+    if cells_per_row and cells_per_row > 0:
+        row_count = max(1, math.ceil(cell_count / cells_per_row))
+    else:
+        row_count = max(1, spec.get("rows") or 1)
+    return {
+        **spec,
+        "hide_axis_labels": True,
+        "x_min": 0,
+        "x_max": cell_count - 1,
+        "x_steps": cell_count,
+        "rows": row_count,
+        "y_param": None,
+        "y_min": None,
+        "y_max": None,
+        "y_steps": None,
+    }
+
+
 def bytes_for_test(*, test_id: int, name: str, material_id: int,
                    spec: dict[str, Any], retest_index: int = 0,
                    machine_id: str = "F2Ultra",
@@ -128,39 +174,14 @@ def bytes_for_test(*, test_id: int, name: str, material_id: int,
             "validation_cells": validation_cells or [],
         })
         # Pin sweep-only fields to values that keep the wrapped-1D layout
-        # math honest. ``x_steps`` becomes the cell count so cell-width
-        # checks (validate_beam_widths) and gradient sizing reflect the
-        # number of cells we're actually rendering. Y is ignored. The
-        # x_min/x_max pair must be distinct to satisfy the Project
-        # validator — they're cosmetic for validation since
-        # ``per_cell_params`` overrides any sweep-derived value at render
-        # time. We pick x_min=0, x_max=cell_count-1 so the values map to
-        # cell indices for any tooling that introspects the spec.
-        #
-        # ``rows`` is derived from ``cells_per_row`` so the renderer wraps
-        # cells across the right number of physical rows. Without this,
-        # the spec's default ``rows=1`` would put every cell on one
-        # row regardless of how many were picked.
-        cells = validation_cells or []
-        cell_count = max(2, len(cells))
-        cells_per_row = spec.get("cells_per_row")
-        if cells_per_row and cells_per_row > 0:
-            import math
-            row_count = max(1, math.ceil(cell_count / cells_per_row))
-        else:
-            row_count = max(1, spec.get("rows") or 1)
-        spec = {
-            **spec,
-            "hide_axis_labels": True,
-            "x_min": 0,
-            "x_max": cell_count - 1,
-            "x_steps": cell_count,
-            "rows": row_count,
-            "y_param": None,
-            "y_min": None,
-            "y_max": None,
-            "y_steps": None,
-        }
+        # math honest. The same override is applied at capture/inspect
+        # time via ``effective_spec_for_layout`` so the .xcs builder and
+        # the analysis pipeline see identical numbers — the validation
+        # photo's sampling grid must land on the same cells the burn
+        # rendered.
+        spec = effective_spec_for_layout(
+            spec=spec, kind="validation", validation_cells=validation_cells,
+        )
 
     project_name = _safe_project_name(name, fallback=f"test-{test_id}")
     placement_test: dict[str, Any] = {

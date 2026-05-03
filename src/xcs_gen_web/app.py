@@ -553,7 +553,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
 
         result = _persist_upload(
-            tid=qr_id, spec=t["spec"], data=data, filename=image.filename,
+            tid=qr_id, spec=capture_service.effective_spec(t),
+            data=data, filename=image.filename,
             user_id=user["id"], via="mobile",
         )
         return MobileUploadResponse(
@@ -1233,7 +1234,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         try:
             cap_result = capture_service.run_capture(
-                image_bytes=data, test_id=r["test_id"], spec=t["spec"],
+                image_bytes=data, test_id=r["test_id"],
+                spec=capture_service.effective_spec(t),
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -1287,7 +1289,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             cap_result = capture_service.run_capture(
                 image_bytes=data, test_id=r["test_id"],
-                spec={**t["spec"], "sample_aggregator": aggregator},
+                spec={**capture_service.effective_spec(t), "sample_aggregator": aggregator},
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -1326,9 +1328,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 status_code=410,
                 detail="source image no longer available — cannot inspect",
             )
+        eff_spec = capture_service.effective_spec(t)
         try:
             cap_result = capture_service.run_capture(
-                image_bytes=data, test_id=r["test_id"], spec=t["spec"],
+                image_bytes=data, test_id=r["test_id"], spec=eff_spec,
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -1336,7 +1339,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             payload = capture_service.inspect_cell(
                 warped=cap_result.warped_image_bgr,
-                spec=t["spec"], row=row, col=col,
+                spec=eff_spec, row=row, col=col,
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -1352,7 +1355,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="test not found")
         data = await image.read()
         return _persist_upload(
-            tid=tid, spec=t["spec"], data=data, filename=image.filename,
+            tid=tid, spec=capture_service.effective_spec(t),
+            data=data, filename=image.filename,
             user_id=user_id,
         )
 
@@ -1408,7 +1412,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                        f"Was the test deleted, or does it belong to another user?",
             )
         return _persist_upload(
-            tid=qr_id, spec=t["spec"], data=data, filename=image.filename,
+            tid=qr_id, spec=capture_service.effective_spec(t),
+            data=data, filename=image.filename,
             user_id=user_id,
         )
 
@@ -1507,7 +1512,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         t = t_repo.get(r["test_id"], owner_id=user_id)
         if t is None:
             raise HTTPException(status_code=404, detail="test not found")
-        payload = capture_service.grid_layout_payload(t["spec"])
+        payload = capture_service.grid_layout_payload(capture_service.effective_spec(t))
         return GridLayout(**payload)
 
     @app.get("/api/results/{rid}/warped-image")
@@ -1536,7 +1541,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         a small parameter title strip. Powers the result-debug modal."""
         warped_bgr, t, _ = _warped_or_http(rid, user_id)
         try:
-            png = capture_service.render_warped_with_grid(warped_bgr, t["spec"])
+            png = capture_service.render_warped_with_grid(
+                warped_bgr, capture_service.effective_spec(t),
+            )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
         return Response(content=png, media_type="image/png")
@@ -1554,7 +1561,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         t = t_repo.get(r["test_id"], owner_id=user_id)
         if t is None:
             raise HTTPException(status_code=404, detail="test not found")
-        return {"rows": capture_service.grid_row_count(t["spec"])}
+        return {"rows": capture_service.grid_row_count(capture_service.effective_spec(t))}
 
     @app.get("/api/results/{rid}/debug/row/{row}")
     def results_debug_row(
@@ -1564,7 +1571,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         warped_bgr, t, r = _warped_or_http(rid, user_id)
         try:
             png = capture_service.render_row_strip(
-                warped_bgr, t["spec"], r["swatches"], row,
+                warped_bgr, capture_service.effective_spec(t), r["swatches"], row,
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
