@@ -1,9 +1,11 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { Lab } from "../color/math";
 import type { ValidationCell } from "../types";
 import { cn } from "../ui";
 import { ScatterRow, StabilityScatter } from "./StabilityScatter";
 import { StabilityHeatmap } from "./StabilityHeatmap";
+import { StabilitySpectrums, SpectrumOrderRow } from "./StabilitySpectrums";
+import type { SpectrumOrder } from "./stabilitySpectrumsMath";
 import {
   AxisMeta,
   computeComputedXValue,
@@ -35,12 +37,12 @@ import {
 export type { SeriesInput, XAxis, YAxis } from "./stabilityChartMath";
 export { seriesColour } from "./stabilityChartMath";
 
-export type ChartMode = "scatter" | "spatial";
+export type ChartMode = "scatter" | "spatial" | "spectrums";
 
 /** Surface a hover/click came from. Drives the page-level "should this
  *  view's mouse-leave clear the transient focus?" decision so a
  *  transient hover in one view never wipes a pinned focus in another. */
-export type FocusSource = "scatter" | "heatmap" | "stats";
+export type FocusSource = "scatter" | "heatmap" | "stats" | "spectrums";
 
 /** Page-level focus state shared between the scatter, the heatmap, and
  *  the stats strip. ``transient`` is a hover; ``pinned`` is a click
@@ -100,6 +102,12 @@ export function StabilityChart({
 }: Props) {
   const xMeta = X_AXES.find((a) => a.id === xAxis)!;
   const yMeta = Y_AXES.find((a) => a.id === yAxis)!;
+
+  // SPECTRUMS view's ordering is local to the chart — the page doesn't
+  // need to round-trip it (no other view consumes it). Default
+  // "expected hue" mirrors the scatter's default X axis.
+  const [spectrumOrder, setSpectrumOrder] =
+    useState<SpectrumOrder>("expected_hue");
 
   // When a burn axis is active and ≥2 runs are selected, the scatter
   // collapses to a single synthetic series — each cell contributes one
@@ -220,6 +228,8 @@ export function StabilityChart({
         onModeChange={onModeChange}
         runCount={series.length}
         burnActive={collapseSeries && mode === "scatter"}
+        spectrumOrder={spectrumOrder}
+        onSpectrumOrderChange={setSpectrumOrder}
       />
       <div className="flex-1 min-h-0 px-4 pb-4 flex flex-col">
         {mode === "scatter" ? (
@@ -248,24 +258,40 @@ export function StabilityChart({
               }
             />
           )
-        ) : cellsPerRow == null ? (
-          <EmptyChart
-            xMeta={xMeta}
-            yMeta={yMeta}
-            hasSeries={hasAnySeries}
-            burnNeedsRuns={false}
-          />
+        ) : mode === "spatial" ? (
+          cellsPerRow == null ? (
+            <EmptyChart
+              xMeta={xMeta}
+              yMeta={yMeta}
+              hasSeries={hasAnySeries}
+              burnNeedsRuns={false}
+            />
+          ) : (
+            <StabilityHeatmap
+              cells={cells}
+              series={series}
+              metric={heatmapMetric}
+              cellsPerRow={cellsPerRow}
+              focusedCell={focusedCell}
+              onHover={(idx) => onHover(idx, "heatmap")}
+              onHoverLeave={() => onHoverLeave("heatmap")}
+              onClick={(idx) => onClick(idx, "heatmap")}
+              onBackgroundClear={() => onBackgroundClear("heatmap")}
+            />
+          )
         ) : (
-          <StabilityHeatmap
+          <StabilitySpectrums
             cells={cells}
             series={series}
-            metric={heatmapMetric}
-            cellsPerRow={cellsPerRow}
+            metric={yAxis}
+            onMetricChange={onYAxisChange}
+            order={spectrumOrder}
+            onOrderChange={setSpectrumOrder}
             focusedCell={focusedCell}
-            onHover={(idx) => onHover(idx, "heatmap")}
-            onHoverLeave={() => onHoverLeave("heatmap")}
-            onClick={(idx) => onClick(idx, "heatmap")}
-            onBackgroundClear={() => onBackgroundClear("heatmap")}
+            onHover={(idx) => onHover(idx, "spectrums")}
+            onHoverLeave={() => onHoverLeave("spectrums")}
+            onClick={(idx) => onClick(idx, "spectrums")}
+            onBackgroundClear={() => onBackgroundClear("spectrums")}
           />
         )}
       </div>
@@ -285,6 +311,8 @@ function ChartHeader({
   onModeChange,
   runCount,
   burnActive,
+  spectrumOrder,
+  onSpectrumOrderChange,
 }: {
   xAxis: XAxis;
   yAxis: YAxis;
@@ -295,13 +323,19 @@ function ChartHeader({
   onModeChange: (m: ChartMode) => void;
   runCount: number;
   burnActive: boolean;
+  spectrumOrder: SpectrumOrder;
+  onSpectrumOrderChange: (o: SpectrumOrder) => void;
 }) {
   // In spatial mode the X axis is meaningless (no abscissa to vary
   // along); the Y axis row keeps its segmented look but its options
   // narrow to per-cell-aggregable metrics, and the row label switches
   // from "Y axis" to "metric" so the visual register matches the
-  // actual mental model.
-  const yLegend = mode === "spatial" ? "Metric" : "Y axis";
+  // actual mental model. SPECTRUMS uses the same "Metric" mental model
+  // as Spatial — the bars are vertical so the active axis is the
+  // metric being measured, with ordering picked separately. The
+  // SPECTRUMS canvas can render every Y axis (per-run + computed) so
+  // we don't filter the pill row there.
+  const yLegend = mode === "scatter" ? "Y axis" : "Metric";
   const yAxes = mode === "spatial"
     ? Y_AXES.filter((a) => isHeatmapMetric(a.id as YAxis))
     : Y_AXES;
@@ -315,9 +349,9 @@ function ChartHeader({
   const isXAxisDisabled = (id: XAxis | YAxis) =>
     isComputedXAxis(id as XAxis) && burnDisabled;
   // Row-level help: the legend's `?` icon explains what *the row*
-  // answers, not what any one pill does. Spatial mode swaps Y axis for
-  // METRIC so the help entry switches too.
-  const yRowHelp = mode === "spatial" ? TOOLBAR_HELP.metricRow : TOOLBAR_HELP.yRow;
+  // answers, not what any one pill does. Spatial / Spectrums modes
+  // swap Y axis for METRIC so the help entry switches too.
+  const yRowHelp = mode === "scatter" ? TOOLBAR_HELP.yRow : TOOLBAR_HELP.metricRow;
   const helpForY = (id: XAxis | YAxis): AxisHelp => Y_AXIS_HELP[id as YAxis];
   const helpForX = (id: XAxis | YAxis): AxisHelp => X_AXIS_HELP[id as XAxis];
   return (
@@ -344,6 +378,12 @@ function ChartHeader({
             disabledHint="needs ≥ 2 runs"
             rowHelp={TOOLBAR_HELP.xRow}
             helpFor={helpForX}
+          />
+        )}
+        {mode === "spectrums" && (
+          <SpectrumOrderRow
+            order={spectrumOrder}
+            onChange={onSpectrumOrderChange}
           />
         )}
       </div>
@@ -399,6 +439,7 @@ function ModeToggleRow({
   const options: { id: ChartMode; label: string }[] = [
     { id: "scatter", label: "Scatter" },
     { id: "spatial", label: "Spatial" },
+    { id: "spectrums", label: "Spectrums" },
   ];
   return (
     <div className="flex flex-wrap items-center gap-1.5">
