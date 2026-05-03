@@ -701,7 +701,6 @@ export function ParamTestEditor({
             setMode={setMode}
             profile={profile}
             base_params={t.base_params}
-            angle_mode={t.angle_mode}
             updateBase={updateBase}
             x_param={t.x_param}
             y_param={t.y_param}
@@ -734,15 +733,32 @@ export function ParamTestEditor({
                 }
               >
                 <option value="fixed">Fixed — all passes at scan angle</option>
-                <option value="crosshatch">Crosshatch — alternate ±90°</option>
                 <option value="incremental">Incremental — XCS rotates per pass</option>
               </Select>
             </Field>
+            <label className="flex items-start gap-2 text-[12.5px] text-[color:var(--color-ink-muted)]">
+              <input
+                type="checkbox"
+                checked={t.crosshatch}
+                disabled={locked}
+                onChange={(e) => updateSpec({ crosshatch: e.target.checked })}
+                className="mt-0.5"
+              />
+              <span>
+                Crosshatch
+                <span className="block text-[11px] text-[color:var(--color-ink-subtle)]">
+                  For every pass, also burn a stroke at scan angle + 90°.
+                  Stacks with the angle mode above; the device fires
+                  twice as many strokes when this is on.
+                </span>
+              </span>
+            </label>
             <p className="text-[11.5px] text-[color:var(--color-ink-muted)] leading-relaxed">
-              Pass count comes from <strong>Base parameters → Passes</strong>. XCS
-              handles the stacking natively; no rect duplication. Crosshatch uses
-              pairs of burns (scan angle + 90°), so every two "passes" counts as
-              one XCS cycle — pick even values.
+              Pass count comes from <strong>Base parameters → Passes</strong>.
+              Each pass is one stroke at the current scan angle — XCS
+              handles the stacking natively, no rect duplication.
+              Crosshatch <strong>doubles</strong> that count: passes=2 +
+              crosshatch ⇒ 4 total strokes (alternating 0°/90°).
             </p>
           </Section>
         </>
@@ -938,7 +954,6 @@ function BaseParamsSection({
   setMode,
   profile,
   base_params,
-  angle_mode,
   updateBase,
   x_param,
   y_param,
@@ -949,7 +964,6 @@ function BaseParamsSection({
   setMode: (id: ModeId) => void;
   profile: ValidationProfile | null;
   base_params: TestSpec["base_params"];
-  angle_mode: TestSpec["angle_mode"];
   updateBase: (patch: Partial<TestSpec["base_params"]>) => void;
   x_param: TestSpec["x_param"];
   y_param: TestSpec["y_param"];
@@ -1001,14 +1015,6 @@ function BaseParamsSection({
               fieldOverrides={fieldOverrides}
             />
 
-            {/* Crosshatch pass hint */}
-            {angle_mode === "crosshatch" && (
-              <p className="text-[11.5px] text-[color:var(--color-ink-muted)] leading-relaxed">
-                In crosshatch mode each pass is one burn at scan angle and one
-                at +90°. Use even pass counts so the total burns match what you
-                enter.
-              </p>
-            )}
 
             {/* Scan angle — a compact inline readout row */}
             {(() => {
@@ -1060,11 +1066,11 @@ function BaseParamsSection({
                 onChange={(v) => updateBase({ density: v })}
               />
               <NumberField
-                label={angle_mode === "crosshatch" ? "Passes (even)" : "Passes"}
+                label="Passes"
                 value={base_params.passes}
                 integer
-                min={angle_mode === "crosshatch" ? 2 : 1}
-                step={angle_mode === "crosshatch" ? 2 : 1}
+                min={1}
+                step={1}
                 onChange={(v) => updateBase({ passes: v })}
               />
               <PulseWidthSelect

@@ -46,6 +46,56 @@ def test_delete_by_test(fresh_db):
     assert repo.list_all() == []
 
 
+def test_delete_by_material_only_touches_matching_material(fresh_db):
+    m1 = _seed_material("A")
+    m2 = _seed_material("B")
+    repo.insert_bulk([
+        dict(test_id=1, material_id=m1, x_value=0, y_value=None,
+             hex="#000000", sigma=0.0, source="averaged",
+             source_result_id=None, params={}),
+        dict(test_id=1, material_id=m1, x_value=1, y_value=None,
+             hex="#111111", sigma=0.0, source="averaged",
+             source_result_id=None, params={}),
+        dict(test_id=2, material_id=m2, x_value=0, y_value=None,
+             hex="#222222", sigma=0.0, source="averaged",
+             source_result_id=None, params={}),
+    ])
+    deleted = repo.delete_by_material(m1)
+    assert deleted == 2
+    remaining = repo.list_all()
+    assert len(remaining) == 1
+    assert remaining[0]["material_id"] == m2
+
+
+def test_delete_by_material_zero_when_nothing_matches(fresh_db):
+    mid = _seed_material()
+    deleted = repo.delete_by_material(mid)
+    assert deleted == 0
+
+
+def test_delete_by_material_owner_scoped(fresh_db):
+    """A different owner's palette entries on the same material are
+    untouched — the owner_id filter is part of the WHERE clause, not
+    just a default."""
+    mid = _seed_material()
+    # Default owner row.
+    repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=0, y_value=None,
+             hex="#aaaaaa", sigma=0.0, source="averaged",
+             source_result_id=None, params={}),
+    ])
+    # Foreign owner row, same material.
+    repo.insert_bulk([
+        dict(test_id=1, material_id=mid, x_value=1, y_value=None,
+             hex="#bbbbbb", sigma=0.0, source="averaged",
+             source_result_id=None, params={}),
+    ], owner_id=999)
+    repo.delete_by_material(mid)  # default owner
+    survivors = repo.list_all(owner_id=999)
+    assert len(survivors) == 1
+    assert survivors[0]["hex"] == "#bbbbbb"
+
+
 def test_list_filters_by_source(fresh_db):
     mid = _seed_material()
     repo.insert_bulk([

@@ -86,15 +86,19 @@ class ParamTest(BaseModel):
 
     # Multi-pass angle behaviour. ``base_params.passes`` is the pass count
     # (emitted as XCS's native ``repeat``, so XCS handles the stacking —
-    # we don't duplicate rects client-side). angle_mode picks how the scan
-    # angle varies per pass:
+    # we don't duplicate rects client-side). ``angle_mode`` and
+    # ``crosshatch`` are independent:
     #
-    #   "fixed"       — every pass at the same scan angle.
-    #   "crosshatch"  — alternates scan_angle and scan_angle + 90°.
-    #   "incremental" — XCS rotates the angle between passes (e.g. 360°/n).
+    #   angle_mode = "fixed"       → every pass at the same scan angle.
+    #   angle_mode = "incremental" → XCS rotates the angle between passes.
+    #   crosshatch = true          → for every pass, also burn one stroke
+    #                                at scan_angle + 90°. So passes=N +
+    #                                crosshatch produces 2N total strokes.
     #
-    # Only meaningful when passes > 1.
-    angle_mode: Literal["fixed", "crosshatch", "incremental"] = "fixed"
+    # Both can stack — incremental + crosshatch rotates the angle between
+    # passes AND adds the perpendicular companion to each one.
+    angle_mode: Literal["fixed", "incremental"] = "fixed"
+    crosshatch: bool = False
     registration: RegistrationConfig = Field(default_factory=RegistrationConfig)
     material_id: str = Field(min_length=1)
     # True → emit bitmapScanMode="oneWay" on the gradient cells + annotation;
@@ -131,6 +135,18 @@ class ParamTest(BaseModel):
     # ``rows`` / cell count, but the frontend persists an explicit
     # value so the editor's preview reflects what the user picked.
     cells_per_row: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _snap_legacy_crosshatch(cls, data: Any) -> Any:
+        """Old rows stored ``angle_mode="crosshatch"`` before crosshatch
+        became an orthogonal flag. Snap them on read: angle_mode="fixed"
+        + crosshatch=True. Pattern matches the rest of this file's
+        legacy-tolerant validation (CLAUDE.md "Pydantic validators snap
+        legacy values rather than rejecting")."""
+        if isinstance(data, dict) and data.get("angle_mode") == "crosshatch":
+            data = {**data, "angle_mode": "fixed", "crosshatch": True}
+        return data
 
     @model_validator(mode="after")
     def validate_ranges(self) -> "ParamTest":
@@ -277,15 +293,26 @@ class LayerSpec(BaseModel):
     scan_angle: float = Field(default=90.0, ge=0.0, le=360.0)
     base_params: BaseParams
 
-    # Multi-pass angle behaviour (same semantics as ParamTest.angle_mode).
-    # Ignored when processing_type == "HATCHED_LINES" which has its own
-    # per-pass model.
-    angle_mode: Literal["fixed", "crosshatch", "incremental"] = "fixed"
+    # Multi-pass angle behaviour (same semantics as ParamTest). Ignored
+    # when processing_type == "HATCHED_LINES" which has its own per-pass
+    # model.
+    angle_mode: Literal["fixed", "incremental"] = "fixed"
+    crosshatch: bool = False
 
     # v2 hatched render mode: required non-empty when processing_type ==
     # "HATCHED_LINES", ignored otherwise.
     material_id: str | None = None
     hatch_passes: list[HatchPass] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _snap_legacy_crosshatch(cls, data: Any) -> Any:
+        """Snap legacy ``angle_mode="crosshatch"`` to the new orthogonal
+        shape (angle_mode="fixed", crosshatch=True). See ParamTest's
+        identical validator for the full rationale."""
+        if isinstance(data, dict) and data.get("angle_mode") == "crosshatch":
+            data = {**data, "angle_mode": "fixed", "crosshatch": True}
+        return data
 
     @model_validator(mode="after")
     def _validate_hatched(self):
@@ -543,7 +570,11 @@ class TestSpec(BaseModel):
     # with tests created before this field existed.
     sample_aggregator: str | None = None
     square_cells: bool = False
-    angle_mode: str = "fixed"             # "fixed" | "crosshatch" | "incremental"
+    # Crosshatch is now an orthogonal flag — see ParamTest above for the
+    # rationale. Legacy ``angle_mode="crosshatch"`` is snapped on read
+    # via the model_validator below.
+    angle_mode: str = "fixed"             # "fixed" | "incremental"
+    crosshatch: bool = False
     unidirectional: bool = False
     # When true, per-row tick + axis-label elements are suppressed on the
     # generated test so multi-row layouts pack tighter. Summary header stays.
@@ -555,6 +586,13 @@ class TestSpec(BaseModel):
     cells_per_row: int | None = None
     base_params: BaseParams
     registration: RegistrationConfig = Field(default_factory=RegistrationConfig)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _snap_legacy_crosshatch(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("angle_mode") == "crosshatch":
+            data = {**data, "angle_mode": "fixed", "crosshatch": True}
+        return data
 
 
 class TestCreate(BaseModel):

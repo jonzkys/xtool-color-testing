@@ -178,9 +178,10 @@ def test_annotations_present():
 
     line_count = types.count("LINE")
     text_count = types.count("TEXT")
-    # 5 labels per row (start + 3 middle + end), 1 row = 5 ticks + 5 labels + 1 summary
+    # 5 labels per row (start + 3 middle + end), 1 row = 5 ticks + 5 labels +
+    # 2 summary lines (sweep description + fixed params, stacked).
     assert line_count == 5
-    assert text_count == 6
+    assert text_count == 7
 
 
 def test_hide_axis_labels_wrapped_suppresses_ticks_and_labels():
@@ -198,10 +199,10 @@ def test_hide_axis_labels_wrapped_suppresses_ticks_and_labels():
     )
     result = build_xcs(project)
     types = [d["type"] for d in result["canvas"][0]["displays"]]
-    # 20 cells + 1 summary TEXT, no tick LINEs, no axis-label TEXTs.
+    # 20 cells + 2 summary TEXT lines, no tick LINEs, no axis-label TEXTs.
     assert types.count("RECT") == 20
     assert types.count("LINE") == 0
-    assert types.count("TEXT") == 1
+    assert types.count("TEXT") == 2
 
 
 def test_hide_axis_labels_default_false_keeps_existing_behaviour():
@@ -227,7 +228,7 @@ def test_hide_axis_labels_dual_axis_suppresses_all_ticks():
     types = [d["type"] for d in result["canvas"][0]["displays"]]
     assert types.count("RECT") == 20
     assert types.count("LINE") == 0
-    assert types.count("TEXT") == 1  # summary only
+    assert types.count("TEXT") == 2  # 2-line summary, no axis labels
 
 
 def test_hide_axis_labels_shrinks_row_stride_between_cells():

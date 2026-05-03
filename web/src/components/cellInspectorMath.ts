@@ -67,30 +67,28 @@ export function imagePxToCell(
   return { physicalRow, displayedCol };
 }
 
-/** Translate a (physical row, displayed col) into the result's flat
+/** Translate a (physical row, displayed col) into the result's
  *  swatch index (the ``ResultSwatch.row`` / ``.col`` fields).
  *
- *  - 2D layouts are pass-through.
- *  - 1D wrapped layouts have ``row=0`` for every swatch and a ``col``
- *    that ranges [0, x_steps). Cells past the last real swatch
- *    (a partial trailing row) return ``null``.
+ *  Both 2D and wrapped 1D swatches are stored with ``row=physicalRow``
+ *  and ``col=displayedCol``: see :func:`sample_grid` in
+ *  ``src/xcs_gen_web/capture_sampling.py``. Single-row 1D collapses to
+ *  ``physicalRow=0``, so the same mapping covers all three layouts.
  *
- *  ``totalCols`` is the test's ``x_steps`` when provided; pass it to
- *  catch the wrapped-tail case. Without it, the return value covers
- *  the full physical grid.  */
+ *  ``totalCols`` is the test's ``x_steps``; pass it to reject hits on
+ *  the unused tail of a partial last row in a wrapped 1D layout
+ *  (10 cells across 3×4 leaves cells (2,2) and (2,3) empty). */
 export function resolveSwatchIndex(
   layout: GridLayout,
   cell: PhysicalCell,
   totalCols?: number,
 ): SwatchIndex | null {
-  if (layout.is_2d) {
-    return { row: cell.physicalRow, col: cell.displayedCol };
+  if (totalCols !== undefined && !layout.is_2d) {
+    const flatIdx =
+      cell.physicalRow * layout.cells_per_physical_row + cell.displayedCol;
+    if (flatIdx >= totalCols) return null;
   }
-  // 1D (single-row or wrapped)
-  const flatCol =
-    cell.physicalRow * layout.cells_per_physical_row + cell.displayedCol;
-  if (totalCols !== undefined && flatCol >= totalCols) return null;
-  return { row: 0, col: flatCol };
+  return { row: cell.physicalRow, col: cell.displayedCol };
 }
 
 /** Translate viewport coords → image-pixel coords using a rendered

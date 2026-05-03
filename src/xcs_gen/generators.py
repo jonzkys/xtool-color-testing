@@ -194,9 +194,23 @@ def generate_gradient(
 
     project = XCSProject()
 
-    # Reserve space above gradient for summary text
+    # Build summary lines first so we know how much vertical space to
+    # reserve. Width-aware wrapping packs tokens into lines that fit
+    # within ``total_width`` — narrow workpieces (50 mm coins) get more
+    # lines, wide ones get fewer. Reservation tracks the actual count.
     summary_font_size = label_font_size
-    summary_h = text_height(summary_font_size) + 0.05  # text + minimal padding
+    summary_line_h = text_height(summary_font_size) + 0.1
+    sweep_line, fixed_line = _build_summary_lines(
+        x_param=x_param, x_min=x_min, x_max=x_max, x_steps=x_steps,
+        y_param=y_param, y_min=y_min, y_max=y_max, y_steps=y_steps,
+        base_params=base_params,
+    )
+    summary_lines = _wrap_summary_to_width(
+        sections=[sweep_line, fixed_line, summary_suffix],
+        max_width_mm=total_width,
+        font_size_pt=summary_font_size,
+    )
+    summary_h = len(summary_lines) * summary_line_h + 0.05
     gradient_start_y = start_y + summary_h
 
     # Registration markers (when enabled) sit at the corners of the grid.
@@ -213,16 +227,8 @@ def generate_gradient(
         start_y += _shift_y
         gradient_start_y += _shift_y
 
-    # Build summary line
-    summary = _build_summary(
-        x_param=x_param, x_min=x_min, x_max=x_max, x_steps=x_steps,
-        y_param=y_param, y_min=y_min, y_max=y_max, y_steps=y_steps,
-        base_params=base_params,
-    )
-    if summary_suffix:
-        summary = f"{summary} / {summary_suffix}"
     _add_summary_text(
-        project, summary,
+        project, summary_lines,
         x=start_x, y=start_y,
         font_size=summary_font_size,
         annotation_params=annotation_params,
@@ -292,7 +298,47 @@ def generate_gradient(
     return project
 
 
-def _build_summary(
+def _wrap_summary_to_width(
+    *,
+    sections: list[str],
+    max_width_mm: float,
+    font_size_pt: float,
+) -> list[str]:
+    """Pack semantic sections into lines that fit within ``max_width_mm``.
+
+    Each section is allowed to spill onto multiple lines when its
+    rendered width exceeds the budget — words are broken on spaces,
+    greedily packed. Empty sections are dropped. A new section never
+    shares a line with the previous one (the user-facing register —
+    sweep / fixed / suffix — is preserved as line breaks even when
+    width is generous, so the label reads consistently across narrow
+    and wide workpieces).
+    """
+    out: list[str] = []
+    for section in sections:
+        if not section:
+            continue
+        if text_width(section, font_size_pt) <= max_width_mm:
+            out.append(section)
+            continue
+        # Greedy word-wrap: pack tokens until the next one would tip
+        # the rendered width past the budget, then start a fresh line.
+        tokens = section.split()
+        current: list[str] = []
+        for tok in tokens:
+            candidate = " ".join(current + [tok]) if current else tok
+            if text_width(candidate, font_size_pt) <= max_width_mm:
+                current.append(tok)
+            else:
+                if current:
+                    out.append(" ".join(current))
+                current = [tok]
+        if current:
+            out.append(" ".join(current))
+    return out
+
+
+def _build_summary_lines(
     *,
     x_param: str,
     x_min: float,
@@ -303,15 +349,23 @@ def _build_summary(
     y_max: float,
     y_steps: int,
     base_params: ProcessingParams,
-) -> str:
-    """Build a 1-2 line summary string of the gradient parameters."""
-    parts = [
+) -> tuple[str, str]:
+    """Build a 2-line summary of the gradient parameters.
+
+    Line 1: sweep description (x range, optional y range).
+    Line 2: fixed params (the ones not being swept).
+
+    Splitting like this keeps the summary on narrow workpieces (e.g.
+    50 mm coins) — the joined single line would overflow the grid.
+    """
+    sweep_parts = [
         f"{x_param} {_format_value(x_param, x_min)}-{_format_value(x_param, x_max)}",
     ]
     if y_param:
-        parts.append(f"{y_param} {_format_value(y_param, y_min)}-{_format_value(y_param, y_max)}")
+        sweep_parts.append(
+            f"{y_param} {_format_value(y_param, y_min)}-{_format_value(y_param, y_max)}",
+        )
 
-    # Add fixed params (skip the one being varied)
     x_field = _PARAM_MAP.get(x_param, x_param)
     y_field = _PARAM_MAP.get(y_param, y_param) if y_param else None
 
@@ -329,31 +383,36 @@ def _build_summary(
     if x_field != "repeat" and y_field != "repeat" and base_params.repeat > 1:
         fixed.append(f"x{base_params.repeat}")
 
-    parts.append(" ".join(fixed))
-    return " / ".join(parts)
+    return " / ".join(sweep_parts), " ".join(fixed)
 
 
 def _add_summary_text(
     project: XCSProject,
-    summary: str,
+    lines: list[str],
     *,
     x: float,
     y: float,
     font_size: float,
     annotation_params: ProcessingParams,
 ) -> None:
-    """Add a summary text element above the gradient."""
+    """Add summary text element(s) above the gradient. Each entry in
+    ``lines`` is rendered as its own TEXT display, stacked vertically
+    with ``text_height(font_size) + 0.1`` mm of leading."""
     ann_layer = ANNOTATION_LAYER_COLOR
-    text_disp = make_text_display(
-        summary, x=x, y=y,
-        font_size=font_size, layer_color=ann_layer,
-    )
-    project.extra_displays.append(text_disp)
-    project.extra_device_entries.append(
-        build_device_entry(
-            text_disp["id"], "TEXT", "COLOR_FILL_ENGRAVE", annotation_params
+    line_h = text_height(font_size) + 0.1
+    for i, line in enumerate(lines):
+        if not line:
+            continue
+        text_disp = make_text_display(
+            line, x=x, y=y + i * line_h,
+            font_size=font_size, layer_color=ann_layer,
         )
-    )
+        project.extra_displays.append(text_disp)
+        project.extra_device_entries.append(
+            build_device_entry(
+                text_disp["id"], "TEXT", "COLOR_FILL_ENGRAVE", annotation_params
+            )
+        )
 
 
 def _generate_wrapped(
@@ -803,11 +862,11 @@ def generate_from_image(
     # Summary text
     import os
     filename = os.path.basename(image_path)
-    summary = f"{filename} / {param} {_format_value(param, param_min)}-{_format_value(param, param_max)} / {cols}x{rows}"
     summary_font_size = 1.2
     summary_h = text_height(summary_font_size) + 0.05
     _add_summary_text(
-        project, summary,
+        project,
+        [f"{filename} / {param} {_format_value(param, param_min)}-{_format_value(param, param_max)} / {cols}x{rows}"],
         x=start_x, y=start_y,
         font_size=summary_font_size,
         annotation_params=annotation_params,

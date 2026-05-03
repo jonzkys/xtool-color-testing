@@ -180,7 +180,7 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
   return (
     <DialogContent
       width="lg"
-      className="p-0 overflow-hidden max-w-[820px] max-h-[90vh] flex flex-col"
+      className="p-0 overflow-hidden max-w-[1230px] max-h-[95vh] flex flex-col"
       aria-describedby={undefined}
     >
       <DialogTitle className="sr-only">
@@ -192,7 +192,7 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
           with lab-notebook crop marks and a mix-blend slug that stays
           legible against any image. The toggle in the bottom-left
           swaps between the two views. */}
-      <div className="relative h-[300px] bg-[color:var(--color-substrate)] overflow-hidden">
+      <div className="relative h-[450px] bg-[color:var(--color-substrate)] overflow-hidden">
         {imageView === "inspect" && blobUrl && gridLayout && testSpec ? (
           <TestCellInspector
             imageUrl={blobUrl}
@@ -332,38 +332,6 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
 
       <MetalBar variant="soft" />
 
-      {/* Distribution charts — two inline SVG mini-vizes in the same
-          dense lab-notebook style as the Spectrum page's σ bar. */}
-      <div className="grid grid-cols-2 gap-px bg-[color:var(--color-border)]">
-        <div className="bg-[color:var(--color-surface)] px-5 pt-4 pb-4">
-          <ChartLabel
-            title="Lab plane · a*/b*"
-            hint="how far the palette strays from neutral"
-          />
-          <LabScatter swatches={displayedSwatches} />
-        </div>
-        <div className="bg-[color:var(--color-surface)] px-5 pt-4 pb-4 flex flex-col gap-4">
-          <div>
-            <ChartLabel
-              title="Luminance ramp · L*"
-              hint="tonal range, darkest → lightest"
-            />
-            <LuminanceRamp swatches={displayedSwatches} />
-          </div>
-          {!is2D && (
-            <div>
-              <ChartLabel
-                title="Spectrum · L* vs sweep"
-                hint="colors across the parameter axis"
-              />
-              <SpectrumStrip swatches={displayedSwatches} />
-            </div>
-          )}
-        </div>
-      </div>
-
-      <MetalBar variant="soft" />
-
       {/* Swatch grid — every detected swatch as its own tile. Capped at
           45vh with an inner scroll so a 200+ swatch result can't push
           the rest of the modal off-screen. Tile size shrinks for large
@@ -442,6 +410,38 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
               />
             );
           })}
+        </div>
+      </div>
+
+      <MetalBar variant="soft" />
+
+      {/* Distribution charts — secondary diagnostics, kept below the swatch
+          grid since the per-cell colours are the primary readout. */}
+      <div className="grid grid-cols-2 gap-px bg-[color:var(--color-border)]">
+        <div className="bg-[color:var(--color-surface)] px-5 pt-4 pb-4">
+          <ChartLabel
+            title="Lab plane · a*/b*"
+            hint="how far the palette strays from neutral"
+          />
+          <LabScatter swatches={displayedSwatches} />
+        </div>
+        <div className="bg-[color:var(--color-surface)] px-5 pt-4 pb-4 flex flex-col gap-4">
+          <div>
+            <ChartLabel
+              title="Luminance ramp · L*"
+              hint="tonal range, darkest → lightest"
+            />
+            <LuminanceRamp swatches={displayedSwatches} />
+          </div>
+          {!is2D && (
+            <div>
+              <ChartLabel
+                title="Spectrum · L* vs sweep"
+                hint="colors across the parameter axis"
+              />
+              <SpectrumStrip swatches={displayedSwatches} />
+            </div>
+          )}
         </div>
       </div>
 

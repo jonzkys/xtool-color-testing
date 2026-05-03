@@ -129,3 +129,48 @@ describe("simplifySvg", () => {
     expect(r.afterVertices).toBe(4);
   });
 });
+
+describe("simplifySvg adjacency preservation", () => {
+  it("drops a shared collinear midpoint from both sides identically", () => {
+    // Two squares meeting on the x=10 edge with a colinear midpoint
+    // vertex on each side. The previous DP pipeline would either
+    // drop or keep them inconsistently between the two shapes,
+    // leaving slivers; the topology pipeline drops both at once.
+    const svg = SVG(`
+      <path d="M0 0 L10 0 L10 5 L10 10 L0 10 Z" fill="#abc"/>
+      <path d="M10 0 L20 0 L20 10 L10 10 L10 5 Z" fill="#cba"/>
+    `);
+    const r = simplifySvg(svg, {
+      minAreaMm2: 0, toleranceMm: 1, widthMm: 100,
+    });
+    const dAttrs = (r.svgText.match(/d="([^"]+)"/g) ?? []).map((m) => m.slice(3, -1));
+    expect(dAttrs.length).toBe(2);
+    for (const d of dAttrs) {
+      // No "L10 5" remains in either shape.
+      expect(/L\s*10\s+5(?![0-9])/.test(d)).toBe(false);
+    }
+  });
+
+  it("preserves curved paths inside a multi-shape SVG (curves shouldn't be touched)", () => {
+    const svg = SVG(`
+      <path d="M0 0 L10 0 L10 5 L10 10 L0 10 Z" fill="#abc"/>
+      <path d="M20 20 C 30 20 40 30 50 30" fill="none" stroke="#000"/>
+    `);
+    const r = simplifySvg(svg, {
+      minAreaMm2: 0, toleranceMm: 1, widthMm: 100,
+    });
+    expect(r.svgText).toContain("M20 20 C 30 20 40 30 50 30");
+  });
+
+  it("keeps a triangle's 3 corners when tolerance is well under its edge length", () => {
+    // Small isolated triangle — V-W must not collapse it to <3 verts.
+    const svg = SVG(`<polygon points="0,0 10,0 5,10" fill="#000"/>`);
+    const r = simplifySvg(svg, {
+      minAreaMm2: 0, toleranceMm: 0.5, widthMm: 100,
+    });
+    expect(r.afterShapes).toBe(1);
+    const points = r.svgText.match(/points="([^"]+)"/)![1];
+    const coords = points.trim().split(/\s+/);
+    expect(coords.length).toBe(3);
+  });
+});

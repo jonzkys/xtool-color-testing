@@ -31,6 +31,11 @@ export function PaletteEntryDialog({
   const [materialId, setMaterialId] = useState<string>(defaultMaterialId ?? "");
   const [notes, setNotes] = useState("");
   const [params, setParams] = useState<BaseParams>(defaultBaseParams());
+  // Test-level angle behaviour. Stored alongside per-cell base params
+  // in the entry's ``params`` blob so a hand-built swatch can record
+  // the same crosshatch context an ingested swatch carries.
+  const [angleMode, setAngleMode] = useState<"fixed" | "incremental">("fixed");
+  const [crosshatch, setCrosshatch] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
@@ -42,11 +47,23 @@ export function PaletteEntryDialog({
       setMaterialId(String(entry.material_id));
       setNotes(entry.notes);
       setParams({ ...defaultBaseParams(), ...paletteParamsToBase(entry.params) });
+      // Snap legacy ``angle_mode="crosshatch"`` to the orthogonal shape.
+      const rawMode = entry.params.angle_mode as string | number | undefined;
+      const rawCross = entry.params.crosshatch as string | number | undefined;
+      if (rawMode === "crosshatch") {
+        setAngleMode("fixed");
+        setCrosshatch(true);
+      } else {
+        setAngleMode(rawMode === "incremental" ? "incremental" : "fixed");
+        setCrosshatch(rawCross === 1 || rawCross === "true" || rawCross === "1");
+      }
     } else {
       setHex("#cccccc");
       setMaterialId(defaultMaterialId ?? "");
       setNotes("");
       setParams(defaultBaseParams());
+      setAngleMode("fixed");
+      setCrosshatch(false);
     }
   }, [open, entry, defaultMaterialId]);
 
@@ -58,7 +75,11 @@ export function PaletteEntryDialog({
     setError(undefined);
     try {
       let saved: PaletteEntry;
-      const paramsRecord = baseToPaletteParams(params);
+      const paramsRecord = {
+        ...baseToPaletteParams(params),
+        angle_mode: angleMode,
+        crosshatch: crosshatch ? 1 : 0,
+      };
       if (isEdit && entry) {
         saved = await patchPaletteEntry(entry.id, {
           hex, material_id: Number(materialId),
@@ -177,6 +198,34 @@ export function PaletteEntryDialog({
                       <option value="blue">Blue (diode)</option>
                     </Select>
                   </Field>
+                </div>
+                <div className="col-span-2">
+                  <Field label="Angle mode">
+                    <Select
+                      value={angleMode}
+                      onChange={(e) =>
+                        setAngleMode(e.target.value as "fixed" | "incremental")
+                      }
+                    >
+                      <option value="fixed">Fixed</option>
+                      <option value="incremental">Incremental</option>
+                    </Select>
+                  </Field>
+                  <label className="mt-2 flex items-start gap-2 text-[12.5px] text-[color:var(--color-ink-muted)]">
+                    <input
+                      type="checkbox"
+                      checked={crosshatch}
+                      onChange={(e) => setCrosshatch(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Crosshatch
+                      <span className="block text-[11px] text-[color:var(--color-ink-subtle)]">
+                        For every pass, also burn at scan_angle + 90°.
+                        Doubles the actual stroke count vs the passes value.
+                      </span>
+                    </span>
+                  </label>
                 </div>
               </div>
             </Section>

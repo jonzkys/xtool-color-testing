@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
 import {
   Button,
   cn,
@@ -13,7 +13,11 @@ import {
   Section,
   Select,
   Textarea,
+  DemoLock,
 } from "../ui";
+import { useIsDemo } from "../hooks/useIsDemo";
+import { listPaletteEntries, deletePaletteByMaterial } from "../api/palette";
+import { notify } from "../ui";
 import type { Material, MaterialShape } from "../library";
 
 /**
@@ -54,6 +58,7 @@ export function MaterialEditDialog({
   onSubmit,
 }: MaterialEditDialogProps) {
   const isEdit = initial != null;
+  const isDemo = useIsDemo();
 
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
@@ -63,6 +68,12 @@ export function MaterialEditDialog({
   const [height, setHeight] = useState<number>(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Live count of palette entries belonging to this material. Fetched
+  // lazily on dialog open in edit-mode; null until loaded so we can
+  // disable the wipe button until we know what we're talking about.
+  const [paletteCount, setPaletteCount] = useState<number | null>(null);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   // Reset draft state when the dialog opens with a different record.
   // Using ``open`` in the deps means a closed-then-reopened dialog
@@ -78,7 +89,55 @@ export function MaterialEditDialog({
     setDiameter(initial?.diameter_mm ?? 0);
     setWidth(initial?.width_mm ?? 0);
     setHeight(initial?.height_mm ?? 0);
+    setConfirmingClear(false);
+    setPaletteCount(null);
   }, [open, initial]);
+
+  // Fetch the live palette-entry count for the material being edited
+  // so the danger-zone label reads "Clear N entries" rather than just
+  // "Clear palette". One round-trip per dialog open in edit-mode.
+  useEffect(() => {
+    if (!open || !isEdit || !initial) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const entries = await listPaletteEntries({ material_id: initial.id });
+        if (!cancelled) setPaletteCount(entries.length);
+      } catch {
+        // Non-fatal — leave the count null so the button surfaces a
+        // generic "Clear palette" label and the API call is what
+        // actually does the work.
+        if (!cancelled) setPaletteCount(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, isEdit, initial]);
+
+  async function handleClearPalette() {
+    if (!isEdit || !initial) return;
+    setClearing(true);
+    try {
+      const { deleted } = await deletePaletteByMaterial(initial.id);
+      notify(
+        deleted === 0
+          ? "No palette entries to clear."
+          : `Cleared ${deleted} palette ${deleted === 1 ? "entry" : "entries"} for ${initial.name}.`,
+        "info",
+      );
+      setPaletteCount(0);
+      setConfirmingClear(false);
+      // Notify any palette-displaying view (PalettePage, etc.) that
+      // it should refetch. Listeners for "palette:refetch" can opt
+      // in; absence of a listener is harmless.
+      window.dispatchEvent(new CustomEvent("palette:refetch", {
+        detail: { material_id: initial.id },
+      }));
+    } catch (e) {
+      notify(`Couldn't clear palette: ${(e as Error).message}`, "error");
+    } finally {
+      setClearing(false);
+    }
+  }
 
   function buildPayload(): SubmitValues | string {
     const trimmed = name.trim();
@@ -246,6 +305,85 @@ export function MaterialEditDialog({
             )}>
               {error}
             </div>
+          )}
+
+          {isEdit && initial && (
+            <Section
+              title="Danger zone"
+              description="Wipe palette entries for this material. Tests and results stay — you can re-ingest selectively from the existing results afterward."
+              dense
+            >
+              {!confirmingClear ? (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-baseline gap-2 min-w-0">
+                    <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
+                      Palette
+                    </span>
+                    <span className="font-mono text-[12px] tabular-nums text-[color:var(--color-ink)]">
+                      {paletteCount === null
+                        ? "—"
+                        : paletteCount === 1
+                          ? "1 entry"
+                          : `${paletteCount} entries`}
+                    </span>
+                  </div>
+                  <DemoLock label="Clearing the palette is disabled in the demo.">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={isDemo || paletteCount === 0 || paletteCount === null}
+                      onClick={() => setConfirmingClear(true)}
+                      className="gap-1.5"
+                    >
+                      <AlertTriangle
+                        className="h-3.5 w-3.5 text-[color:var(--color-destructive)]"
+                        strokeWidth={2.2}
+                      />
+                      <span>Clear palette</span>
+                    </Button>
+                  </DemoLock>
+                </div>
+              ) : (
+                <div
+                  className={cn(
+                    "rounded-[6px] border border-[color:var(--color-destructive)]/40",
+                    "bg-[color:var(--color-destructive-tint)] p-3 flex flex-col gap-2",
+                  )}
+                >
+                  <div className="text-[12.5px] text-[color:var(--color-destructive)] leading-snug">
+                    Delete{" "}
+                    <span className="font-mono tabular-nums font-semibold">
+                      {paletteCount}
+                    </span>{" "}
+                    palette {paletteCount === 1 ? "entry" : "entries"} for
+                    {" "}
+                    <span className="font-semibold">{initial.name}</span>?
+                    Tests and results are kept. This can't be undone.
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={clearing}
+                      onClick={() => setConfirmingClear(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      disabled={clearing}
+                      onClick={() => void handleClearPalette()}
+                    >
+                      {clearing ? "Clearing…" : "Yes, clear palette"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </Section>
           )}
 
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-[color:var(--color-border)] -mx-5 px-5 -mb-5 pb-4">

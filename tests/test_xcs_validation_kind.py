@@ -76,11 +76,19 @@ def test_validation_kind_skips_axis_labels():
     project = _validation_project()
     xcs = project_to_xcs(project)
 
-    # The summary text display is still emitted (1 extra_display); axis
-    # labels would add 5 more (start + 3 middle + end). Validation tests
-    # should have just the summary line.
-    assert len(xcs.extra_displays) == 1, (
-        f"expected only the summary display, got {len(xcs.extra_displays)}"
+    # Summary text is still emitted — width-aware wrapping may turn it
+    # into 1-3 stacked TEXT displays — but axis labels would add 5
+    # ticks (LINE) + 5 labels (TEXT). The invariant we care about:
+    # zero LINE displays and only a small number of TEXT displays
+    # (just the wrapped summary, no per-cell axis ticks).
+    types = [d.get("type") for d in xcs.extra_displays]
+    assert types.count("LINE") == 0, (
+        f"expected no axis-tick LINEs, got {types.count('LINE')} "
+        f"(types={types})"
+    )
+    assert 1 <= types.count("TEXT") <= 3, (
+        f"expected 1-3 summary TEXT displays, got {types.count('TEXT')} "
+        f"(types={types})"
     )
 
 

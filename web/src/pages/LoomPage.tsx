@@ -428,6 +428,7 @@ export function LoomPage() {
         scan_angle: 0, // hatched lines carry their own angle via pass
         base_params: baseParams,
         angle_mode: "fixed",
+        crosshatch: false,
         material_id: materialId,
         hatch_passes: [pass],
       };
