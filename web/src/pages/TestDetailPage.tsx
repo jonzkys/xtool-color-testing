@@ -500,6 +500,7 @@ export function TestDetailPage({ testId }: Props) {
               onChange={handleSpecChange}
               locked={test?.locked ?? false}
               tab={activeTab}
+              kind={test?.kind ?? "sweep"}
               materials={materials}
               materialId={materialId}
               onMaterialChange={handleMaterialChange}
@@ -514,7 +515,19 @@ export function TestDetailPage({ testId }: Props) {
         {/* RIGHT: preview + scrollable results */}
         <div className="flex flex-col min-h-0 gap-3">
           <div className="shrink-0">
-            <TestPreview spec={spec} testId={test?.id ?? null} compact />
+            <TestPreview
+              spec={spec}
+              testId={test?.id ?? null}
+              compact
+              override={
+                test?.kind === "validation"
+                  ? {
+                      cellCount: (test?.validation_cells ?? []).length || 1,
+                      cellsPerRow: spec.cells_per_row,
+                    }
+                  : undefined
+              }
+            />
           </div>
           <div className="flex-1 min-h-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-hidden">
             {test ? (

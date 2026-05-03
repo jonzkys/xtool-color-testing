@@ -257,10 +257,11 @@ def project_to_xcs(project: Project, *, machine_id: str = "F2Ultra") -> XCSProje
                 p = _to_processing_params(t.base_params, angle_mode=t.angle_mode)
                 # Filter to keys the renderer can apply per-cell. Palette
                 # entries also carry top-level test attributes like ``laser``
-                # and ``scan_angle`` which live on the test itself, not on
-                # individual cells — silently skip them.
+                # and ``scan_angle`` (test-level) and legacy ``mode`` which
+                # may round-trip as ``null`` — silently skip both unknown
+                # keys and null values.
                 for key, value in (vc.get("params") or {}).items():
-                    if key not in _PARAM_MAP:
+                    if key not in _PARAM_MAP or value is None:
                         continue
                     _set_param(p, key, value)
                 per_cell_params.append(p)

@@ -66,6 +66,9 @@ interface Props {
   issues?: { field: string; message: string; severity: "error" | "warning" }[];
   /** Which tab to render. Caller (TestDetailPage) owns the selection. */
   tab: ParamTestEditorTab;
+  /** Test kind. Drives validation-only fields on the Test tab and the
+   *  tab list itself. Defaults to "sweep" when omitted. */
+  kind?: "sweep" | "validation";
   /** Material picker lives in the Test tab — caller passes options + value + handler. */
   materials: Material[];
   materialId: number | null;
@@ -120,6 +123,7 @@ export function ParamTestEditor({
   locked,
   issues = [],
   tab,
+  kind = "sweep",
   materials,
   materialId,
   onMaterialChange,
@@ -129,6 +133,7 @@ export function ParamTestEditor({
   palette = [],
 }: Props) {
   const t = spec;
+  const isValidation = kind === "validation";
 
   // Machine-aware validation profile — used to show/hide base param fields.
   const { registry, machineId, machine } = useCurrentMachine();
@@ -246,6 +251,11 @@ export function ParamTestEditor({
         gap_mm: t.gap_mm,
         hide_axis_labels: t.hide_axis_labels,
         is_2d: is2D,
+        // For validation tests, the wrap is driven by ``cells_per_row``
+        // and the cell count comes from the picked palette, not the
+        // placeholder ``x_steps=1`` we keep on the spec.
+        cells_per_row: isValidation ? t.cells_per_row ?? undefined : undefined,
+        cell_count: isValidation ? validationCells.length : undefined,
       });
       if (!sq) return;
       width_mm = sq.width_mm;
@@ -439,6 +449,18 @@ export function ParamTestEditor({
                 disabled={locked}
               />
             </div>
+            {isValidation && (
+              <NumberField
+                label="Cells per row"
+                value={t.cells_per_row ?? 6}
+                min={1}
+                max={50}
+                integer
+                onChange={(v) => updateSpec({ cells_per_row: v })}
+                disabled={locked}
+                hint="Wrap the picked palette cells across this many columns. Rows = ceil(cells / cells-per-row)."
+              />
+            )}
             <label className="flex items-center gap-2 text-[12.5px] text-[color:var(--color-ink-muted)]">
               <input
                 type="checkbox"

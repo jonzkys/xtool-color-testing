@@ -136,14 +136,26 @@ def bytes_for_test(*, test_id: int, name: str, material_id: int,
         # ``per_cell_params`` overrides any sweep-derived value at render
         # time. We pick x_min=0, x_max=cell_count-1 so the values map to
         # cell indices for any tooling that introspects the spec.
+        #
+        # ``rows`` is derived from ``cells_per_row`` so the renderer wraps
+        # cells across the right number of physical rows. Without this,
+        # the spec's default ``rows=1`` would put every cell on one
+        # row regardless of how many were picked.
         cells = validation_cells or []
         cell_count = max(2, len(cells))
+        cells_per_row = spec.get("cells_per_row")
+        if cells_per_row and cells_per_row > 0:
+            import math
+            row_count = max(1, math.ceil(cell_count / cells_per_row))
+        else:
+            row_count = max(1, spec.get("rows") or 1)
         spec = {
             **spec,
             "hide_axis_labels": True,
             "x_min": 0,
             "x_max": cell_count - 1,
             "x_steps": cell_count,
+            "rows": row_count,
             "y_param": None,
             "y_min": None,
             "y_max": None,

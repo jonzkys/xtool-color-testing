@@ -91,7 +91,12 @@ export function MaterialPalettePicker({
   const clear = () => onSelectionChange(new Set());
 
   return (
-    <div className="bg-[color:var(--color-surface)]">
+    // ``min-h-[480px] max-h-[calc(100vh-240px)]`` lets the picker take
+    // most of the viewport without depending on the parent being a
+    // height-locked flex container. Grid + scatter lay out inside; the
+    // grid scrolls internally when it overflows so the header stays
+    // pinned.
+    <div className="bg-[color:var(--color-surface)] flex flex-col min-h-[480px] max-h-[calc(100vh-240px)]">
       <PickerHeader
         materialLabel={materialLabel}
         selectedCount={selectedCount}
@@ -110,13 +115,10 @@ export function MaterialPalettePicker({
       {entries.length === 0 ? (
         <EmptyPaletteHint />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-px bg-[color:var(--color-border)]">
-          {/* Left panel: a-b scatter */}
-          <div className="bg-[color:var(--color-surface)] px-4 pt-3 pb-4">
-            <PanelLabel
-              title="a*/b* gamut"
-              hint={`${selectedCount} of ${totalCount} picked`}
-            />
+        <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[260px_1fr] gap-px bg-[color:var(--color-border)]">
+          {/* Left: a-b scatter — fixed-aspect, doesn't scroll. */}
+          <div className="bg-[color:var(--color-surface)] px-4 py-3 flex flex-col gap-2 min-h-0">
+            <PanelLabel title="a*/b* gamut" />
             <LabScatterPicker
               entries={entries}
               selectedIds={selectedIds}
@@ -124,36 +126,69 @@ export function MaterialPalettePicker({
               onHover={setHoveredId}
               onToggle={toggle}
             />
+            {/* Inline legend — same mono register as InspectMatchDialog's
+                ReadoutCells; pads the column so the scatter stays
+                top-aligned but the gamut info is still nearby. */}
+            <div className="mt-1 flex items-baseline justify-between font-mono text-[9.5px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
+              <span>L* range</span>
+              <span className="tabular-nums text-[color:var(--color-ink-muted)]">
+                {labRange(entries)}
+              </span>
+            </div>
           </div>
 
-          {/* ── Right: swatch grid ── */}
-          <div className="bg-[color:var(--color-surface)] px-4 pt-3 pb-4 min-w-0">
+          {/* Right: swatch grid — scrolls internally to fill column. */}
+          <div className="bg-[color:var(--color-surface)] px-4 py-3 flex flex-col gap-2 min-w-0 min-h-0">
             <PanelLabel
               title="Palette · sorted by L*"
-              hint="click a tile to toggle"
+              hint={selectedCount > 0
+                ? `${selectedCount} picked`
+                : `click any tile`}
             />
             <div
               className={cn(
-                "mt-2 grid gap-1.5 max-h-[360px] overflow-y-auto pr-1",
-                "[grid-template-columns:repeat(auto-fill,minmax(56px,1fr))]",
+                "flex-1 min-h-0 overflow-y-auto pr-1 -mr-1",
+                // Tight scrollbar styling so the column doesn't gain a
+                // fat track when there are many rows.
+                "[&::-webkit-scrollbar]:w-[6px]",
+                "[&::-webkit-scrollbar-thumb]:bg-[color:var(--color-border-strong)]",
+                "[&::-webkit-scrollbar-thumb]:rounded-full",
+                "[&::-webkit-scrollbar-track]:bg-transparent",
               )}
             >
-              {sortedEntries.map((e) => (
-                <SwatchPickerTile
-                  key={e.id}
-                  entry={e}
-                  selected={selectedIds.has(e.id)}
-                  hovered={hoveredId === e.id}
-                  onHover={setHoveredId}
-                  onToggle={toggle}
-                />
-              ))}
+              <div
+                className={cn(
+                  "grid gap-1.5",
+                  "[grid-template-columns:repeat(auto-fill,minmax(56px,1fr))]",
+                )}
+              >
+                {sortedEntries.map((e) => (
+                  <SwatchPickerTile
+                    key={e.id}
+                    entry={e}
+                    selected={selectedIds.has(e.id)}
+                    hovered={hoveredId === e.id}
+                    onHover={setHoveredId}
+                    onToggle={toggle}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </div>
       )}
     </div>
   );
+}
+
+/** Format the L* range across the palette as a tight "min – max" pair
+ *  for the gamut sidebar. Returns "—" when no entries are valid. */
+function labRange(entries: PaletteEntry[]): string {
+  const ls = entries
+    .map((e) => e.lab?.[0])
+    .filter((v): v is number => typeof v === "number");
+  if (ls.length === 0) return "—";
+  return `${Math.min(...ls).toFixed(0)}–${Math.max(...ls).toFixed(0)}`;
 }
 
 function PickerHeader({

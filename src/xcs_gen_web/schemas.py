@@ -126,6 +126,11 @@ class ParamTest(BaseModel):
     # for sweep tests; required for validation tests at converter time
     # (the converter raises if absent).
     validation_cells: list[dict[str, Any]] | None = None
+    # Wrap-1D layout knob — only meaningful for kind=validation. Caller
+    # can leave this None and let bytes_for_test compute it from
+    # ``rows`` / cell count, but the frontend persists an explicit
+    # value so the editor's preview reflects what the user picked.
+    cells_per_row: int | None = None
 
     @model_validator(mode="after")
     def validate_ranges(self) -> "ParamTest":
@@ -543,6 +548,11 @@ class TestSpec(BaseModel):
     # When true, per-row tick + axis-label elements are suppressed on the
     # generated test so multi-row layouts pack tighter. Summary header stays.
     hide_axis_labels: bool = False
+    # Validation tests only — how many cells per physical row. ``rows``
+    # is derived (ceil(cell_count / cells_per_row)) at xcs-build time,
+    # and the frontend's square-cells logic + preview both honour it.
+    # Sweep tests ignore this field. Persists across the API round-trip.
+    cells_per_row: int | None = None
     base_params: BaseParams
     registration: RegistrationConfig = Field(default_factory=RegistrationConfig)
 
@@ -744,7 +754,14 @@ class ValidationCellIn(BaseModel):
     palette_entry_id: int | None = None
     expected_hex: str
     expected_lab: list[float]   # [L*, a*, b*]
-    params: dict[str, float | int | str]
+    # ``None`` is permitted because palette entries occasionally carry
+    # legacy fields (e.g. ``mode``) that round-trip from the database
+    # as ``null``. The renderer's per-cell overlay filters to the keys
+    # ``_PARAM_MAP`` recognises, so unknown or null values get dropped
+    # before they hit ``_set_param``. Matches the project's tolerant
+    # input-validator convention (CLAUDE.md "Pydantic validators snap
+    # legacy values rather than rejecting").
+    params: dict[str, float | int | str | None]
 
 
 class ValidationCellsPatch(BaseModel):
