@@ -11,8 +11,6 @@ the per-row strip only rendered ROW 1.
 
 from __future__ import annotations
 
-import math
-
 from xcs_gen_web.services import capture as capture_service
 from xcs_gen_web.services.xcs import effective_spec_for_layout
 
