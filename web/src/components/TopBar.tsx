@@ -32,6 +32,7 @@ type NavRouteName =
   | "stability"
   | "loom"
   | "svg-layers"
+  | "pixel-art"
   | "library"
   | "palette"
   | "spectrum"
@@ -68,6 +69,7 @@ const NAV_GROUPS: NavGroup[] = [
     children: [
       { label: "Loom", route: "loom" },
       { label: "SVG layers", route: "svg-layers" },
+      { label: "Pixel art", route: "pixel-art" },
     ],
   },
   {
@@ -279,6 +281,7 @@ function activeNavRoute(route: Route): NavRouteName | null {
       return "stability";
     case "loom":
     case "svg-layers":
+    case "pixel-art":
     case "library":
     case "palette":
     case "spectrum":

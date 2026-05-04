@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { TopBar } from "./components/TopBar";
 import { LoomPage } from "./pages/LoomPage";
 import { SvgLayersPage } from "./components/SvgLayersPage";
+import { PixelArtPage } from "./pages/PixelArtPage";
 import { LibraryPage } from "./components/LibraryPage";
 import { PalettePage } from "./components/PalettePage";
 import { TestsPage } from "./pages/TestsPage";
@@ -99,6 +100,7 @@ export default function App() {
     : route.name === "test-detail" ? `Test #${route.id}`
     : route.name === "loom"       ? "Loom"
     : route.name === "svg-layers" ? "SVG layers"
+    : route.name === "pixel-art"  ? "Pixel art"
     : route.name === "library"    ? "Library"
     : route.name === "styleguide" ? "Styleguide"
     : route.name === "spectrum"   ? "Spectrum"
@@ -136,6 +138,7 @@ export default function App() {
         {gate === "ready" && route.name === "test-detail"  && <TestDetailPage testId={route.id} />}
         {gate === "ready" && route.name === "loom"         && <LoomPage />}
         {gate === "ready" && route.name === "svg-layers"   && <SvgLayersPage />}
+        {gate === "ready" && route.name === "pixel-art"    && <PixelArtPage />}
         {gate === "ready" && route.name === "library"      && <LibraryPage onMaterialsChange={() => {}} />}
         {gate === "ready" && route.name === "palette"      && <PalettePage />}
         {gate === "ready" && route.name === "spectrum"     && <SpectrumPage />}
