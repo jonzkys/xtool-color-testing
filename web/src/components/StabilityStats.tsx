@@ -120,14 +120,14 @@ export function StabilityStats({
         ) : (
           <>
             {/* Per-result cards are aggregate-per-run (mean Δ, median
-                ΔE…). When the user has zoomed into a single cell via
-                the focused-cell panel above, those run-level
-                aggregates are no longer the question and they drown
-                the strip on a 280 px-wide column. Hide them while
-                focused — BURN vs CAMERA + Σ across-runs still
-                provide the run-level context the user needs without
-                eating four card-heights. */}
-            {focusedCell == null &&
+                ΔE…). When the user has PINNED a cell (clicked it),
+                those run-level aggregates are no longer the question
+                and they drown the strip — hide them so the focused-
+                cell panel above gets the spotlight. Transient hover
+                does NOT hide them: that would cause a layout-shift
+                loop where the row under the cursor moves out of
+                reach. */}
+            {focusedCell?.kind !== "pinned" &&
               perResult.map((stat, i) => (
                 <ResultStatCard
                   key={stat.resultId}

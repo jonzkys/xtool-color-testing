@@ -476,7 +476,16 @@ export function StabilityPage() {
           burnsSpanned={burnsSpanned}
           widened={leftCollapsed}
           prependSlot={
-            focusedCell != null && testDetail != null ? (
+            // Only show the drilldown panel for PINNED focus (an
+            // explicit click). A transient hover used to render this
+            // too, but that caused a layout-shift loop: hover →
+            // panel inserts at top of strip → rows below shift down
+            // → cursor leaves the source row → focus clears → panel
+            // disappears → rows shift back → cursor enters again →
+            // loop. The chart + TOP VARIABLE list still highlight
+            // the cell on hover, which is the affordance hover
+            // should give; the drilldown is a deliberate read.
+            focusedCell?.kind === "pinned" && testDetail != null ? (
               <StabilityFocusedCellPanel
                 test={testDetail}
                 results={selectedResultIds
