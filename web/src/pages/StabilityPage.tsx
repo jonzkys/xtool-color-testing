@@ -92,6 +92,22 @@ export function StabilityPage() {
   const [selectedResultIdForModal, setSelectedResultIdForModal] =
     useState<number | null>(null);
 
+  // Left picker rail collapse state. Persisted to localStorage so the
+  // user's preference survives reloads — once you've fold the rail
+  // for analysis, you typically want to stay folded. Default expanded
+  // on first visit so the picker is discoverable.
+  const [leftCollapsed, setLeftCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("stability:leftCollapsed") === "1";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      "stability:leftCollapsed",
+      leftCollapsed ? "1" : "0",
+    );
+  }, [leftCollapsed]);
+
   // Priority: pinned beats transient. The earlier order (transient
   // first) caused the user-reported bug where clicking a cell to pin
   // it, then moving the cursor over a neighbouring cell, silently
@@ -423,6 +439,8 @@ export function StabilityPage() {
           selectedResultIds={selectedResultIds}
           onToggleResult={onToggleResult}
           error={resultsError}
+          collapsed={leftCollapsed}
+          onToggleCollapsed={() => setLeftCollapsed((v) => !v)}
         />
         <main className="flex-1 min-w-0 min-h-0 flex flex-col">
           <StabilityChart
@@ -456,6 +474,7 @@ export function StabilityPage() {
           onClick={(idx) => handleClick(idx, "stats")}
           onResultCardClick={setSelectedResultIdForModal}
           burnsSpanned={burnsSpanned}
+          widened={leftCollapsed}
           prependSlot={
             focusedCell != null && testDetail != null ? (
               <StabilityFocusedCellPanel

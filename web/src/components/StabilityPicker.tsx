@@ -19,6 +19,11 @@ interface Props {
   onToggleResult: (id: number) => void;
   /** Optional error string to surface inline. */
   error?: string;
+  /** When ``true`` the rail collapses to a thin strip — just an
+   *  expand button + a one-line summary of what's currently
+   *  picked. The freed pixels reflow to the chart + stats strip. */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }
 
 /**
@@ -39,6 +44,8 @@ export function StabilityPicker({
   selectedResultIds,
   onToggleResult,
   error,
+  collapsed,
+  onToggleCollapsed,
 }: Props) {
   const [search, setSearch] = useState("");
   const [materialFilter, setMaterialFilter] = useState<number | "all">("all");
@@ -66,6 +73,20 @@ export function StabilityPicker({
   const materialName = (id: number) =>
     materials.find((m) => m.id === id)?.name ?? `material #${id}`;
 
+  const selectedTest =
+    selectedTestId != null ? tests.find((t) => t.id === selectedTestId) : null;
+
+  if (collapsed) {
+    return (
+      <CollapsedRail
+        selectedTest={selectedTest ?? null}
+        selectedResultCount={selectedResultIds.length}
+        totalResultCount={results?.length ?? 0}
+        onExpand={onToggleCollapsed}
+      />
+    );
+  }
+
   return (
     <aside
       className={cn(
@@ -76,7 +97,14 @@ export function StabilityPicker({
     >
       {/* ── Base test selector ───────────────────────────────────────── */}
       <div className="px-3 py-3 border-b border-[color:var(--color-border)] flex flex-col gap-2">
-        <RailLabel text="Base test" />
+        <div className="flex items-center justify-between gap-2">
+          <RailLabel text="Base test" />
+          <CollapseButton
+            onClick={onToggleCollapsed}
+            label="Collapse"
+            direction="left"
+          />
+        </div>
         <div className="flex flex-col gap-1.5">
           <Select
             value={materialFilter === "all" ? "" : String(materialFilter)}
@@ -228,8 +256,163 @@ export function StabilityPicker({
             </ul>
           )}
         </div>
+        {/* Done · Collapse — primary action that lets the user
+            commit a selection and reclaim the rail's pixels for the
+            chart + stats strip. The rail can also be collapsed via
+            the chevron in the header at any time; this just makes
+            the "I'm done picking" path obvious. Disabled until
+            there's at least one result selected, so the user
+            doesn't accidentally collapse before configuring. */}
+        <div className="px-3 pb-3 pt-2 border-t border-[color:var(--color-border)]/60">
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            disabled={selectedResultIds.length === 0}
+            className={cn(
+              "w-full h-8 rounded-[6px]",
+              "font-mono text-[10.5px] tracking-[0.18em] uppercase font-semibold",
+              "border transition-colors",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
+              selectedResultIds.length === 0
+                ? "border-[color:var(--color-border)] bg-[color:var(--color-surface)]/60 text-[color:var(--color-ink-subtle)] cursor-not-allowed"
+                : "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white hover:bg-[color:var(--color-primary)]/90",
+            )}
+          >
+            Done · Collapse
+          </button>
+        </div>
       </div>
     </aside>
+  );
+}
+
+/* ─── Collapsed rail ────────────────────────────────────────────────────
+ *
+ * Thin (32 px) sidebar that surfaces just enough state for the user
+ * to know what they picked, plus a fat hit area to expand back. The
+ * vertical strip of test id + result count lives along the
+ * collapse-friendly axis (top → bottom) so it reads at a glance.
+ */
+function CollapsedRail({
+  selectedTest,
+  selectedResultCount,
+  totalResultCount,
+  onExpand,
+}: {
+  selectedTest: TestRecord | null;
+  selectedResultCount: number;
+  totalResultCount: number;
+  onExpand: () => void;
+}) {
+  return (
+    <aside
+      className={cn(
+        "shrink-0 w-[32px] flex flex-col min-h-0",
+        "border-r border-[color:var(--color-border)]",
+        "bg-[color:var(--color-surface)]",
+      )}
+    >
+      <button
+        type="button"
+        onClick={onExpand}
+        aria-label="Expand picker"
+        title="Expand picker (base test + results)"
+        className={cn(
+          "flex-1 min-h-0 w-full flex flex-col items-center gap-3 py-3",
+          "text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-ink)] hover:bg-[color:var(--color-surface-elevated)]",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--color-primary)] focus-visible:ring-inset",
+          "transition-colors",
+        )}
+      >
+        {/* Expand glyph */}
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          aria-hidden
+          className="block shrink-0"
+        >
+          <path
+            d="M5 3 L9 7 L5 11"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        {/* Vertical text — uses writing-mode so the labels don't
+            wrap into stacked single characters. ``upright`` keeps
+            digits oriented the right way. */}
+        {selectedTest && (
+          <span
+            className="font-mono text-[10px] tabular-nums tracking-[0.12em] text-[color:var(--color-primary)] font-semibold"
+            style={{
+              writingMode: "vertical-rl",
+              transform: "rotate(180deg)",
+            }}
+          >
+            #{selectedTest.id}
+          </span>
+        )}
+        {totalResultCount > 0 && (
+          <span
+            className="font-mono text-[9.5px] tabular-nums tracking-[0.1em] text-[color:var(--color-ink-subtle)]"
+            style={{
+              writingMode: "vertical-rl",
+              transform: "rotate(180deg)",
+            }}
+          >
+            {selectedResultCount}/{totalResultCount}
+          </span>
+        )}
+      </button>
+    </aside>
+  );
+}
+
+/* ─── Chevron-style collapse button ────────────────────────────────── */
+
+function CollapseButton({
+  onClick,
+  label,
+  direction,
+}: {
+  onClick: () => void;
+  label: string;
+  direction: "left" | "right";
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className={cn(
+        "h-5 w-5 inline-flex items-center justify-center rounded-[3px]",
+        "text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-ink)]",
+        "hover:bg-[color:var(--color-surface-elevated)]",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--color-primary)]/60",
+        "transition-colors",
+      )}
+    >
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 12 12"
+        aria-hidden
+        className="block"
+      >
+        <path
+          d={direction === "left" ? "M8 2 L4 6 L8 10" : "M4 2 L8 6 L4 10"}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
   );
 }
 

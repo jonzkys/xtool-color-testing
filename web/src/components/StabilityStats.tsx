@@ -43,6 +43,11 @@ interface Props {
    *  is read with the right caveat. ``undefined`` falls back to 1
    *  (single-burn assumption) so legacy callers don't need to thread it. */
   burnsSpanned?: number;
+  /** When ``true`` the strip widens (260 → 420 px) to claim the
+   *  pixels freed by the collapsed picker rail. Cards inside don't
+   *  need any internal layout changes — labels stop ellipsising and
+   *  the histogram bars get more dynamic range. */
+  widened?: boolean;
 }
 
 /**
@@ -62,6 +67,7 @@ export function StabilityStats({
   onResultCardClick,
   prependSlot,
   burnsSpanned = 1,
+  widened = false,
 }: Props) {
   const perResult = useMemo(
     () => series.map((s) => computePerResultStats(cells, s)),
@@ -91,7 +97,8 @@ export function StabilityStats({
   return (
     <aside
       className={cn(
-        "shrink-0 w-[260px] flex flex-col min-h-0",
+        "shrink-0 flex flex-col min-h-0 transition-[width] duration-150",
+        widened ? "w-[420px]" : "w-[260px]",
         "border-l border-[color:var(--color-border)]",
         "bg-[color:var(--color-surface)]",
       )}
