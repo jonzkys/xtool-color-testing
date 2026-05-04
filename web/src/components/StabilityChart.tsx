@@ -4,6 +4,7 @@ import type { ValidationCell } from "../types";
 import { cn } from "../ui";
 import { ScatterRow, StabilityScatter } from "./StabilityScatter";
 import { StabilityHeatmap } from "./StabilityHeatmap";
+import { StabilityPolar } from "./StabilityPolar";
 import { StabilitySpectrums, SpectrumOrderRow } from "./StabilitySpectrums";
 import { StabilityCalibrate } from "./StabilityCalibrate";
 import type { SpectrumOrder } from "./stabilitySpectrumsMath";
@@ -43,7 +44,12 @@ import {
 export type { SeriesInput, XAxis, YAxis } from "./stabilityChartMath";
 export { seriesColour } from "./stabilityChartMath";
 
-export type ChartMode = "scatter" | "spatial" | "spectrums" | "calibrate";
+export type ChartMode =
+  | "scatter"
+  | "spatial"
+  | "spectrums"
+  | "polar"
+  | "calibrate";
 
 /** Surface a hover/click came from. Drives the page-level "should this
  *  view's mouse-leave clear the transient focus?" decision so a
@@ -366,6 +372,17 @@ export function StabilityChart({
             onBackgroundClear={() => onBackgroundClear("spectrums")}
             simulationActive={simulationActive}
           />
+        ) : mode === "polar" ? (
+          <StabilityPolar
+            cells={cells}
+            series={effectiveSeries}
+            focusedCell={focusedCell}
+            onHover={onHover}
+            onHoverLeave={onHoverLeave}
+            onClick={onClick}
+            onBackgroundClear={onBackgroundClear}
+            simulationActive={simulationActive}
+          />
         ) : (
           <StabilityCalibrate
             cells={cells}
@@ -483,7 +500,7 @@ function ChartHeader({
             referenceResultId={referenceResultId}
             onChange={onReferenceResultIdChange}
           />
-        ) : (
+        ) : mode === "polar" ? null : (
           <AxisRow
             legend={yLegend}
             axes={yAxes}
@@ -573,6 +590,7 @@ function ModeToggleRow({
     { id: "scatter", label: "Scatter" },
     { id: "spatial", label: "Spatial" },
     { id: "spectrums", label: "Spectrums" },
+    { id: "polar", label: "Polar" },
     { id: "calibrate", label: "Calibrate" },
   ];
   return (
