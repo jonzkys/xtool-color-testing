@@ -5,9 +5,10 @@
  *          frame overlay. The frame's aspect ratio matches the chosen
  *          material's width/height so the crop directly drives what
  *          the burn occupies.
- *  Bottom: the post-quantise pixel preview, rendered as one ``<rect>``
- *          per ``CoverRect`` inside an ``<svg viewBox>`` that scales to
- *          fill its container.
+ *  Bottom: the post-quantise pixel preview, rendered as one ``<path>``
+ *          per enabled colour (compound path, one subpath per cell)
+ *          inside an ``<svg viewBox>`` that scales to fill its
+ *          container. Mirrors the .xcs export structure.
  *
  *  The crop frame is a sibling absolutely-positioned ``<div>`` (not a
  *  second canvas) so pointer events stay simple. Coordinates everywhere
@@ -31,20 +32,18 @@ export interface CroppedRegion {
   h: number;
 }
 
-export interface PreviewRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+export interface PreviewPath {
+  /** SVG d-string in cell coords (0..cols, 0..rows). */
+  d: string;
   color: string;
 }
 
 export interface PreviewState {
   cols: number;
   rows: number;
-  rects: PreviewRect[];
-  /** Total post-merge rect count (for the footer strip). */
-  rectCount: number;
+  paths: PreviewPath[];
+  /** Number of paths emitted (one per enabled colour). */
+  pathCount: number;
   kColors: number;
 }
 
@@ -517,14 +516,12 @@ export function PixelArtCanvas({
               role="img"
               aria-label="pixelated preview"
             >
-              {preview.rects.map((r, i) => (
-                <rect
+              {preview.paths.map((p, i) => (
+                <path
                   key={i}
-                  x={r.x}
-                  y={r.y}
-                  width={r.width}
-                  height={r.height}
-                  fill={r.color}
+                  d={p.d}
+                  fill={p.color}
+                  fillRule="evenodd"
                 />
               ))}
             </svg>
@@ -549,7 +546,7 @@ export function PixelArtCanvas({
               <span className="opacity-60">
                 {" · "}
                 {preview.cols}×{preview.rows} cells · {preview.kColors}{" "}
-                colours · {preview.rectCount} rects after merge
+                colours · {preview.pathCount} paths
               </span>
             </>
           ) : (

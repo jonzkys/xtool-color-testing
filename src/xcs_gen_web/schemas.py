@@ -982,5 +982,8 @@ class PixelArtRequest(BaseModel):
     start_x: float = Field(default=10.0, ge=0)
     start_y: float = Field(default=10.0, ge=0)
     cell_mm: float = Field(gt=0)
-    rects: list[PixelArtRectSpec] = Field(min_length=1, max_length=2000)
+    # One rect per non-skip cell — the backend groups by colour and
+    # emits one compound Path per layer. 50000 covers a ~225×225 grid,
+    # well past anything practical for engraving.
+    rects: list[PixelArtRectSpec] = Field(min_length=1, max_length=50_000)
     layers: list[PixelArtLayerSpec] = Field(min_length=1, max_length=64)

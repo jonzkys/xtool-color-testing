@@ -18,16 +18,15 @@ describe("PixelArtCanvas", () => {
     expect(screen.getByText(/preview appears once/i)).toBeInTheDocument();
   });
 
-  it("renders one rect per CoverRect when preview is non-null", () => {
+  it("renders one path per enabled colour when preview is non-null", () => {
     const preview: PreviewState = {
       cols: 4,
       rows: 4,
-      rectCount: 3,
+      pathCount: 2,
       kColors: 2,
-      rects: [
-        { x: 0, y: 0, width: 2, height: 2, color: "#ff0000" },
-        { x: 2, y: 0, width: 2, height: 2, color: "#00ff00" },
-        { x: 0, y: 2, width: 4, height: 2, color: "#0000ff" },
+      paths: [
+        { d: "M0,0 h1 v1 h-1 z M1,0 h1 v1 h-1 z", color: "#ff0000" },
+        { d: "M2,0 h1 v1 h-1 z", color: "#00ff00" },
       ],
     };
     const { container } = render(
@@ -40,9 +39,9 @@ describe("PixelArtCanvas", () => {
         preview={preview}
       />,
     );
-    const rects = container.querySelectorAll("svg rect");
-    expect(rects.length).toBe(3);
+    const paths = container.querySelectorAll("svg path");
+    expect(paths.length).toBe(2);
     expect(screen.getByText(/4×4 cells/)).toBeInTheDocument();
-    expect(screen.getByText(/3 rects after merge/)).toBeInTheDocument();
+    expect(screen.getByText(/2 paths/)).toBeInTheDocument();
   });
 });

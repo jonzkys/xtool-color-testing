@@ -57,12 +57,6 @@ export interface PixelArtLayerPanelProps {
   onRematchAll: () => void;
   onDownloadXcs: () => void;
   onDownloadSvg: () => void;
-  capExceeded: boolean;
-  rectCount: number;
-  /** Drop K so the cap is no longer exceeded (re-runs the pipeline). */
-  onAutoFitToCap: () => void;
-  /** Hard error — even at K=2 the rect count exceeds the cap. */
-  hardCapExceeded?: boolean;
   /** Disabled when a download is in flight. */
   generating?: boolean;
 }
@@ -95,10 +89,6 @@ export function PixelArtLayerPanel({
   onRematchAll,
   onDownloadXcs,
   onDownloadSvg,
-  capExceeded,
-  rectCount,
-  onAutoFitToCap,
-  hardCapExceeded,
   generating,
 }: PixelArtLayerPanelProps) {
   const [mergeOpen, setMergeOpen] = useState(false);
@@ -115,8 +105,7 @@ export function PixelArtLayerPanel({
   }
 
   const hasRows = rows.length > 0;
-  const downloadsDisabled =
-    capExceeded || hardCapExceeded || !hasRows || generating === true;
+  const downloadsDisabled = !hasRows || generating === true;
 
   return (
     <div className="flex flex-col gap-4">
@@ -126,7 +115,7 @@ export function PixelArtLayerPanel({
         actions={
           hasRows && (
             <Badge size="sm" variant="neutral">
-              {rectCount.toLocaleString()} rects
+              {enabledCount.toLocaleString()} paths
             </Badge>
           )
         }
@@ -134,37 +123,6 @@ export function PixelArtLayerPanel({
         {!hasRows && (
           <div className="rounded-[8px] border border-dashed border-[color:var(--color-border-strong)] px-3 py-6 text-center text-[12.5px] text-[color:var(--color-ink-subtle)] font-mono tracking-[0.04em]">
             no colours yet — upload an image
-          </div>
-        )}
-
-        {(capExceeded || hardCapExceeded) && (
-          <div
-            className={cn(
-              "rounded-[8px] border px-3 py-2.5 flex items-start gap-2.5 text-[12px]",
-              hardCapExceeded
-                ? "border-[color:var(--color-destructive)]/40 bg-[color:var(--color-destructive-tint)] text-[color:var(--color-destructive)]"
-                : "border-[color:var(--color-warning)]/40 bg-[color:var(--color-warning-tint)] text-[color:var(--color-warning)]",
-            )}
-          >
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold mb-0.5">
-                {rectCount.toLocaleString()} rects — exceeds XCS cap (750).
-              </div>
-              <div className="opacity-80">
-                {hardCapExceeded
-                  ? "Even at K=2 the rect count is over the cap. Reduce the cell grid or change crop."
-                  : "Reduce colours or grid."}
-              </div>
-            </div>
-            {!hardCapExceeded && (
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={onAutoFitToCap}
-              >
-                Auto-fit to cap
-              </Button>
-            )}
           </div>
         )}
 

@@ -1,17 +1,19 @@
 /**
- * Pixel Art — quantise an image into a small grid of colour cells, run
- * a greedy rect-cover, and burn each colour as one engrave layer.
+ * Pixel Art — quantise an image into a small grid of colour cells and
+ * burn each colour as one compound engrave path (one closed subpath per
+ * cell).
  *
  * This page composes three pieces:
  *   - left:   settings (name, material, start, grid, max-K)
  *   - center: ``PixelArtCanvas`` (original + crop on top, preview below)
  *   - right:  ``PixelArtLayerPanel`` (colour rows + actions)
  *
- * The pipeline (sample → quantise → cover → cap-fit) runs on every
+ * The pipeline (sample → quantise → group cells by label) runs on every
  * change to ``crop`` / ``cellsAcross`` / ``maxK`` / ``imageData`` with
- * a small debounce. ``capFit`` returns the labels + rects + the
- * final K used; the page derives ``rows`` (one per centroid) from
- * those plus the auto-matched palette entries.
+ * a small debounce. ``kMeansLab`` returns the labels + centroid hexes;
+ * the page derives ``rows`` (one per centroid) from those plus the
+ * auto-matched palette entries, and bakes a per-colour SVG d-string for
+ * the preview.
  *
  * Skip-engrave is enforced at download time, not in the preview — the
  * preview keeps showing the dimmed cell so the user can see the
@@ -41,8 +43,8 @@ import {
   type PixelArtLayerRow,
 } from "../components/PixelArtLayerPanel";
 import {
-  capFit,
-  type CapFitResult,
+  kMeansLab,
+  type KMeansResult,
 } from "../components/pixelArtMath";
 import { sampleCellGrid } from "../components/pixelArtImage";
 import { defaultBaseParams } from "../defaults";
@@ -65,10 +67,14 @@ import {
   nearestPaletteEntry,
 } from "./pixelArtHelpers";
 
-const RECT_CAP = 750;
+interface PipelineResult extends KMeansResult {
+  cols: number;
+  rows: number;
+}
+
 const DEFAULT_CELLS_ACROSS = 32;
 const DEFAULT_MAX_K = 8;
-const DEBOUNCE_MS = 60;
+const DEBOUNCE_MS = 150;
 
 export function PixelArtPage() {
   const { machine } = useCurrentMachine();
@@ -104,7 +110,7 @@ export function PixelArtPage() {
   const [cellsAcross, setCellsAcross] = useState(DEFAULT_CELLS_ACROSS);
   const [maxK, setMaxK] = useState(DEFAULT_MAX_K);
   const [crop, setCrop] = useState<CroppedRegion>({ x: 0, y: 0, w: 1, h: 1 });
-  const [pipelineResult, setPipelineResult] = useState<CapFitResult | null>(null);
+  const [pipelineResult, setPipelineResult] = useState<PipelineResult | null>(null);
   const [enabledByColor, setEnabledByColor] = useState<Record<string, boolean>>({});
   const [matchByColor, setMatchByColor] = useState<Record<string, PaletteEntry | null>>({});
   const [error, setError] = useState<string | undefined>();
@@ -170,8 +176,10 @@ export function PixelArtPage() {
     [widthMm, laserSpotMm],
   );
 
-  // ── Pipeline: cells → quantise → cover → cap-fit ───────────────────
-  // Debounced. Re-runs whenever crop, grid, K, or image change.
+  // ── Pipeline: cells → quantise ─────────────────────────────────────
+  // Debounced. Re-runs whenever crop, grid, K, or image change. Path
+  // grouping happens downstream in ``previewState`` / ``buildRequest`` —
+  // the pipeline itself stops at labels + centroids.
   useEffect(() => {
     if (!imageData) {
       setPipelineResult(null);
@@ -190,8 +198,15 @@ export function PixelArtPage() {
           cropW: crop.w,
           cropH: crop.h,
         });
-        const result = capFit(cells, cellsAcross, derivedRows, maxK, RECT_CAP);
-        if (!cancelled) setPipelineResult(result);
+        const result = kMeansLab(cells, maxK);
+        if (!cancelled) {
+          setPipelineResult({
+            labels: result.labels,
+            centroidsHex: result.centroidsHex,
+            cols: cellsAcross,
+            rows: derivedRows,
+          });
+        }
       } catch (err) {
         if (!cancelled) setError((err as Error).message);
       }
@@ -229,36 +244,40 @@ export function PixelArtPage() {
 
   const previewState = useMemo<PreviewState | null>(() => {
     if (!pipelineResult) return null;
-    const aspect = widthMm > 0 && heightMm > 0 ? widthMm / heightMm : 1;
-    const derivedRows = Math.max(1, Math.round(cellsAcross / aspect));
+    const { labels, centroidsHex, cols, rows: pRows } = pipelineResult;
     const enabledMap = new Map(rows.map((r) => [r.color, r.enabled]));
-    const rects = pipelineResult.rects.map((r) => {
-      const color = pipelineResult.centroidsHex[r.label] ?? "#000000";
-      const enabled = enabledMap.get(color) ?? true;
-      return {
-        x: r.x,
-        y: r.y,
-        width: r.width,
-        height: r.height,
+
+    // Group cell d-string fragments by label, then materialise one path
+    // per centroid colour with disabled-colour alpha tacked on.
+    const fragsByLabel: string[][] = centroidsHex.map(() => []);
+    for (let row = 0; row < pRows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const label = labels[row * cols + col];
+        if (label < 0) continue;
+        fragsByLabel[label].push(`M${col},${row} h1 v1 h-1 z`);
+      }
+    }
+    const paths = centroidsHex
+      .map((color, i) => {
+        if (fragsByLabel[i].length === 0) return null;
+        const enabled = enabledMap.get(color) ?? true;
         // Disabled colours render at half alpha so the user can still
         // see what they're skipping. The download path skips them.
-        color: enabled ? color : `${color}55`,
-      };
-    });
-    return {
-      cols: cellsAcross,
-      rows: derivedRows,
-      rects,
-      rectCount: pipelineResult.rects.length,
-      kColors: pipelineResult.k,
-    };
-  }, [pipelineResult, rows, cellsAcross, widthMm, heightMm]);
+        return {
+          d: fragsByLabel[i].join(" "),
+          color: enabled ? color : `${color}55`,
+        };
+      })
+      .filter((p): p is { d: string; color: string } => p !== null);
 
-  const capExceeded =
-    !!pipelineResult &&
-    pipelineResult.rects.length > RECT_CAP &&
-    !pipelineResult.exceededAtK2;
-  const hardCapExceeded = !!pipelineResult && pipelineResult.exceededAtK2;
+    return {
+      cols,
+      rows: pRows,
+      paths,
+      pathCount: paths.length,
+      kColors: centroidsHex.length,
+    };
+  }, [pipelineResult, rows]);
 
   // ── Handlers ────────────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -340,29 +359,30 @@ export function PixelArtPage() {
     });
   }, [paletteEntries, rows]);
 
-  const onAutoFitToCap = useCallback(() => {
-    if (!pipelineResult) return;
-    setMaxK(pipelineResult.k);
-  }, [pipelineResult]);
-
   // ── Download builders ───────────────────────────────────────────────
   const buildRequest = useCallback((): PixelArtRequest | null => {
     if (!pipelineResult || !materialId) return null;
     const cellMm = widthMm / cellsAcross;
     const enabledColors = new Set(rows.filter((r) => r.enabled).map((r) => r.color));
-    const rects: PixelArtRectSpec[] = pipelineResult.rects
-      .map((r) => {
-        const color = pipelineResult.centroidsHex[r.label];
-        return { r, color };
-      })
-      .filter(({ color }) => enabledColors.has(color))
-      .map(({ r, color }) => ({
-        x: r.x * cellMm,
-        y: r.y * cellMm,
-        width: r.width * cellMm,
-        height: r.height * cellMm,
-        color,
-      }));
+    const { labels, centroidsHex, cols, rows: pRows } = pipelineResult;
+    // One PixelArtRectSpec per cell (not merged). The backend groups
+    // them by colour and emits one Path per layer.
+    const rects: PixelArtRectSpec[] = [];
+    for (let row = 0; row < pRows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const label = labels[row * cols + col];
+        if (label < 0) continue;
+        const color = centroidsHex[label];
+        if (!enabledColors.has(color)) continue;
+        rects.push({
+          x: col * cellMm,
+          y: row * cellMm,
+          width: cellMm,
+          height: cellMm,
+          color,
+        });
+      }
+    }
     const layers: PixelArtLayerSpec[] = rows.map((row) => ({
       color: row.color,
       enabled: row.enabled,
@@ -436,10 +456,10 @@ export function PixelArtPage() {
                 Pixel art
               </h1>
               <p className="mt-1 text-[13px] text-[color:var(--color-ink-muted)] max-w-[60ch]">
-                Quantise an image to K colours, run a greedy rect-cover
-                so the engrave is a handful of fills (not thousands of
-                pixels), and burn each colour with its matched palette
-                params.
+                Quantise an image to K colours, then burn each colour as
+                one compound engrave path with its matched palette
+                params — one display element per colour, regardless of
+                grid size.
               </p>
             </div>
             <input
@@ -556,7 +576,7 @@ export function PixelArtPage() {
               </Section>
 
               <Section title="Quantisation" dense
-                description="Upper bound on colours. Fewer = simpler engrave; capFit drops K automatically if the rect cap is exceeded."
+                description="Upper bound on colours. Fewer = simpler engrave; each colour becomes one compound path on export."
               >
                 <Field label={`Max K · ${maxK}`}>
                   <input
@@ -600,10 +620,6 @@ export function PixelArtPage() {
                 onRematchAll={onRematchAll}
                 onDownloadXcs={onDownloadXcs}
                 onDownloadSvg={onDownloadSvg}
-                capExceeded={capExceeded}
-                hardCapExceeded={hardCapExceeded}
-                rectCount={pipelineResult?.rects.length ?? 0}
-                onAutoFitToCap={onAutoFitToCap}
                 generating={generating}
               />
             </Card>
