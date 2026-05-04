@@ -354,3 +354,76 @@ def test_insert_bulk_distinct_source_result_ids_stay_distinct(fresh_db):
     rows = {e["id"]: e for e in repo.list_all(material_id=mid)}
     assert rows[id_a]["hex"] == "#cc0000"
     assert rows[id_b]["hex"] == "#bb0000"  # untouched
+
+
+# ───── Validated state ────────────────────────────────────────────────
+
+
+def test_validate_entry_sets_flag_lab_and_residual(fresh_db):
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=_SPEC)["id"]
+    [eid] = repo.insert_bulk([
+        dict(test_id=tid, material_id=mid, x_value=500, y_value=None,
+             hex="#806040", sigma=1.0, source="averaged",
+             source_result_id=None, params={"power": 10}),
+    ])
+    out = repo.validate_entry(
+        eid,
+        validated_lab=(45.0, 14.0, 28.0),
+        validated_test_id=tid,
+        run_count=3,
+    )
+    assert out is not None
+    assert out["is_validated"] is True
+    assert out["validated_lab"] == [45.0, 14.0, 28.0]
+    assert out["validated_test_id"] == tid
+    assert out["validated_run_count"] == 3
+    assert out["validated_at"] is not None
+    # Residual is √Σ(diff²) — non-negative finite float.
+    assert out["validated_residual_de"] >= 0
+
+
+def test_validate_entry_returns_none_for_unknown_id(fresh_db):
+    assert repo.validate_entry(99999, validated_lab=(50.0, 0.0, 0.0)) is None
+
+
+def test_invalidate_clears_validated_columns(fresh_db):
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=_SPEC)["id"]
+    [eid] = repo.insert_bulk([
+        dict(test_id=tid, material_id=mid, x_value=500, y_value=None,
+             hex="#806040", sigma=1.0, source="averaged",
+             source_result_id=None, params={}),
+    ])
+    repo.validate_entry(eid, validated_lab=(45.0, 14.0, 28.0), run_count=2)
+    out = repo.invalidate_entry(eid)
+    assert out is not None
+    assert out["is_validated"] is False
+    assert out["validated_at"] is None
+    assert out["validated_lab"] is None
+    assert out["validated_run_count"] is None
+    assert out["validated_residual_de"] is None
+    # Original lab remained.
+    assert len(out["lab"]) == 3
+
+
+def test_invalidate_returns_none_for_unknown_id(fresh_db):
+    assert repo.invalidate_entry(99999) is None
+
+
+def test_list_all_validated_only_filter(fresh_db):
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=_SPEC)["id"]
+    ids = repo.insert_bulk([
+        dict(test_id=tid, material_id=mid, x_value=500, y_value=None,
+             hex="#aa0000", sigma=1.0, source="averaged",
+             source_result_id=None, params={}),
+        dict(test_id=tid, material_id=mid, x_value=1000, y_value=None,
+             hex="#00aa00", sigma=1.0, source="averaged",
+             source_result_id=None, params={}),
+    ])
+    repo.validate_entry(ids[0], validated_lab=(50.0, 60.0, 50.0))
+    rows = repo.list_all(validated_only=True)
+    assert [r["id"] for r in rows] == [ids[0]]
+    rows_all = repo.list_all()
+    assert {r["id"] for r in rows_all} == set(ids)

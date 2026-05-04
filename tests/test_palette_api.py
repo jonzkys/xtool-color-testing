@@ -391,3 +391,156 @@ def test_validation_status_respects_max_de_param(client, mid):
     ).json()
     by_id = {r["entry_id"]: r for r in rows}
     assert by_id[eid]["validated"] is False
+
+
+# ───── Validated state (per-entry) ─────────────────────────────────────
+
+
+def test_palette_response_carries_validated_defaults(client, mid):
+    """Untouched entries serialize with is_validated=false and the
+    validated_* fields all None — the canonical baseline for entries
+    that haven't been through a validation analysis."""
+    _seed_entries(mid)
+    entries = client.get("/api/palette").json()
+    assert len(entries) == 2
+    for e in entries:
+        assert e["is_validated"] is False
+        assert e["validated_at"] is None
+        assert e["validated_test_id"] is None
+        assert e["validated_lab"] is None
+        assert e["validated_run_count"] is None
+        assert e["validated_residual_de"] is None
+
+
+def test_validate_entry_persists_lab_and_residual(client, mid):
+    """POST /api/palette/{id}/validate stores the corrected Lab,
+    flips the flag, and computes the residual ΔE76 from the
+    original — surfaced so callers can flag big movers."""
+    [eid_a, eid_b] = _seed_entries(mid)
+    # Original lab for eid_a was hex_to_lab('#ff0000') ≈ (53, 80, 67).
+    # Pick a validated_lab a few units away on each axis.
+    body = {
+        "validated_lab": [55.0, 78.0, 65.0],
+        "validated_test_id": _seed_test(mid),
+        "run_count": 4,
+    }
+    r = client.post(f"/api/palette/{eid_a}/validate", json=body)
+    assert r.status_code == 200, r.text
+    entry = r.json()
+    assert entry["is_validated"] is True
+    assert entry["validated_lab"] == [55.0, 78.0, 65.0]
+    assert entry["validated_test_id"] == body["validated_test_id"]
+    assert entry["validated_run_count"] == 4
+    assert entry["validated_at"] is not None
+    # √((55-53)² + (78-80)² + (65-67)²) ≈ 3.46
+    assert entry["validated_residual_de"] is not None
+    assert 3.0 < entry["validated_residual_de"] < 4.0
+    # The other entry stays unvalidated.
+    others = client.get("/api/palette").json()
+    other = next(e for e in others if e["id"] == eid_b)
+    assert other["is_validated"] is False
+
+
+def test_validate_entry_refresh_overwrites(client, mid):
+    """Re-validating an already-validated entry refreshes the
+    Lab and timestamp without keeping a history (per the design
+    decision: warn-and-refresh)."""
+    [eid] = _seed_entries(mid)[:1]
+    client.post(
+        f"/api/palette/{eid}/validate",
+        json={"validated_lab": [50.0, 60.0, 60.0], "run_count": 2},
+    )
+    first = client.get("/api/palette").json()
+    first_at = next(e for e in first if e["id"] == eid)["validated_at"]
+
+    r = client.post(
+        f"/api/palette/{eid}/validate",
+        json={"validated_lab": [52.0, 62.0, 58.0], "run_count": 5},
+    )
+    entry = r.json()
+    assert entry["validated_lab"] == [52.0, 62.0, 58.0]
+    assert entry["validated_run_count"] == 5
+    # Timestamp refreshed (or at least non-decreasing).
+    assert entry["validated_at"] >= first_at
+
+
+def test_validate_entry_404_when_missing(client, fresh_db):
+    r = client.post(
+        "/api/palette/99999/validate",
+        json={"validated_lab": [50.0, 0.0, 0.0]},
+    )
+    assert r.status_code == 404
+
+
+def test_validate_entry_422_on_bad_lab(client, mid):
+    [eid] = _seed_entries(mid)[:1]
+    # Wrong arity.
+    r = client.post(
+        f"/api/palette/{eid}/validate",
+        json={"validated_lab": [50.0, 0.0]},
+    )
+    assert r.status_code == 422
+
+
+def test_invalidate_clears_state(client, mid):
+    [eid] = _seed_entries(mid)[:1]
+    client.post(
+        f"/api/palette/{eid}/validate",
+        json={"validated_lab": [55.0, 78.0, 65.0], "run_count": 3},
+    )
+    r = client.delete(f"/api/palette/{eid}/validate")
+    assert r.status_code == 200
+    entry = r.json()
+    assert entry["is_validated"] is False
+    assert entry["validated_at"] is None
+    assert entry["validated_lab"] is None
+    assert entry["validated_run_count"] is None
+    assert entry["validated_residual_de"] is None
+    # Original lab is preserved.
+    assert len(entry["lab"]) == 3
+
+
+def test_invalidate_404_when_missing(client, fresh_db):
+    r = client.delete("/api/palette/99999/validate")
+    assert r.status_code == 404
+
+
+def test_palette_list_validated_only_filter(client, mid):
+    """``?validated_only=true`` restricts to entries with the flag set
+    — the auto-match's "Prefer validated" toggle uses this path."""
+    [eid_a, eid_b] = _seed_entries(mid)
+    # No entry validated yet → empty.
+    rows = client.get("/api/palette?validated_only=true").json()
+    assert rows == []
+
+    client.post(
+        f"/api/palette/{eid_a}/validate",
+        json={"validated_lab": [55.0, 78.0, 65.0]},
+    )
+    rows = client.get("/api/palette?validated_only=true").json()
+    assert [e["id"] for e in rows] == [eid_a]
+    # Without the filter, both still appear.
+    rows_all = client.get("/api/palette").json()
+    assert {e["id"] for e in rows_all} == {eid_a, eid_b}
+
+
+def test_validated_test_id_set_to_null_on_test_delete(client, mid):
+    """The FK uses ``ON DELETE SET NULL`` so deleting the source
+    test preserves validated_lab + the flag, only clearing the
+    test reference."""
+    [eid] = _seed_entries(mid)[:1]
+    val_tid = _seed_test(mid)
+    client.post(
+        f"/api/palette/{eid}/validate",
+        json={"validated_lab": [55.0, 78.0, 65.0], "validated_test_id": val_tid},
+    )
+    # Hard-delete the validated test row to exercise the FK.
+    from xcs_gen_web.repositories import tests as tt_repo
+    tt_repo.delete(val_tid)
+    entry = next(
+        e for e in client.get("/api/palette").json() if e["id"] == eid
+    )
+    # Validated state retained; only the FK reference cleared.
+    assert entry["is_validated"] is True
+    assert entry["validated_lab"] == [55.0, 78.0, 65.0]
+    assert entry["validated_test_id"] is None

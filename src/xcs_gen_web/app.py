@@ -32,6 +32,7 @@ from .schemas import (
     PaletteEntryCreateManual,
     PaletteEntryPatch,
     PaletteEntryResponse,
+    PaletteEntryValidateRequest,
     PaletteQueryResult,
     PaletteValidationStatus,
     PresetCreate,
@@ -699,14 +700,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         favorites_only: bool = False,
         source: str | None = None,
         machine_id: str | None = None,
+        validated_only: bool = False,
         user_id: int = Depends(get_current_user),
     ) -> list[PaletteEntryResponse]:
+        """List palette entries scoped to the caller. Filters compose:
+        ``validated_only=true`` restricts to entries whose
+        ``is_validated`` flag is set, which is what the auto-match
+        ``Prefer validated`` toggle on the SVG layers tab uses."""
         return [
             PaletteEntryResponse(**e)
             for e in pal_repo.list_all(
                 owner_id=user_id, material_id=material_id,
                 favorites_only=favorites_only, source=source,
                 machine_id=machine_id,
+                validated_only=validated_only,
             )
         ]
 
@@ -776,6 +783,64 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not pal_repo.delete_entry(entry_id, owner_id=user_id):
             raise HTTPException(status_code=404, detail="entry not found")
         return Response(status_code=204)
+
+    @app.post(
+        "/api/palette/{entry_id}/validate",
+        response_model=PaletteEntryResponse,
+    )
+    def palette_validate(
+        entry_id: int,
+        body: PaletteEntryValidateRequest,
+        user_id: int = Depends(get_current_user),
+    ) -> PaletteEntryResponse:
+        """Mark an entry as validated and persist a corrected Lab.
+
+        ``body.validated_lab`` is the burn-mean Lab the caller has
+        decided is the authoritative colour — typically the
+        cluster-robust mean across a validation test's results, but
+        the route accepts any 3-vector so a manual override
+        ("trust this measurement") works too. Returns 422 if the
+        Lab triple is malformed, 404 if the entry doesn't exist
+        (or wrong owner). Re-validation is a refresh.
+        """
+        if len(body.validated_lab) != 3:
+            raise HTTPException(
+                status_code=422,
+                detail="validated_lab must be a 3-vector (L*, a*, b*)",
+            )
+        L, a, b = body.validated_lab
+        if not all(isinstance(v, (int, float)) for v in (L, a, b)):
+            raise HTTPException(
+                status_code=422,
+                detail="validated_lab values must be numeric",
+            )
+        result = pal_repo.validate_entry(
+            entry_id,
+            validated_lab=(float(L), float(a), float(b)),
+            validated_test_id=body.validated_test_id,
+            run_count=body.run_count,
+            owner_id=user_id,
+        )
+        if result is None:
+            raise HTTPException(status_code=404, detail="entry not found")
+        return PaletteEntryResponse(**result)
+
+    @app.delete(
+        "/api/palette/{entry_id}/validate",
+        response_model=PaletteEntryResponse,
+    )
+    def palette_invalidate(
+        entry_id: int,
+        user_id: int = Depends(get_current_user),
+    ) -> PaletteEntryResponse:
+        """Clear the validated state on an entry — flag flips back
+        to ``False`` and the validated_* columns reset. The original
+        ``lab_*`` is left untouched so the entry remains usable as
+        an unvalidated row."""
+        result = pal_repo.invalidate_entry(entry_id, owner_id=user_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="entry not found")
+        return PaletteEntryResponse(**result)
 
     @app.patch("/api/palette/{entry_id}", response_model=PaletteEntryResponse)
     def palette_patch(
