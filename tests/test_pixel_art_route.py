@@ -66,5 +66,5 @@ def test_pixel_art_svg_returns_parseable_svg():
     root = ET.fromstring(resp.text)
     assert root.tag.endswith("svg")
     assert root.attrib["viewBox"] == "0 0 10.0 10.0"
-    rects = root.findall(".//{http://www.w3.org/2000/svg}rect")
-    assert len(rects) == 1
+    paths = root.findall(".//{http://www.w3.org/2000/svg}path")
+    assert len(paths) == 1
