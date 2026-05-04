@@ -72,3 +72,14 @@ def test_all_disabled_raises():
     )
     with pytest.raises(ValueError, match="No enabled rects"):
         build_pixel_art_project(req)
+
+
+def test_start_offset_is_added_to_rect_position():
+    req = _req(
+        start_x=15.0,
+        start_y=25.0,
+        rects=[PixelArtRectSpec(x=3.0, y=4.0, width=1, height=1, color="#000000")],
+    )
+    rect = build_pixel_art_project(req).elements[0]
+    assert rect.x == 18.0  # 15 + 3
+    assert rect.y == 29.0  # 25 + 4
