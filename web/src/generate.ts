@@ -1,4 +1,4 @@
-import type { SvgLayersRequest, SvgStackRequest } from "./types";
+import type { PixelArtRequest, SvgLayersRequest, SvgStackRequest } from "./types";
 import { ApiError } from "./api/_fetch";
 import { captureHandledError } from "./sentry";
 
@@ -120,4 +120,12 @@ export async function previewSvg(
   }
   const data = await resp.json();
   return data.svg as string;
+}
+
+export async function pixelArtAndDownload(request: PixelArtRequest): Promise<void> {
+  return postAndDownload("/api/pixel-art", request, `${request.name || "pixel-art"}.xcs`);
+}
+
+export async function pixelArtSvgAndDownload(request: PixelArtRequest): Promise<void> {
+  return postAndDownload("/api/pixel-art/svg", request, `${request.name || "pixel-art"}.svg`);
 }

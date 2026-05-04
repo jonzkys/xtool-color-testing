@@ -35,6 +35,7 @@ from .schemas import (
     PaletteEntryValidateRequest,
     PaletteQueryResult,
     PaletteValidationStatus,
+    PixelArtRequest,
     ValidateBatchEntry,
     ValidateBatchRequest,
     ValidateBatchResponse,
@@ -67,6 +68,7 @@ from .schemas import (
     UserResponse,
     ValidationCellsPatch,
 )
+from .pixel_art_converter import pixel_art_to_svg, pixel_art_to_xcs_bytes
 from .svg_converter import svg_stack_to_xcs_bytes
 from .svg_layers_converter import (
     svg_layers_to_xcs_bytes,
@@ -672,6 +674,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return Response(
             content=body,
             media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+
+    @app.post("/api/pixel-art")
+    def pixel_art(request: PixelArtRequest) -> Response:
+        try:
+            body = pixel_art_to_xcs_bytes(request)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        filename = f"{request.name or 'pixel-art'}.xcs"
+        return Response(
+            content=body,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+
+    @app.post("/api/pixel-art/svg")
+    def pixel_art_svg(request: PixelArtRequest) -> Response:
+        try:
+            svg_text = pixel_art_to_svg(request)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        filename = f"{request.name or 'pixel-art'}.svg"
+        return Response(
+            content=svg_text,
+            media_type="image/svg+xml",
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
             },

@@ -474,3 +474,35 @@ export type TextRegSource = "material" | "machine" | "fallback";
 export interface TextRegResolveResponse extends TextRegParamsBody {
   source: TextRegSource;
 }
+
+// ---------------------------------------------------------------------------
+// Pixel Art (mirrors src/xcs_gen_web/schemas.py).
+// ---------------------------------------------------------------------------
+
+export interface PixelArtLayerSpec {
+  color: string;
+  enabled: boolean;
+  base_params: BaseParams;
+  material_id: string | null;
+  palette_entry_id: number | null;
+}
+
+export interface PixelArtRectSpec {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string;
+}
+
+export interface PixelArtRequest {
+  name: string;
+  material_id: string;
+  width_mm: number;
+  height_mm: number;
+  start_x: number;
+  start_y: number;
+  cell_mm: number;
+  rects: PixelArtRectSpec[];
+  layers: PixelArtLayerSpec[];
+}
