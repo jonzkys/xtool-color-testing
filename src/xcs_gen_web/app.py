@@ -34,6 +34,7 @@ from .schemas import (
     PaletteEntryResponse,
     PaletteQueryResult,
     PaletteValidationStatus,
+    PixelArtRequest,
     PresetCreate,
     PresetResponse,
     PresetUpdate,
@@ -62,6 +63,7 @@ from .schemas import (
     UserResponse,
     ValidationCellsPatch,
 )
+from .pixel_art_converter import pixel_art_to_svg, pixel_art_to_xcs_bytes
 from .svg_converter import svg_stack_to_xcs_bytes
 from .svg_layers_converter import (
     svg_layers_to_xcs_bytes,
@@ -664,6 +666,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(e))
 
         filename = f"{request.name or 'svg-layers'}.xcs"
+        return Response(
+            content=body,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+
+    @app.post("/api/pixel-art")
+    def pixel_art(request: PixelArtRequest) -> Response:
+        try:
+            body = pixel_art_to_xcs_bytes(request)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        filename = f"{request.name or 'pixel-art'}.xcs"
         return Response(
             content=body,
             media_type="application/json",
