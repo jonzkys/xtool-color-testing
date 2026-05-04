@@ -695,7 +695,10 @@ export function StabilityScatter({
             xMax={xMax}
             x={PADL}
             width={W - PADL - PADR}
-            y={H - STRIP - STRIP_GAP - 14}
+            // Strip bottom sits ~8 px above the axis title's cap so the
+            // gradient doesn't kiss "EXPECTED HUE". Top sits ~6 px below
+            // the tick-label baseline.
+            y={H - STRIP - STRIP_GAP - 22}
             height={5}
           />
         )}
