@@ -90,3 +90,21 @@ export async function createManualPaletteEntry(
 export async function patchPaletteNotes(id: number, notes: string): Promise<PaletteEntry> {
   return patchPaletteEntry(id, { notes });
 }
+
+export interface PaletteValidationStatus {
+  entry_id: number;
+  best_de: number | null;
+  last_validated_at: string | null;
+  validated: boolean;
+}
+
+export async function listPaletteValidationStatus(opts: {
+  material_id: number;
+  machine_id?: string;
+  max_de?: number;
+}): Promise<PaletteValidationStatus[]> {
+  const qs = new URLSearchParams({ material_id: String(opts.material_id) });
+  if (opts.machine_id) qs.set("machine_id", opts.machine_id);
+  if (opts.max_de != null) qs.set("max_de", String(opts.max_de));
+  return j(await fetch(`/api/palette/validation-status?${qs}`));
+}

@@ -33,6 +33,7 @@ from .schemas import (
     PaletteEntryPatch,
     PaletteEntryResponse,
     PaletteQueryResult,
+    PaletteValidationStatus,
     PresetCreate,
     PresetResponse,
     PresetUpdate,
@@ -726,6 +727,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
             for r in results
         ]
+
+    @app.get(
+        "/api/palette/validation-status",
+        response_model=list[PaletteValidationStatus],
+    )
+    def palette_validation_status(
+        material_id: int,
+        machine_id: str | None = None,
+        max_de: float = 5.0,
+        user_id: int = Depends(get_current_user),
+    ) -> list[PaletteValidationStatus]:
+        """Per-palette-entry validation status for a material — drives
+        the SVG-Layers tab's "validated colour" badge. ``max_de``
+        defaults to 5 (just-perceptible); callers wanting stricter
+        confidence can lower it."""
+        rows = pal_repo.validation_status_for_material(
+            material_id=material_id,
+            owner_id=user_id,
+            machine_id=machine_id,
+            max_de=max_de,
+        )
+        return [PaletteValidationStatus(**r) for r in rows]
 
     @app.delete("/api/palette/by-test/{test_id}", status_code=204)
     def palette_delete_by_test(

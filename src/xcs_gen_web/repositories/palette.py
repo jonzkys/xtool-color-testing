@@ -9,6 +9,7 @@ future work will widen the filter to ``owner == self OR visibility ==
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
@@ -430,3 +431,176 @@ def create_manual(
             select(palette_entries).where(palette_entries.c.id == new_id),
         ).one()
     return _row_to_entry(out)
+
+
+def validation_status_for_material(
+    *,
+    material_id: int,
+    owner_id: int = STANDALONE_USER_ID,
+    machine_id: str | None = None,
+    max_de: float = 5.0,
+) -> list[dict[str, Any]]:
+    """Validation status per palette entry for a given material/machine.
+
+    For each palette entry scoped to ``material_id`` (and optionally
+    ``machine_id``), find every validation cell that points to the
+    entry via ``palette_entry_id``. Across all non-excluded results of
+    those tests, compute ΔE76 between the cell's measured Lab and its
+    expected Lab. The entry's ``best_de`` is the minimum across all
+    matched (test, result, cell) tuples; ``last_validated_at`` is the
+    upload timestamp of the result that produced ``best_de``.
+
+    An entry is ``validated`` when ``best_de`` is finite and ≤
+    ``max_de`` (default 5.0 — at the just-perceptible boundary). The
+    threshold is a knob the caller can tighten for stricter palettes.
+
+    Returns one dict per palette entry, even those with no matching
+    validation cells (``best_de = None``, ``validated = False``). The
+    SVG-layers UI uses this to badge layers whose auto-matched colour
+    is known to print correctly.
+    """
+    # Imported lazily to avoid circular imports — the models module
+    # can pull in this repo via the FK-relationship surface.
+    from ..models import results as results_table
+    from ..models import tests as tests_table
+    from ..models import validation_cells as vc_table
+
+    with session_scope() as s:
+        entries_q = select(palette_entries.c.id).where(
+            palette_entries.c.owner_id == owner_id,
+            palette_entries.c.material_id == material_id,
+        )
+        if machine_id is not None:
+            entries_q = entries_q.where(
+                palette_entries.c.machine_id == machine_id,
+            )
+        entry_ids = [r.id for r in s.execute(entries_q).all()]
+        if not entry_ids:
+            return []
+
+        # Bring in every validation cell that targets one of our
+        # entries. ``palette_entry_id`` is indexed; the IN list size
+        # is bounded by the entry count which is typically small.
+        cells_q = select(
+            vc_table.c.id,
+            vc_table.c.test_id,
+            vc_table.c.cell_index,
+            vc_table.c.palette_entry_id,
+            vc_table.c.expected_lab_l,
+            vc_table.c.expected_lab_a,
+            vc_table.c.expected_lab_b,
+        ).where(vc_table.c.palette_entry_id.in_(entry_ids))
+        cells = list(s.execute(cells_q).all())
+
+        per_entry: dict[int, dict[str, Any]] = {
+            eid: {"best_de": None, "last_at": None} for eid in entry_ids
+        }
+        if not cells:
+            return [
+                {
+                    "entry_id": eid,
+                    "best_de": None,
+                    "last_validated_at": None,
+                    "validated": False,
+                }
+                for eid in entry_ids
+            ]
+
+        test_ids = list({int(c.test_id) for c in cells})
+        # Pull spec_json so we can derive cells_per_row to map a
+        # swatch's (row, col) → cell_index. Only validation tests
+        # have validation cells in the first place, but we read spec
+        # values defensively.
+        test_specs: dict[int, dict[str, Any]] = {}
+        for r in s.execute(
+            select(tests_table.c.id, tests_table.c.spec_json).where(
+                tests_table.c.id.in_(test_ids),
+            ),
+        ).all():
+            try:
+                test_specs[int(r.id)] = json.loads(r.spec_json) or {}
+            except Exception:
+                test_specs[int(r.id)] = {}
+
+        # Group cells per test for the per-result loop below; also
+        # count cells per test for the cells_per_row fallback when
+        # the spec doesn't carry one (older validation tests).
+        cells_by_test: dict[int, list[Any]] = {}
+        for c in cells:
+            cells_by_test.setdefault(int(c.test_id), []).append(c)
+
+        # Pull every non-excluded result for these tests in one go.
+        results_q = select(
+            results_table.c.id,
+            results_table.c.test_id,
+            results_table.c.uploaded_at,
+            results_table.c.swatches_json,
+            results_table.c.excluded,
+        ).where(results_table.c.test_id.in_(test_ids))
+        result_rows = list(s.execute(results_q).all())
+
+        for r in result_rows:
+            if r.excluded:
+                continue
+            tid = int(r.test_id)
+            spec = test_specs.get(tid, {})
+            cells_per_row = spec.get("cells_per_row")
+            if not cells_per_row or cells_per_row <= 0:
+                rows_count = max(1, int(spec.get("rows") or 1))
+                cell_count = max(1, len(cells_by_test.get(tid, [])))
+                cells_per_row = max(1, math.ceil(cell_count / rows_count))
+
+            try:
+                swatches = json.loads(r.swatches_json) or []
+            except Exception:
+                continue
+
+            sw_by_idx: dict[int, dict[str, Any]] = {}
+            for sw in swatches:
+                try:
+                    row_n = int(sw.get("row", 0))
+                    col_n = int(sw.get("col", 0))
+                except (TypeError, ValueError):
+                    continue
+                sw_by_idx[row_n * cells_per_row + col_n] = sw
+
+            for c in cells_by_test.get(tid, []):
+                sw = sw_by_idx.get(int(c.cell_index))
+                if sw is None:
+                    continue
+                lab = sw.get("lab")
+                if not isinstance(lab, list) or len(lab) != 3:
+                    continue
+                try:
+                    measured = (float(lab[0]), float(lab[1]), float(lab[2]))
+                except (TypeError, ValueError):
+                    continue
+                expected = (
+                    float(c.expected_lab_l),
+                    float(c.expected_lab_a),
+                    float(c.expected_lab_b),
+                )
+                de = math.sqrt(
+                    (expected[0] - measured[0]) ** 2
+                    + (expected[1] - measured[1]) ** 2
+                    + (expected[2] - measured[2]) ** 2
+                )
+                eid = int(c.palette_entry_id)
+                slot = per_entry.get(eid)
+                if slot is None:
+                    continue
+                if slot["best_de"] is None or de < slot["best_de"]:
+                    slot["best_de"] = de
+                    slot["last_at"] = r.uploaded_at
+
+        return [
+            {
+                "entry_id": eid,
+                "best_de": v["best_de"],
+                "last_validated_at": v["last_at"],
+                "validated": (
+                    v["best_de"] is not None and v["best_de"] <= max_de
+                ),
+            }
+            for eid, v in per_entry.items()
+        ]

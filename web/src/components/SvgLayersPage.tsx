@@ -44,7 +44,12 @@ import { validateLayerSpec } from "../validation";
 import type { LibraryState } from "../library";
 import { listMaterials, listPresets } from "../api/library";
 import { StarToggle } from "./StarToggle";
-import { listPaletteEntries, queryPalette, patchPaletteEntry } from "../api/palette";
+import {
+  listPaletteEntries,
+  listPaletteValidationStatus,
+  patchPaletteEntry,
+  queryPalette,
+} from "../api/palette";
 import { getCurrentMachineId } from "../state/machine";
 import { deltaE2000, hexToLab, type Lab } from "../color/math";
 import { computePager } from "../svg/favoritesPager";
@@ -199,6 +204,20 @@ export function SvgLayersPage() {
   const [predictedByColor, setPredictedByColor] = useState<Record<string, string>>(
     {},
   );
+  // Parallel map: per-layer-colour the matched palette entry's ID,
+  // populated alongside ``predictedByColor`` whenever a match is
+  // applied. Lets the UI cross-reference each layer with the
+  // validation-status set without re-querying the palette.
+  const [matchedEntryIdByColor, setMatchedEntryIdByColor] = useState<
+    Record<string, number>
+  >({});
+  // Per-material set of palette entry IDs that have been validated by
+  // a passing validation test (max ΔE76 ≤ 5 vs expected). Fetched on
+  // material change; used to badge each layer card whose matched
+  // entry has been confirmed to print correctly.
+  const [validatedEntryIds, setValidatedEntryIds] = useState<Set<number>>(
+    new Set(),
+  );
   type LayerSortKey = "detected" | "hue" | "luminance_light_first" | "luminance_dark_first";
   const [layerSort, setLayerSort] = useState<LayerSortKey>("detected");
   // What the .xcs export uses for layer colours: "original" keeps the
@@ -314,6 +333,37 @@ export function SvgLayersPage() {
       layers: prev.layers.map((l) => (l.color === color ? { ...l, ...patch } : l)),
     }));
   }
+  // Re-fetch validation status whenever the project's material flips.
+  // The set is small (one row per palette entry for the material) and
+  // changes rarely, so we don't bother caching beyond React state.
+  useEffect(() => {
+    const matIdNum = Number(request.material_id);
+    if (!Number.isFinite(matIdNum) || matIdNum <= 0) {
+      setValidatedEntryIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    listPaletteValidationStatus({
+      material_id: matIdNum,
+      machine_id: getCurrentMachineId(),
+    })
+      .then((rows) => {
+        if (cancelled) return;
+        const ids = new Set<number>();
+        for (const r of rows) if (r.validated) ids.add(r.entry_id);
+        setValidatedEntryIds(ids);
+      })
+      .catch(() => {
+        // Silent: validation status is decorative — the page still
+        // works without the badges. A repeat fetch fires next time the
+        // material changes.
+        if (!cancelled) setValidatedEntryIds(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [request.material_id]);
+
   function updateBase(color: string, patch: Partial<LayerSpec["base_params"]>) {
     setRequest((prev) => ({
       ...prev,
@@ -328,9 +378,13 @@ export function SvgLayersPage() {
     color: string,
     params: Partial<LayerSpec["base_params"]>,
     predictedHex: string,
+    entryId: number | undefined,
   ) {
     updateBase(color, params);
     setPredictedByColor((prev) => ({ ...prev, [color]: predictedHex }));
+    if (entryId != null) {
+      setMatchedEntryIdByColor((prev) => ({ ...prev, [color]: entryId }));
+    }
   }
 
   async function autoMatchAllLayers() {
@@ -372,6 +426,7 @@ export function SvgLayersPage() {
       let unchanged = 0;
       let noMatch = 0;
       const nextPredicted: Record<string, string> = { ...predictedByColor };
+      const nextEntryIds: Record<string, number> = { ...matchedEntryIdByColor };
       setRequest((prev) => ({
         ...prev,
         layers: prev.layers.map((l) => {
@@ -388,6 +443,7 @@ export function SvgLayersPage() {
             (Object.entries(newParams) as [keyof typeof newParams, unknown][])
               .every(([k, v]) => l.base_params[k] === v);
           nextPredicted[l.color] = match.best.entry.hex;
+          nextEntryIds[l.color] = match.best.entry.id;
           if (alreadyMatched) {
             unchanged += 1;
             return l;
@@ -397,6 +453,7 @@ export function SvgLayersPage() {
         }),
       }));
       setPredictedByColor(nextPredicted);
+      setMatchedEntryIdByColor(nextEntryIds);
 
       // Compose a message that distinguishes the three buckets.
       const plural = (n: number) => (n === 1 ? "" : "s");
@@ -1094,6 +1151,10 @@ export function SvgLayersPage() {
                   })().map((l) => {
                     const isSel = selectedColor === l.color;
                     const matched = predictedByColor[l.color];
+                    const matchedEntryId = matchedEntryIdByColor[l.color];
+                    const isValidated =
+                      matchedEntryId != null &&
+                      validatedEntryIds.has(matchedEntryId);
                     const shapeCount = shapeCountsByColor[l.color] ?? 0;
                     const vertexCount = vertexCountsByColor[l.color] ?? 0;
                     return (
@@ -1106,10 +1167,12 @@ export function SvgLayersPage() {
                             "border transition-colors text-left",
                             isSel
                               ? "border-[color:var(--color-primary)] ring-1 ring-[color:var(--color-primary)]/40"
-                              : "border-[color:var(--color-border)] hover:border-[color:var(--color-border-strong)]",
+                              : isValidated
+                                ? "border-[color:var(--color-success)]/55 hover:border-[color:var(--color-success)]"
+                                : "border-[color:var(--color-border)] hover:border-[color:var(--color-border-strong)]",
                             !l.enabled && "opacity-50",
                           )}
-                          aria-label={`Layer ${l.color}${matched ? `, matched to ${matched}` : ", no palette match"}`}
+                          aria-label={`Layer ${l.color}${matched ? `, matched to ${matched}${isValidated ? ", validated" : ""}` : ", no palette match"}`}
                         >
                           {/* Top half: detected colour */}
                           <div
@@ -1126,6 +1189,37 @@ export function SvgLayersPage() {
                             {!matched && (
                               <span className="absolute inset-0 flex items-center justify-center font-mono text-[8.5px] tracking-[0.15em] uppercase text-[color:var(--color-ink-subtle)]">
                                 no match
+                              </span>
+                            )}
+                            {isValidated && (
+                              <span
+                                title="Validated — a passing validation test confirms this colour prints close to expected"
+                                className={cn(
+                                  "absolute bottom-0.5 left-0.5",
+                                  "inline-flex items-center gap-0.5",
+                                  "px-1 h-3.5 rounded-[2px]",
+                                  "font-mono text-[8px] font-semibold tracking-[0.18em] uppercase",
+                                  "bg-[color:var(--color-success)] text-white",
+                                  "drop-shadow-[0_0_2px_rgba(0,0,0,0.45)]",
+                                )}
+                              >
+                                <svg
+                                  aria-hidden="true"
+                                  width="7"
+                                  height="7"
+                                  viewBox="0 0 7 7"
+                                  className="block"
+                                >
+                                  <path
+                                    d="M1 3.6 L2.7 5.3 L6 1.7"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.4"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                </svg>
+                                ok
                               </span>
                             )}
                           </div>
@@ -1263,8 +1357,8 @@ export function SvgLayersPage() {
                 projectMaterialId={request.material_id}
                 onPatch={(p) => updateLayer(selected.color, p)}
                 onBasePatch={(p) => updateBase(selected.color, p)}
-                onPaletteApply={(params, hex) =>
-                  applyPaletteMatch(selected.color, params, hex)
+                onPaletteApply={(params, hex, entryId) =>
+                  applyPaletteMatch(selected.color, params, hex, entryId)
                 }
                 appliedHex={predictedByColor[selected.color]}
               />
@@ -1431,6 +1525,7 @@ function LayerEditor({
   onPaletteApply: (
     params: Partial<LayerSpec["base_params"]>,
     predictedHex: string,
+    entryId: number,
   ) => void;
   /** Hex of whichever palette entry's params are currently applied to
    *  this layer, or undefined if none. Drives the active-chip highlight
@@ -1755,7 +1850,11 @@ function PaletteMatchSection({
 }: {
   layerColor: string;
   materialId: string;
-  onApply: (params: Partial<BaseParams>, predictedHex: string) => void;
+  onApply: (
+    params: Partial<BaseParams>,
+    predictedHex: string,
+    entryId: number,
+  ) => void;
   /** Hex of the palette entry whose params are currently applied to the
    *  parent layer. Drives the active-chip highlight, so switching layers
    *  shows the chip whose recipe is actually live (rather than the
@@ -1897,7 +1996,7 @@ function PaletteMatchSection({
                         // Apply propagates a new appliedHex up to the
                         // parent → re-render → derived selectedId picks
                         // up the new chip. No local highlight state.
-                        onApply(paletteParamsToBaseParams(r.entry.params), r.entry.hex);
+                        onApply(paletteParamsToBaseParams(r.entry.params), r.entry.hex, r.entry.id);
                       }}
                       aria-pressed={isActive}
                       aria-label={`Apply palette match ${r.entry.hex}`}
@@ -2004,7 +2103,11 @@ function PaletteFavoritesRow({
    *  chip is derived against this row's own favourites list — so a
    *  favourited chip outside the matcher's top-N still highlights here. */
   appliedHex?: string;
-  onApply: (params: Partial<BaseParams>, predictedHex: string) => void;
+  onApply: (
+    params: Partial<BaseParams>,
+    predictedHex: string,
+    entryId: number,
+  ) => void;
   refreshKey: number;
 }) {
   const [favorites, setFavorites] = useState<PaletteEntry[]>([]);
@@ -2102,7 +2205,7 @@ function PaletteFavoritesRow({
             <button
               key={entry.id}
               type="button"
-              onClick={() => onApply(paletteParamsToBaseParams(entry.params), entry.hex)}
+              onClick={() => onApply(paletteParamsToBaseParams(entry.params), entry.hex, entry.id)}
               aria-pressed={isActive}
               title={`ΔE ${dE.toFixed(2)} · ${entry.params.power}% · ${entry.params.speed} mm/s · ${laser}`}
               className={cn(
