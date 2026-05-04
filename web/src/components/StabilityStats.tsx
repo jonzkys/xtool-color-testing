@@ -108,8 +108,17 @@ export function StabilityStats({
           Stats
         </span>
       </div>
+      {/* Cards stack via ``space-y-3`` instead of ``flex flex-col gap-3``
+          — flex items default to ``flex-shrink: 1``, which silently
+          shrinks each card below its natural height when the strip
+          overflows the viewport. The cards have ``overflow-hidden``
+          on their wrappers (for rounded borders), so the shrinkage
+          clips content invisibly: PALETTE DRIFT loses its variance
+          row, Σ ACROSS RUNS loses its TOP VARIABLE list. Block
+          layout keeps every card at its natural height and the
+          strip scrolls past them honestly. */}
       <div
-        className="flex-1 min-h-0 overflow-y-scroll p-3 flex flex-col gap-3"
+        className="flex-1 min-h-0 overflow-y-scroll p-3 space-y-3"
         style={{ scrollbarGutter: "stable" }}
       >
         {prependSlot}
