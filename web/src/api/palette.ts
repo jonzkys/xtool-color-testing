@@ -108,3 +108,97 @@ export async function listPaletteValidationStatus(opts: {
   if (opts.max_de != null) qs.set("max_de", String(opts.max_de));
   return j(await fetch(`/api/palette/validation-status?${qs}`));
 }
+
+/* ─── Per-entry validate/invalidate ─────────────────────────────────── */
+
+export interface ValidateEntryRequest {
+  validated_lab: [number, number, number];
+  validated_test_id?: number;
+  run_count?: number;
+}
+
+export async function validatePaletteEntry(
+  id: number,
+  body: ValidateEntryRequest,
+): Promise<PaletteEntry> {
+  return j(await fetch(`/api/palette/${id}/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }));
+}
+
+export async function invalidatePaletteEntry(
+  id: number,
+): Promise<PaletteEntry> {
+  return j(await fetch(`/api/palette/${id}/validate`, { method: "DELETE" }));
+}
+
+/* ─── Batch validate from validation test results ───────────────────── */
+
+export interface ValidateBatchOverride {
+  cell_index: number;
+  accept: boolean;
+}
+
+export interface ValidateBatchRequest {
+  tolerance_de?: number;
+  result_ids?: number[];
+  overrides?: ValidateBatchOverride[];
+  dry_run?: boolean;
+}
+
+export interface ValidateBatchEntry {
+  cell_index: number;
+  /** Existing palette entry the cell links to, if any. Carried as
+   *  provenance only — save always creates a new entry. */
+  palette_entry_id: number | null;
+  burn_mean_lab: [number, number, number];
+  expected_lab: [number, number, number];
+  /** Stability gate: max ΔE between any single run's per-cell mean
+   *  and the across-run consensus. ≤ tolerance → "stable" bucket. */
+  stability_de: number;
+  /** Informational ΔE from the cell's original expected colour.
+   *  Never gates anything (the original may be wrong) but useful to
+   *  surface "how much did this colour move from where we thought
+   *  it was?". */
+  de_vs_expected: number;
+  run_count: number;
+  n_inputs: number;
+  /** Server-side: was this cell actually persisted on save? */
+  persisted: boolean;
+  /** Server-side: id of the freshly-created palette entry on save. */
+  new_entry_id: number | null;
+}
+
+export interface ValidateBatchSkipped {
+  cell_index: number;
+  palette_entry_id: number | null;
+  /** ``no_palette_link`` is gone — unlinked cells now create new
+   *  entries on save. The remaining reasons are about whether the
+   *  measurements are usable. */
+  reason: "insufficient_runs" | "no_measurements";
+  run_count?: number;
+}
+
+export interface ValidateBatchResponse {
+  test_id: number;
+  test_name: string;
+  tolerance_de: number;
+  result_count: number;
+  dry_run: boolean;
+  stable: ValidateBatchEntry[];
+  drifted: ValidateBatchEntry[];
+  skipped: ValidateBatchSkipped[];
+}
+
+export async function validateBatch(
+  testId: number,
+  body: ValidateBatchRequest = {},
+): Promise<ValidateBatchResponse> {
+  return j(await fetch(`/api/tests/${testId}/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }));
+}

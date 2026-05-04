@@ -11,7 +11,7 @@ export type Route =
   | { name: "palette" }
   | { name: "spectrum"; id?: number }
   | { name: "spectrum-2d"; id?: number }
-  | { name: "stability"; id?: number }
+  | { name: "stability"; id?: number; cell?: number }
   | { name: "styleguide" }
   | { name: "guide" }
   | { name: "changelog" }
@@ -38,6 +38,18 @@ export function parseRoute(hash: string): Route {
   const ms = h.match(/^spectrum\/(\d+)$/);
   if (ms) return { name: "spectrum", id: Number(ms[1]) };
   if (h === "stability") return { name: "stability" };
+  // ``#/stability/<id>`` and ``#/stability/<id>?cell=<n>`` — the
+  // optional ``cell`` query param deep-links to a specific cell so
+  // the palette page can navigate "this validated entry → its
+  // source cell" in one click.
+  const mstCell = h.match(/^stability\/(\d+)\?cell=(\d+)$/);
+  if (mstCell) {
+    return {
+      name: "stability",
+      id: Number(mstCell[1]),
+      cell: Number(mstCell[2]),
+    };
+  }
   const mst = h.match(/^stability\/(\d+)$/);
   if (mst) return { name: "stability", id: Number(mst[1]) };
   if (h === "styleguide") return { name: "styleguide" };
@@ -66,7 +78,12 @@ export function formatRoute(r: Route): string {
     case "palette":     return "#/palette";
     case "spectrum":    return r.id != null ? `#/spectrum/${r.id}` : "#/spectrum";
     case "spectrum-2d": return r.id != null ? `#/spectrum-2d/${r.id}` : "#/spectrum-2d";
-    case "stability":   return r.id != null ? `#/stability/${r.id}` : "#/stability";
+    case "stability": {
+      if (r.id == null) return "#/stability";
+      return r.cell != null
+        ? `#/stability/${r.id}?cell=${r.cell}`
+        : `#/stability/${r.id}`;
+    }
     case "saved-spectrums": return "#/saved-spectrums";
     case "styleguide":  return "#/styleguide";
     case "guide":       return "#/guide";

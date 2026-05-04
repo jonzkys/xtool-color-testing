@@ -16,7 +16,7 @@ from sqlalchemy import and_, select
 from ..config import DEFAULT_VISIBILITY, STANDALONE_USER_ID
 from ..db import session_scope
 from ..models import results
-from ..palette import hex_to_lab
+from ..palette import hex_to_lab, lab_to_hex
 
 
 def _now() -> str:
@@ -184,35 +184,6 @@ def list_recent_for_user(
     return [_row(r) for r in rows]
 
 
-def _lab_to_hex(L: float, a: float, b: float) -> str:
-    """Inverse of palette.hex_to_lab for rendering the averaged colour.
-
-    Round-trip through XYZ → linear sRGB → sRGB. Values clamped to [0,1].
-    """
-    def f_inv(t: float) -> float:
-        return t ** 3 if t ** 3 > 0.008856 else (t - 16 / 116) / 7.787
-
-    fy = (L + 16) / 116
-    fx = fy + a / 500
-    fz = fy - b / 200
-    xn, yn, zn = 0.95047, 1.00000, 1.08883
-    X, Y, Z = f_inv(fx) * xn, f_inv(fy) * yn, f_inv(fz) * zn
-    # XYZ → linear sRGB (D65)
-    r =  3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z
-    g = -0.9692660 * X + 1.8760108 * Y + 0.0415560 * Z
-    b_ = 0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z
-
-    def to_srgb(u: float) -> int:
-        if u <= 0:
-            return 0
-        if u >= 1:
-            return 255
-        v = 12.92 * u if u <= 0.0031308 else 1.055 * (u ** (1 / 2.4)) - 0.055
-        return max(0, min(255, round(v * 255)))
-
-    return f"#{to_srgb(r):02x}{to_srgb(g):02x}{to_srgb(b_):02x}"
-
-
 def averaged_swatches(tid: int, *, owner_id: int = STANDALONE_USER_ID) -> list[dict[str, Any]]:
     """Per (row, col): mean Lab across non-excluded results.
 
@@ -242,7 +213,7 @@ def averaged_swatches(tid: int, *, owner_id: int = STANDALONE_USER_ID) -> list[d
         out.append({
             "row": row, "col": col,
             "x_value": items[0]["x_value"], "y_value": items[0]["y_value"],
-            "hex": _lab_to_hex(L, a, b),
+            "hex": lab_to_hex(L, a, b),
             "lab": [L, a, b],
             "sigma": max(it["sigma"] for it in items),
             "sample_count": n,

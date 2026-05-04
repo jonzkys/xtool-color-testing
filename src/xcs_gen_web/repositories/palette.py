@@ -18,7 +18,7 @@ from sqlalchemy import and_, select
 from ..config import DEFAULT_VISIBILITY, STANDALONE_USER_ID
 from ..db import session_scope
 from ..models import palette_entries
-from ..palette import delta_e_2000, hex_to_lab
+from ..palette import delta_e_2000, hex_to_lab, lab_to_hex
 
 
 class NotMutableError(Exception):
@@ -34,6 +34,13 @@ def _now() -> str:
 
 
 def _row_to_entry(r) -> dict[str, Any]:
+    validated_lab: list[float] | None = None
+    if (
+        r.validated_lab_l is not None
+        and r.validated_lab_a is not None
+        and r.validated_lab_b is not None
+    ):
+        validated_lab = [r.validated_lab_l, r.validated_lab_a, r.validated_lab_b]
     return {
         "id": r.id,
         "test_id": r.test_id,
@@ -52,6 +59,19 @@ def _row_to_entry(r) -> dict[str, Any]:
         "visibility": r.visibility,
         "favorited": bool(r.favorited),
         "machine_id": r.machine_id,
+        # Validated state. Stays ``False`` / ``None`` for unvalidated
+        # entries, including every entry pre-migration. The flag is
+        # the canonical filter for "show me only colours I trust";
+        # ``validated_lab`` is the corrected colour the validation
+        # run measured (which can differ from the ingestion-time
+        # ``lab`` when the original was mis-measured).
+        "is_validated": bool(r.is_validated),
+        "validated_at": r.validated_at,
+        "validated_test_id": r.validated_test_id,
+        "validated_cell_index": r.validated_cell_index,
+        "validated_lab": validated_lab,
+        "validated_run_count": r.validated_run_count,
+        "validated_residual_de": r.validated_residual_de,
     }
 
 
@@ -208,7 +228,15 @@ def list_all(
     favorites_only: bool = False,
     source: str | None = None,
     machine_id: str | None = None,
+    validated_only: bool = False,
 ) -> list[dict[str, Any]]:
+    """List palette entries scoped to the owner.
+
+    ``validated_only=True`` restricts to entries where
+    ``is_validated`` is set — the auto-match's "Prefer validated"
+    toggle on the SVG layers tab uses this path so it doesn't have
+    to do a second filter pass client-side.
+    """
     with session_scope() as s:
         q = select(palette_entries).where(
             palette_entries.c.owner_id == owner_id,
@@ -221,6 +249,8 @@ def list_all(
             q = q.where(palette_entries.c.favorited == True)  # noqa: E712
         if source is not None:
             q = q.where(palette_entries.c.source == source)
+        if validated_only:
+            q = q.where(palette_entries.c.is_validated == True)  # noqa: E712
         q = q.order_by(palette_entries.c.created_at.desc())
         return [_row_to_entry(r) for r in s.execute(q).all()]
 
@@ -604,3 +634,189 @@ def validation_status_for_material(
             }
             for eid, v in per_entry.items()
         ]
+
+
+def validate_entry(
+    eid: int,
+    *,
+    validated_lab: tuple[float, float, float],
+    validated_test_id: int | None = None,
+    run_count: int | None = None,
+    owner_id: int = STANDALONE_USER_ID,
+) -> dict[str, Any] | None:
+    """Mark a palette entry as validated and persist the validated Lab.
+
+    ``validated_lab`` is the burn-mean (typically robust-mean) Lab
+    measured across the validation test's results — it can differ
+    from the entry's original ``lab_*`` if the original was
+    mis-ingested under bad lighting. ``validated_residual_de`` is
+    computed and stored so callers can answer "how much did this
+    entry move?" without a second query.
+
+    Re-validation is a refresh: calling on an already-validated
+    entry overwrites the Lab and timestamp. The flag stays ``True``.
+    Returns the updated entry dict, or ``None`` if the entry doesn't
+    exist (or wrong owner).
+    """
+    L_v, a_v, b_v = float(validated_lab[0]), float(validated_lab[1]), float(validated_lab[2])
+    with session_scope() as s:
+        existing = s.execute(
+            select(palette_entries).where(
+                and_(
+                    palette_entries.c.id == eid,
+                    palette_entries.c.owner_id == owner_id,
+                ),
+            )
+        ).one_or_none()
+        if existing is None:
+            return None
+        residual = math.sqrt(
+            (L_v - existing.lab_l) ** 2
+            + (a_v - existing.lab_a) ** 2
+            + (b_v - existing.lab_b) ** 2
+        )
+        s.execute(
+            palette_entries.update()
+            .where(
+                and_(
+                    palette_entries.c.id == eid,
+                    palette_entries.c.owner_id == owner_id,
+                ),
+            )
+            .values(
+                is_validated=True,
+                validated_at=_now(),
+                validated_test_id=validated_test_id,
+                validated_lab_l=L_v,
+                validated_lab_a=a_v,
+                validated_lab_b=b_v,
+                validated_run_count=run_count,
+                validated_residual_de=residual,
+            )
+        )
+        out = s.execute(
+            select(palette_entries).where(palette_entries.c.id == eid),
+        ).one()
+    return _row_to_entry(out)
+
+
+def create_validated_entry(
+    *,
+    machine_id: str,
+    material_id: int,
+    burn_mean_lab: tuple[float, float, float],
+    validated_test_id: int,
+    validated_cell_index: int,
+    run_count: int,
+    stability_de: float,
+    params: dict[str, Any] | None = None,
+    notes: str = "",
+    sigma: float = 0.0,
+    owner_id: int = STANDALONE_USER_ID,
+    visibility: str = DEFAULT_VISIBILITY,
+) -> dict[str, Any]:
+    """Insert a brand-new palette entry from a validated burn-mean Lab.
+
+    The Stability page's VALIDATE save calls this once per cell that
+    the user accepted as stable. The new entry's ``lab_*`` IS the
+    consensus Lab — no separation between "first-ingested colour" and
+    "validated colour" — but the ``validated_*`` columns are still
+    populated for query convenience (so ``WHERE is_validated`` rolls
+    up cleanly without a UNION). ``validated_residual_de`` stores
+    the *stability* gate value (max cross-run drift) since that's the
+    quality signal worth surfacing on the entry, not a residual
+    against an obsolete pre-validation Lab.
+
+    Returns the inserted entry dict.
+    """
+    L, a, b = float(burn_mean_lab[0]), float(burn_mean_lab[1]), float(burn_mean_lab[2])
+    hex_ = lab_to_hex(L, a, b)
+    now = _now()
+    # ``test_id`` mirrors ``validated_test_id`` so the entry surfaces
+    # in the palette page's per-test BrowseView grouping (which keys
+    # off ``test_id``). Otherwise validated entries would only show
+    # up via the Query tab and the user couldn't browse them next to
+    # the original test's swatches. The ``validated_*`` columns then
+    # carry the cell + stability provenance separately.
+    row = {
+        "test_id": validated_test_id,
+        "material_id": material_id,
+        "x_value": 0,
+        "y_value": None,
+        "hex": hex_,
+        "lab_l": L, "lab_a": a, "lab_b": b,
+        "params_json": json.dumps(params or {}, separators=(",", ":")),
+        "sigma": sigma,
+        "source": "averaged",
+        "source_result_id": None,
+        "notes": notes,
+        "created_at": now,
+        "owner_id": owner_id,
+        "visibility": visibility,
+        "machine_id": machine_id,
+        "favorited": False,
+        "is_validated": True,
+        "validated_at": now,
+        "validated_test_id": validated_test_id,
+        "validated_cell_index": validated_cell_index,
+        "validated_lab_l": L,
+        "validated_lab_a": a,
+        "validated_lab_b": b,
+        "validated_run_count": run_count,
+        "validated_residual_de": stability_de,
+    }
+    with session_scope() as s:
+        res = s.execute(palette_entries.insert().values(**row))
+        new_id = res.inserted_primary_key[0]
+        out = s.execute(
+            select(palette_entries).where(palette_entries.c.id == new_id),
+        ).one()
+    return _row_to_entry(out)
+
+
+def invalidate_entry(
+    eid: int,
+    *,
+    owner_id: int = STANDALONE_USER_ID,
+) -> dict[str, Any] | None:
+    """Clear the validated state on an entry — flag flips back to
+    ``False`` and the validated_* columns reset to ``NULL``.
+
+    The original ``lab_*`` is untouched. Returns the updated entry,
+    or ``None`` when the row doesn't exist (or wrong owner).
+    """
+    with session_scope() as s:
+        existing = s.execute(
+            select(palette_entries.c.id).where(
+                and_(
+                    palette_entries.c.id == eid,
+                    palette_entries.c.owner_id == owner_id,
+                ),
+            )
+        ).one_or_none()
+        if existing is None:
+            return None
+        s.execute(
+            palette_entries.update()
+            .where(
+                and_(
+                    palette_entries.c.id == eid,
+                    palette_entries.c.owner_id == owner_id,
+                ),
+            )
+            .values(
+                is_validated=False,
+                validated_at=None,
+                validated_test_id=None,
+                validated_cell_index=None,
+                validated_lab_l=None,
+                validated_lab_a=None,
+                validated_lab_b=None,
+                validated_run_count=None,
+                validated_residual_de=None,
+            )
+        )
+        out = s.execute(
+            select(palette_entries).where(palette_entries.c.id == eid),
+        ).one()
+    return _row_to_entry(out)

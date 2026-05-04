@@ -32,9 +32,14 @@ from .schemas import (
     PaletteEntryCreateManual,
     PaletteEntryPatch,
     PaletteEntryResponse,
+    PaletteEntryValidateRequest,
     PaletteQueryResult,
     PaletteValidationStatus,
     PixelArtRequest,
+    ValidateBatchEntry,
+    ValidateBatchRequest,
+    ValidateBatchResponse,
+    ValidateBatchSkipped,
     PresetCreate,
     PresetResponse,
     PresetUpdate,
@@ -731,14 +736,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         favorites_only: bool = False,
         source: str | None = None,
         machine_id: str | None = None,
+        validated_only: bool = False,
         user_id: int = Depends(get_current_user),
     ) -> list[PaletteEntryResponse]:
+        """List palette entries scoped to the caller. Filters compose:
+        ``validated_only=true`` restricts to entries whose
+        ``is_validated`` flag is set, which is what the auto-match
+        ``Prefer validated`` toggle on the SVG layers tab uses."""
         return [
             PaletteEntryResponse(**e)
             for e in pal_repo.list_all(
                 owner_id=user_id, material_id=material_id,
                 favorites_only=favorites_only, source=source,
                 machine_id=machine_id,
+                validated_only=validated_only,
             )
         ]
 
@@ -808,6 +819,64 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not pal_repo.delete_entry(entry_id, owner_id=user_id):
             raise HTTPException(status_code=404, detail="entry not found")
         return Response(status_code=204)
+
+    @app.post(
+        "/api/palette/{entry_id}/validate",
+        response_model=PaletteEntryResponse,
+    )
+    def palette_validate(
+        entry_id: int,
+        body: PaletteEntryValidateRequest,
+        user_id: int = Depends(get_current_user),
+    ) -> PaletteEntryResponse:
+        """Mark an entry as validated and persist a corrected Lab.
+
+        ``body.validated_lab`` is the burn-mean Lab the caller has
+        decided is the authoritative colour — typically the
+        cluster-robust mean across a validation test's results, but
+        the route accepts any 3-vector so a manual override
+        ("trust this measurement") works too. Returns 422 if the
+        Lab triple is malformed, 404 if the entry doesn't exist
+        (or wrong owner). Re-validation is a refresh.
+        """
+        if len(body.validated_lab) != 3:
+            raise HTTPException(
+                status_code=422,
+                detail="validated_lab must be a 3-vector (L*, a*, b*)",
+            )
+        L, a, b = body.validated_lab
+        if not all(isinstance(v, (int, float)) for v in (L, a, b)):
+            raise HTTPException(
+                status_code=422,
+                detail="validated_lab values must be numeric",
+            )
+        result = pal_repo.validate_entry(
+            entry_id,
+            validated_lab=(float(L), float(a), float(b)),
+            validated_test_id=body.validated_test_id,
+            run_count=body.run_count,
+            owner_id=user_id,
+        )
+        if result is None:
+            raise HTTPException(status_code=404, detail="entry not found")
+        return PaletteEntryResponse(**result)
+
+    @app.delete(
+        "/api/palette/{entry_id}/validate",
+        response_model=PaletteEntryResponse,
+    )
+    def palette_invalidate(
+        entry_id: int,
+        user_id: int = Depends(get_current_user),
+    ) -> PaletteEntryResponse:
+        """Clear the validated state on an entry — flag flips back
+        to ``False`` and the validated_* columns reset. The original
+        ``lab_*`` is left untouched so the entry remains usable as
+        an unvalidated row."""
+        result = pal_repo.invalidate_entry(entry_id, owner_id=user_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="entry not found")
+        return PaletteEntryResponse(**result)
 
     @app.patch("/api/palette/{entry_id}", response_model=PaletteEntryResponse)
     def palette_patch(
@@ -1677,6 +1746,147 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             AveragedSwatch(**s)
             for s in r_repo.averaged_swatches(tid, owner_id=user_id)
         ]
+
+    @app.post(
+        "/api/tests/{tid}/validate",
+        response_model=ValidateBatchResponse,
+    )
+    def tests_validate_batch(
+        tid: int,
+        body: ValidateBatchRequest,
+        user_id: int = Depends(get_current_user),
+    ) -> ValidateBatchResponse:
+        """Walk a validation test's cells against its uploaded
+        results, bucket them stable / drifted / skipped by intra-cell
+        cross-run stability, and (unless ``dry_run``) create new
+        validated palette entries from the consensus Lab of each
+        accepted cell.
+
+        Save semantics: each accepted cell *creates a brand-new
+        palette entry* with ``source='averaged'`` and the burn-mean
+        as its Lab. Linked cells produce a new entry alongside the
+        original; unlinked cells produce an entry on their own. There
+        is no in-place update path — the original entry might itself
+        be wrong, and the new entry is the authoritative record.
+
+        The Stability page's VALIDATE mode hits this in dry_run
+        mode first to show the preview, then again with
+        ``dry_run=false`` and any per-cell overrides the user
+        flipped. The math lives in
+        ``services/validate.compute_validation_buckets``.
+        """
+        from .services import validate as validate_service
+        from .repositories import validation_cells as vc_repo
+
+        t = t_repo.get(tid, owner_id=user_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        if (t.get("kind") or "sweep") != "validation":
+            raise HTTPException(
+                status_code=400,
+                detail="validate is only valid on kind=validation tests",
+            )
+
+        # Pull non-excluded results, optionally filtered to the
+        # caller's selection.
+        results = r_repo.list_by_test(
+            tid, owner_id=user_id, include_excluded=False,
+        )
+        if body.result_ids:
+            allowed = set(body.result_ids)
+            results = [r for r in results if r["id"] in allowed]
+        result_count = len(results)
+        # ``r_repo.list_by_test`` returns swatches already parsed
+        # into Python lists, so the validate service can consume them
+        # directly without a JSON round-trip.
+        swatches_per_result = [
+            r.get("swatches") or [] for r in results
+        ]
+
+        # ``vc_repo.list_for_test`` is owner-agnostic — owner is
+        # enforced via the parent test's ``t_repo.get`` above.
+        cells_full = vc_repo.list_for_test(test_id=tid)
+        # Materialise lab columns + params dict the bucketing + save
+        # path needs. ``params`` is preserved on the new palette entry
+        # so the validated colour records the burn parameters that
+        # produced it (otherwise auto-match has no recipe to apply).
+        cells_for_buckets = []
+        cell_params: dict[int, dict] = {}
+        for c in cells_full:
+            exp = c.get("expected_lab")
+            if not isinstance(exp, list) or len(exp) != 3:
+                continue
+            cells_for_buckets.append({
+                "cell_index": c["cell_index"],
+                "palette_entry_id": c.get("palette_entry_id"),
+                "expected_lab_l": exp[0],
+                "expected_lab_a": exp[1],
+                "expected_lab_b": exp[2],
+            })
+            cell_params[c["cell_index"]] = c.get("params") or {}
+
+        buckets = validate_service.compute_validation_buckets(
+            cells=cells_for_buckets,
+            swatches_per_result=swatches_per_result,
+            spec=t["spec"],
+            tolerance_de=body.tolerance_de,
+        )
+
+        # Apply per-cell overrides: build the persist set. Stable
+        # entries persist by default; drifted entries only when
+        # explicitly accepted by the user.
+        override_map = {o.cell_index: o.accept for o in body.overrides}
+
+        def decide(entry: dict, default_accept: bool) -> bool:
+            return override_map.get(entry["cell_index"], default_accept) and not body.dry_run
+
+        stable_decisions = [(entry, decide(entry, True)) for entry in buckets["stable"]]
+        drifted_decisions = [(entry, decide(entry, False)) for entry in buckets["drifted"]]
+
+        # Persist outside the bucketing loop so a partial failure
+        # doesn't leave half the rows created. Each accepted cell
+        # gets a brand-new palette entry.
+        machine_id = t.get("machine_id") or "F2Ultra"
+        material_id = t["material_id"]
+        new_ids: dict[int, int] = {}
+        for entry, persist in (*stable_decisions, *drifted_decisions):
+            if not persist:
+                continue
+            new_entry = pal_repo.create_validated_entry(
+                machine_id=machine_id,
+                material_id=material_id,
+                burn_mean_lab=tuple(entry["burn_mean_lab"]),
+                validated_test_id=tid,
+                validated_cell_index=int(entry["cell_index"]),
+                run_count=int(entry["run_count"]),
+                stability_de=float(entry["stability_de"]),
+                params=cell_params.get(entry["cell_index"]) or {},
+                owner_id=user_id,
+            )
+            new_ids[entry["cell_index"]] = new_entry["id"]
+
+        def to_response(entry: dict, persisted: bool) -> ValidateBatchEntry:
+            return ValidateBatchEntry(
+                **entry,
+                persisted=persisted,
+                new_entry_id=new_ids.get(entry["cell_index"]),
+            )
+
+        stable_response = [to_response(e, p) for e, p in stable_decisions]
+        drifted_response = [to_response(e, p) for e, p in drifted_decisions]
+        skipped_response = [
+            ValidateBatchSkipped(**s) for s in buckets["skipped"]
+        ]
+        return ValidateBatchResponse(
+            test_id=tid,
+            test_name=t["name"],
+            tolerance_de=body.tolerance_de,
+            result_count=result_count,
+            dry_run=body.dry_run,
+            stable=stable_response,
+            drifted=drifted_response,
+            skipped=skipped_response,
+        )
 
     @app.post("/api/tests/{tid}/ingest-to-palette")
     def tests_ingest_to_palette(

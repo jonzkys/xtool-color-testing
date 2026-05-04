@@ -391,6 +391,24 @@ class PaletteEntryResponse(BaseModel):
     owner_id: int
     visibility: str
     machine_id: str
+    # Validated state. ``is_validated`` defaults to ``False`` so
+    # pre-migration entries deserialise cleanly without a backfill.
+    # When set, ``validated_lab`` carries the burn-mean Lab measured
+    # by the validation test (a more reliable colour than the
+    # ingestion-time ``lab`` if the original was photographed under
+    # poor light); ``validated_residual_de`` reports the ΔE76
+    # between the original and validated Lab so the UI can flag
+    # entries that moved a lot.
+    is_validated: bool = False
+    validated_at: str | None = None
+    validated_test_id: int | None = None
+    # Cell index inside ``validated_test_id`` that the entry came
+    # from. Lets the palette UI link "this entry → that cell" without
+    # comparing burn parameters by hand.
+    validated_cell_index: int | None = None
+    validated_lab: list[float] | None = None
+    validated_run_count: int | None = None
+    validated_residual_de: float | None = None
 
 
 class PaletteQueryResult(BaseModel):
@@ -419,6 +437,98 @@ class PaletteEntryPatch(BaseModel):
     params: dict | None = None
     notes: str | None = None
     favorited: bool | None = None
+
+
+class PaletteEntryValidateRequest(BaseModel):
+    """Per-entry validate request body. ``validated_lab`` is the
+    burn-mean Lab the caller has decided is the authoritative
+    colour for this entry — typically computed client-side from a
+    validation test's results, but the route accepts any 3-vector
+    so manual overrides ("I trust this measurement, just use it")
+    work too. ``validated_test_id`` and ``run_count`` are
+    provenance hints; both are optional but recommended."""
+
+    validated_lab: list[float]
+    validated_test_id: int | None = None
+    run_count: int | None = None
+
+
+class ValidateBatchAcceptOverride(BaseModel):
+    """Per-cell override carried in a batch validate request. The UI
+    flips individual cells between accept (create entry) and skip
+    (don't) regardless of the stable/drifted bucket. Accepting a
+    drifted cell is the user saying "yes, save this colour even
+    though it wandered between runs"; skipping a stable cell is "I
+    don't want this colour in the palette right now"."""
+
+    cell_index: int
+    accept: bool
+
+
+class ValidateBatchRequest(BaseModel):
+    """POST /api/tests/{tid}/validate body.
+
+    ``tolerance_de`` seeds the stable/drifted bucketing — cells whose
+    *cross-run stability* (max ΔE76 between any single run's per-cell
+    mean and the across-run consensus) is within tolerance go into
+    ``stable``, larger spread goes into ``drifted`` for user review.
+    ``result_ids`` restricts which results contribute (defaults to
+    all non-excluded). ``overrides`` lets the UI flip per-cell
+    bucketing before commit. ``dry_run=true`` returns the bucketing
+    without persisting — drives the preview pane."""
+
+    tolerance_de: float = 8.0
+    result_ids: list[int] | None = None
+    overrides: list[ValidateBatchAcceptOverride] = []
+    dry_run: bool = False
+
+
+class ValidateBatchEntry(BaseModel):
+    cell_index: int
+    # Existing palette entry the cell is linked to, if any. Carried as
+    # provenance only — save always *creates* a new entry rather than
+    # mutating this one.
+    palette_entry_id: int | None = None
+    burn_mean_lab: list[float]
+    expected_lab: list[float]
+    # Stability gate: max cross-run ΔE between any single run's mean
+    # and the consensus. ≤ tolerance → "stable" bucket.
+    stability_de: float
+    # Informational: ΔE between consensus and the cell's original
+    # expected Lab. Never a gate (the original might be wrong) but
+    # useful for the user to see how much the validated colour drifts
+    # from what they thought.
+    de_vs_expected: float
+    run_count: int
+    n_inputs: int
+    # Response-side: was this cell actually persisted on save?
+    persisted: bool = False
+    # Response-side: id of the freshly-created palette entry when
+    # ``persisted=true``; ``None`` for dry-run or skipped saves.
+    new_entry_id: int | None = None
+
+
+class ValidateBatchSkipped(BaseModel):
+    cell_index: int
+    palette_entry_id: int | None = None
+    # Allowed values: "insufficient_runs", "no_measurements". The
+    # ``no_palette_link`` skip reason is gone — unlinked cells are
+    # first-class citizens that just create new entries.
+    reason: str
+    run_count: int | None = None
+
+
+class ValidateBatchResponse(BaseModel):
+    """Bucketed result of a batch validate, with provenance."""
+
+    test_id: int
+    test_name: str
+    tolerance_de: float
+    result_count: int
+    dry_run: bool
+    stable: list[ValidateBatchEntry]
+    drifted: list[ValidateBatchEntry]
+    skipped: list[ValidateBatchSkipped]
 
 
 class PaletteEntryCreateManual(BaseModel):
