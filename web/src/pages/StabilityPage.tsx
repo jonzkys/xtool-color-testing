@@ -467,6 +467,7 @@ export function StabilityPage() {
                 cellsPerRow={cellsPerRow}
                 focusedCell={focusedCell}
                 onCellClick={(idx) => handleClick(idx, "stats")}
+                onRunOpen={setSelectedResultIdForModal}
                 onClose={() => {
                   setTransientCell(null);
                   setPinnedCell(null);
@@ -485,6 +486,8 @@ export function StabilityPage() {
               : null
           }
           test={testDetail}
+          highlightCellIndex={focusedCell?.cellIndex ?? null}
+          cellsPerRow={cellsPerRow}
           onClose={() => setSelectedResultIdForModal(null)}
         />
       )}

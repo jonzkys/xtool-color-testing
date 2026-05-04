@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ExternalLink, X } from "lucide-react";
 import type { Lab } from "../color/math";
-import type { ResultRecord, TestRecord } from "../types";
+import type { GridLayout, ResultRecord, TestRecord } from "../types";
 import { cn, MetalBar } from "../ui";
 import {
   computePerResultStats, signedNum,
   type PerResultStats, type StatsSeriesEntry,
 } from "./stabilityStatsMath";
+import { cellRectInImagePx } from "./cellInspectorMath";
 
 interface ResultModalProps {
   open: boolean;
@@ -16,6 +17,14 @@ interface ResultModalProps {
   /** Carries cells_per_row + validation cells for stats; provides the
    *  test id used by the OPEN ⤴ deep link. */
   test: TestRecord;
+  /** When set, render a primary-tinted box around this cell on the
+   *  warped image (with a dimmed mask outside) so the user can spot
+   *  where on the print the focused cell lives. ``null`` = no
+   *  highlight. */
+  highlightCellIndex?: number | null;
+  /** Required to compute (row, col) from ``cell_index`` for the
+   *  highlight. ``null`` skips the overlay. */
+  cellsPerRow?: number | null;
   onClose: () => void;
 }
 
@@ -26,7 +35,14 @@ interface ResultModalProps {
  * Reuses ``computePerResultStats`` so the strip and modal never
  * disagree.
  */
-export function StabilityResultModal({ open, result, test, onClose }: ResultModalProps) {
+export function StabilityResultModal({
+  open,
+  result,
+  test,
+  highlightCellIndex,
+  cellsPerRow,
+  onClose,
+}: ResultModalProps) {
   return (
     <DialogPrimitive.Root open={open && result != null} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogPrimitive.Portal>
@@ -45,14 +61,34 @@ export function StabilityResultModal({ open, result, test, onClose }: ResultModa
             "flex flex-col focus:outline-none",
           )}
         >
-          {result ? <ModalBody result={result} test={test} onClose={onClose} /> : null}
+          {result ? (
+            <ModalBody
+              result={result}
+              test={test}
+              highlightCellIndex={highlightCellIndex ?? null}
+              cellsPerRow={cellsPerRow ?? null}
+              onClose={onClose}
+            />
+          ) : null}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
   );
 }
 
-function ModalBody({ result, test, onClose }: { result: ResultRecord; test: TestRecord; onClose: () => void }) {
+function ModalBody({
+  result,
+  test,
+  highlightCellIndex,
+  cellsPerRow,
+  onClose,
+}: {
+  result: ResultRecord;
+  test: TestRecord;
+  highlightCellIndex: number | null;
+  cellsPerRow: number | null;
+  onClose: () => void;
+}) {
   const stat = useMemo(
     () => computePerResultStats(test.validation_cells, buildSeriesEntry(test, result)),
     [test, result],
@@ -62,7 +98,11 @@ function ModalBody({ result, test, onClose }: { result: ResultRecord; test: Test
       <Header result={result} test={test} stat={stat} onClose={onClose} />
       <MetalBar variant="soft" />
       <div className="flex-1 min-h-0 grid grid-cols-[1fr_240px]">
-        <ImagePane result={result} />
+        <ImagePane
+          result={result}
+          highlightCellIndex={highlightCellIndex}
+          cellsPerRow={cellsPerRow}
+        />
         <StatPane result={result} stat={stat} />
       </div>
     </>
@@ -115,16 +155,59 @@ const Sep = () => <span className="mx-2 text-[color:var(--color-border-strong)]"
 
 /* ─── Image pane ───────────────────────────────────────────────────────── */
 
-function ImagePane({ result }: { result: ResultRecord }) {
+function ImagePane({
+  result,
+  highlightCellIndex,
+  cellsPerRow,
+}: {
+  result: ResultRecord;
+  highlightCellIndex: number | null;
+  cellsPerRow: number | null;
+}) {
   const { blobUrl, status } = useWarpedImage(result.id);
+  // Lazy grid layout fetch — only fired when we actually need to draw
+  // the highlight overlay. Stays cached across opens because the
+  // modal's React tree unmounts on close, but if it stayed mounted the
+  // dependency on result.id would re-fetch.
+  const [layout, setLayout] = useState<GridLayout | null>(null);
+  useEffect(() => {
+    if (highlightCellIndex == null || cellsPerRow == null) return;
+    let cancelled = false;
+    setLayout(null);
+    (async () => {
+      try {
+        const { getGridLayout } = await import("../api/results");
+        const l = await getGridLayout(result.id);
+        if (!cancelled) setLayout(l);
+      } catch {
+        if (!cancelled) setLayout(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [result.id, highlightCellIndex, cellsPerRow]);
+
   return (
     <div className="relative bg-[color:var(--color-substrate)] border-r border-[color:var(--color-border)] overflow-hidden">
       {status === "ok" && blobUrl != null && (
-        <img
-          src={blobUrl}
-          alt={`Rectified burn-space view of result #${result.id}`}
-          className="absolute inset-0 w-full h-full object-contain"
-        />
+        <>
+          <img
+            src={blobUrl}
+            alt={`Rectified burn-space view of result #${result.id}`}
+            className="absolute inset-0 w-full h-full object-contain"
+          />
+          {highlightCellIndex != null &&
+            cellsPerRow != null &&
+            cellsPerRow > 0 &&
+            layout != null && (
+              <CellHighlightOverlay
+                layout={layout}
+                cellsPerRow={cellsPerRow}
+                cellIndex={highlightCellIndex}
+              />
+            )}
+        </>
       )}
       {status === "loading" && (
         <div className="absolute inset-0 flex items-center justify-center">
@@ -149,6 +232,82 @@ function ImagePane({ result }: { result: ResultRecord }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Primary-tinted box around the focused cell on the warped image,
+ *  with a 32% black mask outside so the cell pops. The overlay shares
+ *  the image's viewBox so its placement tracks ``object-contain``
+ *  letterboxing exactly — no separate <img> rect math required. A
+ *  tiny "FOCUSED · #N" label hugs the box's top-right corner; it
+ *  flips to the inside of the rect when there isn't room outside. */
+function CellHighlightOverlay({
+  layout,
+  cellsPerRow,
+  cellIndex,
+}: {
+  layout: GridLayout;
+  cellsPerRow: number;
+  cellIndex: number;
+}) {
+  const physicalRow = Math.floor(cellIndex / cellsPerRow);
+  const displayedCol = cellIndex % cellsPerRow;
+  const rect = cellRectInImagePx(layout, { physicalRow, displayedCol });
+  const imgW = layout.image_width_px;
+  const imgH = layout.image_height_px;
+  // Visually-tuned strokes; image-pixel dimensions can be 1000+ px so
+  // a 1 px stroke would render as a hairline at modal-fit scale.
+  const stroke = Math.max(3, Math.min(imgW, imgH) / 180);
+  const labelFontPx = Math.max(11, Math.min(imgW, imgH) / 75);
+  const labelTextX = rect.left + rect.width / 2;
+  // Place the caption above the box if there's room; otherwise tuck
+  // it just below the bottom edge.
+  const labelAbove = rect.top - labelFontPx * 1.6 > 0;
+  const labelTextY = labelAbove
+    ? rect.top - labelFontPx * 0.6
+    : rect.top + rect.height + labelFontPx * 1.2;
+  return (
+    <svg
+      viewBox={`0 0 ${imgW} ${imgH}`}
+      preserveAspectRatio="xMidYMid meet"
+      className="absolute inset-0 w-full h-full pointer-events-none"
+      aria-hidden
+    >
+      {/* Even-odd fill: outer rect minus the cell rect → ring-shaped
+          dimmer that sells the highlight without obscuring the cell
+          itself. */}
+      <path
+        d={`M0 0 H${imgW} V${imgH} H0 Z M${rect.left} ${rect.top} V${rect.top + rect.height} H${rect.left + rect.width} V${rect.top} Z`}
+        fillRule="evenodd"
+        fill="rgba(0,0,0,0.42)"
+      />
+      <rect
+        x={rect.left}
+        y={rect.top}
+        width={rect.width}
+        height={rect.height}
+        fill="none"
+        stroke="var(--color-primary)"
+        strokeWidth={stroke}
+      />
+      <text
+        x={labelTextX}
+        y={labelTextY}
+        textAnchor="middle"
+        fill="var(--color-primary)"
+        style={{
+          font: `600 ${labelFontPx}px var(--font-mono)`,
+          letterSpacing: "0.18em",
+          textTransform: "uppercase",
+          paintOrder: "stroke fill",
+          stroke: "rgba(0,0,0,0.45)",
+          strokeWidth: Math.max(3, labelFontPx / 4),
+          strokeLinejoin: "round",
+        }}
+      >
+        Focused · #{cellIndex}
+      </text>
+    </svg>
   );
 }
 

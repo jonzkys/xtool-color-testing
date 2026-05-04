@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { labToHex, type Lab } from "../color/math";
-import type { GridLayout, ResultRecord, TestRecord } from "../types";
+import type { ResultRecord, TestRecord } from "../types";
 import { cn } from "../ui";
 import { seriesColour, type FocusedCell } from "./StabilityChart";
 import { cellResidual, signedNum } from "./stabilityStatsMath";
-import { cellRectInImagePx } from "./cellInspectorMath";
-import { useAuthedImage } from "../hooks/useAuthedImage";
 
 interface FocusedCellPanelProps {
   test: TestRecord;
@@ -15,6 +13,11 @@ interface FocusedCellPanelProps {
   /** Re-pin focus on the same cell — used by the close button (clears)
    *  and chip clicks (re-asserts). */
   onCellClick: (cellIndex: number) => void;
+  /** Open a run in the per-result modal. Triggered by the ``→`` pip on
+   *  each measured-run row. ``undefined`` hides the pip. The modal
+   *  highlights the focused cell on the warped photo when this fires
+   *  while a cell is focused (the page wires both pieces). */
+  onRunOpen?: (resultId: number) => void;
   /** Clear focus everywhere. */
   onClose: () => void;
   /** Used purely for the `aria-pressed` styling — when ``true`` we
@@ -40,6 +43,7 @@ export function StabilityFocusedCellPanel({
   results,
   cellIndex,
   onCellClick,
+  onRunOpen,
   onClose,
   cellsPerRow,
 }: FocusedCellPanelProps) {
@@ -47,16 +51,6 @@ export function StabilityFocusedCellPanel({
     () => test.validation_cells.find((c) => c.cell_index === cellIndex) ?? null,
     [test, cellIndex],
   );
-
-  // Which run is currently expanded with its inline image preview.
-  // The user toggles this by clicking the small → arrow on each run
-  // chip row. Reset whenever the focused cell changes — the previous
-  // expansion was about a different cell, so the photo would now show
-  // a different highlight that the user didn't ask for.
-  const [expandedRunId, setExpandedRunId] = useState<number | null>(null);
-  useEffect(() => {
-    setExpandedRunId(null);
-  }, [cellIndex]);
 
   // Per-result measurement for this cell, in the same order as
   // ``results`` (which mirrors the chart series order, hence the chip
@@ -177,33 +171,18 @@ export function StabilityFocusedCellPanel({
               const labTuple: Lab = [lab[0], lab[1], lab[2]];
               const dE = euclidean(labTuple, expectedLab);
               const isSingleton = presentMeasurements.length === 1;
-              const expanded = expandedRunId === m.result.id;
               return (
-                <li key={m.result.id} className="flex flex-col gap-1.5">
-                  <RunChipRow
-                    hex={m.sw!.hex}
-                    colour={seriesColour(m.seriesIndex)}
-                    label={shortStamp(m.result.uploaded_at)}
-                    dE={dE}
-                    primary={isSingleton}
-                    expanded={expanded}
-                    onToggleExpand={
-                      cellsPerRow != null
-                        ? () =>
-                            setExpandedRunId(
-                              expanded ? null : m.result.id,
-                            )
-                        : undefined
-                    }
-                  />
-                  {expanded && cellsPerRow != null && (
-                    <CellImagePreview
-                      result={m.result}
-                      cellIndex={cellIndex}
-                      cellsPerRow={cellsPerRow}
-                    />
-                  )}
-                </li>
+                <RunChipRow
+                  key={m.result.id}
+                  hex={m.sw!.hex}
+                  colour={seriesColour(m.seriesIndex)}
+                  label={shortStamp(m.result.uploaded_at)}
+                  dE={dE}
+                  primary={isSingleton}
+                  onOpen={
+                    onRunOpen ? () => onRunOpen(m.result.id) : undefined
+                  }
+                />
               );
             })}
           </ul>
@@ -321,245 +300,29 @@ function Section({
   );
 }
 
-/** Inline cell-on-photo preview rendered below a run chip when the
- *  user clicks its → toggle. Lazy-loads the run's warped image + grid
- *  layout and renders the focused cell either as a primary-tinted box
- *  on the full photo (default) or zoomed-in to just the cell rect.
- *
- *  Failures (missing layout, image fetch error) collapse to a small
- *  caption rather than spinning forever — the run chip itself stays
- *  intact, so the user can still read every other section. */
-function CellImagePreview({
-  result,
-  cellIndex,
-  cellsPerRow,
-}: {
-  result: ResultRecord;
-  cellIndex: number;
-  cellsPerRow: number;
-}) {
-  const [mode, setMode] = useState<"box" | "crop">("box");
-  const [layout, setLayout] = useState<GridLayout | null>(null);
-  const [layoutErr, setLayoutErr] = useState<string | null>(null);
-  const blobUrl = useAuthedImage(`/api/results/${result.id}/warped-image`);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLayout(null);
-    setLayoutErr(null);
-    (async () => {
-      try {
-        const { getGridLayout } = await import("../api/results");
-        const l = await getGridLayout(result.id);
-        if (!cancelled) setLayout(l);
-      } catch (err) {
-        if (!cancelled) setLayoutErr((err as Error).message);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [result.id]);
-
-  const physicalRow = Math.floor(cellIndex / cellsPerRow);
-  const displayedCol = cellIndex % cellsPerRow;
-  const rect =
-    layout != null
-      ? cellRectInImagePx(layout, { physicalRow, displayedCol })
-      : null;
-
-  return (
-    <div className="ml-9 flex flex-col gap-1.5">
-      <div className="flex items-center gap-1">
-        <CellPreviewModeButton
-          on={mode === "box"}
-          onClick={() => setMode("box")}
-          label="Box"
-          title="Whole warped photo with a box on the focused cell"
-        />
-        <CellPreviewModeButton
-          on={mode === "crop"}
-          onClick={() => setMode("crop")}
-          label="Crop"
-          title="Zoom in to just the focused cell"
-        />
-      </div>
-      <CellImageCanvas
-        mode={mode}
-        blobUrl={blobUrl}
-        layout={layout}
-        layoutErr={layoutErr}
-        rect={rect}
-      />
-    </div>
-  );
-}
-
-function CellPreviewModeButton({
-  on,
-  onClick,
-  label,
-  title,
-}: {
-  on: boolean;
-  onClick: () => void;
-  label: string;
-  title: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={on}
-      title={title}
-      className={cn(
-        "h-5 px-2 rounded-[3px] font-mono text-[9px] font-semibold tracking-[0.18em] uppercase tabular-nums border transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
-        on
-          ? "bg-[color:var(--color-primary)] text-white border-[color:var(--color-primary)]"
-          : "bg-[color:var(--color-surface)] border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
-      )}
-    >
-      {label}
-    </button>
-  );
-}
-
-function CellImageCanvas({
-  mode,
-  blobUrl,
-  layout,
-  layoutErr,
-  rect,
-}: {
-  mode: "box" | "crop";
-  blobUrl: string | null;
-  layout: GridLayout | null;
-  layoutErr: string | null;
-  rect: { left: number; top: number; width: number; height: number } | null;
-}) {
-  if (layoutErr != null) {
-    return (
-      <div className="aspect-[4/3] rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] flex items-center justify-center px-2 text-center font-mono text-[9.5px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
-        layout unavailable
-      </div>
-    );
-  }
-  if (blobUrl == null || layout == null || rect == null) {
-    return (
-      <div className="aspect-[4/3] rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] flex items-center justify-center font-mono text-[9.5px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
-        loading…
-      </div>
-    );
-  }
-  const { image_width_px: imgW, image_height_px: imgH } = layout;
-  if (mode === "crop") {
-    // viewBox crops the image to the cell rect — clean SVG-native
-    // approach with no CSS background-position arithmetic. The aspect
-    // box matches the cell's aspect to avoid letterboxing.
-    const aspect = `${rect.width} / ${rect.height}`;
-    return (
-      <div
-        className="rounded-[4px] border-2 border-[color:var(--color-primary)] bg-[color:var(--color-surface)] overflow-hidden"
-        style={{ aspectRatio: aspect, maxHeight: 200 }}
-      >
-        <svg
-          viewBox={`${rect.left} ${rect.top} ${rect.width} ${rect.height}`}
-          preserveAspectRatio="xMidYMid meet"
-          className="w-full h-full block"
-        >
-          <image
-            href={blobUrl}
-            x={0}
-            y={0}
-            width={imgW}
-            height={imgH}
-            preserveAspectRatio="none"
-          />
-        </svg>
-      </div>
-    );
-  }
-  // Default: full image with a primary-tinted box around the cell.
-  // Stroke width scales so the box stays visible regardless of how
-  // large the photo is in image-pixel units.
-  const stroke = Math.max(2, Math.min(imgW, imgH) / 200);
-  return (
-    <div
-      className="rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-hidden"
-      style={{ aspectRatio: `${imgW} / ${imgH}`, maxHeight: 200 }}
-    >
-      <svg
-        viewBox={`0 0 ${imgW} ${imgH}`}
-        preserveAspectRatio="xMidYMid meet"
-        className="w-full h-full block"
-      >
-        <image
-          href={blobUrl}
-          x={0}
-          y={0}
-          width={imgW}
-          height={imgH}
-          preserveAspectRatio="none"
-        />
-        <rect
-          x={rect.left}
-          y={rect.top}
-          width={rect.width}
-          height={rect.height}
-          fill="none"
-          stroke="var(--color-primary)"
-          strokeWidth={stroke}
-        />
-        {/* Subtle dimmer ring outside the box so the cell pops without
-            obscuring its colour. Achieved via a path with even-odd
-            fill: outer rect minus inner rect. */}
-        <path
-          d={`M0 0 H${imgW} V${imgH} H0 Z M${rect.left} ${rect.top} V${rect.top + rect.height} H${rect.left + rect.width} V${rect.top} Z`}
-          fillRule="evenodd"
-          fill="rgba(0,0,0,0.32)"
-        />
-        <rect
-          x={rect.left}
-          y={rect.top}
-          width={rect.width}
-          height={rect.height}
-          fill="none"
-          stroke="var(--color-primary)"
-          strokeWidth={stroke}
-        />
-      </svg>
-    </div>
-  );
-}
-
 /** Single 24×24 chip with a coloured ring matching the chart series
  *  legend, the run timestamp, the run's hex value, and ΔE vs
- *  expected. The trailing arrow pip toggles an inline image preview
- *  for that run with the focused cell highlighted (the photo lives
- *  one click away rather than always-on). */
+ *  expected. The trailing → pip opens that run in the per-result
+ *  modal with the focused cell pre-highlighted on the warped photo. */
 function RunChipRow({
   hex,
   colour,
   label,
   dE,
   primary,
-  expanded,
-  onToggleExpand,
+  onOpen,
 }: {
   hex: string;
   colour: string;
   label: string;
   dE: number;
   primary: boolean;
-  expanded: boolean;
-  /** When provided, renders the toggle pip. ``undefined`` hides it
-   *  (e.g. when the test has no cells_per_row so we can't compute
-   *  the cell rect on the photo). */
-  onToggleExpand?: () => void;
+  /** When provided, renders the → pip on the right that opens this
+   *  run in the per-result modal. */
+  onOpen?: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 min-w-0">
+    <li className="flex items-center gap-2 min-w-0">
       <SwatchChip
         hex={hex}
         size={primary ? [32, 32] : [24, 24]}
@@ -577,40 +340,26 @@ function RunChipRow({
           <span className="font-mono text-[10px] tabular-nums text-[color:var(--color-ink-subtle)]">
             ΔE {dE.toFixed(1)}
           </span>
-          {onToggleExpand && (
+          {onOpen && (
             <button
               type="button"
-              onClick={onToggleExpand}
-              aria-expanded={expanded}
-              aria-label={
-                expanded
-                  ? `Hide cell preview for run ${label}`
-                  : `Show cell preview for run ${label}`
-              }
-              title={
-                expanded
-                  ? "Hide cell on photo"
-                  : "Show this cell on the warped photo"
-              }
+              onClick={onOpen}
+              aria-label={`Open run ${label} in result modal`}
+              title="Open warped photo with this cell highlighted"
               className={cn(
                 "font-mono text-[11px] leading-none px-1 -mr-0.5 rounded-[3px]",
-                "transition-all duration-150",
+                "text-[color:var(--color-primary)]/70 hover:text-[color:var(--color-primary)]",
+                "hover:bg-[color:var(--color-primary)]/10",
                 "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--color-primary)]/60",
-                expanded
-                  ? "text-[color:var(--color-primary)] bg-[color:var(--color-primary)]/15"
-                  : "text-[color:var(--color-primary)]/70 hover:text-[color:var(--color-primary)] hover:bg-[color:var(--color-primary)]/10",
+                "transition-colors",
               )}
-              style={{
-                display: "inline-block",
-                transform: expanded ? "rotate(90deg)" : undefined,
-              }}
             >
               →
             </button>
           )}
         </span>
       </div>
-    </div>
+    </li>
   );
 }
 
