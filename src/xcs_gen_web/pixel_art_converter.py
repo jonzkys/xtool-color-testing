@@ -55,3 +55,27 @@ def pixel_art_to_xcs_bytes(req: PixelArtRequest) -> bytes:
     project = build_pixel_art_project(req)
     payload = build_xcs(project)
     return json.dumps(payload, separators=(",", ":")).encode("utf-8")
+
+
+def pixel_art_to_svg(req: PixelArtRequest) -> str:
+    """Serialise the request's enabled rects to a standalone SVG document.
+
+    The fill colour is the rect's *layer* colour (the centroid hex from
+    quantisation), not the matched palette entry's colour — the SVG is
+    intended as a faithful preview of the pixelation, with laser params
+    living in the .xcs companion."""
+    enabled = {layer.color for layer in req.layers if layer.enabled}
+    parts: list[str] = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="0 0 {req.width_mm} {req.height_mm}" '
+        f'width="{req.width_mm}mm" height="{req.height_mm}mm">'
+    ]
+    for r in req.rects:
+        if r.color not in enabled:
+            continue
+        parts.append(
+            f'<rect x="{r.x}" y="{r.y}" width="{r.width}" '
+            f'height="{r.height}" fill="{r.color}"/>'
+        )
+    parts.append("</svg>")
+    return "".join(parts)

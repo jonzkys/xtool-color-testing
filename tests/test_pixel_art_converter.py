@@ -5,6 +5,7 @@ from __future__ import annotations
 from xcs_gen.model import Rect, XCSProject
 from xcs_gen_web.pixel_art_converter import (
     build_pixel_art_project,
+    pixel_art_to_svg,
     pixel_art_to_xcs_bytes,
 )
 from xcs_gen_web.schemas import (
@@ -96,3 +97,45 @@ def test_xcs_bytes_round_trip():
     payload = json.loads(body.decode("utf-8"))
     assert isinstance(payload, dict)
     assert payload  # non-empty
+
+
+def test_svg_has_correct_viewbox_and_rect_count():
+    from xml.etree import ElementTree as ET
+
+    req = _req(
+        width_mm=20.0,
+        height_mm=15.0,
+        rects=[
+            PixelArtRectSpec(x=0, y=0, width=2, height=2, color="#000000"),
+            PixelArtRectSpec(x=4, y=0, width=2, height=2, color="#000000"),
+        ],
+    )
+    svg = pixel_art_to_svg(req)
+    assert isinstance(svg, str)
+
+    root = ET.fromstring(svg)
+    assert root.tag.endswith("svg")
+    assert root.attrib["viewBox"] == "0 0 20.0 15.0"
+    rects = root.findall(".//{http://www.w3.org/2000/svg}rect")
+    assert len(rects) == 2
+    assert all(r.attrib["fill"] == "#000000" for r in rects)
+
+
+def test_svg_omits_disabled_layer_rects():
+    from xml.etree import ElementTree as ET
+
+    req = _req(
+        rects=[
+            PixelArtRectSpec(x=0, y=0, width=2, height=2, color="#000000"),
+            PixelArtRectSpec(x=4, y=0, width=2, height=2, color="#ffffff"),
+        ],
+        layers=[
+            PixelArtLayerSpec(color="#000000", enabled=True, base_params=_params()),
+            PixelArtLayerSpec(color="#ffffff", enabled=False, base_params=_params()),
+        ],
+    )
+    svg = pixel_art_to_svg(req)
+    root = ET.fromstring(svg)
+    rects = root.findall(".//{http://www.w3.org/2000/svg}rect")
+    assert len(rects) == 1
+    assert rects[0].attrib["fill"] == "#000000"
