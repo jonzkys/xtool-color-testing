@@ -9,6 +9,7 @@ import {
   computePaletteResidualPC1,
   describePc1Axis,
   meanLab,
+  robustMeanLab,
   type StatsSeriesEntry,
 } from "./stabilityStatsMath";
 
@@ -40,6 +41,76 @@ describe("meanLab", () => {
     ]);
     expect(m).not.toBeNull();
     expect(m![0]).toBeCloseTo(55);
+  });
+});
+
+describe("robustMeanLab", () => {
+  it("returns null on empty / non-finite input", () => {
+    expect(robustMeanLab([])).toBeNull();
+    expect(robustMeanLab([[NaN, 0, 0]])).toBeNull();
+  });
+
+  it("falls back to simple mean when N < 3 (no exclusion possible)", () => {
+    const r = robustMeanLab([[50, 0, 0], [60, 0, 0]]);
+    expect(r).not.toBeNull();
+    expect(r!.lab[0]).toBeCloseTo(55);
+    expect(r!.excluded).toEqual([]);
+    expect(r!.inputCount).toBe(2);
+  });
+
+  it("matches arithmetic mean when all runs agree", () => {
+    const r = robustMeanLab([
+      [50, 0, 0],
+      [50, 0, 0],
+      [50, 0, 0],
+      [50, 0, 0],
+    ]);
+    expect(r).not.toBeNull();
+    expect(r!.lab[0]).toBeCloseTo(50);
+    expect(r!.excluded).toEqual([]);
+  });
+
+  it("drops a single far-outlier run when one exists at >2× the median distance", () => {
+    // Three tight runs near (50, 0, 0) plus one run 30 ΔE away.
+    const r = robustMeanLab([
+      [50, 0, 0],
+      [50.5, 0, 0],
+      [49.5, 0, 0],
+      [80, 0, 0],
+    ]);
+    expect(r).not.toBeNull();
+    // Robust mean should land near 50, not the simple mean ~57.5.
+    expect(r!.lab[0]).toBeCloseTo(50, 1);
+    expect(r!.excluded).toEqual([3]);
+    expect(r!.inputCount).toBe(4);
+  });
+
+  it("does NOT exclude when the spread is uniform", () => {
+    // Five runs evenly distributed — no clear outlier; median distance
+    // is comparable to all distances.
+    const r = robustMeanLab([
+      [40, 0, 0],
+      [45, 0, 0],
+      [50, 0, 0],
+      [55, 0, 0],
+      [60, 0, 0],
+    ]);
+    expect(r).not.toBeNull();
+    expect(r!.lab[0]).toBeCloseTo(50);
+    expect(r!.excluded).toEqual([]);
+  });
+
+  it("preserves the simple mean rather than collapsing to <2 inliers", () => {
+    // Two runs that disagree wildly with no central cluster — refusing
+    // to exclude is the safer behaviour than picking one arbitrarily.
+    const r = robustMeanLab([
+      [40, 0, 0],
+      [80, 0, 0],
+    ]);
+    expect(r).not.toBeNull();
+    // N=2 short-circuits before the cluster math runs.
+    expect(r!.lab[0]).toBeCloseTo(60);
+    expect(r!.excluded).toEqual([]);
   });
 });
 

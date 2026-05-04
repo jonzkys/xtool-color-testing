@@ -3,7 +3,11 @@ import { labToHex, type Lab } from "../color/math";
 import type { ResultRecord, TestRecord } from "../types";
 import { cn } from "../ui";
 import { seriesColour, type FocusedCell } from "./StabilityChart";
-import { cellResidual, signedNum } from "./stabilityStatsMath";
+import {
+  cellResidual,
+  robustMeanLab,
+  signedNum,
+} from "./stabilityStatsMath";
 
 interface FocusedCellPanelProps {
   test: TestRecord;
@@ -105,25 +109,38 @@ export function StabilityFocusedCellPanel({
 
   // Burn-mean hex for the chip strip — only meaningful when ≥2
   // measurements exist (otherwise the single chip already IS the
-  // burn-mean estimate). Lab → sRGB hex via the page's existing
-  // converter; out-of-gamut values clip rather than render as a CSS
-  // ``lab()`` literal, which keeps the readout copy-friendly.
-  const burnMeanHex = useMemo(() => {
-    if (labsForResidual.length < 2) return null;
-    let sL = 0;
-    let sA = 0;
-    let sB = 0;
-    for (const l of labsForResidual) {
-      sL += l[0];
-      sA += l[1];
-      sB += l[2];
+  // burn-mean estimate). Uses the cluster-based robust mean so a
+  // single noisy run can't pull the centroid; ``robustMean.excluded``
+  // tells us which run indices were dropped so we can flag them on
+  // the chip rows below.
+  const robustMean = useMemo(
+    () => (labsForResidual.length >= 2 ? robustMeanLab(labsForResidual) : null),
+    [labsForResidual],
+  );
+  const burnMeanHex = useMemo(
+    () => (robustMean != null ? labToHex(robustMean.lab) : null),
+    [robustMean],
+  );
+  // Map the robust-mean exclusion indices (which index into the
+  // ``labsForResidual`` list) back to result IDs, so each run row can
+  // render its own "outlier" badge.
+  const excludedRunIds = useMemo(() => {
+    if (robustMean == null || robustMean.excluded.length === 0) {
+      return new Set<number>();
     }
-    return labToHex([
-      sL / labsForResidual.length,
-      sA / labsForResidual.length,
-      sB / labsForResidual.length,
-    ]);
-  }, [labsForResidual]);
+    const ids = new Set<number>();
+    // ``labsForResidual`` is built by filtering ``presentMeasurements``
+    // for rows with a finite Lab. Walk that filter again to recover the
+    // original ResultRecord per index.
+    let cursor = 0;
+    for (const m of presentMeasurements) {
+      const lab = m.sw?.lab;
+      if (!Array.isArray(lab) || lab.length !== 3) continue;
+      if (robustMean.excluded.includes(cursor)) ids.add(m.result.id);
+      cursor++;
+    }
+    return ids;
+  }, [robustMean, presentMeasurements]);
 
   const residual =
     expectedLab != null && labsForResidual.length > 0
@@ -179,6 +196,7 @@ export function StabilityFocusedCellPanel({
                   label={shortStamp(m.result.uploaded_at)}
                   dE={dE}
                   primary={isSingleton}
+                  excluded={excludedRunIds.has(m.result.id)}
                   onOpen={
                     onRunOpen ? () => onRunOpen(m.result.id) : undefined
                   }
@@ -310,6 +328,7 @@ function RunChipRow({
   label,
   dE,
   primary,
+  excluded,
   onOpen,
 }: {
   hex: string;
@@ -317,25 +336,53 @@ function RunChipRow({
   label: string;
   dE: number;
   primary: boolean;
+  /** ``true`` when the cluster-based robust mean classified this run
+   *  as an outlier and dropped it from the burn-mean. Renders a small
+   *  amber badge so the user can see which run was excluded. */
+  excluded: boolean;
   /** When provided, renders the → pip on the right that opens this
    *  run in the per-result modal. */
   onOpen?: () => void;
 }) {
   return (
-    <li className="flex items-center gap-2 min-w-0">
+    <li
+      className={cn(
+        "flex items-center gap-2 min-w-0",
+        excluded && "opacity-65",
+      )}
+      title={
+        excluded
+          ? `${label} was excluded from the burn-mean for this cell`
+          : undefined
+      }
+    >
       <SwatchChip
         hex={hex}
         size={primary ? [32, 32] : [24, 24]}
         outline={primary ? "primary" : "series"}
         ringColour={colour}
-        title={`${label} · ${hex} · ΔE ${dE.toFixed(1)}`}
-        ariaLabel={`run ${label} swatch ${hex}`}
+        title={`${label} · ${hex} · ΔE ${dE.toFixed(1)}${excluded ? " · excluded outlier" : ""}`}
+        ariaLabel={`run ${label} swatch ${hex}${excluded ? " (excluded outlier)" : ""}`}
       />
       <div className="flex-1 min-w-0 flex items-baseline justify-between gap-2">
         <span className="font-mono text-[10px] tabular-nums text-[color:var(--color-ink)] truncate">
           {label}
         </span>
         <span className="flex items-baseline gap-1.5 shrink-0">
+          {excluded && (
+            <span
+              aria-label="Excluded as outlier from burn-mean"
+              title="Run sat far enough from the cluster that the robust burn-mean dropped it"
+              className={cn(
+                "font-mono text-[8.5px] tracking-[0.18em] uppercase font-semibold",
+                "px-1 rounded-[2px] border",
+                "border-[color:var(--color-warning)]/60 text-[color:var(--color-warning)]",
+                "bg-[color:var(--color-warning)]/10",
+              )}
+            >
+              out
+            </span>
+          )}
           <CopyableHex hex={hex} compact />
           <span className="font-mono text-[10px] tabular-nums text-[color:var(--color-ink-subtle)]">
             ΔE {dE.toFixed(1)}

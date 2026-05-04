@@ -201,17 +201,91 @@ export function meanLab(measurements: readonly Lab[]): Lab | null {
   return [sL / n, sA / n, sB / n];
 }
 
-/** Burn-true ΔE76: distance between mean-Lab and expected_Lab. The
- *  systematic, run-averaged error — the best guess at the burn's true
- *  output independent of camera noise. ``null`` when ``meanLab`` is
- *  null. */
+/* ─── Robust mean (cluster-based) ─────────────────────────────────────── */
+
+export interface RobustMeanResult {
+  /** Lab centroid of the inlier cluster. Falls back to the simple mean
+   *  when no run could be defended as an outlier (N < 3, all runs
+   *  agree, or the candidate exclusions would drop the cluster below
+   *  two members). */
+  lab: Lab;
+  /** Indices into the original (finite-only) measurement array that
+   *  were classified as outliers and excluded from the centroid.
+   *  Empty when the simple mean was used. The order matches the
+   *  caller's input array so the UI can label them by run index. */
+  excluded: number[];
+  /** Number of finite inputs *before* exclusion. Useful for callers
+   *  that want to know whether the result is well-supported. */
+  inputCount: number;
+}
+
+/** Cluster-based robust mean of Lab measurements. The intent: a single
+ *  outlying run (lighting flicker, dust, momentary mis-focus) shouldn't
+ *  pull the burn-mean toward itself. Implementation:
+ *
+ *  1. Take the simple centroid of all finite inputs.
+ *  2. Compute each input's ΔE76 distance from the centroid.
+ *  3. Compute the median distance ``d_med``. The threshold for an
+ *     outlier is ``max(2 × d_med, 1.5)`` — the fixed floor catches
+ *     the tight-cluster case where every run sits ≤ 0.7 from the
+ *     centroid and the floor (~1.5 ΔE) is the smallest deviation
+ *     worth calling "different".
+ *  4. Exclude any inputs above the threshold. If fewer than two
+ *     inputs would remain, abandon the exclusion and return the
+ *     simple mean.
+ *  5. Otherwise recompute the centroid from the remaining inputs.
+ *
+ *  Returns ``null`` when the input has no finite measurements (same
+ *  contract as ``meanLab``). N=1 is a degenerate case: the lone run is
+ *  the centroid and ``excluded`` is empty.
+ *
+ *  Camera-σ math intentionally does NOT use this — that statistic is
+ *  *about* the spread, so trimming outliers would conceal exactly what
+ *  it's trying to measure. Burn-mean math does. */
+export function robustMeanLab(
+  measurements: readonly Lab[],
+): RobustMeanResult | null {
+  const finite: Lab[] = [];
+  for (const m of measurements) {
+    if (!m || m.length !== 3) continue;
+    if (!Number.isFinite(m[0]) || !Number.isFinite(m[1]) || !Number.isFinite(m[2])) {
+      continue;
+    }
+    finite.push([m[0], m[1], m[2]]);
+  }
+  if (finite.length === 0) return null;
+  const simple = meanLab(finite)!;
+  if (finite.length < 3) {
+    return { lab: simple, excluded: [], inputCount: finite.length };
+  }
+  const distances = finite.map((f) => deltaE76(f, simple));
+  const dMed = median([...distances]);
+  const threshold = Math.max(dMed * 2, 1.5);
+  const excluded: number[] = [];
+  const kept: Lab[] = [];
+  for (let i = 0; i < finite.length; i++) {
+    if (distances[i] > threshold) excluded.push(i);
+    else kept.push(finite[i]);
+  }
+  if (excluded.length === 0 || kept.length < 2) {
+    return { lab: simple, excluded: [], inputCount: finite.length };
+  }
+  const robust = meanLab(kept)!;
+  return { lab: robust, excluded, inputCount: finite.length };
+}
+
+/** Burn-true ΔE76: distance between robust-mean Lab and expected_Lab.
+ *  The systematic, run-averaged error — best guess at the burn's true
+ *  output independent of camera noise. Uses {@link robustMeanLab} so a
+ *  single outlier run can't pull the mean. ``null`` when no finite
+ *  measurements are supplied. */
 export function burnDeltaE(
   measurements: readonly Lab[],
   expected: Lab,
 ): number | null {
-  const m = meanLab(measurements);
-  if (m == null) return null;
-  return deltaE76(m, expected);
+  const r = robustMeanLab(measurements);
+  if (r == null) return null;
+  return deltaE76(r.lab, expected);
 }
 
 /** Camera σ: mean of ``||lab_i − meanLab||`` (Euclidean ΔE76) across
@@ -236,15 +310,16 @@ export function cameraSigma(measurements: readonly Lab[]): number | null {
   return acc / finite.length;
 }
 
-/** Burn-true signed Δh°: hue rotation from expected to mean-measured,
- *  wrapped to [-180, 180]. ``null`` when mean-measured chroma is too
- *  small to define hue meaningfully. */
+/** Burn-true signed Δh°: hue rotation from expected to robust-mean-
+ *  measured, wrapped to [-180, 180]. ``null`` when robust-mean-
+ *  measured chroma is too small to define hue meaningfully. */
 export function burnDeltaHue(
   measurements: readonly Lab[],
   expected: Lab,
 ): number | null {
-  const m = meanLab(measurements);
-  if (m == null) return null;
+  const r = robustMeanLab(measurements);
+  if (r == null) return null;
+  const m = r.lab;
   if (chroma(m[1], m[2]) < HUE_CHROMA_THRESHOLD) return null;
   return wrapHueDelta(hueDeg(m[1], m[2]) - hueDeg(expected[1], expected[2]));
 }
@@ -267,8 +342,9 @@ export function cellResidual(
   measurements: readonly Lab[],
   expected: Lab,
 ): CellResidual | null {
-  const m = meanLab(measurements);
-  if (m == null) return null;
+  const r = robustMeanLab(measurements);
+  if (r == null) return null;
+  const m = r.lab;
   const dL = m[0] - expected[0];
   const dA = m[1] - expected[1];
   const dB = m[2] - expected[2];
@@ -383,12 +459,12 @@ export function computePaletteResidualPC1(
       if (m) labs.push(m.lab);
     }
     if (labs.length === 0) continue;
-    const cellMean = meanLab(labs);
+    const cellMean = robustMeanLab(labs);
     if (cellMean == null) continue;
     residuals.push([
-      cellMean[0] - expected[0],
-      cellMean[1] - expected[1],
-      cellMean[2] - expected[2],
+      cellMean.lab[0] - expected[0],
+      cellMean.lab[1] - expected[1],
+      cellMean.lab[2] - expected[2],
     ]);
   }
   if (residuals.length < 3) {
