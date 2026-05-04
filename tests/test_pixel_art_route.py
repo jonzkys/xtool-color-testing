@@ -54,3 +54,17 @@ def test_pixel_art_400_when_all_layers_disabled():
     resp = client.post("/api/pixel-art", json=body)
     assert resp.status_code == 400
     assert "No enabled rects" in resp.json()["detail"]
+
+
+def test_pixel_art_svg_returns_parseable_svg():
+    from xml.etree import ElementTree as ET
+
+    client = TestClient(create_app())
+    resp = client.post("/api/pixel-art/svg", json=_payload())
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("image/svg+xml")
+    root = ET.fromstring(resp.text)
+    assert root.tag.endswith("svg")
+    assert root.attrib["viewBox"] == "0 0 10.0 10.0"
+    rects = root.findall(".//{http://www.w3.org/2000/svg}rect")
+    assert len(rects) == 1

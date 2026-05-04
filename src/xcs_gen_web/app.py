@@ -689,6 +689,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
         )
 
+    @app.post("/api/pixel-art/svg")
+    def pixel_art_svg(request: PixelArtRequest) -> Response:
+        try:
+            svg_text = pixel_art_to_svg(request)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        filename = f"{request.name or 'pixel-art'}.svg"
+        return Response(
+            content=svg_text,
+            media_type="image/svg+xml",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+
     from .repositories import palette as pal_repo
     from .repositories import materials as m_repo
     from .repositories import presets as p_repo
