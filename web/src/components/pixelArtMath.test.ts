@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { kMeansLab, greedyRectCover } from "./pixelArtMath";
+import { kMeansLab, greedyRectCover, capFit } from "./pixelArtMath";
 
 describe("kMeansLab", () => {
   it("returns K labels for K clearly-separated colour clusters", () => {
@@ -52,5 +52,38 @@ describe("greedyRectCover", () => {
     const result = greedyRectCover(labels, 3, 1);
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({ x: 0, y: 0, width: 3, height: 1, label: 0 });
+  });
+});
+
+describe("capFit", () => {
+  it("returns the requested K when its rect-count is already under cap", () => {
+    const cells: (string | null)[] = ["#000000", "#000000", "#ffffff", "#ffffff"];
+    const result = capFit(cells, 2, 2, 2, /*cap*/ 100);
+    expect(result.k).toBe(2);
+    expect(result.rects.length).toBeLessThanOrEqual(100);
+    expect(result.exceededAtK2).toBe(false);
+  });
+
+  it("drops K when rect-count exceeds cap", () => {
+    // 9 distinct colours; at K=3 each centroid pulls scattered cells, so the
+    // greedy cover can't compress below ~9 rects. cap=2 forces a K-drop.
+    const cells: (string | null)[] = [
+      "#ff0000", "#00ff00", "#0000ff",
+      "#ffff00", "#00ffff", "#ff00ff",
+      "#ffffff", "#888888", "#000000",
+    ];
+    const result = capFit(cells, 3, 3, 3, /*cap*/ 2);
+    expect(result.k).toBeLessThan(3);
+  });
+
+  it("flags exceededAtK2 when even K=2 is over", () => {
+    const cells: (string | null)[] = [
+      "#ff0000", "#00ff00", "#0000ff",
+      "#ffff00", "#00ffff", "#ff00ff",
+      "#aaaaaa", "#555555", "#000000",
+    ];
+    const result = capFit(cells, 3, 3, 3, /*cap*/ 1);
+    expect(result.k).toBe(2);
+    expect(result.exceededAtK2).toBe(true);
   });
 });

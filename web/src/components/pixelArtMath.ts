@@ -180,3 +180,39 @@ export function greedyRectCover(
   }
   return out;
 }
+
+export interface CapFitResult {
+  k: number;
+  labels: number[];
+  centroidsHex: string[];
+  rects: CoverRect[];
+  exceededAtK2: boolean;
+}
+
+/** Run quantise + cover; if the rect count is over ``cap``, drop K by 1
+ *  and try again until under cap or K === 2.
+ *
+ *  Returns the final result and a flag for the "K=2 still over" case so
+ *  the UI can surface the hard-error state. */
+export function capFit(
+  cells: (string | null)[],
+  width: number,
+  height: number,
+  startK: number,
+  cap: number,
+): CapFitResult {
+  let k = Math.max(2, startK);
+  let exceededAtK2 = false;
+  while (true) {
+    const q = kMeansLab(cells, k);
+    const rects = greedyRectCover(q.labels, width, height);
+    if (rects.length <= cap) {
+      return { k, labels: q.labels, centroidsHex: q.centroidsHex, rects, exceededAtK2 };
+    }
+    if (k === 2) {
+      exceededAtK2 = true;
+      return { k, labels: q.labels, centroidsHex: q.centroidsHex, rects, exceededAtK2 };
+    }
+    k -= 1;
+  }
+}
