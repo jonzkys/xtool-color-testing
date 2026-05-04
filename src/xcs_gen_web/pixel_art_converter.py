@@ -48,3 +48,10 @@ def build_pixel_art_project(req: PixelArtRequest) -> XCSProject:
     if not project.elements:
         raise ValueError("No enabled rects — enable at least one colour.")
     return project
+
+
+def pixel_art_to_xcs_bytes(req: PixelArtRequest) -> bytes:
+    """Build the project, serialise via build_xcs, JSON-dump to bytes."""
+    project = build_pixel_art_project(req)
+    payload = build_xcs(project)
+    return json.dumps(payload, separators=(",", ":")).encode("utf-8")

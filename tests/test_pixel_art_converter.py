@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from xcs_gen.model import Rect, XCSProject
-from xcs_gen_web.pixel_art_converter import build_pixel_art_project
+from xcs_gen_web.pixel_art_converter import (
+    build_pixel_art_project,
+    pixel_art_to_xcs_bytes,
+)
 from xcs_gen_web.schemas import (
     BaseParams,
     PixelArtLayerSpec,
@@ -83,3 +86,13 @@ def test_start_offset_is_added_to_rect_position():
     rect = build_pixel_art_project(req).elements[0]
     assert rect.x == 18.0  # 15 + 3
     assert rect.y == 29.0  # 25 + 4
+
+
+def test_xcs_bytes_round_trip():
+    import json
+
+    body = pixel_art_to_xcs_bytes(_req())
+    assert isinstance(body, bytes)
+    payload = json.loads(body.decode("utf-8"))
+    assert isinstance(payload, dict)
+    assert payload  # non-empty
