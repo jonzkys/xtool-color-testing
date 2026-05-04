@@ -273,9 +273,20 @@ def query_by_hex(
     hex_: str, *, owner_id: int = STANDALONE_USER_ID, limit: int = 5,
     material_id: int | None = None,
     machine_id: str | None = None,
+    validated_only: bool = False,
 ) -> list[dict[str, Any]]:
+    """Closest-ΔE2000 search inside the caller's palette.
+
+    ``validated_only=True`` restricts the candidate set to entries
+    where ``is_validated`` is set — i.e. drop the lowest-ΔE match
+    that wasn't actually verified to engrave the colour it claims.
+    Defers the gate to ``list_all`` so the filter happens in SQL.
+    """
     target = hex_to_lab(hex_)
-    rows = list_all(owner_id=owner_id, material_id=material_id, machine_id=machine_id)
+    rows = list_all(
+        owner_id=owner_id, material_id=material_id, machine_id=machine_id,
+        validated_only=validated_only,
+    )
     scored = []
     for r in rows:
         de = delta_e_2000(target, tuple(r["lab"]))
@@ -715,46 +726,37 @@ def create_validated_entry(
     owner_id: int = STANDALONE_USER_ID,
     visibility: str = DEFAULT_VISIBILITY,
 ) -> dict[str, Any]:
-    """Insert a brand-new palette entry from a validated burn-mean Lab.
+    """Upsert a validated palette entry for ``(validated_test_id,
+    validated_cell_index, owner_id)``.
 
     The Stability page's VALIDATE save calls this once per cell that
     the user accepted as stable. The new entry's ``lab_*`` IS the
     consensus Lab — no separation between "first-ingested colour" and
     "validated colour" — but the ``validated_*`` columns are still
     populated for query convenience (so ``WHERE is_validated`` rolls
-    up cleanly without a UNION). ``validated_residual_de`` stores
-    the *stability* gate value (max cross-run drift) since that's the
+    up cleanly without a UNION). ``validated_residual_de`` stores the
+    *stability* gate value (max cross-run drift) since that's the
     quality signal worth surfacing on the entry, not a residual
     against an obsolete pre-validation Lab.
 
-    Returns the inserted entry dict.
+    Re-running validate on the same (test, cell) refreshes the
+    existing row's capture-derived columns (Lab, hex, params,
+    validated_*) and leaves user-curated columns alone (``notes``,
+    ``favorited``, ``created_at``). This makes the save endpoint
+    idempotent under retries / double-clicks / re-validation after
+    uploading more results — one cell, one entry, regardless of how
+    many times the user hits Save.
+
+    Returns the entry dict (newly-inserted or freshly-updated).
     """
     L, a, b = float(burn_mean_lab[0]), float(burn_mean_lab[1]), float(burn_mean_lab[2])
     hex_ = lab_to_hex(L, a, b)
     now = _now()
-    # ``test_id`` mirrors ``validated_test_id`` so the entry surfaces
-    # in the palette page's per-test BrowseView grouping (which keys
-    # off ``test_id``). Otherwise validated entries would only show
-    # up via the Query tab and the user couldn't browse them next to
-    # the original test's swatches. The ``validated_*`` columns then
-    # carry the cell + stability provenance separately.
-    row = {
-        "test_id": validated_test_id,
-        "material_id": material_id,
-        "x_value": 0,
-        "y_value": None,
+    refresh_values = {
         "hex": hex_,
         "lab_l": L, "lab_a": a, "lab_b": b,
         "params_json": json.dumps(params or {}, separators=(",", ":")),
         "sigma": sigma,
-        "source": "averaged",
-        "source_result_id": None,
-        "notes": notes,
-        "created_at": now,
-        "owner_id": owner_id,
-        "visibility": visibility,
-        "machine_id": machine_id,
-        "favorited": False,
         "is_validated": True,
         "validated_at": now,
         "validated_test_id": validated_test_id,
@@ -766,8 +768,49 @@ def create_validated_entry(
         "validated_residual_de": stability_de,
     }
     with session_scope() as s:
-        res = s.execute(palette_entries.insert().values(**row))
-        new_id = res.inserted_primary_key[0]
+        # Natural key: (validated_test_id, validated_cell_index, owner_id).
+        # We require ``is_validated=True`` on the existing row so an
+        # entry that was deliberately invalidated (validated_test_id
+        # cleared by ``invalidate_entry``) doesn't get reused.
+        existing = s.execute(
+            select(palette_entries.c.id).where(
+                and_(
+                    palette_entries.c.validated_test_id == validated_test_id,
+                    palette_entries.c.validated_cell_index == validated_cell_index,
+                    palette_entries.c.owner_id == owner_id,
+                    palette_entries.c.is_validated == True,  # noqa: E712
+                ),
+            )
+        ).one_or_none()
+        if existing is not None:
+            s.execute(
+                palette_entries.update()
+                .where(palette_entries.c.id == existing.id)
+                .values(**refresh_values)
+            )
+            new_id = existing.id
+        else:
+            # ``test_id`` mirrors ``validated_test_id`` so the entry
+            # surfaces in the palette page's per-test BrowseView
+            # grouping (which keys off ``test_id``). Otherwise
+            # validated entries would only show up via the Query tab.
+            row = {
+                "test_id": validated_test_id,
+                "material_id": material_id,
+                "x_value": 0,
+                "y_value": None,
+                "source": "averaged",
+                "source_result_id": None,
+                "notes": notes,
+                "created_at": now,
+                "owner_id": owner_id,
+                "visibility": visibility,
+                "machine_id": machine_id,
+                "favorited": False,
+                **refresh_values,
+            }
+            res = s.execute(palette_entries.insert().values(**row))
+            new_id = res.inserted_primary_key[0]
         out = s.execute(
             select(palette_entries).where(palette_entries.c.id == new_id),
         ).one()

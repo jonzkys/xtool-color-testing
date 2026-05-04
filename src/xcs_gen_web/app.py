@@ -725,11 +725,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def palette_query(
         hex: str, limit: int = 5, material_id: int | None = None,
         machine_id: str | None = None,
+        validated_only: bool = False,
         user_id: int = Depends(get_current_user),
     ) -> list[PaletteQueryResult]:
         results = pal_repo.query_by_hex(
             hex, owner_id=user_id, limit=limit, material_id=material_id,
-            machine_id=machine_id,
+            machine_id=machine_id, validated_only=validated_only,
         )
         return [
             PaletteQueryResult(
