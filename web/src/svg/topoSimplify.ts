@@ -43,6 +43,27 @@ export interface ShapeInput {
 
 export type ShapeOutput = ShapeInput;
 
+/** Quantization grid passed to ``topojson-server.topology()`` so its
+ *  junction detector hashes coords-on-a-grid rather than raw floats.
+ *
+ *  Without this, traced-image SVGs (vtracer, Potrace, Adobe export)
+ *  routinely emit adjacent paths whose shared edges are off by
+ *  sub-pixel amounts (e.g. one path's right boundary at ``x = 100.123``
+ *  and the neighbour's left at ``x = 100.124``). They render
+ *  seamlessly because they overlap by fractions of a pixel, but
+ *  topology() treats those edges as independent arcs. V-W on each
+ *  side then moves those arcs independently and the regions pull
+ *  apart, opening gaps far larger than the simplification tolerance —
+ *  the bug the user actually sees ("white gaps forming much larger
+ *  than the simplification").
+ *
+ *  ``q = 1e5`` snaps coords onto a grid with precision = max(width,
+ *  height) ÷ 100,000. For a 1344 × 768 SVG that's ~0.013 user units —
+ *  far below display pixel size, far finer than any tracer's vertex
+ *  precision. Sub-pixel mismatches collapse onto the same grid point;
+ *  shared edges become single arcs again. */
+const TOPOLOGY_QUANTIZATION = 1e5;
+
 /** Run V-W with topology-preserving weight propagation across shared
  *  arcs. ``weight`` is twice-the-triangle-area in input-coord² units —
  *  a vertex is dropped when the triangle it forms with its neighbours
@@ -102,9 +123,12 @@ export function simplifyTopology(
   };
 
   // 2. Build topology. Each named object becomes a TopoJSON object;
-  //    we pack the FeatureCollection under a single key.
+  //    we pack the FeatureCollection under a single key. Pass the
+  //    quantization parameter so the junction detector hashes
+  //    coords-on-a-grid instead of raw floats — see
+  //    ``TOPOLOGY_QUANTIZATION`` for the rationale.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const topo: any = topology({ shapes: fc as any });
+  const topo: any = topology({ shapes: fc as any }, TOPOLOGY_QUANTIZATION);
 
   // 3 + 4. presimplify annotates V-W weights on every coordinate;
   //   simplify(topo, weight) drops vertices whose weight is below.
