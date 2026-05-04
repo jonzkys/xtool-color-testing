@@ -305,7 +305,8 @@ export type ModeHelpKey =
   | "spatial"
   | "spectrums"
   | "polar"
-  | "calibrate";
+  | "calibrate"
+  | "validate";
 
 export const MODE_HELP: Record<ModeHelpKey, AxisHelp> = {
   scatter: {
@@ -346,6 +347,14 @@ export const MODE_HELP: Record<ModeHelpKey, AxisHelp> = {
       "Fits a 12-parameter Lab→Lab affine that maps one reference run's measurements back toward expected.",
     guide:
       "Pick a reference run, see the matrix + R² + before/after ΔE distribution, then toggle APPLY TO CHART to preview the other modes as if the correction was already applied. Useful for asking 'would one calibration pass help?'.",
+    schematic: "pair",
+  },
+  validate: {
+    heading: "Validate",
+    definition:
+      "Lock in burn-mean Lab as the authoritative colour for each cell's palette entry.",
+    guide:
+      "Per-cell preview of original / burn-mean / ΔE. Cells inside tolerance auto-validate; ones outside flag for review. Saves write the corrected Lab back to the palette + flip is_validated, so auto-match's 'Prefer validated' filter can use them.",
     schematic: "pair",
   },
 };

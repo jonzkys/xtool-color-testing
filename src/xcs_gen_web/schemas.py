@@ -449,6 +449,67 @@ class PaletteEntryValidateRequest(BaseModel):
     run_count: int | None = None
 
 
+class ValidateBatchAcceptOverride(BaseModel):
+    """Per-cell override carried in a batch validate request. The UI
+    can flip individual cells between accept (write) and skip (no
+    write) regardless of the auto/flag classification — accepting a
+    flagged cell is the user saying "yes, the original entry was
+    wrong, take this new measurement"; skipping an auto-accepted
+    cell is "actually I don't trust this run"."""
+
+    cell_index: int
+    accept: bool
+
+
+class ValidateBatchRequest(BaseModel):
+    """POST /api/tests/{tid}/validate body.
+
+    ``tolerance_de`` seeds the auto/flag bucketing — cells with
+    ``ΔE76(burn_mean, expected) ≤ tolerance_de`` go into ``auto``,
+    larger drift goes into ``flagged`` for user review.
+    ``result_ids`` restricts which results contribute (defaults to
+    all non-excluded). ``overrides`` lets the UI flip per-cell
+    bucketing before commit. ``dry_run=true`` returns the bucketing
+    without persisting — drives the preview pane."""
+
+    tolerance_de: float = 8.0
+    result_ids: list[int] | None = None
+    overrides: list[ValidateBatchAcceptOverride] = []
+    dry_run: bool = False
+
+
+class ValidateBatchEntry(BaseModel):
+    cell_index: int
+    palette_entry_id: int
+    burn_mean_lab: list[float]
+    expected_lab: list[float]
+    de_burn_vs_expected: float
+    run_count: int
+    n_inputs: int
+    # Set on the response side: was this cell actually persisted?
+    persisted: bool = False
+
+
+class ValidateBatchSkipped(BaseModel):
+    cell_index: int
+    palette_entry_id: int | None = None
+    reason: str
+    run_count: int | None = None
+
+
+class ValidateBatchResponse(BaseModel):
+    """Bucketed result of a batch validate, with provenance."""
+
+    test_id: int
+    test_name: str
+    tolerance_de: float
+    result_count: int
+    dry_run: bool
+    auto_validated: list[ValidateBatchEntry]
+    flagged: list[ValidateBatchEntry]
+    skipped: list[ValidateBatchSkipped]
+
+
 class PaletteEntryCreateManual(BaseModel):
     material_id: int
     hex: str

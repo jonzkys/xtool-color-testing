@@ -35,6 +35,10 @@ from .schemas import (
     PaletteEntryValidateRequest,
     PaletteQueryResult,
     PaletteValidationStatus,
+    ValidateBatchEntry,
+    ValidateBatchRequest,
+    ValidateBatchResponse,
+    ValidateBatchSkipped,
     PresetCreate,
     PresetResponse,
     PresetUpdate,
@@ -1710,6 +1714,126 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             AveragedSwatch(**s)
             for s in r_repo.averaged_swatches(tid, owner_id=user_id)
         ]
+
+    @app.post(
+        "/api/tests/{tid}/validate",
+        response_model=ValidateBatchResponse,
+    )
+    def tests_validate_batch(
+        tid: int,
+        body: ValidateBatchRequest,
+        user_id: int = Depends(get_current_user),
+    ) -> ValidateBatchResponse:
+        """Walk a validation test's cells against its uploaded
+        results, bucket them auto / flagged / skipped, and (unless
+        ``dry_run``) persist the validated state on the linked
+        palette entries.
+
+        The Stability page's VALIDATE mode hits this in dry_run
+        mode first to show the preview, then again with
+        ``dry_run=false`` and any per-cell overrides the user
+        flipped. The math lives in
+        ``services/validate.compute_validation_buckets``.
+        """
+        from .services import validate as validate_service
+        from .repositories import validation_cells as vc_repo
+
+        t = t_repo.get(tid, owner_id=user_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        if (t.get("kind") or "sweep") != "validation":
+            raise HTTPException(
+                status_code=400,
+                detail="validate is only valid on kind=validation tests",
+            )
+
+        # Pull non-excluded results, optionally filtered to the
+        # caller's selection.
+        results = r_repo.list_by_test(
+            tid, owner_id=user_id, include_excluded=False,
+        )
+        if body.result_ids:
+            allowed = set(body.result_ids)
+            results = [r for r in results if r["id"] in allowed]
+        result_count = len(results)
+        # ``r_repo.list_by_test`` returns swatches already parsed
+        # into Python lists, so the validate service can consume them
+        # directly without a JSON round-trip.
+        swatches_per_result = [
+            r.get("swatches") or [] for r in results
+        ]
+
+        # ``vc_repo.list_for_test`` is owner-agnostic — owner is
+        # enforced via the parent test's ``t_repo.get`` above.
+        cells_full = vc_repo.list_for_test(test_id=tid)
+        # Materialise lab columns the bucketing math expects on each
+        # cell dict — repo returns them under the structured key.
+        cells_for_buckets = []
+        for c in cells_full:
+            exp = c.get("expected_lab")
+            if not isinstance(exp, list) or len(exp) != 3:
+                continue
+            cells_for_buckets.append({
+                "cell_index": c["cell_index"],
+                "palette_entry_id": c.get("palette_entry_id"),
+                "expected_lab_l": exp[0],
+                "expected_lab_a": exp[1],
+                "expected_lab_b": exp[2],
+            })
+
+        buckets = validate_service.compute_validation_buckets(
+            cells=cells_for_buckets,
+            swatches_per_result=swatches_per_result,
+            spec=t["spec"],
+            tolerance_de=body.tolerance_de,
+        )
+
+        # Apply per-cell overrides: build a target set of cells to
+        # persist. Cells in ``auto`` are persisted by default; cells
+        # in ``flagged`` only if explicitly accepted.
+        override_map = {o.cell_index: o.accept for o in body.overrides}
+        to_persist: list[dict] = []
+        auto_response: list[ValidateBatchEntry] = []
+        flagged_response: list[ValidateBatchEntry] = []
+        for entry in buckets["auto_validated"]:
+            persisted = override_map.get(entry["cell_index"], True) and not body.dry_run
+            if persisted:
+                to_persist.append(entry)
+            auto_response.append(ValidateBatchEntry(
+                **entry, persisted=persisted,
+            ))
+        for entry in buckets["flagged"]:
+            persisted = override_map.get(entry["cell_index"], False) and not body.dry_run
+            if persisted:
+                to_persist.append(entry)
+            flagged_response.append(ValidateBatchEntry(
+                **entry, persisted=persisted,
+            ))
+
+        # Persist outside the bucketing loop so a partial failure
+        # doesn't leave half the rows updated.
+        for entry in to_persist:
+            pal_repo.validate_entry(
+                entry["palette_entry_id"],
+                validated_lab=tuple(entry["burn_mean_lab"]),
+                validated_test_id=tid,
+                run_count=entry["run_count"],
+                owner_id=user_id,
+            )
+
+        skipped_response = [
+            ValidateBatchSkipped(**s) for s in buckets["skipped"]
+        ]
+        return ValidateBatchResponse(
+            test_id=tid,
+            test_name=t["name"],
+            tolerance_de=body.tolerance_de,
+            result_count=result_count,
+            dry_run=body.dry_run,
+            auto_validated=auto_response,
+            flagged=flagged_response,
+            skipped=skipped_response,
+        )
 
     @app.post("/api/tests/{tid}/ingest-to-palette")
     def tests_ingest_to_palette(

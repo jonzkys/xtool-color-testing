@@ -7,6 +7,7 @@ import { StabilityHeatmap } from "./StabilityHeatmap";
 import { StabilityPolar } from "./StabilityPolar";
 import { StabilitySpectrums, SpectrumOrderRow } from "./StabilitySpectrums";
 import { StabilityCalibrate } from "./StabilityCalibrate";
+import { StabilityValidate } from "./StabilityValidate";
 import type { SpectrumOrder } from "./stabilitySpectrumsMath";
 import {
   AxisMeta,
@@ -49,7 +50,8 @@ export type ChartMode =
   | "spatial"
   | "spectrums"
   | "polar"
-  | "calibrate";
+  | "calibrate"
+  | "validate";
 
 /** Surface a hover/click came from. Drives the page-level "should this
  *  view's mouse-leave clear the transient focus?" decision so a
@@ -102,6 +104,15 @@ interface Props {
    *  reads it when CALIBRATE is active. */
   applyToChart: boolean;
   onApplyToChartChange: (on: boolean) => void;
+  /** Validation test id — only required for VALIDATE mode, otherwise
+   *  ``undefined``. Drives the batch-validate API call so the route
+   *  knows which test's cells + results to operate on. */
+  validateTestId?: number;
+  /** Fired after a successful validate save so the page can refresh
+   *  any palette-derived state (the validated badge on layer cards,
+   *  the per-entry chip on the palette page, etc.). Only relevant
+   *  when VALIDATE is active. */
+  onValidateSaved?: () => void;
 }
 
 /**
@@ -131,6 +142,8 @@ export function StabilityChart({
   onReferenceResultIdChange,
   applyToChart,
   onApplyToChartChange,
+  validateTestId,
+  onValidateSaved,
 }: Props) {
   const xMeta = X_AXES.find((a) => a.id === xAxis)!;
   const yMeta = Y_AXES.find((a) => a.id === yAxis)!;
@@ -383,13 +396,25 @@ export function StabilityChart({
             onBackgroundClear={onBackgroundClear}
             simulationActive={simulationActive}
           />
-        ) : (
+        ) : mode === "calibrate" ? (
           <StabilityCalibrate
             cells={cells}
             series={series}
             referenceResultId={referenceResultId}
             applyToChart={applyToChart}
             onApplyToChartChange={onApplyToChartChange}
+          />
+        ) : (
+          // VALIDATE mode — locks in burn-mean Lab as the
+          // authoritative colour for each cell's palette entry. The
+          // mode pill is gated on having a test id, so this branch
+          // assumes ``validateTestId`` is set; the panel itself
+          // shows an empty state if cells lack palette links.
+          <StabilityValidate
+            cells={cells}
+            series={series}
+            testId={validateTestId ?? null}
+            onSaved={onValidateSaved}
           />
         )}
       </div>
@@ -594,6 +619,7 @@ function ModeToggleRow({
     { id: "spectrums", label: "Spectrums", help: MODE_HELP.spectrums },
     { id: "polar", label: "Polar", help: MODE_HELP.polar },
     { id: "calibrate", label: "Calibrate", help: MODE_HELP.calibrate },
+    { id: "validate", label: "Validate", help: MODE_HELP.validate },
   ];
   return (
     <div className="flex flex-wrap items-center gap-1.5">

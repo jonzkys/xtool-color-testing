@@ -108,3 +108,85 @@ export async function listPaletteValidationStatus(opts: {
   if (opts.max_de != null) qs.set("max_de", String(opts.max_de));
   return j(await fetch(`/api/palette/validation-status?${qs}`));
 }
+
+/* ─── Per-entry validate/invalidate ─────────────────────────────────── */
+
+export interface ValidateEntryRequest {
+  validated_lab: [number, number, number];
+  validated_test_id?: number;
+  run_count?: number;
+}
+
+export async function validatePaletteEntry(
+  id: number,
+  body: ValidateEntryRequest,
+): Promise<PaletteEntry> {
+  return j(await fetch(`/api/palette/${id}/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }));
+}
+
+export async function invalidatePaletteEntry(
+  id: number,
+): Promise<PaletteEntry> {
+  return j(await fetch(`/api/palette/${id}/validate`, { method: "DELETE" }));
+}
+
+/* ─── Batch validate from validation test results ───────────────────── */
+
+export interface ValidateBatchOverride {
+  cell_index: number;
+  accept: boolean;
+}
+
+export interface ValidateBatchRequest {
+  tolerance_de?: number;
+  result_ids?: number[];
+  overrides?: ValidateBatchOverride[];
+  dry_run?: boolean;
+}
+
+export interface ValidateBatchEntry {
+  cell_index: number;
+  palette_entry_id: number;
+  burn_mean_lab: [number, number, number];
+  expected_lab: [number, number, number];
+  de_burn_vs_expected: number;
+  run_count: number;
+  n_inputs: number;
+  persisted: boolean;
+}
+
+export interface ValidateBatchSkipped {
+  cell_index: number;
+  palette_entry_id: number | null;
+  reason:
+    | "no_palette_link"
+    | "insufficient_runs"
+    | "no_measurements";
+  run_count?: number;
+}
+
+export interface ValidateBatchResponse {
+  test_id: number;
+  test_name: string;
+  tolerance_de: number;
+  result_count: number;
+  dry_run: boolean;
+  auto_validated: ValidateBatchEntry[];
+  flagged: ValidateBatchEntry[];
+  skipped: ValidateBatchSkipped[];
+}
+
+export async function validateBatch(
+  testId: number,
+  body: ValidateBatchRequest = {},
+): Promise<ValidateBatchResponse> {
+  return j(await fetch(`/api/tests/${testId}/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }));
+}

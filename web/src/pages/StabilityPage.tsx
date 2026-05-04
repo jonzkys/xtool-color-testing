@@ -463,6 +463,7 @@ export function StabilityPage() {
             onReferenceResultIdChange={setReferenceResultId}
             applyToChart={applyToChart}
             onApplyToChartChange={setApplyToChart}
+            validateTestId={selectedTestId}
           />
         </main>
         <StabilityStats
