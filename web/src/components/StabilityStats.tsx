@@ -5,11 +5,14 @@ import { seriesColour, type FocusedCell } from "./StabilityChart";
 import {
   AcrossRunsStats,
   BurnVsCameraStats,
+  PaletteResidualPC1,
   PerResultStats,
   StatsSeriesEntry,
   computeAcrossRunsStats,
   computeBurnVsCameraStats,
+  computePaletteResidualPC1,
   computePerResultStats,
+  describePc1Axis,
   signedNum,
 } from "./stabilityStatsMath";
 
@@ -76,6 +79,15 @@ export function StabilityStats({
     [cells, series],
   );
 
+  // PC1 of the (per-cell, burn-mean) residual cloud — surfaces the
+  // dominant direction the palette is pulled in. Renders for any
+  // non-empty selection; meaningful at ≥3 sampled cells (math returns
+  // a stable zero for fewer).
+  const residualPC1 = useMemo(
+    () => (series.length > 0 ? computePaletteResidualPC1(cells, series) : null),
+    [cells, series],
+  );
+
   return (
     <aside
       className={cn(
@@ -131,6 +143,9 @@ export function StabilityStats({
                 onClick={onClick}
                 burnsSpanned={burnsSpanned}
               />
+            )}
+            {residualPC1 && residualPC1.sampleCount >= 3 && (
+              <PaletteDriftCard pc1={residualPC1} />
             )}
             {acrossRuns && (
               <AcrossRunsCard
@@ -400,6 +415,91 @@ function BurnVsCameraCard({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─── Palette drift (PC1) card ────────────────────────────────────────── */
+
+function PaletteDriftCard({ pc1 }: { pc1: PaletteResidualPC1 }) {
+  const hint = describePc1Axis(pc1);
+  const ratio = pc1.varianceRatio;
+  // Verdict: high variance ratio = the burn drift is unidirectional →
+  // a single global shift would help. Low ratio = drift is diffuse →
+  // colour-dependent, no single offset will fix it.
+  let verdict: string;
+  if (ratio >= 0.6) verdict = "Single shift fits";
+  else if (ratio >= 0.4) verdict = "Mostly aligned";
+  else verdict = "Diffuse";
+  // Magnitude of the centroid → how far the average residual is from
+  // zero. Read it as "the average cell is this much off, and PC1
+  // points the way".
+  const meanMag = Math.hypot(
+    pc1.meanDelta.L,
+    pc1.meanDelta.a,
+    pc1.meanDelta.b,
+  );
+  const ratioPct = Math.round(ratio * 100);
+  return (
+    <div className="rounded-[8px] border border-[color:var(--color-primary)]/40 bg-[color:var(--color-primary-tint)]/40 overflow-hidden">
+      <header className="px-2.5 py-1.5 border-b border-[color:var(--color-primary)]/30">
+        <div className="font-mono text-[10px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-primary)]">
+          Palette drift · PC1
+        </div>
+      </header>
+      <dl className="flex flex-col">
+        <StatRow
+          label="Direction"
+          value={hint ?? "—"}
+        />
+        <StatRow
+          label="Mean Δ"
+          value={`${meanMag.toFixed(2)} Lab`}
+        />
+        <StatRow
+          label="Variance"
+          value={`${ratioPct}% on PC1`}
+        />
+      </dl>
+      <div className="px-2.5 pb-2 pt-1">
+        {/* Variance-explained bar — primary on the PC1 share, ink-subtle on
+            the residual perpendicular variance. The fuller the primary bar,
+            the more the palette's whole drift is captured by one direction. */}
+        <div
+          className="flex h-[6px] w-full overflow-hidden rounded-[2px] border border-[color:var(--color-border)]"
+          aria-hidden
+          title={`PC1 explains ${ratioPct}% of residual variance`}
+        >
+          <div
+            className="h-full bg-[color:var(--color-primary)]"
+            style={{ width: `${ratioPct}%` }}
+          />
+          <div
+            className="h-full bg-[color:var(--color-ink-subtle)]"
+            style={{ width: `${100 - ratioPct}%` }}
+          />
+        </div>
+        <div className="mt-1 font-mono text-[9px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
+          {verdict}
+        </div>
+        {/* Component breakdown — Lab axis weights inside PC1, signed so
+            the reader can map "warmer + brighter" back to the actual
+            channel deltas without needing to remember the axis. */}
+        <div className="mt-2 flex flex-wrap gap-x-2.5 gap-y-0.5 font-mono text-[10px] tabular-nums text-[color:var(--color-ink)]">
+          <span>
+            <span className="text-[color:var(--color-ink-subtle)] mr-0.5">ΔL</span>
+            {signedNum(pc1.meanDelta.L)}
+          </span>
+          <span>
+            <span className="text-[color:var(--color-ink-subtle)] mr-0.5">Δa</span>
+            {signedNum(pc1.meanDelta.a)}
+          </span>
+          <span>
+            <span className="text-[color:var(--color-ink-subtle)] mr-0.5">Δb</span>
+            {signedNum(pc1.meanDelta.b)}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

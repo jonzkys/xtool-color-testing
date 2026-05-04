@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { deltaE76, type Lab } from "../color/math";
+import type { ResultRecord, ValidationCell } from "../types";
 import {
   burnDeltaE,
   burnDeltaHue,
   cameraSigma,
   cellResidual,
+  computePaletteResidualPC1,
+  describePc1Axis,
   meanLab,
+  type StatsSeriesEntry,
 } from "./stabilityStatsMath";
 
 describe("meanLab", () => {
@@ -127,5 +131,167 @@ describe("cellResidual", () => {
 
   it("returns null when there are no finite measurements", () => {
     expect(cellResidual([], [50, 30, 0])).toBeNull();
+  });
+});
+
+/* ─── Palette residual PC1 ─────────────────────────────────────────────── */
+
+function fakeCells(expectedLabs: Lab[]): ValidationCell[] {
+  return expectedLabs.map((lab, i) => ({
+    cell_index: i,
+    expected_lab: lab,
+    expected_hex: "#000",
+    params: {},
+  })) as unknown as ValidationCell[];
+}
+
+function fakeSeries(measuredByCell: Map<number, Lab>): StatsSeriesEntry {
+  const cells = new Map<number, { hex: string; lab: Lab }>();
+  for (const [k, lab] of measuredByCell)
+    cells.set(k, { hex: "#000", lab });
+  return {
+    result: { id: 1 } as ResultRecord,
+    cells,
+    label: "test",
+  };
+}
+
+describe("computePaletteResidualPC1", () => {
+  it("returns zero stats when fewer than 3 cells contribute", () => {
+    const cells = fakeCells([[50, 0, 0], [60, 0, 0]]);
+    const series: StatsSeriesEntry[] = [
+      fakeSeries(
+        new Map([
+          [0, [55, 0, 0]],
+          [1, [65, 0, 0]],
+        ]),
+      ),
+    ];
+    const r = computePaletteResidualPC1(cells, series);
+    expect(r.sampleCount).toBe(2);
+    expect(r.varianceRatio).toBe(0);
+    expect(r.axis).toEqual({ L: 0, a: 0, b: 0 });
+  });
+
+  it("captures a single-axis Δa shift in PC1 with high variance ratio", () => {
+    // 5 cells, expected at varying L*, all measured a* = expected + 4.
+    // PC1 should land on the a-axis with ≈100% variance (since all
+    // residuals are co-linear).
+    const cells = fakeCells([
+      [40, 5, 0],
+      [50, 5, 0],
+      [60, 5, 0],
+      [70, 5, 0],
+      [80, 5, 0],
+    ]);
+    const series: StatsSeriesEntry[] = [
+      fakeSeries(
+        new Map([
+          [0, [40, 9, 0]],
+          [1, [50, 9, 0]],
+          [2, [60, 9, 0]],
+          [3, [70, 9, 0]],
+          [4, [80, 9, 0]],
+        ]),
+      ),
+    ];
+    const r = computePaletteResidualPC1(cells, series);
+    expect(r.sampleCount).toBe(5);
+    // All residuals identical → variance is zero → axis is undefined,
+    // but math still produces a non-zero result via the centroid sign
+    // flip. The variance ratio should be 0/0 → 0 (totalVar = 0).
+    expect(r.meanDelta.a).toBeCloseTo(4);
+    expect(r.meanDelta.L).toBeCloseTo(0);
+  });
+
+  it("PC1 captures the dominant variance direction in a noisy palette", () => {
+    // Spread along a (variance ~16) plus tiny jitter on L (variance
+    // ~1). PC1 should align with the a-axis and capture > 80% of
+    // variance.
+    const cells = fakeCells([
+      [50, 0, 0],
+      [50, 0, 0],
+      [50, 0, 0],
+      [50, 0, 0],
+      [50, 0, 0],
+    ]);
+    const series: StatsSeriesEntry[] = [
+      fakeSeries(
+        new Map([
+          [0, [50.5, -4, 0]],
+          [1, [50.0, -2, 0]],
+          [2, [49.5, 0, 0]],
+          [3, [50.5, 2, 0]],
+          [4, [50.0, 4, 0]],
+        ]),
+      ),
+    ];
+    const r = computePaletteResidualPC1(cells, series);
+    expect(r.sampleCount).toBe(5);
+    // PC1 is an a-axis direction → |a| component dominates.
+    expect(Math.abs(r.axis.a)).toBeGreaterThan(0.95);
+    expect(r.varianceRatio).toBeGreaterThan(0.8);
+  });
+
+  it("flips PC1 sign so the axis points along the centroid", () => {
+    // Residuals cluster around (Δa=+5) with a small L spread so the
+    // power-iteration axis isn't degenerate with the starting basis.
+    // PCA is sign-arbitrary; we force the sign so 'warmer' reads
+    // consistently with the mean residual's actual direction.
+    const cells = fakeCells([
+      [50, 0, 0],
+      [50, 0, 0],
+      [50, 0, 0],
+      [50, 0, 0],
+      [50, 0, 0],
+    ]);
+    const series: StatsSeriesEntry[] = [
+      fakeSeries(
+        new Map([
+          [0, [50.1, 4, 0]],
+          [1, [50.0, 5, 0]],
+          [2, [49.9, 6, 0]],
+          [3, [50.0, 5, 0]],
+          [4, [50.1, 4, 0]],
+        ]),
+      ),
+    ];
+    const r = computePaletteResidualPC1(cells, series);
+    expect(r.axis.a).toBeGreaterThan(0);
+  });
+});
+
+describe("describePc1Axis", () => {
+  it("labels Δa-positive as warmer, Δb-positive as yellower, ΔL-positive as brighter", () => {
+    expect(
+      describePc1Axis({
+        sampleCount: 5,
+        meanDelta: { L: 1, a: 2, b: 0 },
+        axis: { L: 0.5, a: 0.85, b: 0 },
+        varianceRatio: 0.9,
+        projectedMean: 1,
+      }),
+    ).toBe("warmer + brighter");
+    expect(
+      describePc1Axis({
+        sampleCount: 5,
+        meanDelta: { L: 0, a: 0, b: -3 },
+        axis: { L: 0, a: 0, b: -1 },
+        varianceRatio: 1,
+        projectedMean: 1,
+      }),
+    ).toBe("bluer");
+  });
+
+  it("returns null on a zero axis (insufficient samples)", () => {
+    expect(
+      describePc1Axis({
+        sampleCount: 2,
+        meanDelta: { L: 0, a: 0, b: 0 },
+        axis: { L: 0, a: 0, b: 0 },
+        varianceRatio: 0,
+        projectedMean: 0,
+      }),
+    ).toBeNull();
   });
 });

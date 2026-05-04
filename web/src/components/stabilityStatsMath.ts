@@ -2,6 +2,7 @@ import {
   chroma,
   deltaE76,
   hueDeg,
+  pca1,
   wrapHueDelta,
   type Lab,
 } from "../color/math";
@@ -332,6 +333,121 @@ export function computeBurnVsCameraStats(
     worstBurn,
     worstCamera,
   };
+}
+
+/* ─── Palette residual PC1 ────────────────────────────────────────────── */
+
+/** Output of {@link computePaletteResidualPC1}: the principal direction
+ *  along which the palette's per-cell residual vector cloud spreads,
+ *  the variance fraction it explains, and a human-readable
+ *  interpretation hint (e.g. "warmer + brighter").
+ *
+ *  PC1 is the burn's "dominant correction direction" — when its
+ *  variance ratio is high (≥ ~0.6) the entire palette can usually be
+ *  pulled back toward expected by a single Lab translation in this
+ *  axis. When it's low (≤ ~0.4) the residuals are diffuse — colour-
+ *  dependent drift — and a single global correction won't help. */
+export interface PaletteResidualPC1 {
+  /** Number of cells contributing (need ≥ 3 for the math to mean
+   *  anything; below that we still emit zeros for stable rendering). */
+  sampleCount: number;
+  /** Mean residual vector (cloud centroid). Lab units. */
+  meanDelta: { L: number; a: number; b: number };
+  /** Unit-length first principal axis in (ΔL, Δa, Δb). Sign is chosen
+   *  so the projection of the centroid onto the axis is non-negative —
+   *  i.e. the axis points the same way the mean residual does, so the
+   *  interpretation hint reads consistently with the centroid's sign. */
+  axis: { L: number; a: number; b: number };
+  /** Fraction of total residual variance captured by this axis,
+   *  ∈ [0, 1]. */
+  varianceRatio: number;
+  /** Magnitude of the centroid projected onto the axis (Lab units).
+   *  Tells you "how much" of the residual is along PC1 on average. */
+  projectedMean: number;
+}
+
+export function computePaletteResidualPC1(
+  cells: ValidationCell[],
+  series: StatsSeriesEntry[],
+): PaletteResidualPC1 {
+  const residuals: Lab[] = [];
+  for (const c of cells) {
+    const expArr = c.expected_lab as Lab | number[];
+    if (!Array.isArray(expArr) || expArr.length !== 3) continue;
+    const expected: Lab = [expArr[0], expArr[1], expArr[2]];
+    // Per-cell measurement: average across runs that hit this cell so
+    // PC1 sees the burn-mean residual, not per-run noise.
+    const labs: Lab[] = [];
+    for (const s of series) {
+      const m = s.cells.get(c.cell_index);
+      if (m) labs.push(m.lab);
+    }
+    if (labs.length === 0) continue;
+    const cellMean = meanLab(labs);
+    if (cellMean == null) continue;
+    residuals.push([
+      cellMean[0] - expected[0],
+      cellMean[1] - expected[1],
+      cellMean[2] - expected[2],
+    ]);
+  }
+  if (residuals.length < 3) {
+    return {
+      sampleCount: residuals.length,
+      meanDelta: { L: 0, a: 0, b: 0 },
+      axis: { L: 0, a: 0, b: 0 },
+      varianceRatio: 0,
+      projectedMean: 0,
+    };
+  }
+  const pca = pca1(residuals);
+  // Sign convention: flip the axis so the centroid projects positively
+  // onto it. PCA itself doesn't fix the axis sign, so without this the
+  // interpretation ("warmer/cooler") flips run-to-run.
+  let [aL, aA, aB] = pca.axis;
+  const meanL = pca.mean[0];
+  const meanA = pca.mean[1];
+  const meanB = pca.mean[2];
+  const projMean = meanL * aL + meanA * aA + meanB * aB;
+  if (projMean < 0) {
+    aL = -aL;
+    aA = -aA;
+    aB = -aB;
+  }
+  return {
+    sampleCount: residuals.length,
+    meanDelta: { L: meanL, a: meanA, b: meanB },
+    axis: { L: aL, a: aA, b: aB },
+    varianceRatio: pca.variance_ratio,
+    projectedMean: Math.abs(projMean),
+  };
+}
+
+/** Phrase the dominant axis as a short interpretation hint, e.g.
+ *  "warmer + brighter" or "blue-shifted". Picks the two Lab
+ *  components with the largest absolute weights in the axis and
+ *  labels each as a perceptual direction. Returns ``null`` when the
+ *  axis is zero (not enough samples). */
+export function describePc1Axis(
+  pc1: PaletteResidualPC1,
+): string | null {
+  const a = pc1.axis;
+  const mag = Math.hypot(a.L, a.a, a.b);
+  if (mag < 1e-6) return null;
+  const components: { label: string; weight: number }[] = [
+    { label: a.L > 0 ? "brighter" : "darker", weight: Math.abs(a.L) },
+    { label: a.a > 0 ? "warmer" : "greener", weight: Math.abs(a.a) },
+    { label: a.b > 0 ? "yellower" : "bluer", weight: Math.abs(a.b) },
+  ];
+  components.sort((x, y) => y.weight - x.weight);
+  // Only include the second component if its weight is at least half
+  // the first's — otherwise the hint reads as misleadingly equal.
+  const primary = components[0];
+  const secondary = components[1];
+  if (secondary.weight >= primary.weight * 0.5) {
+    return `${primary.label} + ${secondary.label}`;
+  }
+  return primary.label;
 }
 
 export function median(values: number[]): number {
