@@ -331,14 +331,10 @@ export function PixelArtPage() {
   const onConfirmMerge = useCallback(
     (groups: MergeGroup[]) => {
       if (groups.length === 0) return;
-      // Merge centroids in-place: pick the representative as the
-      // canonical hex, drop the others. The pipeline doesn't re-run; we
-      // just rewrite ``matchByColor`` and ``enabledByColor`` so the
-      // representative takes the union state, then the next preview
-      // tick can use the new mapping.
-      // Simpler approach: nudge ``maxK`` down by ``groups.length - X``
-      // so capFit re-runs with fewer centroids. This always converges
-      // toward the user's intent (fewer colours).
+      // Heuristic: drop maxK by the number of merges so the next
+      // ``kMeansLab`` pass produces fewer centroids. The result tracks
+      // user intent in aggregate (fewer colours) rather than honouring
+      // the specific merge groupings — see PR #50 for the v1 trade-off.
       const reduction = groups.reduce(
         (n, g) => n + (g.sourceColors.length - 1),
         0,
