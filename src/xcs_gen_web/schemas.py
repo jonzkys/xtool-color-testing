@@ -933,3 +933,54 @@ class TextRegResolveResponse(BaseModel):
     mopa_frequency: int
     processing_light_source: str
     source: Literal["material", "machine", "fallback"]
+
+
+# ---------------------------------------------------------------------------
+# Pixel Art (raster → grid of rects engraving page).
+# Spec: docs/superpowers/specs/2026-05-03-pixel-art-design.md
+# ---------------------------------------------------------------------------
+
+
+class PixelArtLayerSpec(BaseModel):
+    """Per-quantised-colour processing config for the Pixel Art page.
+
+    Pixel rects are always emitted as ``COLOR_FILL_ENGRAVE`` — no
+    processing-type picker, no hatch passes, no scan angle override
+    (see spec § Decisions taken / Q4)."""
+
+    color: str = Field(pattern=_COLOR_PATTERN)
+    enabled: bool = True
+    base_params: BaseParams
+    material_id: str | None = None
+    palette_entry_id: int | None = None  # audit/debug only
+
+
+class PixelArtRectSpec(BaseModel):
+    """One output rectangle in mm-space, relative to the crop origin.
+
+    The browser pipeline produces these by greedy max-rectangle covering
+    over same-label cells; the backend treats them as opaque.  ``color``
+    references a layer in the request's ``layers`` list by hex."""
+
+    x: float = Field(ge=0)
+    y: float = Field(ge=0)
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+    color: str = Field(pattern=_COLOR_PATTERN)
+
+
+class PixelArtRequest(BaseModel):
+    """Request to convert a pixelated raster into an .xcs / .svg.
+
+    Mm-space wire format — the backend has no cell-grid context, ``cell_mm``
+    is informational only (debug logs / audit)."""
+
+    name: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._\- ]+$")
+    material_id: str = Field(min_length=1)
+    width_mm: float = Field(gt=0, le=500)
+    height_mm: float = Field(gt=0, le=500)
+    start_x: float = Field(default=10.0, ge=0)
+    start_y: float = Field(default=10.0, ge=0)
+    cell_mm: float = Field(gt=0)
+    rects: list[PixelArtRectSpec] = Field(min_length=1, max_length=2000)
+    layers: list[PixelArtLayerSpec] = Field(min_length=1, max_length=64)
