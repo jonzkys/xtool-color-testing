@@ -308,40 +308,51 @@ def _seed_validation_with_result(
     return eid
 
 
-def test_validation_status_validates_within_threshold(client, mid):
-    """A measurement within ΔE76 ≤ 5 of expected marks the entry validated."""
+def test_validation_status_reads_is_validated_flag(client, mid):
+    """``validated`` mirrors the entry's ``is_validated`` column. The
+    Phase 2 validate flow flips this flag on save; the heuristic
+    "low-ΔE measurement implies validated" is gone."""
     eid = _seed_validation_with_result(
         mid,
         expected_lab=[40.0, 5.0, -10.0],
-        measured_lab=[41.0, 5.5, -9.0],  # ΔE76 ≈ 1.5
+        measured_lab=[41.0, 5.5, -9.0],
     )
-    resp = client.get(
+    # Default state: not validated, even with a tight measurement.
+    rows = client.get(
         "/api/palette/validation-status", params={"material_id": mid},
-    )
-    assert resp.status_code == 200
-    rows = resp.json()
+    ).json()
     by_id = {r["entry_id"]: r for r in rows}
-    assert eid in by_id
+    assert by_id[eid]["validated"] is False
+    # Flip the flag via the per-entry validate route.
+    client.post(
+        f"/api/palette/{eid}/validate",
+        json={"validated_lab": [41.0, 5.5, -9.0], "run_count": 3},
+    )
+    rows = client.get(
+        "/api/palette/validation-status", params={"material_id": mid},
+    ).json()
+    by_id = {r["entry_id"]: r for r in rows}
     assert by_id[eid]["validated"] is True
     assert by_id[eid]["best_de"] is not None
-    assert by_id[eid]["best_de"] < 5.0
     assert by_id[eid]["last_validated_at"] is not None
 
 
-def test_validation_status_flags_far_measurement_as_unvalidated(client, mid):
-    """A measurement way outside the threshold leaves the entry unvalidated."""
+def test_validation_status_unvalidated_for_far_measurements(client, mid):
+    """A high-ΔE measurement no longer matters — the only thing that
+    flips ``validated`` is the explicit per-entry / batch validate
+    route. An untouched entry stays unvalidated regardless of how
+    its results landed."""
     eid = _seed_validation_with_result(
         mid,
         expected_lab=[40.0, 5.0, -10.0],
-        measured_lab=[80.0, 5.0, -10.0],  # ΔL = 40 → ΔE76 = 40
+        measured_lab=[80.0, 5.0, -10.0],  # very far off — irrelevant now
     )
     rows = client.get(
         "/api/palette/validation-status", params={"material_id": mid},
     ).json()
     by_id = {r["entry_id"]: r for r in rows}
     assert by_id[eid]["validated"] is False
-    assert by_id[eid]["best_de"] is not None
-    assert by_id[eid]["best_de"] > 5.0
+    assert by_id[eid]["best_de"] is None  # no validate call made
 
 
 def test_validation_status_unvalidated_when_no_validation_test(client, mid):
@@ -371,26 +382,33 @@ def test_validation_status_filters_by_machine_id(client, mid):
     assert rows == []
 
 
-def test_validation_status_respects_max_de_param(client, mid):
-    """``max_de`` is a knob — tightening it can demote a borderline entry."""
+def test_validation_status_max_de_param_is_accepted_but_ignored(client, mid):
+    """``max_de`` is wire-compat — old callers still pass it. The
+    actual gate is ``is_validated``, set when the entry was saved
+    via the validate flow, so ``max_de`` no longer changes the
+    result. Endpoint must still accept the parameter (no 422)."""
     eid = _seed_validation_with_result(
         mid,
         expected_lab=[40.0, 5.0, -10.0],
-        measured_lab=[44.0, 5.0, -10.0],  # ΔE76 = 4
+        measured_lab=[44.0, 5.0, -10.0],
     )
-    # Default threshold (5.0) → validated
-    rows = client.get(
+    client.post(
+        f"/api/palette/{eid}/validate",
+        json={"validated_lab": [44.0, 5.0, -10.0], "run_count": 2},
+    )
+    # Loose threshold + strict threshold both report the same thing
+    # now: the flag is what matters, not the legacy ΔE knob.
+    rows_loose = client.get(
         "/api/palette/validation-status", params={"material_id": mid},
     ).json()
-    by_id = {r["entry_id"]: r for r in rows}
-    assert by_id[eid]["validated"] is True
-    # Stricter threshold (3.0) → not validated
-    rows = client.get(
+    rows_strict = client.get(
         "/api/palette/validation-status",
-        params={"material_id": mid, "max_de": 3.0},
+        params={"material_id": mid, "max_de": 0.1},
     ).json()
-    by_id = {r["entry_id"]: r for r in rows}
-    assert by_id[eid]["validated"] is False
+    loose_by_id = {r["entry_id"]: r for r in rows_loose}
+    strict_by_id = {r["entry_id"]: r for r in rows_strict}
+    assert loose_by_id[eid]["validated"] is True
+    assert strict_by_id[eid]["validated"] is True
 
 
 # ───── Validated state (per-entry) ─────────────────────────────────────
