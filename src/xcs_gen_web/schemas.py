@@ -402,6 +402,10 @@ class PaletteEntryResponse(BaseModel):
     is_validated: bool = False
     validated_at: str | None = None
     validated_test_id: int | None = None
+    # Cell index inside ``validated_test_id`` that the entry came
+    # from. Lets the palette UI link "this entry → that cell" without
+    # comparing burn parameters by hand.
+    validated_cell_index: int | None = None
     validated_lab: list[float] | None = None
     validated_run_count: int | None = None
     validated_residual_de: float | None = None

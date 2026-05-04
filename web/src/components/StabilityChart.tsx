@@ -56,7 +56,17 @@ export type ChartMode =
 /** Surface a hover/click came from. Drives the page-level "should this
  *  view's mouse-leave clear the transient focus?" decision so a
  *  transient hover in one view never wipes a pinned focus in another. */
-export type FocusSource = "scatter" | "heatmap" | "stats" | "spectrums";
+export type FocusSource =
+  | "scatter"
+  | "heatmap"
+  | "stats"
+  | "spectrums"
+  /* "deep-link" — focus arrived via a URL ?cell= deep link from
+   * elsewhere (typically the palette page surfacing "this validated
+   * entry came from this cell"). Functionally identical to a pinned
+   * focus from any other source, but tagged so future UI hooks can
+   * differentiate "user clicked here" from "we landed them here". */
+  | "deep-link";
 
 /** Page-level focus state shared between the scatter, the heatmap, and
  *  the stats strip. ``transient`` is a hover; ``pinned`` is a click

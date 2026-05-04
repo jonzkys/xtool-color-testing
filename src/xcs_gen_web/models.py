@@ -228,6 +228,12 @@ palette_entries = Table(
     Column("validated_lab_b", Float, nullable=True),
     Column("validated_run_count", Integer, nullable=True),
     Column("validated_residual_de", Float, nullable=True),
+    # Cell index inside ``validated_test_id`` that the entry was
+    # created from. Lets the UI link "this validated entry" → "the
+    # specific cell of that test that produced it" without having
+    # to compare burn parameters by hand. Nullable for legacy rows
+    # and any future entry created outside the batch validate path.
+    Column("validated_cell_index", Integer, nullable=True),
     CheckConstraint(
         "source IN ('averaged','single_result','manual')",
         name="palette_entries_source_chk",

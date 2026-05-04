@@ -1825,6 +1825,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 material_id=material_id,
                 burn_mean_lab=tuple(entry["burn_mean_lab"]),
                 validated_test_id=tid,
+                validated_cell_index=int(entry["cell_index"]),
                 run_count=int(entry["run_count"]),
                 stability_de=float(entry["stability_de"]),
                 params=cell_params.get(entry["cell_index"]) or {},

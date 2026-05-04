@@ -68,6 +68,7 @@ def _row_to_entry(r) -> dict[str, Any]:
         "is_validated": bool(r.is_validated),
         "validated_at": r.validated_at,
         "validated_test_id": r.validated_test_id,
+        "validated_cell_index": r.validated_cell_index,
         "validated_lab": validated_lab,
         "validated_run_count": r.validated_run_count,
         "validated_residual_de": r.validated_residual_de,
@@ -705,6 +706,7 @@ def create_validated_entry(
     material_id: int,
     burn_mean_lab: tuple[float, float, float],
     validated_test_id: int,
+    validated_cell_index: int,
     run_count: int,
     stability_de: float,
     params: dict[str, Any] | None = None,
@@ -730,8 +732,14 @@ def create_validated_entry(
     L, a, b = float(burn_mean_lab[0]), float(burn_mean_lab[1]), float(burn_mean_lab[2])
     hex_ = lab_to_hex(L, a, b)
     now = _now()
+    # ``test_id`` mirrors ``validated_test_id`` so the entry surfaces
+    # in the palette page's per-test BrowseView grouping (which keys
+    # off ``test_id``). Otherwise validated entries would only show
+    # up via the Query tab and the user couldn't browse them next to
+    # the original test's swatches. The ``validated_*`` columns then
+    # carry the cell + stability provenance separately.
     row = {
-        "test_id": None,
+        "test_id": validated_test_id,
         "material_id": material_id,
         "x_value": 0,
         "y_value": None,
@@ -750,6 +758,7 @@ def create_validated_entry(
         "is_validated": True,
         "validated_at": now,
         "validated_test_id": validated_test_id,
+        "validated_cell_index": validated_cell_index,
         "validated_lab_l": L,
         "validated_lab_a": a,
         "validated_lab_b": b,
@@ -799,6 +808,7 @@ def invalidate_entry(
                 is_validated=False,
                 validated_at=None,
                 validated_test_id=None,
+                validated_cell_index=None,
                 validated_lab_l=None,
                 validated_lab_a=None,
                 validated_lab_b=None,

@@ -676,6 +676,9 @@ def test_batch_validate_persists_creates_new_entry(client, mid):
     new_entry = next(e for e in palette if e["id"] == new_id)
     assert new_entry["is_validated"] is True
     assert new_entry["validated_test_id"] == tid
+    # Cell index back-reference lets the UI link directly to the
+    # source cell instead of forcing the user to find it by params.
+    assert new_entry["validated_cell_index"] == 0
     assert new_entry["source"] == "averaged"
     # New entry's lab IS the burn-mean (≈ 41, 5, -10).
     assert abs(new_entry["lab"][0] - 41.0) < 0.5

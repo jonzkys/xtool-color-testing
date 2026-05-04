@@ -39,6 +39,16 @@ import type { ResultRecord, TestRecord } from "../types";
 export function StabilityPage() {
   const [route, navigate] = useRoute();
   const routeId = route.name === "stability" ? route.id : undefined;
+  const routeCell =
+    route.name === "stability" && route.cell != null ? route.cell : null;
+  // Tracks which (id, cell) deep link we most recently applied so the
+  // apply-on-load effect can distinguish "first time at this URL"
+  // (apply) from "user has been interacting since" (don't snap back).
+  // A new deep-link navigation (e.g. clicking a different palette
+  // entry's "from cell" link) updates this and reapplies.
+  const lastAppliedDeepLink = useRef<{ id: number; cell: number } | null>(
+    null,
+  );
 
   const [materials, setMaterials] = useState<Material[]>([]);
   const [tests, setTests] = useState<TestRecord[]>([]);
@@ -292,6 +302,24 @@ export function StabilityPage() {
   }, [chartSeries, resultCache]);
 
   const cells = testDetail?.validation_cells ?? [];
+
+  // Apply ``?cell=`` deep-link when the matching test's cells become
+  // available. Reapplies whenever the (id, cell) tuple changes —
+  // letting the user follow a sequence of palette → test deep links
+  // without each one being shadowed by the previous pin. Doesn't
+  // re-snap after manual pin/unpin: lastAppliedDeepLink remembers
+  // the (id, cell) we already applied for, so further interaction
+  // is not interrupted.
+  useEffect(() => {
+    if (routeId == null || routeCell == null) return;
+    if (selectedTestId !== routeId) return;
+    if (cells.length === 0) return;
+    if (!cells.some((c) => c.cell_index === routeCell)) return;
+    const last = lastAppliedDeepLink.current;
+    if (last && last.id === routeId && last.cell === routeCell) return;
+    setPinnedCell({ cellIndex: routeCell, source: "deep-link" });
+    lastAppliedDeepLink.current = { id: routeId, cell: routeCell };
+  }, [cells, selectedTestId, routeId, routeCell]);
   const cellsPerRow = useMemo(
     () => (testDetail ? inferCellsPerRow(testDetail) : null),
     [testDetail],

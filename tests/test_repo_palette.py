@@ -411,6 +411,34 @@ def test_invalidate_returns_none_for_unknown_id(fresh_db):
     assert repo.invalidate_entry(99999) is None
 
 
+def test_create_validated_entry_inserts_fresh_row(fresh_db):
+    """``create_validated_entry`` inserts a brand-new row carrying
+    the burn-mean Lab + the test/cell back-reference + stability gate
+    value as the residual_de field."""
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=_SPEC)["id"]
+    out = repo.create_validated_entry(
+        machine_id="F2Ultra",
+        material_id=mid,
+        burn_mean_lab=(45.0, 14.0, 28.0),
+        validated_test_id=tid,
+        validated_cell_index=7,
+        run_count=4,
+        stability_de=2.5,
+        params={"power": 10, "speed": 800},
+    )
+    assert out["is_validated"] is True
+    assert out["validated_test_id"] == tid
+    assert out["validated_cell_index"] == 7
+    assert out["validated_run_count"] == 4
+    assert out["validated_residual_de"] == 2.5
+    assert out["validated_lab"] == [45.0, 14.0, 28.0]
+    # New entry's lab IS the burn-mean — no separation between
+    # ingestion-time and validated values for entries created this way.
+    assert out["lab"] == out["validated_lab"]
+    assert out["source"] == "averaged"
+
+
 def test_list_all_validated_only_filter(fresh_db):
     mid = m_repo.create(name="SS")["id"]
     tid = t_repo.create(name="T", material_id=mid, spec=_SPEC)["id"]
