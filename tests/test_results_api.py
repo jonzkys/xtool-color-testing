@@ -758,7 +758,11 @@ def test_upload_allows_same_image_after_delete(fresh_db, monkeypatch, tmp_path):
         files={"image": ("a.png", payload, "image/png")},
     )
     rid = first.json()["id"]
-    assert c.delete(f"/api/results/{rid}").status_code == 204
+    # Side-effecting calls don't go inside ``assert`` — under ``python
+    # -O`` the whole assertion would be stripped and the delete would
+    # silently never run.
+    delete_resp = c.delete(f"/api/results/{rid}")
+    assert delete_resp.status_code == 204
 
     second = c.post(
         f"/api/tests/{tid}/results",
