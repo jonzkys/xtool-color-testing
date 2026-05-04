@@ -502,31 +502,24 @@ function PageHeader({
   test: TestRecord | null;
   cellsCount: number;
 }) {
+  // Single-line header. Earlier iteration carried a breadcrumb, a
+  // 20px title, and a wrap-friendly description paragraph — over
+  // four screen lines of chrome that the chart had to push past on
+  // every screen. Title sits inline with the test summary; the
+  // TopBar already labels the page so the breadcrumb adds nothing.
   return (
-    <header className="shrink-0 px-4 py-4 border-b border-[color:var(--color-border)] bg-[color:var(--color-surface)]">
-      <div className="inline-flex items-center gap-2 font-mono text-[10px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)] mb-1">
-        <span className="h-px w-4 bg-[color:var(--color-border-strong)]" aria-hidden />
-        Stability · validation comparison
-      </div>
-      <div className="flex items-baseline justify-between gap-4 flex-wrap">
-        <h1 className="text-[20px] font-semibold text-[color:var(--color-ink)]">
-          Where does my burn drift?
-        </h1>
-        {test && (
-          <div className="font-mono text-[10.5px] tabular-nums tracking-[0.06em] text-[color:var(--color-ink-muted)]">
-            base #{test.id} · {test.name || "Untitled"} ·{" "}
-            <span className="text-[color:var(--color-ink-subtle)]">
-              {cellsCount} cells
-            </span>
-          </div>
-        )}
-      </div>
-      <p className="mt-1 text-[12.5px] text-[color:var(--color-ink-muted)] max-w-[78ch]">
-        Pick a validation test as the expected base, layer one or more of
-        its result photos, and look for consistent deltas — a uniform
-        hue rotation or brightness offset means the whole palette can be
-        corrected with a single shift.
-      </p>
+    <header className="shrink-0 px-4 py-2 border-b border-[color:var(--color-border)] bg-[color:var(--color-surface)] flex items-baseline justify-between gap-4 flex-wrap">
+      <h1 className="text-[14px] font-semibold text-[color:var(--color-ink)] whitespace-nowrap">
+        Where does my burn drift?
+      </h1>
+      {test && (
+        <div className="font-mono text-[10.5px] tabular-nums tracking-[0.06em] text-[color:var(--color-ink-muted)]">
+          base #{test.id} · {test.name || "Untitled"} ·{" "}
+          <span className="text-[color:var(--color-ink-subtle)]">
+            {cellsCount} cells
+          </span>
+        </div>
+      )}
     </header>
   );
 }

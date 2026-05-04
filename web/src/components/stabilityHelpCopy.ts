@@ -291,3 +291,61 @@ export const TOOLBAR_HELP: Record<ToolbarHelpKey, AxisHelp> = {
     schematic: "pair",
   },
 };
+
+/* ─── Per-mode help (chart-mode pills) ─────────────────────────────────
+ *
+ * Each mode pill (SCATTER / SPATIAL / SPECTRUMS / POLAR / CALIBRATE)
+ * shows its own hover card so users can discover what a mode does
+ * without switching into it blind. ``definition`` says what the view
+ * is; ``guide`` says when you'd reach for it.
+ */
+
+export type ModeHelpKey =
+  | "scatter"
+  | "spatial"
+  | "spectrums"
+  | "polar"
+  | "calibrate";
+
+export const MODE_HELP: Record<ModeHelpKey, AxisHelp> = {
+  scatter: {
+    heading: "Scatter",
+    definition:
+      "Per-cell dots in colour-space — each dot is one cell from one run, plotted against the X / Y metrics you pick.",
+    guide:
+      "The everyday view. Pair an EXP-* axis on X with a residual on Y for hue-dependent drift; pair BURN ΔE × CAMERA σ for the burn-vs-noise quadrant split. Optional spread connectors and a hue-binned trend line live in the toolbar.",
+    schematic: "pair",
+  },
+  spatial: {
+    heading: "Spatial",
+    definition:
+      "Cells laid out in their workpiece position (the burn grid), tinted by the selected per-cell metric.",
+    guide:
+      "Use when scatter shows drift but you want to know if it's positional — laser warming up, optics drifting, lighting fall-off across the photo. Hot patches map directly onto the print.",
+    schematic: "cycle",
+  },
+  spectrums: {
+    heading: "Spectrums",
+    definition:
+      "Per-cell vertical bars from min → max measured value across the selected runs, with a mean dot.",
+    guide:
+      "Read 'which cells move the most run-to-run' at a glance. Sortable by expected hue / lightness / chroma / cell index / range. Tall bars = unstable cells; short bars = repeatable.",
+    schematic: "spread",
+  },
+  polar: {
+    heading: "Polar",
+    definition:
+      "CIE Lab a×b colour wheel. Each cell renders at its expected (hue, chroma); an arrow stretches to where it actually landed.",
+    guide:
+      "One-frame answer to 'is the whole palette rotating one way, or smearing everywhere?'. Arrow colour is bucketed by ΔE76 (≤ 2 imperceptible / ≤ 5 noticeable / ≤ 10 clearly off / > 10 wrong) so the eye picks acceptable vs problem drift instantly.",
+    schematic: "rotation",
+  },
+  calibrate: {
+    heading: "Calibrate",
+    definition:
+      "Fits a 12-parameter Lab→Lab affine that maps one reference run's measurements back toward expected.",
+    guide:
+      "Pick a reference run, see the matrix + R² + before/after ΔE distribution, then toggle APPLY TO CHART to preview the other modes as if the correction was already applied. Useful for asking 'would one calibration pass help?'.",
+    schematic: "pair",
+  },
+};

@@ -33,7 +33,7 @@ import { isHeatmapMetric } from "./stabilityHeatmapMath";
 import { meanLab } from "./stabilityStatsMath";
 import { HelpTip } from "./StabilityHelpTip";
 import {
-  TOOLBAR_HELP,
+  MODE_HELP,
   X_AXIS_HELP,
   Y_AXIS_HELP,
   type AxisHelp,
@@ -467,7 +467,7 @@ function ChartHeader({
   // metric being measured, with ordering picked separately. The
   // SPECTRUMS canvas can render every Y axis (per-run + computed) so
   // we don't filter the pill row there.
-  const yLegend = mode === "scatter" ? "Y axis" : "Metric";
+  const yLegend = mode === "scatter" ? "Y" : "Metric";
   const yAxes = mode === "spatial"
     ? Y_AXES.filter((a) => isHeatmapMetric(a.id as YAxis))
     : Y_AXES;
@@ -480,10 +480,9 @@ function ChartHeader({
     isBurnAxis(id as YAxis) && burnDisabled;
   const isXAxisDisabled = (id: XAxis | YAxis) =>
     isComputedXAxis(id as XAxis) && burnDisabled;
-  // Row-level help: the legend's `?` icon explains what *the row*
-  // answers; per-pill help reads the per-axis copy. Spatial / Spectrums
-  // modes swap Y axis for METRIC so the row help entry switches too.
-  const yRowHelp = mode === "scatter" ? TOOLBAR_HELP.yRow : TOOLBAR_HELP.metricRow;
+  // Per-pill help reads the per-axis copy; the row-level legend has
+  // no help affordance any more — every pill in the row already
+  // explains itself on hover.
   const helpForY = (id: XAxis | YAxis): AxisHelp => Y_AXIS_HELP[id as YAxis];
   const helpForX = (id: XAxis | YAxis): AxisHelp => X_AXIS_HELP[id as XAxis];
   return (
@@ -508,19 +507,17 @@ function ChartHeader({
             onChange={(v) => onYAxisChange(v as YAxis)}
             isDisabled={isYAxisDisabled}
             disabledHint="needs ≥ 2 runs"
-            rowHelp={yRowHelp}
             helpFor={helpForY}
           />
         )}
         {mode === "scatter" && (
           <AxisRow
-            legend="X axis"
+            legend="X"
             axes={X_AXES}
             value={xAxis}
             onChange={(v) => onXAxisChange(v as XAxis)}
             isDisabled={isXAxisDisabled}
             disabledHint="needs ≥ 2 runs"
-            rowHelp={TOOLBAR_HELP.xRow}
             helpFor={helpForX}
           />
         )}
@@ -582,26 +579,31 @@ function ModeToggleRow({
   onChange: (m: ChartMode) => void;
   simulationActive: boolean;
 }) {
-  // Per-pill help is gone; the row's `?` icon (left) opens the chart-mode
-  // help card. The CALIBRATE pill carries a small dot when the "apply to
-  // chart" toggle is active so users see at a glance that the other
-  // modes are showing simulated values.
-  const options: { id: ChartMode; label: string }[] = [
-    { id: "scatter", label: "Scatter" },
-    { id: "spatial", label: "Spatial" },
-    { id: "spectrums", label: "Spectrums" },
-    { id: "polar", label: "Polar" },
-    { id: "calibrate", label: "Calibrate" },
+  // Each mode pill carries its own help — hovering reveals what that
+  // mode actually shows, so the user doesn't have to switch modes
+  // blind to discover them. The CALIBRATE pill carries a small dot
+  // when the "apply to chart" toggle is active so users see at a
+  // glance that the other modes are showing simulated values.
+  const options: {
+    id: ChartMode;
+    label: string;
+    help: AxisHelp;
+  }[] = [
+    { id: "scatter", label: "Scatter", help: MODE_HELP.scatter },
+    { id: "spatial", label: "Spatial", help: MODE_HELP.spatial },
+    { id: "spectrums", label: "Spectrums", help: MODE_HELP.spectrums },
+    { id: "polar", label: "Polar", help: MODE_HELP.polar },
+    { id: "calibrate", label: "Calibrate", help: MODE_HELP.calibrate },
   ];
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <RowLabel label="Mode" help={TOOLBAR_HELP.mode} />
+      <RowLabel label="Mode" />
       <div className="inline-flex rounded-[6px] border border-[color:var(--color-border)] overflow-hidden">
         {options.map((o, i) => {
           const active = o.id === mode;
           const decorate =
             o.id === "calibrate" && simulationActive && !active;
-          return (
+          const button = (
             <button
               key={o.id}
               type="button"
@@ -625,6 +627,11 @@ function ModeToggleRow({
                 />
               )}
             </button>
+          );
+          return (
+            <HelpTip key={o.id} help={o.help}>
+              {button}
+            </HelpTip>
           );
         })}
       </div>
@@ -693,29 +700,20 @@ function ReferenceRunRow({
   );
 }
 
-/* ─── Row label with `?` info icon ─────────────────────────────────────── */
-
-function RowLabel({ label, help }: { label: string; help: AxisHelp }) {
+/* ─── Row label ────────────────────────────────────────────────────────
+ *
+ * Just the legend in mono caps. The row-level `?` icon used to live
+ * here for "what does this axis row do" help, but every pill in the
+ * row now opens its own hover-help modal — the standalone icon
+ * doubled the affordances without adding signal. Width pinned + no-
+ * wrap so the label can never split across two lines.
+ */
+function RowLabel({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center gap-1 w-[44px] shrink-0">
-      <span className="font-mono text-[9.5px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)]">
+    <span className="inline-flex items-center w-[36px] shrink-0">
+      <span className="whitespace-nowrap font-mono text-[9.5px] font-semibold tracking-[0.22em] uppercase text-[color:var(--color-ink-subtle)]">
         {label}
       </span>
-      <HelpTip help={help}>
-        <button
-          type="button"
-          aria-label={`${label} info`}
-          className={cn(
-            "h-3.5 w-3.5 rounded-full inline-flex items-center justify-center",
-            "border border-[color:var(--color-border-strong)] text-[color:var(--color-ink-subtle)]",
-            "font-mono text-[8px] font-semibold leading-none",
-            "hover:text-[color:var(--color-ink)] hover:border-[color:var(--color-ink)]",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
-          )}
-        >
-          ?
-        </button>
-      </HelpTip>
     </span>
   );
 }
@@ -727,7 +725,6 @@ function AxisRow({
   onChange,
   isDisabled,
   disabledHint,
-  rowHelp,
   helpFor,
 }: {
   legend: string;
@@ -736,13 +733,12 @@ function AxisRow({
   onChange: (v: string) => void;
   isDisabled: (id: XAxis | YAxis) => boolean;
   disabledHint: string;
-  rowHelp: AxisHelp;
   helpFor: (id: XAxis | YAxis) => AxisHelp;
 }) {
   const anyDisabled = axes.some((a) => isDisabled(a.id));
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <RowLabel label={legend} help={rowHelp} />
+      <RowLabel label={legend} />
       <div className="flex flex-wrap gap-1">
         {axes.map((a) => {
           const active = a.id === value;
