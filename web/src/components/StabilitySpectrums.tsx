@@ -207,9 +207,21 @@ function SpectrumsCanvas({
 
   const nearestIdx = (e: React.MouseEvent<SVGSVGElement>): number | null => {
     if (sorted.length === 0) return null;
-    const rect = svgRef.current!.getBoundingClientRect();
-    const px = ((e.clientX - rect.left) / rect.width) * W;
-    const py = ((e.clientY - rect.top) / rect.height) * H;
+    // Round-trip via getScreenCTM().inverse() so the cursor → viewBox
+    // mapping respects ``preserveAspectRatio="xMidYMid meet"``.
+    // Without this, the linear interp over the container's bounding
+    // rect drifts horizontally on letterboxed viewports — cursor
+    // lands in the wrong bar, with the bias growing toward the edges.
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const ctm = svg.getScreenCTM();
+    if (ctm == null) return null;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const local = pt.matrixTransform(ctm.inverse());
+    const px = local.x;
+    const py = local.y;
     if (py < plotTop || py > plotBottom) return null;
     if (px < offsetX - slot / 2 || px > offsetX + totalContentW + slot / 2) {
       return null;

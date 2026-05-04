@@ -270,9 +270,28 @@ export function StabilityScatter({
   // close enough for focus dispatch (HIT_RADIUS_SQ) versus the looser
   // tooltip selection (always nearest).
   const nearestRow = (e: React.MouseEvent<SVGSVGElement>) => {
-    const rect = svgRef.current!.getBoundingClientRect();
-    const px = ((e.clientX - rect.left) / rect.width) * W;
-    const py = ((e.clientY - rect.top) / rect.height) * H;
+    // Use the SVG's screen-CTM inverse so we get viewBox coordinates
+    // that respect ``preserveAspectRatio="xMidYMid meet"`` — without
+    // this, the previous linear-interp mapping over the container's
+    // bounding rect treats the letterbox bands as part of the chart
+    // and the resulting viewBox X drifts: cursor on the left half
+    // resolves to a viewBox-X further right than the actual dot under
+    // it (so selection appears to shift right), and vice versa on the
+    // right half. Most visible at wide aspect ratios where the
+    // horizontal letterbox is largest. ``getScreenCTM().inverse()`` is
+    // the canonical way to round-trip a screen point through any
+    // SVG with letterboxing or transforms.
+    const svg = svgRef.current;
+    if (!svg) return { i: -1, d: Infinity };
+    const ctm = svg.getScreenCTM();
+    if (ctm == null) return { i: -1, d: Infinity };
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const inv = ctm.inverse();
+    const local = pt.matrixTransform(inv);
+    const px = local.x;
+    const py = local.y;
     let bestI = -1;
     let bestD = Infinity;
     for (let i = 0; i < rows.length; i++) {
