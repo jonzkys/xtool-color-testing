@@ -213,6 +213,21 @@ palette_entries = Table(
     Column("visibility", String(_VISIBILITY_LEN), nullable=False, server_default="private"),
     Column("favorited", Boolean, nullable=False, server_default="0"),
     Column("machine_id", String(_MACHINE_ID_LEN), nullable=False, server_default="F2Ultra"),
+    # Validated state — populated when a validation test's results
+    # confirm (and may correct) this entry's measured Lab. The
+    # original ``lab_*`` stays as the historical ingestion-time
+    # value; ``validated_lab_*`` holds the burn-mean across
+    # validation results, which is the more reliable colour to
+    # match against. ``is_validated`` becomes the canonical filter
+    # for "show me only colours I trust".
+    Column("is_validated", Boolean, nullable=False, server_default="0"),
+    Column("validated_at", String(_ISO_TS_LEN), nullable=True),
+    Column("validated_test_id", Integer, ForeignKey("tests.id", ondelete="SET NULL"), nullable=True),
+    Column("validated_lab_l", Float, nullable=True),
+    Column("validated_lab_a", Float, nullable=True),
+    Column("validated_lab_b", Float, nullable=True),
+    Column("validated_run_count", Integer, nullable=True),
+    Column("validated_residual_de", Float, nullable=True),
     CheckConstraint(
         "source IN ('averaged','single_result','manual')",
         name="palette_entries_source_chk",
@@ -222,6 +237,10 @@ palette_entries = Table(
     Index("ix_palette_entries_test_id", "test_id"),
     Index("ix_palette_entries_owner", "owner_id"),
     Index("ix_palette_entries_owner_machine", "owner_id", "machine_id"),
+    Index(
+        "ix_palette_entries_validated",
+        "machine_id", "material_id", "is_validated",
+    ),
 )
 
 saved_spectrums = Table(

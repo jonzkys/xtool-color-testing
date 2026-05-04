@@ -391,6 +391,20 @@ class PaletteEntryResponse(BaseModel):
     owner_id: int
     visibility: str
     machine_id: str
+    # Validated state. ``is_validated`` defaults to ``False`` so
+    # pre-migration entries deserialise cleanly without a backfill.
+    # When set, ``validated_lab`` carries the burn-mean Lab measured
+    # by the validation test (a more reliable colour than the
+    # ingestion-time ``lab`` if the original was photographed under
+    # poor light); ``validated_residual_de`` reports the ΔE76
+    # between the original and validated Lab so the UI can flag
+    # entries that moved a lot.
+    is_validated: bool = False
+    validated_at: str | None = None
+    validated_test_id: int | None = None
+    validated_lab: list[float] | None = None
+    validated_run_count: int | None = None
+    validated_residual_de: float | None = None
 
 
 class PaletteQueryResult(BaseModel):
@@ -419,6 +433,20 @@ class PaletteEntryPatch(BaseModel):
     params: dict | None = None
     notes: str | None = None
     favorited: bool | None = None
+
+
+class PaletteEntryValidateRequest(BaseModel):
+    """Per-entry validate request body. ``validated_lab`` is the
+    burn-mean Lab the caller has decided is the authoritative
+    colour for this entry — typically computed client-side from a
+    validation test's results, but the route accepts any 3-vector
+    so manual overrides ("I trust this measurement, just use it")
+    work too. ``validated_test_id`` and ``run_count`` are
+    provenance hints; both are optional but recommended."""
+
+    validated_lab: list[float]
+    validated_test_id: int | None = None
+    run_count: int | None = None
 
 
 class PaletteEntryCreateManual(BaseModel):
