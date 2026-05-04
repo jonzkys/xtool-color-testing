@@ -293,7 +293,7 @@ export function StabilityValidate({ cells, series, testId, onSaved }: Props) {
         saving={saving}
         savedAt={savedAt}
         saveError={saveError}
-        canSave={preview != null && !loading}
+        canSave={!loading}
         onSave={onSave}
       />
     </div>
