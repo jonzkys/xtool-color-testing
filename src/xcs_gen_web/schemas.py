@@ -398,6 +398,18 @@ class PaletteQueryResult(BaseModel):
     delta_e: float
 
 
+class PaletteValidationStatus(BaseModel):
+    """One row per palette entry from
+    GET /api/palette/validation-status. ``validated`` is the canonical
+    flag the UI badges off; ``best_de`` and ``last_validated_at`` are
+    surfaced for tooltips and ordering."""
+
+    entry_id: int
+    best_de: float | None = None
+    last_validated_at: str | None = None
+    validated: bool
+
+
 class PaletteEntryPatch(BaseModel):
     """All fields optional. Backend rejects hex/material_id/params changes
     on non-manual rows with 409 Conflict (see app.py:palette_patch)."""

@@ -30,7 +30,8 @@ button {
   outline-offset: 2px;
 }
 
-/* Scrollbar polish — subtle so it doesn't compete with content */
+/* Scrollbar polish — subtle so it doesn't compete with content,
+ * but visible enough that users see "there's more below". */
 @media (pointer: fine) {
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb {
@@ -40,6 +41,13 @@ button {
   }
   ::-webkit-scrollbar-thumb:hover { background: var(--color-ink-subtle); }
   ::-webkit-scrollbar-track { background: transparent; }
+}
+
+/* Firefox uses a separate property; we keep the same colour family
+ * so the strip looks consistent across browsers. */
+* {
+  scrollbar-color: var(--color-border-strong) transparent;
+  scrollbar-width: thin;
 }
 
 /* Changelog markdown prose — tight, typographic, consistent with the

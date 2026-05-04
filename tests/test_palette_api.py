@@ -248,3 +248,146 @@ def test_patch_favorited_plus_recipe_on_ingested_is_atomic(client, mid):
     assert resp.status_code == 409
     listed = next(e for e in client.get("/api/palette").json() if e["id"] == eid)
     assert listed["favorited"] is False  # No partial application
+
+
+# ───── Validation status ─────────────────────────────────────────────────
+
+
+def _seed_validation_with_result(
+    mid: int,
+    *,
+    expected_lab: list[float],
+    measured_lab: list[float],
+) -> int:
+    """Seed a palette entry, a validation test that targets it via a
+    single cell, and a result whose swatch carries ``measured_lab``.
+    Returns the seeded palette entry's id so the test can assert
+    against it. ``cells_per_row=1`` keeps the row/col → cell-index
+    math trivial."""
+    from xcs_gen_web.repositories import results as r_repo
+    from xcs_gen_web.repositories import validation_cells as vc_repo
+
+    val_spec = {
+        **_SPEC,
+        "x_param": "power",
+        "x_min": 0,
+        "x_max": 0,
+        "x_steps": 1,
+        "rows": 1,
+        "cells_per_row": 1,
+    }
+    tid = t_repo.create(
+        name="V", material_id=mid, spec=val_spec, kind="validation",
+    )["id"]
+    [eid] = pal_repo.insert_bulk([
+        dict(
+            test_id=tid, material_id=mid, x_value=0, y_value=None,
+            hex="#aabbcc", sigma=0.5, source="averaged",
+            source_result_id=None,
+            params={"power": 14.6, "speed": 2400},
+        ),
+    ])
+    vc_repo.replace_for_test(test_id=tid, cells=[
+        {
+            "cell_index": 0,
+            "expected_hex": "#aabbcc",
+            "expected_lab": expected_lab,
+            "palette_entry_id": eid,
+            "params": {"power": 14.6, "speed": 2400},
+        },
+    ])
+    r_repo.create(
+        test_id=tid,
+        image_path="/dev/null",
+        image_sha256="x" * 64,
+        swatches=[{
+            "row": 0, "col": 0, "x_value": 0, "y_value": None,
+            "hex": "#aabbcc", "lab": measured_lab, "sigma": 0.5,
+        }],
+    )
+    return eid
+
+
+def test_validation_status_validates_within_threshold(client, mid):
+    """A measurement within ΔE76 ≤ 5 of expected marks the entry validated."""
+    eid = _seed_validation_with_result(
+        mid,
+        expected_lab=[40.0, 5.0, -10.0],
+        measured_lab=[41.0, 5.5, -9.0],  # ΔE76 ≈ 1.5
+    )
+    resp = client.get(
+        "/api/palette/validation-status", params={"material_id": mid},
+    )
+    assert resp.status_code == 200
+    rows = resp.json()
+    by_id = {r["entry_id"]: r for r in rows}
+    assert eid in by_id
+    assert by_id[eid]["validated"] is True
+    assert by_id[eid]["best_de"] is not None
+    assert by_id[eid]["best_de"] < 5.0
+    assert by_id[eid]["last_validated_at"] is not None
+
+
+def test_validation_status_flags_far_measurement_as_unvalidated(client, mid):
+    """A measurement way outside the threshold leaves the entry unvalidated."""
+    eid = _seed_validation_with_result(
+        mid,
+        expected_lab=[40.0, 5.0, -10.0],
+        measured_lab=[80.0, 5.0, -10.0],  # ΔL = 40 → ΔE76 = 40
+    )
+    rows = client.get(
+        "/api/palette/validation-status", params={"material_id": mid},
+    ).json()
+    by_id = {r["entry_id"]: r for r in rows}
+    assert by_id[eid]["validated"] is False
+    assert by_id[eid]["best_de"] is not None
+    assert by_id[eid]["best_de"] > 5.0
+
+
+def test_validation_status_unvalidated_when_no_validation_test(client, mid):
+    """An entry with no validation cell pointing to it has best_de=None."""
+    _seed_entries(mid)
+    rows = client.get(
+        "/api/palette/validation-status", params={"material_id": mid},
+    ).json()
+    assert all(r["best_de"] is None for r in rows)
+    assert all(r["validated"] is False for r in rows)
+
+
+def test_validation_status_filters_by_machine_id(client, mid):
+    """``machine_id`` filters the entry universe; entries on a different
+    machine are excluded entirely."""
+    _seed_validation_with_result(
+        mid,
+        expected_lab=[40.0, 5.0, -10.0],
+        measured_lab=[40.0, 5.0, -10.0],
+    )
+    # Default machine is F2Ultra; ask for a different one and we get
+    # an empty list (no entries scoped there).
+    rows = client.get(
+        "/api/palette/validation-status",
+        params={"material_id": mid, "machine_id": "DoesNotExist"},
+    ).json()
+    assert rows == []
+
+
+def test_validation_status_respects_max_de_param(client, mid):
+    """``max_de`` is a knob — tightening it can demote a borderline entry."""
+    eid = _seed_validation_with_result(
+        mid,
+        expected_lab=[40.0, 5.0, -10.0],
+        measured_lab=[44.0, 5.0, -10.0],  # ΔE76 = 4
+    )
+    # Default threshold (5.0) → validated
+    rows = client.get(
+        "/api/palette/validation-status", params={"material_id": mid},
+    ).json()
+    by_id = {r["entry_id"]: r for r in rows}
+    assert by_id[eid]["validated"] is True
+    # Stricter threshold (3.0) → not validated
+    rows = client.get(
+        "/api/palette/validation-status",
+        params={"material_id": mid, "max_de": 3.0},
+    ).json()
+    by_id = {r["entry_id"]: r for r in rows}
+    assert by_id[eid]["validated"] is False

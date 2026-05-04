@@ -8,6 +8,7 @@ import { TestsPage } from "./pages/TestsPage";
 import { TestDetailPage } from "./pages/TestDetailPage";
 import { SpectrumPage } from "./pages/SpectrumPage";
 import { Spectrum2DPage } from "./pages/Spectrum2DPage";
+import { StabilityPage } from "./pages/StabilityPage";
 import { StyleguidePage } from "./pages/StyleguidePage";
 import { GuidePage } from "./pages/GuidePage";
 import { ChangelogPage } from "./pages/ChangelogPage";
@@ -102,6 +103,7 @@ export default function App() {
     : route.name === "styleguide" ? "Styleguide"
     : route.name === "spectrum"   ? "Spectrum"
     : route.name === "spectrum-2d" ? "Spectrum · 2D"
+    : route.name === "stability" ? "Stability"
     : route.name === "saved-spectrums" ? "Saved spectrums"
     : route.name === "guide"      ? "Guide"
     : route.name === "changelog"  ? "Changelog"
@@ -138,6 +140,7 @@ export default function App() {
         {gate === "ready" && route.name === "palette"      && <PalettePage />}
         {gate === "ready" && route.name === "spectrum"     && <SpectrumPage />}
         {gate === "ready" && route.name === "spectrum-2d"  && <Spectrum2DPage />}
+        {gate === "ready" && route.name === "stability"    && <StabilityPage />}
         {gate === "ready" && route.name === "styleguide"   && <StyleguidePage />}
         {gate === "ready" && route.name === "guide"        && <GuidePage />}
         {gate === "ready" && route.name === "changelog"    && <ChangelogPage />}

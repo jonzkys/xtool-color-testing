@@ -1,13 +1,16 @@
 import { describe, it, expect } from "vitest";
 import {
   alignPcaWithReference,
+  chroma,
   deltaE76,
   hexToLab,
+  hueDeg,
   labToHex,
   pca1,
   polyFit,
   evalPoly,
   predictXFromLab,
+  wrapHueDelta,
   type Lab,
 } from "./math";
 
@@ -104,6 +107,36 @@ describe("polyFit", () => {
     expect(fit.r2).toBeCloseTo(1, 6);
     expect(fit.coeffs[2]).toBeCloseTo(2, 4);
     expect(evalPoly(fit.coeffs, 10)).toBeCloseTo(2 * 100 - 10 + 4, 3);
+  });
+});
+
+describe("hueDeg / chroma / wrapHueDelta", () => {
+  it("hueDeg returns 0..360 quadrant angles", () => {
+    // Pure +a* (red side) is hue 0°.
+    expect(hueDeg(50, 0)).toBeCloseTo(0, 5);
+    // Pure +b* (yellow side) is hue 90°.
+    expect(hueDeg(0, 50)).toBeCloseTo(90, 5);
+    // Pure -a* (green side) is hue 180°.
+    expect(hueDeg(-50, 0)).toBeCloseTo(180, 5);
+    // Pure -b* (blue side) wraps to 270°, never -90°.
+    expect(hueDeg(0, -50)).toBeCloseTo(270, 5);
+  });
+  it("chroma is the radial Lab distance from the L* axis", () => {
+    expect(chroma(3, 4)).toBeCloseTo(5, 5);
+    expect(chroma(0, 0)).toBe(0);
+    expect(chroma(-12, 5)).toBeCloseTo(13, 5);
+  });
+  it("wrapHueDelta folds wrap-around rotations into [-180, 180]", () => {
+    // 5° apart, regardless of which side of 0° you start from.
+    expect(wrapHueDelta(5)).toBe(5);
+    expect(wrapHueDelta(355)).toBe(-5);
+    expect(wrapHueDelta(-355)).toBe(5);
+    // Boundary cases.
+    expect(wrapHueDelta(180)).toBe(180);
+    expect(wrapHueDelta(-180)).toBe(-180);
+    // Bigger-than-one-turn deltas still collapse correctly.
+    expect(wrapHueDelta(720 + 30)).toBe(30);
+    expect(wrapHueDelta(-720 - 30)).toBe(-30);
   });
 });
 

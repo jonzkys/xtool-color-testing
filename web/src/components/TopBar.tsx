@@ -85,6 +85,9 @@ export function TopBar({ title, route, onNavigate }: Props) {
             <TabLink route={route} target={{ name: "spectrum" }} onNavigate={onNavigate}>
               Spectrum
             </TabLink>
+            <TabLink route={route} target={{ name: "stability" }} onNavigate={onNavigate}>
+              Stability
+            </TabLink>
             <TabLink route={route} target={{ name: "saved-spectrums" }} onNavigate={onNavigate}>
               Saved
             </TabLink>
