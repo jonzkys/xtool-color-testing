@@ -31,7 +31,12 @@ import {
 import { isHeatmapMetric } from "./stabilityHeatmapMath";
 import { meanLab } from "./stabilityStatsMath";
 import { HelpTip } from "./StabilityHelpTip";
-import { TOOLBAR_HELP, type AxisHelp } from "./stabilityHelpCopy";
+import {
+  TOOLBAR_HELP,
+  X_AXIS_HELP,
+  Y_AXIS_HELP,
+  type AxisHelp,
+} from "./stabilityHelpCopy";
 
 // Re-export public surface so the page only needs to import from
 // `StabilityChart`.
@@ -459,9 +464,11 @@ function ChartHeader({
   const isXAxisDisabled = (id: XAxis | YAxis) =>
     isComputedXAxis(id as XAxis) && burnDisabled;
   // Row-level help: the legend's `?` icon explains what *the row*
-  // answers. Spatial / Spectrums modes swap Y axis for METRIC so the
-  // help entry switches too.
+  // answers; per-pill help reads the per-axis copy. Spatial / Spectrums
+  // modes swap Y axis for METRIC so the row help entry switches too.
   const yRowHelp = mode === "scatter" ? TOOLBAR_HELP.yRow : TOOLBAR_HELP.metricRow;
+  const helpForY = (id: XAxis | YAxis): AxisHelp => Y_AXIS_HELP[id as YAxis];
+  const helpForX = (id: XAxis | YAxis): AxisHelp => X_AXIS_HELP[id as XAxis];
   return (
     <div className="px-4 pt-4 pb-3 border-b border-[color:var(--color-border)]">
       <div className="flex flex-col gap-2">
@@ -485,6 +492,7 @@ function ChartHeader({
             isDisabled={isYAxisDisabled}
             disabledHint="needs ≥ 2 runs"
             rowHelp={yRowHelp}
+            helpFor={helpForY}
           />
         )}
         {mode === "scatter" && (
@@ -496,6 +504,7 @@ function ChartHeader({
             isDisabled={isXAxisDisabled}
             disabledHint="needs ≥ 2 runs"
             rowHelp={TOOLBAR_HELP.xRow}
+            helpFor={helpForX}
           />
         )}
         {mode === "spectrums" && (
@@ -701,6 +710,7 @@ function AxisRow({
   isDisabled,
   disabledHint,
   rowHelp,
+  helpFor,
 }: {
   legend: string;
   axes: readonly AxisMeta[];
@@ -709,6 +719,7 @@ function AxisRow({
   isDisabled: (id: XAxis | YAxis) => boolean;
   disabledHint: string;
   rowHelp: AxisHelp;
+  helpFor: (id: XAxis | YAxis) => AxisHelp;
 }) {
   const anyDisabled = axes.some((a) => isDisabled(a.id));
   return (
@@ -718,7 +729,8 @@ function AxisRow({
         {axes.map((a) => {
           const active = a.id === value;
           const disabled = isDisabled(a.id);
-          return (
+          const help = helpFor(a.id);
+          const button = (
             <button
               key={a.id}
               type="button"
@@ -743,6 +755,13 @@ function AxisRow({
             >
               {a.short}
             </button>
+          );
+          return help ? (
+            <HelpTip key={a.id} help={help}>
+              {button}
+            </HelpTip>
+          ) : (
+            button
           );
         })}
         {anyDisabled && disabledHint && (

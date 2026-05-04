@@ -15,23 +15,28 @@ import { StabilityHelpSchematic } from "./StabilityHelpSchematic";
 
 /* ─── HelpTip ─────────────────────────────────────────────────────────────
  *
- * Click-to-open help popover for the Stability page's row labels and
- * toolbar buttons. The trigger is the wrapped child (typically a small
- * `?` icon button); clicking it toggles a portal'd card anchored to the
- * trigger.
+ * Hover-to-open help card for the Stability page's pills, row labels,
+ * and toolbar buttons. A single rich card — no tooltip-then-modal
+ * two-stage flicker — appears after a deliberate hover delay and
+ * stays put while the cursor is on the trigger or the card.
  *
- * The card is dismissed by:
- *   - clicking the trigger again
- *   - clicking outside the card
- *   - pressing Esc
+ * Behaviours:
+ *   - Pointer enter / focus → ``OPEN_DELAY_MS`` then card opens
+ *   - Pointer leave (trigger or card) → ``LEAVE_DELAY_MS`` grace then
+ *     fades out — so the user can move the cursor into the card
+ *   - Click on the trigger → close instantly (the pill's own onClick
+ *     selects the axis; we just dismiss the help so it doesn't fight
+ *     the new selection state)
+ *   - Esc → close
  *
- * The trigger child stays fully interactive: we pass our toggle through
- * its existing onClick, so callers don't need to know the help exists.
- * Hover does nothing — earlier iterations layered a quick tooltip on top
- * of the rich card and the dual states read as confusing flicker.
+ * The trigger child stays fully interactive: we wrap it in a span and
+ * attach pointer / focus listeners on the wrapper so the existing
+ * onClick / onKeyDown on the child still run unchanged.
  */
 
-const FADE_MS = 100;
+const OPEN_DELAY_MS = 450;
+const LEAVE_DELAY_MS = 220;
+const FADE_OUT_MS = 100;
 
 export interface HelpTipProps {
   help: AxisHelp;
@@ -44,43 +49,34 @@ export function HelpTip({ help, children, className }: HelpTipProps) {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const wrapperRef = useRef<HTMLSpanElement | null>(null);
+  const openTimerRef = useRef<number | null>(null);
+  const leaveTimerRef = useRef<number | null>(null);
   const fadeTimerRef = useRef<number | null>(null);
   const tipId = useId();
 
-  const clearFadeTimer = (): void => {
-    if (fadeTimerRef.current != null) {
-      window.clearTimeout(fadeTimerRef.current);
-      fadeTimerRef.current = null;
+  const clearTimer = (
+    ref: React.MutableRefObject<number | null>,
+  ): void => {
+    if (ref.current != null) {
+      window.clearTimeout(ref.current);
+      ref.current = null;
     }
   };
 
-  useEffect(() => () => clearFadeTimer(), []);
-
-  const close = (): void => {
-    if (!open) return;
-    setClosing(true);
-    fadeTimerRef.current = window.setTimeout(() => {
-      setOpen(false);
-      setClosing(false);
-    }, FADE_MS);
+  const cancelAllTimers = (): void => {
+    clearTimer(openTimerRef);
+    clearTimer(leaveTimerRef);
+    clearTimer(fadeTimerRef);
   };
 
-  const toggle = (): void => {
-    clearFadeTimer();
-    if (open && !closing) {
-      close();
-    } else {
-      setClosing(false);
-      setOpen(true);
-    }
-  };
+  useEffect(() => () => cancelAllTimers(), []);
 
   // Esc closes any visible card.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
-        clearFadeTimer();
+        cancelAllTimers();
         setClosing(false);
         setOpen(false);
       }
@@ -89,62 +85,81 @@ export function HelpTip({ help, children, className }: HelpTipProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  // Click-outside closes. Listening on mousedown (capture) so the close
-  // happens before the new click target's onClick — important when the
-  // user clicks a sibling pill while the help is open.
-  useEffect(() => {
-    if (!open) return;
-    const onMouseDown = (e: MouseEvent): void => {
-      const target = e.target as Node | null;
-      if (!target) return;
-      if (wrapperRef.current?.contains(target)) return;
-      const card = document.querySelector(`[data-help-tip="${tipId}"]`);
-      if (card?.contains(target)) return;
-      close();
-    };
-    document.addEventListener("mousedown", onMouseDown, true);
-    return () =>
-      document.removeEventListener("mousedown", onMouseDown, true);
-  }, [open, tipId]);
+  const scheduleOpen = (): void => {
+    cancelAllTimers();
+    setClosing(false);
+    if (open) return;
+    openTimerRef.current = window.setTimeout(() => {
+      setOpen(true);
+    }, OPEN_DELAY_MS);
+  };
 
-  // Wrap the child so we can intercept its click. Children must be a
-  // valid React element; if not, we render them as-is and bail (no
-  // help). React fragments aren't supported as the trigger.
+  const scheduleClose = (): void => {
+    clearTimer(openTimerRef);
+    clearTimer(leaveTimerRef);
+    if (!open) return;
+    leaveTimerRef.current = window.setTimeout(() => {
+      setClosing(true);
+      fadeTimerRef.current = window.setTimeout(() => {
+        setOpen(false);
+        setClosing(false);
+      }, FADE_OUT_MS);
+    }, LEAVE_DELAY_MS);
+  };
+
+  const cancelClose = (): void => {
+    clearTimer(leaveTimerRef);
+    clearTimer(fadeTimerRef);
+    setClosing(false);
+  };
+
+  // When the trigger is clicked we close the card immediately so the
+  // action (which typically toggles the pill) doesn't fight a stale
+  // help card. The child's own onClick still runs because we use
+  // ``onClickCapture`` rather than intercepting it.
+  const onClickCapture = (): void => {
+    cancelAllTimers();
+    setClosing(false);
+    setOpen(false);
+  };
+
+  // Wrap the child so we can attach listeners without rewriting the
+  // pill button. Children must be a valid React element; if not, we
+  // render them as-is and bail (no help). React fragments aren't
+  // supported as the trigger.
   if (!isValidElement(children)) return <>{children}</>;
 
-  const childTyped = children as ReactElement<{
-    onClick?: (e: React.MouseEvent) => void;
-    "aria-describedby"?: string;
-    "aria-expanded"?: boolean;
-  }>;
-  const originalOnClick = childTyped.props.onClick;
-  const childWithToggle = cloneElement(childTyped, {
-    onClick: (e: React.MouseEvent): void => {
-      // Run the trigger's own onClick first (lets buttons run their
-      // logic), then toggle the help. If callers really want to
-      // prevent the help, they can call e.stopPropagation() — but the
-      // intended flow is: click the `?` icon → help opens.
-      originalOnClick?.(e);
-      toggle();
-    },
-    "aria-describedby": open ? tipId : undefined,
-    "aria-expanded": open,
-  });
+  // Pass aria-describedby down to the actual trigger element so the
+  // help text is announced — but only when the card is visible, so
+  // the announcement doesn't fire ambiently.
+  const childProps = open
+    ? ({ "aria-describedby": tipId } as Record<string, string>)
+    : {};
+  const childWithA11y = cloneElement(
+    children as ReactElement<Record<string, unknown>>,
+    childProps,
+  );
 
   return (
     <span
       ref={wrapperRef}
       className={className}
+      onPointerEnter={scheduleOpen}
+      onPointerLeave={scheduleClose}
+      onFocus={scheduleOpen}
+      onBlur={scheduleClose}
+      onClickCapture={onClickCapture}
       style={{ display: "inline-flex" }}
     >
-      {childWithToggle}
+      {childWithA11y}
       {open && wrapperRef.current && (
         <HelpTipPortal
           id={tipId}
           closing={closing}
           help={help}
           anchor={wrapperRef.current}
-          onClose={close}
+          onPointerEnter={cancelClose}
+          onPointerLeave={scheduleClose}
         />
       )}
     </span>
@@ -158,10 +173,18 @@ interface PortalProps {
   closing: boolean;
   help: AxisHelp;
   anchor: HTMLElement;
-  onClose: () => void;
+  onPointerEnter: () => void;
+  onPointerLeave: () => void;
 }
 
-function HelpTipPortal({ id, closing, help, anchor, onClose }: PortalProps) {
+function HelpTipPortal({
+  id,
+  closing,
+  help,
+  anchor,
+  onPointerEnter,
+  onPointerLeave,
+}: PortalProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [placement, setPlacement] = useState<{
     left: number;
@@ -169,8 +192,8 @@ function HelpTipPortal({ id, closing, help, anchor, onClose }: PortalProps) {
     flipped: boolean;
   }>({ left: 0, top: 0, flipped: false });
 
-  // Re-measure on mount; stays put after that. Ignored on closing so the
-  // fade-out doesn't reflow.
+  // Re-measure on mount; stays put after that. Ignored on closing so
+  // the fade-out doesn't reflow.
   useLayoutEffect(() => {
     if (closing) return;
     if (!ref.current) return;
@@ -183,10 +206,10 @@ function HelpTipPortal({ id, closing, help, anchor, onClose }: PortalProps) {
     if (left + p.width + margin > vw) left = vw - p.width - margin;
     if (left < margin) left = margin;
     // Prefer below; flip above if it'd clip.
-    let top = a.bottom + 8;
+    let top = a.bottom + 6;
     let flipped = false;
     if (top + p.height + margin > vh) {
-      top = a.top - p.height - 8;
+      top = a.top - p.height - 6;
       flipped = true;
     }
     setPlacement({ left, top, flipped });
@@ -201,9 +224,10 @@ function HelpTipPortal({ id, closing, help, anchor, onClose }: PortalProps) {
     <div
       id={id}
       ref={ref}
-      role="dialog"
-      aria-label={`Help: ${help.heading}`}
+      role="tooltip"
       data-help-tip={id}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
       className={
         "fixed z-[1000] rounded-[8px] border border-[color:var(--color-border-strong)] " +
         "bg-[color:var(--color-surface-elevated)] shadow-lg"
@@ -211,13 +235,16 @@ function HelpTipPortal({ id, closing, help, anchor, onClose }: PortalProps) {
       style={{
         left: placement.left,
         top: placement.top,
+        // Catch pointer events so the user can move the cursor into
+        // the card without triggering close.
+        pointerEvents: "auto",
         opacity: closing ? 0 : 1,
         transition: closing
-          ? `opacity ${FADE_MS}ms ease-out`
+          ? `opacity ${FADE_OUT_MS}ms ease-out`
           : "opacity 80ms ease-out",
       }}
     >
-      <HelpCardBody help={help} onClose={onClose} />
+      <HelpCardBody help={help} />
     </div>,
     document.body,
   );
@@ -225,45 +252,11 @@ function HelpTipPortal({ id, closing, help, anchor, onClose }: PortalProps) {
 
 /* ─── Card body ────────────────────────────────────────────────────────── */
 
-function HelpCardBody({
-  help,
-  onClose,
-}: {
-  help: AxisHelp;
-  onClose: () => void;
-}) {
+function HelpCardBody({ help }: { help: AxisHelp }) {
   return (
     <div className="px-3.5 py-3 flex flex-col gap-3" style={{ width: 340 }}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[color:var(--color-ink-subtle)] flex-1 min-w-0">
-          {help.heading}
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close help"
-          className={
-            "h-4 w-4 inline-flex items-center justify-center shrink-0 " +
-            "rounded-[3px] text-[color:var(--color-ink-subtle)] " +
-            "hover:bg-[color:var(--color-surface)] hover:text-[color:var(--color-ink)] " +
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60"
-          }
-        >
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 10 10"
-            aria-hidden
-            className="block"
-          >
-            <path
-              d="M2 2 L8 8 M8 2 L2 8"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
+      <div className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[color:var(--color-ink-subtle)]">
+        {help.heading}
       </div>
       <div className="flex items-start gap-3">
         <div className="shrink-0 pt-0.5">
@@ -295,7 +288,9 @@ function HelpCardBody({
 /* ─── Public re-exports for tests ──────────────────────────────────────── */
 
 export const __testing__ = {
-  FADE_MS,
+  OPEN_DELAY_MS,
+  LEAVE_DELAY_MS,
+  FADE_OUT_MS,
 };
 
 // ``ReactNode`` re-exported so call sites that only need the type don't
