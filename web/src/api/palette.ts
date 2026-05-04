@@ -6,6 +6,10 @@ export interface ListPaletteOptions {
   favorites_only?: boolean;
   source?: "averaged" | "single_result" | "manual";
   machine_id?: string;
+  /** Restrict to ``is_validated`` entries — used by the SVG layers
+   *  page's auto-match when the user wants only colours we've
+   *  verified actually engrave correctly to be considered. */
+  validated_only?: boolean;
 }
 
 export async function listPaletteEntries(
@@ -18,18 +22,29 @@ export async function listPaletteEntries(
   if (opts.favorites_only) qs.set("favorites_only", "true");
   if (opts.source) qs.set("source", opts.source);
   if (opts.machine_id) qs.set("machine_id", opts.machine_id);
+  if (opts.validated_only) qs.set("validated_only", "true");
   const tail = qs.toString() ? `?${qs.toString()}` : "";
   return j(await fetch(`/api/palette${tail}`));
 }
 
 export async function queryPalette(
   hex: string,
-  opts: { limit?: number; material_id?: number; machine_id?: string } = {},
+  opts: {
+    limit?: number;
+    material_id?: number;
+    machine_id?: string;
+    /** Restrict candidates to validated palette entries — used by
+     *  the SVG layers page when the user opts into validated-only
+     *  matching, so only colours we've actually verified engrave
+     *  correctly are eligible. */
+    validated_only?: boolean;
+  } = {},
 ): Promise<PaletteQueryResult[]> {
   const qs = new URLSearchParams({ hex });
   if (opts.limit) qs.set("limit", String(opts.limit));
   if (opts.material_id) qs.set("material_id", String(opts.material_id));
   if (opts.machine_id) qs.set("machine_id", opts.machine_id);
+  if (opts.validated_only) qs.set("validated_only", "true");
   return j(await fetch(`/api/palette/query?${qs}`));
 }
 

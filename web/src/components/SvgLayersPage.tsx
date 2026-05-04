@@ -228,11 +228,25 @@ export function SvgLayersPage() {
   const [exportColorMode, setExportColorMode] = useState<ExportColorMode>("original");
   const [autoApplying, setAutoApplying] = useState(false);
   const [autoApplyMessage, setAutoApplyMessage] = useState<string | undefined>();
-  // Cache the full palette per material_id. Auto-match used to fire one
-  // /api/palette/query per layer (N parallel requests, each running
-  // CIEDE2000 across the whole palette on the server). With the cache we
-  // do one /api/palette fetch and run CIEDE2000 locally — zero per-layer
-  // server CPU, zero network RTT per layer.
+  // Restrict the auto-match to validated palette entries — i.e.
+  // colours we've actually verified engrave correctly. Persisted so
+  // the preference survives reloads. Default OFF so existing
+  // workflows keep matching the full palette.
+  const [validatedOnly, setValidatedOnly] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("svgLayers:validatedOnly") === "1";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      "svgLayers:validatedOnly",
+      validatedOnly ? "1" : "0",
+    );
+  }, [validatedOnly]);
+  // Cache the full palette per (material_id, validated_only). The
+  // validated-only flip swaps the candidate set, so cached entries
+  // for the unfiltered list shouldn't be reused. Keying by both
+  // means toggling back and forth doesn't refetch on every flip.
   const paletteCacheRef = useRef<Map<string, PaletteEntry[]>>(new Map());
 
   const selected = useMemo(
@@ -402,10 +416,14 @@ export function SvgLayersPage() {
     setAutoApplyMessage(undefined);
     try {
       const matIdNum = Number(request.material_id);
-      const cacheKey = String(matIdNum);
+      const cacheKey = `${matIdNum}:${validatedOnly ? "v" : "all"}`;
       let palette = paletteCacheRef.current.get(cacheKey);
       if (!palette) {
-        palette = await listPaletteEntries({ material_id: matIdNum, machine_id: getCurrentMachineId() });
+        palette = await listPaletteEntries({
+          material_id: matIdNum,
+          machine_id: getCurrentMachineId(),
+          validated_only: validatedOnly,
+        });
         paletteCacheRef.current.set(cacheKey, palette);
       }
       const results = request.layers.map((l) => {
@@ -486,7 +504,17 @@ export function SvgLayersPage() {
       const parts: string[] = [];
       if (applied > 0) parts.push(`Applied to ${applied} layer${plural(applied)}`);
       if (unchanged > 0) parts.push(`${unchanged} already matched`);
-      if (noMatch > 0) parts.push(`${noMatch} skipped — no palette match`);
+      if (noMatch > 0) {
+        // Surface that the filter is the reason for missing matches
+        // when it's on — otherwise the user's first reaction is "but
+        // I have palette entries for these colours" before they
+        // remember they ticked the box.
+        parts.push(
+          validatedOnly
+            ? `${noMatch} skipped — no validated match`
+            : `${noMatch} skipped — no palette match`,
+        );
+      }
       setAutoApplyMessage(
         parts.length === 0 ? "No layers to match." : `${parts.join(" · ")}.`,
       );
@@ -1101,23 +1129,52 @@ export function SvgLayersPage() {
               dense
             >
               {hasLayers && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={autoMatchAllLayers}
-                  disabled={!request.material_id || autoApplying}
-                  title={
-                    !request.material_id
-                      ? "Pick a material above first"
-                      : "Query the palette for each layer's colour and apply the closest match"
-                  }
-                  className="w-full"
-                >
-                  <Wand2 className="h-4 w-4" />
-                  {autoApplying
-                    ? "Matching…"
-                    : "Auto-match all layers to palette"}
-                </Button>
+                <>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={autoMatchAllLayers}
+                    disabled={!request.material_id || autoApplying}
+                    title={
+                      !request.material_id
+                        ? "Pick a material above first"
+                        : validatedOnly
+                          ? "Query validated palette entries for each layer's colour and apply the closest match"
+                          : "Query the palette for each layer's colour and apply the closest match"
+                    }
+                    className="w-full"
+                  >
+                    <Wand2 className="h-4 w-4" />
+                    {autoApplying
+                      ? "Matching…"
+                      : validatedOnly
+                        ? "Auto-match all layers (validated only)"
+                        : "Auto-match all layers to palette"}
+                  </Button>
+                  {/* Validated-only filter — gates both this button
+                      and the per-layer suggested-matches strip. The
+                      label intentionally avoids the word "verified"
+                      so it lines up with the ``is_validated`` column
+                      everywhere else in the codebase. */}
+                  <label
+                    className="flex items-center gap-2 text-[12px] text-[color:var(--color-ink-muted)] cursor-pointer select-none"
+                    title="Only consider palette entries that have been confirmed by a validation test"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={validatedOnly}
+                      onChange={(e) => {
+                        setValidatedOnly(e.target.checked);
+                        // The cache key already partitions by
+                        // (material_id, validated_only), so no need
+                        // to clear the cache — both versions can
+                        // coexist as the user toggles.
+                      }}
+                      className="cursor-pointer"
+                    />
+                    Validated only
+                  </label>
+                </>
               )}
               {autoApplyMessage && (
                 <p className="text-[11px] text-[color:var(--color-ink-muted)]">
@@ -1387,6 +1444,7 @@ export function SvgLayersPage() {
                   applyPaletteMatch(selected.color, params, hex, entryId)
                 }
                 appliedHex={predictedByColor[selected.color]}
+                validatedOnly={validatedOnly}
               />
             ) : (
               <EmptyState
@@ -1542,6 +1600,7 @@ function LayerEditor({
   onBasePatch,
   onPaletteApply,
   appliedHex,
+  validatedOnly,
 }: {
   layer: LayerSpec;
   layerIdx: number;
@@ -1558,6 +1617,9 @@ function LayerEditor({
    *  in the matcher so it tracks the layer's actual state — switching
    *  layers no longer falsely highlights the closest match. */
   appliedHex?: string;
+  /** When true, the per-layer palette matcher restricts its results
+   *  to validated entries — same gate the auto-match-all uses. */
+  validatedOnly: boolean;
 }) {
   const hatchIssues = validateLayerSpec(layer, layerIdx);
 
@@ -1585,6 +1647,7 @@ function LayerEditor({
           materialId={projectMaterialId}
           onApply={onPaletteApply}
           appliedHex={appliedHex}
+          validatedOnly={validatedOnly}
         />
       )}
 
@@ -1925,6 +1988,7 @@ function PaletteMatchSection({
   materialId,
   onApply,
   appliedHex,
+  validatedOnly,
 }: {
   layerColor: string;
   materialId: string;
@@ -1939,6 +2003,10 @@ function PaletteMatchSection({
    *  closest match, which was the source of the previous mis-highlight
    *  bug). Undefined → no chip highlighted. */
   appliedHex?: string;
+  /** When true, the suggested-matches query restricts to validated
+   *  palette entries. Mirrors the auto-match-all toggle so the per-
+   *  layer matcher and the bulk apply don't silently disagree. */
+  validatedOnly: boolean;
 }) {
   const [results, setResults] = useState<PaletteQueryResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1953,7 +2021,12 @@ function PaletteMatchSection({
     if (!materialId || !/^#[0-9a-fA-F]{6}$/.test(layerColor)) return;
     setLoading(true);
     const matIdNum = materialId ? Number(materialId) : undefined;
-    queryPalette(layerColor, { limit: 10, material_id: matIdNum, machine_id: getCurrentMachineId() })
+    queryPalette(layerColor, {
+      limit: 10,
+      material_id: matIdNum,
+      machine_id: getCurrentMachineId(),
+      validated_only: validatedOnly,
+    })
       .then((r) => {
         if (!cancelled) setResults(r);
       })
@@ -1966,7 +2039,7 @@ function PaletteMatchSection({
     return () => {
       cancelled = true;
     };
-  }, [layerColor, materialId]);
+  }, [layerColor, materialId, validatedOnly]);
 
   // Highlight tracks what's actually applied to the parent layer.
   // Empty string ⇒ no chip highlighted (initial state, or applied entry

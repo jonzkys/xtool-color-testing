@@ -439,6 +439,73 @@ def test_create_validated_entry_inserts_fresh_row(fresh_db):
     assert out["source"] == "averaged"
 
 
+def test_create_validated_entry_is_idempotent_per_cell(fresh_db):
+    """Re-running ``create_validated_entry`` for the same (test, cell,
+    owner) refreshes the existing row rather than inserting a new
+    one. Protects against duplicate-on-double-click + lets the user
+    re-validate freely after uploading more results without their
+    palette accumulating a new entry per save."""
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=_SPEC)["id"]
+    first = repo.create_validated_entry(
+        machine_id="F2Ultra",
+        material_id=mid,
+        burn_mean_lab=(45.0, 14.0, 28.0),
+        validated_test_id=tid,
+        validated_cell_index=7,
+        run_count=4,
+        stability_de=3.0,
+        params={"power": 10},
+    )
+    # User stars + annotates the entry — the upsert must preserve
+    # both, otherwise the second save would silently wipe their work.
+    repo.set_favorited(first["id"], True)
+    repo.update_entry(first["id"], notes="keep me")
+    second = repo.create_validated_entry(
+        machine_id="F2Ultra",
+        material_id=mid,
+        burn_mean_lab=(50.0, 12.0, 30.0),  # a different burn-mean
+        validated_test_id=tid,
+        validated_cell_index=7,
+        run_count=6,
+        stability_de=1.5,
+        params={"power": 10},
+    )
+    # Same row id — refreshed in place, not duplicated.
+    assert second["id"] == first["id"]
+    # Capture-derived values reflect the most recent save.
+    assert second["validated_lab"] == [50.0, 12.0, 30.0]
+    assert second["lab"] == [50.0, 12.0, 30.0]
+    assert second["validated_run_count"] == 6
+    assert second["validated_residual_de"] == 1.5
+    # User-curated columns survive.
+    assert second["favorited"] is True
+    assert second["notes"] == "keep me"
+    # Only one entry in the palette for this cell.
+    rows = repo.list_all(validated_only=True)
+    assert len([r for r in rows if r["validated_test_id"] == tid and r["validated_cell_index"] == 7]) == 1
+
+
+def test_create_validated_entry_distinct_cells_dont_collide(fresh_db):
+    """The natural key includes ``validated_cell_index``, so saves for
+    different cells of the same test produce separate rows."""
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=_SPEC)["id"]
+    a = repo.create_validated_entry(
+        machine_id="F2Ultra", material_id=mid,
+        burn_mean_lab=(40.0, 10.0, 20.0),
+        validated_test_id=tid, validated_cell_index=3,
+        run_count=4, stability_de=2.0, params={},
+    )
+    b = repo.create_validated_entry(
+        machine_id="F2Ultra", material_id=mid,
+        burn_mean_lab=(60.0, -5.0, 10.0),
+        validated_test_id=tid, validated_cell_index=4,
+        run_count=4, stability_de=2.0, params={},
+    )
+    assert a["id"] != b["id"]
+
+
 def test_list_all_validated_only_filter(fresh_db):
     mid = m_repo.create(name="SS")["id"]
     tid = t_repo.create(name="T", material_id=mid, spec=_SPEC)["id"]
