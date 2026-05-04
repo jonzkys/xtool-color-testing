@@ -31,12 +31,7 @@ import {
 import { isHeatmapMetric } from "./stabilityHeatmapMath";
 import { meanLab } from "./stabilityStatsMath";
 import { HelpTip } from "./StabilityHelpTip";
-import {
-  TOOLBAR_HELP,
-  X_AXIS_HELP,
-  Y_AXIS_HELP,
-  type AxisHelp,
-} from "./stabilityHelpCopy";
+import { TOOLBAR_HELP, type AxisHelp } from "./stabilityHelpCopy";
 
 // Re-export public surface so the page only needs to import from
 // `StabilityChart`.
@@ -464,11 +459,9 @@ function ChartHeader({
   const isXAxisDisabled = (id: XAxis | YAxis) =>
     isComputedXAxis(id as XAxis) && burnDisabled;
   // Row-level help: the legend's `?` icon explains what *the row*
-  // answers, not what any one pill does. Spatial / Spectrums modes
-  // swap Y axis for METRIC so the help entry switches too.
+  // answers. Spatial / Spectrums modes swap Y axis for METRIC so the
+  // help entry switches too.
   const yRowHelp = mode === "scatter" ? TOOLBAR_HELP.yRow : TOOLBAR_HELP.metricRow;
-  const helpForY = (id: XAxis | YAxis): AxisHelp => Y_AXIS_HELP[id as YAxis];
-  const helpForX = (id: XAxis | YAxis): AxisHelp => X_AXIS_HELP[id as XAxis];
   return (
     <div className="px-4 pt-4 pb-3 border-b border-[color:var(--color-border)]">
       <div className="flex flex-col gap-2">
@@ -492,7 +485,6 @@ function ChartHeader({
             isDisabled={isYAxisDisabled}
             disabledHint="needs ≥ 2 runs"
             rowHelp={yRowHelp}
-            helpFor={helpForY}
           />
         )}
         {mode === "scatter" && (
@@ -504,7 +496,6 @@ function ChartHeader({
             isDisabled={isXAxisDisabled}
             disabledHint="needs ≥ 2 runs"
             rowHelp={TOOLBAR_HELP.xRow}
-            helpFor={helpForX}
           />
         )}
         {mode === "spectrums" && (
@@ -565,19 +556,15 @@ function ModeToggleRow({
   onChange: (m: ChartMode) => void;
   simulationActive: boolean;
 }) {
-  // Each pill is wrapped in its own ``HelpTip`` so the hover help reads
-  // the pill-specific copy. The CALIBRATE pill carries a small dot when
-  // the "apply to chart" toggle is active so users see at a glance that
-  // the other modes are showing simulated values.
-  const options: {
-    id: ChartMode;
-    label: string;
-    help: AxisHelp;
-  }[] = [
-    { id: "scatter", label: "Scatter", help: TOOLBAR_HELP.mode },
-    { id: "spatial", label: "Spatial", help: TOOLBAR_HELP.mode },
-    { id: "spectrums", label: "Spectrums", help: TOOLBAR_HELP.mode },
-    { id: "calibrate", label: "Calibrate", help: TOOLBAR_HELP.calibrate },
+  // Per-pill help is gone; the row's `?` icon (left) opens the chart-mode
+  // help card. The CALIBRATE pill carries a small dot when the "apply to
+  // chart" toggle is active so users see at a glance that the other
+  // modes are showing simulated values.
+  const options: { id: ChartMode; label: string }[] = [
+    { id: "scatter", label: "Scatter" },
+    { id: "spatial", label: "Spatial" },
+    { id: "spectrums", label: "Spectrums" },
+    { id: "calibrate", label: "Calibrate" },
   ];
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -587,7 +574,7 @@ function ModeToggleRow({
           const active = o.id === mode;
           const decorate =
             o.id === "calibrate" && simulationActive && !active;
-          const button = (
+          return (
             <button
               key={o.id}
               type="button"
@@ -611,11 +598,6 @@ function ModeToggleRow({
                 />
               )}
             </button>
-          );
-          return (
-            <HelpTip key={o.id} help={o.help}>
-              {button}
-            </HelpTip>
           );
         })}
       </div>
@@ -719,7 +701,6 @@ function AxisRow({
   isDisabled,
   disabledHint,
   rowHelp,
-  helpFor,
 }: {
   legend: string;
   axes: readonly AxisMeta[];
@@ -728,7 +709,6 @@ function AxisRow({
   isDisabled: (id: XAxis | YAxis) => boolean;
   disabledHint: string;
   rowHelp: AxisHelp;
-  helpFor: (id: XAxis | YAxis) => AxisHelp;
 }) {
   const anyDisabled = axes.some((a) => isDisabled(a.id));
   return (
@@ -738,8 +718,7 @@ function AxisRow({
         {axes.map((a) => {
           const active = a.id === value;
           const disabled = isDisabled(a.id);
-          const help = helpFor(a.id);
-          const button = (
+          return (
             <button
               key={a.id}
               type="button"
@@ -750,6 +729,7 @@ function AxisRow({
               aria-pressed={active}
               aria-disabled={disabled}
               disabled={disabled}
+              title={a.label}
               className={cn(
                 "h-7 px-2.5 rounded-[6px] font-mono text-[10.5px] tracking-[0.12em] uppercase font-semibold tabular-nums",
                 "border transition-colors",
@@ -763,13 +743,6 @@ function AxisRow({
             >
               {a.short}
             </button>
-          );
-          return help ? (
-            <HelpTip key={a.id} help={help}>
-              {button}
-            </HelpTip>
-          ) : (
-            button
           );
         })}
         {anyDisabled && disabledHint && (

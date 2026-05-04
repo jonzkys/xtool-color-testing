@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import type { Lab } from "../color/math";
+import { useId, useMemo, useRef, useState } from "react";
+import { type Lab, labToHex } from "../color/math";
 import type { ValidationCell } from "../types";
 import { cn } from "../ui";
 import {
@@ -689,6 +689,16 @@ export function StabilityScatter({
         >
           {yMeta.label}
         </text>
+        {xAxis === "expected_hue" && (
+          <HueAxisStrip
+            xMin={xMin}
+            xMax={xMax}
+            x={PADL}
+            width={W - PADL - PADR}
+            y={H - STRIP - STRIP_GAP - 14}
+            height={5}
+          />
+        )}
         <text
           x={(W - PADL - PADR) / 2 + PADL}
           y={H - STRIP - STRIP_GAP - 2}
@@ -714,7 +724,7 @@ export function StabilityScatter({
           </span>
         )}
         {trendApplicable(xAxis) && rows.length > 0 && (
-          <HelpTip help={TOOLBAR_HELP.trend}>
+          <div className="inline-flex items-center gap-1">
             <ToolbarPill
               label="Trend"
               on={showTrend}
@@ -722,10 +732,13 @@ export function StabilityScatter({
               titleOn="Hide hue-binned trend"
               titleOff="Show hue-binned trend"
             />
-          </HelpTip>
+            <HelpTip help={TOOLBAR_HELP.trend}>
+              <ToolbarHelpIcon ariaLabel="Trend info" />
+            </HelpTip>
+          </div>
         )}
         {multiRun && hasAnySpread && (
-          <HelpTip help={TOOLBAR_HELP.connectors}>
+          <div className="inline-flex items-center gap-1">
             <ToolbarPill
               label="Connectors"
               on={showConnectors}
@@ -733,7 +746,10 @@ export function StabilityScatter({
               titleOn="Hide spread connectors"
               titleOff="Show spread connectors"
             />
-          </HelpTip>
+            <HelpTip help={TOOLBAR_HELP.connectors}>
+              <ToolbarHelpIcon ariaLabel="Connectors info" />
+            </HelpTip>
+          </div>
         )}
       </div>
 
@@ -814,6 +830,89 @@ function ToolbarPill({
       )}
     >
       {label}
+    </button>
+  );
+}
+
+/** Fine LCH hue gradient drawn just above the X axis label when the X
+ *  axis is EXP h°. Stops every 6° of the visible hue range so the band
+ *  reads as a smooth wheel; the LCH→sRGB conversion clips out-of-gamut
+ *  regions toward the boundary so deep blues and reds never go solid
+ *  black. ``xMin``/``xMax`` are the chart's X-domain values in degrees;
+ *  the strip spans the plot width [x, x+width] in viewBox units. */
+function HueAxisStrip({
+  xMin,
+  xMax,
+  x,
+  width,
+  y,
+  height,
+}: {
+  xMin: number;
+  xMax: number;
+  x: number;
+  width: number;
+  y: number;
+  height: number;
+}) {
+  // Sample the hue range at fixed angular density so the gradient looks
+  // the same when the user zooms (xMax - xMin shrinks).
+  const stops = useMemo(() => {
+    const range = Math.max(0.0001, xMax - xMin);
+    const stepDeg = 6;
+    const count = Math.max(8, Math.ceil(range / stepDeg) + 1);
+    const out: { offset: number; hex: string }[] = [];
+    for (let i = 0; i < count; i++) {
+      const t = i / (count - 1);
+      const hue = xMin + t * range;
+      const rad = (hue * Math.PI) / 180;
+      // L=70, C=55: bright + saturated enough to read on the dark
+      // surface, low enough not to fight the chart contents above.
+      const a = 55 * Math.cos(rad);
+      const b = 55 * Math.sin(rad);
+      out.push({ offset: t, hex: labToHex([70, a, b]) });
+    }
+    return out;
+  }, [xMin, xMax]);
+  const gradientId = useId();
+  return (
+    <g aria-hidden>
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+          {stops.map((s) => (
+            <stop key={s.offset} offset={s.offset} stopColor={s.hex} />
+          ))}
+        </linearGradient>
+      </defs>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        rx={1}
+        fill={`url(#${gradientId})`}
+      />
+    </g>
+  );
+}
+
+/** Round `?` info button shown next to a toolbar pill. Visually subtle so
+ *  the pill itself stays the primary action; clicking it pops the
+ *  ``HelpTip`` modal that wraps it. */
+function ToolbarHelpIcon({ ariaLabel }: { ariaLabel: string }) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      className={cn(
+        "h-3.5 w-3.5 rounded-full inline-flex items-center justify-center",
+        "border border-[color:var(--color-border-strong)] text-[color:var(--color-ink-subtle)]",
+        "font-mono text-[8px] font-semibold leading-none",
+        "hover:text-[color:var(--color-ink)] hover:border-[color:var(--color-ink)]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
+      )}
+    >
+      ?
     </button>
   );
 }
