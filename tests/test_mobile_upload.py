@@ -275,17 +275,19 @@ def test_mobile_upload_rate_limit_blocks_after_cap(fresh_db, monkeypatch, tmp_pa
         return (tid, 0)
     monkeypatch.setattr(cap, "detect_test_id", _counting_detect)
 
-    for _ in range(2):
+    # Distinct bytes per upload so each one passes the SHA-256 dedup
+    # check — this test cares about the rate limiter, not dedup.
+    for i in range(2):
         r = c.post(
             f"/api/m/{mid}/upload",
-            files={"image": ("p.jpg", b"fake", "image/jpeg")},
+            files={"image": ("p.jpg", f"fake-{i}".encode(), "image/jpeg")},
         )
         assert r.status_code == 201
     assert len(detect_calls) == 2
 
     r = c.post(
         f"/api/m/{mid}/upload",
-        files={"image": ("p.jpg", b"fake", "image/jpeg")},
+        files={"image": ("p.jpg", b"fake-third", "image/jpeg")},
     )
     assert r.status_code == 429
     assert "Retry-After" in r.headers
@@ -298,12 +300,14 @@ def test_recent_mobile_uploads_returns_only_mobile_for_caller(fresh_db, monkeypa
     mid, tid = _seed_user_with_test(c, h, monkeypatch, tmp_path)
 
     # Two mobile uploads + one desktop upload, all by the same user.
+    # Distinct bytes per upload so each one passes the SHA-256 dedup
+    # check — this test cares about source-of-upload classification.
     c.post(f"/api/m/{mid}/upload",
-           files={"image": ("a.jpg", b"fake", "image/jpeg")})
+           files={"image": ("a.jpg", b"fake-a", "image/jpeg")})
     c.post(f"/api/m/{mid}/upload",
-           files={"image": ("b.jpg", b"fake", "image/jpeg")})
+           files={"image": ("b.jpg", b"fake-b", "image/jpeg")})
     c.post(f"/api/tests/{tid}/results",
-           files={"image": ("c.jpg", b"fake", "image/jpeg")},
+           files={"image": ("c.jpg", b"fake-c", "image/jpeg")},
            headers=h)
 
     r = c.get("/api/me/mobile-uploads/recent?since=0", headers=h)

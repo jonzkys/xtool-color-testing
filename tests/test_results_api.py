@@ -119,19 +119,27 @@ def test_preflight_returns_test_info_and_existing_count(fresh_db, monkeypatch, t
         files={"image": ("phone.jpg", b"fake", "image/jpeg")},
     )
     assert r.status_code == 200, r.text
-    assert r.json() == {
-        "test_id": tid, "test_name": "Speed sweep",
-        "existing_result_count": 0,
-    }
+    body = r.json()
+    assert body["test_id"] == tid
+    assert body["test_name"] == "Speed sweep"
+    assert body["existing_result_count"] == 0
+    assert body["duplicate_of_result_id"] is None
 
-    # After one upload, preflight reports the prior result count.
-    c.post("/api/results/upload",
-           files={"image": ("phone.jpg", b"fake", "image/jpeg")})
+    # After one upload, preflight reports the prior result count + the
+    # duplicate flag because the same bytes hash to the same SHA-256.
+    upload_resp = c.post(
+        "/api/results/upload",
+        files={"image": ("phone.jpg", b"fake", "image/jpeg")},
+    )
+    rid = upload_resp.json()["id"]
     r2 = c.post(
         "/api/results/preflight",
         files={"image": ("phone.jpg", b"fake", "image/jpeg")},
     )
-    assert r2.json()["existing_result_count"] == 1
+    body2 = r2.json()
+    assert body2["existing_result_count"] == 1
+    assert body2["duplicate_of_result_id"] == rid
+    assert body2["duplicate_uploaded_at"] is not None
 
     # Preflight does not persist (still only 1 result after 2 preflights).
     assert len(c.get(f"/api/tests/{tid}/results").json()) == 1
@@ -699,3 +707,142 @@ def test_inspect_cell_wrapped_1d_uses_per_row_cell_width(fresh_db, monkeypatch, 
         f"sample box too narrow ({region['half_w_px']}); "
         f"wrapped-1D cell width should use per_row, not x_steps"
     )
+
+
+# ───── SHA-256 dedup ─────────────────────────────────────────────────────
+
+
+def test_upload_409_on_duplicate_image_for_same_test(fresh_db, monkeypatch, tmp_path):
+    """Re-uploading identical bytes for the same test 409s with the
+    existing result_id surfaced — the user can then choose to view the
+    prior upload or hard-delete and re-upload."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    payload = b"identical bytes"
+
+    first = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("a.png", payload, "image/png")},
+    )
+    assert first.status_code == 201
+    rid = first.json()["id"]
+
+    second = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("a.png", payload, "image/png")},
+    )
+    assert second.status_code == 409
+    detail = second.json()["detail"]
+    assert detail["kind"] == "duplicate_image"
+    assert detail["existing_result_id"] == rid
+
+    # Only one row persisted.
+    assert len(c.get(f"/api/tests/{tid}/results").json()) == 1
+
+
+def test_upload_allows_same_image_after_delete(fresh_db, monkeypatch, tmp_path):
+    """Hard-deleting the existing result frees the hash, so the same
+    photo can be uploaded again."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    payload = b"identical bytes 2"
+
+    first = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("a.png", payload, "image/png")},
+    )
+    rid = first.json()["id"]
+    # Side-effecting calls don't go inside ``assert`` — under ``python
+    # -O`` the whole assertion would be stripped and the delete would
+    # silently never run.
+    delete_resp = c.delete(f"/api/results/{rid}")
+    assert delete_resp.status_code == 204
+
+    second = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("a.png", payload, "image/png")},
+    )
+    assert second.status_code == 201
+    # SQLite reuses deleted PKs by default, so we don't assert id !=
+    # rid; the contract is "the upload succeeded again".
+    assert second.json()["test_id"] == tid
+
+
+def test_upload_409_blocks_excluded_duplicates_too(fresh_db, monkeypatch, tmp_path):
+    """An excluded result still occupies storage and shouldn't be
+    silently re-uploaded as a fresh row."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    payload = b"excluded later"
+
+    first = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("a.png", payload, "image/png")},
+    )
+    rid = first.json()["id"]
+    c.patch(f"/api/results/{rid}", json={"excluded": True})
+
+    second = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("a.png", payload, "image/png")},
+    )
+    assert second.status_code == 409
+    assert second.json()["detail"]["existing_result_id"] == rid
+
+
+def test_upload_allows_same_image_for_different_test(fresh_db, monkeypatch, tmp_path):
+    """Dedup is scoped per test — uploading the same photo to a
+    different test is legitimate (e.g. same QR card photographed for a
+    second test by mistake) and must not be conflated across tests."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid_a = t_repo.create(name="A", material_id=mid, spec=SPEC)["id"]
+    tid_b = t_repo.create(name="B", material_id=mid, spec=SPEC)["id"]
+    payload = b"shared bytes"
+
+    a = c.post(
+        f"/api/tests/{tid_a}/results",
+        files={"image": ("x.png", payload, "image/png")},
+    )
+    b = c.post(
+        f"/api/tests/{tid_b}/results",
+        files={"image": ("x.png", payload, "image/png")},
+    )
+    assert a.status_code == 201
+    assert b.status_code == 201
+
+
+def test_auto_upload_409_on_duplicate(fresh_db, monkeypatch, tmp_path):
+    """Auto-routed upload (POST /api/results/upload) honours the same
+    dedup — the QR resolves the test_id, then the hash check fires."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    monkeypatch.setattr(cap, "detect_test_id", lambda _: (tid, 0))
+    payload = b"auto dedup"
+
+    first = c.post(
+        "/api/results/upload",
+        files={"image": ("phone.jpg", payload, "image/jpeg")},
+    )
+    assert first.status_code == 201
+
+    second = c.post(
+        "/api/results/upload",
+        files={"image": ("phone.jpg", payload, "image/jpeg")},
+    )
+    assert second.status_code == 409
+    assert second.json()["detail"]["kind"] == "duplicate_image"

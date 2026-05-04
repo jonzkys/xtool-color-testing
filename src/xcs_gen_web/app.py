@@ -1201,7 +1201,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Shared tail for both upload routes: run capture against the
         already-read image bytes, persist the result + image, mark test
         tested, and return the ResultResponse. Raises HTTPException(400)
-        if the capture fails (e.g. photo doesn't align)."""
+        if the capture fails (e.g. photo doesn't align), or 409 if the
+        same photo (by SHA-256) has already been uploaded for this test
+        — the existing result_id is surfaced so the UI can offer to
+        view it instead of re-processing. The user can hard-delete the
+        existing result to free the hash for re-upload."""
+        sha = images.sha256_hex(data)
+        existing = r_repo.find_by_hash_for_test(tid, sha, owner_id=user_id)
+        if existing is not None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "kind": "duplicate_image",
+                    "message": (
+                        f"This photo was already uploaded as result "
+                        f"#{existing['id']} ({existing['uploaded_at']}). "
+                        f"Delete that result first if you want to re-process the same image."
+                    ),
+                    "existing_result_id": existing["id"],
+                    "existing_uploaded_at": existing["uploaded_at"],
+                },
+            )
+
         try:
             cap_result = capture_service.run_capture(
                 image_bytes=data, test_id=tid, spec=spec,
@@ -1214,7 +1235,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         placeholder = r_repo.create(
             test_id=tid,
             image_path="pending",
-            image_sha256=images.sha256_hex(data),
+            image_sha256=sha,
             swatches=cap_result.swatches,
             owner_id=user_id,
             via=via,
@@ -1395,10 +1416,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         user_id: int = Depends(get_current_user),
     ) -> dict:
         """Decode the photo's QR and return what test it matches + how
-        many results that test already has — without persisting anything.
+        many results that test already has + whether this exact photo
+        was uploaded before — without persisting anything.
 
-        The upload modal calls this first so it can warn the user before
-        re-processing a test that already has uploads."""
+        The upload modal calls this first so it can warn the user
+        before re-processing, and short-circuit duplicate uploads
+        without sending the file twice."""
         data = await image.read()
         try:
             qr_id, _retest_idx = capture_service.detect_test_id(data)
@@ -1412,10 +1435,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                        f"Was the test deleted, or does it belong to another user?",
             )
         existing = r_repo.list_by_test(qr_id, owner_id=user_id, include_excluded=True)
+        sha = images.sha256_hex(data)
+        duplicate = r_repo.find_by_hash_for_test(qr_id, sha, owner_id=user_id)
         return {
             "test_id": qr_id,
             "test_name": t["name"],
             "existing_result_count": len(existing),
+            "duplicate_of_result_id": duplicate["id"] if duplicate else None,
+            "duplicate_uploaded_at": (
+                duplicate["uploaded_at"] if duplicate else None
+            ),
         }
 
     @app.post("/api/results/upload", response_model=ResultResponse, status_code=201)
