@@ -105,3 +105,78 @@ export function kMeansLab(
 
   return { labels, centroidsHex: liveCentroids.map(labToHex) };
 }
+
+export interface CoverRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: number;
+}
+
+/** Greedy max-rectangle covering of same-label adjacent cells.
+ *
+ *  For each label: scan grid for the largest uncovered rectangle of that
+ *  label, emit, mark covered, repeat. Cells with label === -1 (skip) are
+ *  treated as permanently-covered gaps and never appear in the output. */
+export function greedyRectCover(
+  labels: number[],
+  width: number,
+  height: number,
+): CoverRect[] {
+  const covered = new Array<boolean>(labels.length).fill(false);
+  const out: CoverRect[] = [];
+  for (let i = 0; i < labels.length; i++) if (labels[i] < 0) covered[i] = true;
+
+  // Derive the upper bound on labels actually present in the grid.
+  let maxLabel = -1;
+  for (const l of labels) if (l > maxLabel) maxLabel = l;
+
+  while (true) {
+    let best: CoverRect | null = null;
+    let bestArea = 0;
+    for (let label = 0; label <= maxLabel; label++) {
+      const heights = new Array<number>(width).fill(0);
+      for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+          const i = row * width + col;
+          if (!covered[i] && labels[i] === label) {
+            heights[col] += 1;
+          } else {
+            heights[col] = 0;
+          }
+        }
+        const stack: { col: number; h: number }[] = [];
+        for (let col = 0; col <= width; col++) {
+          const h = col === width ? 0 : heights[col];
+          let leftCol = col;
+          while (stack.length > 0 && stack[stack.length - 1].h > h) {
+            const top = stack.pop()!;
+            leftCol = top.col;
+            const w = col - leftCol;
+            const area = w * top.h;
+            if (area > bestArea) {
+              bestArea = area;
+              best = {
+                x: leftCol,
+                y: row - top.h + 1,
+                width: w,
+                height: top.h,
+                label,
+              };
+            }
+          }
+          stack.push({ col: leftCol, h });
+        }
+      }
+    }
+    if (!best || bestArea === 0) break;
+    out.push(best);
+    for (let r = best.y; r < best.y + best.height; r++) {
+      for (let c = best.x; c < best.x + best.width; c++) {
+        covered[r * width + c] = true;
+      }
+    }
+  }
+  return out;
+}
