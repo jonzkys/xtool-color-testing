@@ -617,12 +617,16 @@ def test_batch_validate_400_when_test_is_not_validation_kind(client, mid):
 
 
 def test_batch_validate_dry_run_doesnt_persist(client, mid):
-    """``dry_run=true`` returns the bucketing without touching the entry."""
+    """``dry_run=true`` returns the bucketing without writing
+    anything — no new entries created, source entry untouched."""
     tid, eid = _seed_validation_with_n_results(
         mid,
         expected_lab=[40.0, 5.0, -10.0],
-        measured_labs=[[41.0, 5.5, -9.0], [41.5, 5.2, -9.2]],
+        # Two runs that both centre at (41, 5, -10) → tight cluster
+        # → low stability_de.
+        measured_labs=[[41.0, 5.0, -10.0], [41.0, 5.0, -10.0]],
     )
+    palette_before = client.get("/api/palette").json()
     r = client.post(
         f"/api/tests/{tid}/validate",
         json={"tolerance_de": 8, "dry_run": True},
@@ -632,77 +636,114 @@ def test_batch_validate_dry_run_doesnt_persist(client, mid):
     assert body["test_id"] == tid
     assert body["dry_run"] is True
     assert body["result_count"] == 2
-    assert len(body["auto_validated"]) == 1
-    assert body["auto_validated"][0]["palette_entry_id"] == eid
-    assert body["auto_validated"][0]["persisted"] is False
-    # Entry stays unvalidated.
-    entry = next(
-        e for e in client.get("/api/palette").json() if e["id"] == eid
-    )
-    assert entry["is_validated"] is False
+    assert len(body["stable"]) == 1
+    stable = body["stable"][0]
+    assert stable["palette_entry_id"] == eid  # provenance, not target
+    assert stable["persisted"] is False
+    assert stable["new_entry_id"] is None
+    # No new entry created; source entry stays unvalidated.
+    palette_after = client.get("/api/palette").json()
+    assert len(palette_after) == len(palette_before)
+    src = next(e for e in palette_after if e["id"] == eid)
+    assert src["is_validated"] is False
 
 
-def test_batch_validate_persists_inside_tolerance(client, mid):
-    """Without ``dry_run``, auto-bucket cells get the validated_lab
-    written and is_validated flipped."""
+def test_batch_validate_persists_creates_new_entry(client, mid):
+    """Stable cells produce brand-new validated palette entries on
+    save — the linked source entry stays untouched, so the user can
+    keep both around."""
     tid, eid = _seed_validation_with_n_results(
         mid,
         expected_lab=[40.0, 5.0, -10.0],
-        measured_labs=[[41.0, 5.5, -9.0], [41.5, 5.2, -9.2]],
+        measured_labs=[[41.0, 5.0, -10.0], [41.0, 5.0, -10.0]],
     )
     r = client.post(
         f"/api/tests/{tid}/validate",
         json={"tolerance_de": 8},
     )
-    assert r.status_code == 200, r.text
     body = r.json()
     assert body["dry_run"] is False
-    assert len(body["auto_validated"]) == 1
-    assert body["auto_validated"][0]["persisted"] is True
-    entry = next(
-        e for e in client.get("/api/palette").json() if e["id"] == eid
-    )
-    assert entry["is_validated"] is True
-    # Burn-mean lands close to (41.25, 5.35, -9.1).
-    L, a, b = entry["validated_lab"]
-    assert abs(L - 41.25) < 0.5
-    assert abs(a - 5.35) < 0.5
-    assert abs(b - (-9.1)) < 0.5
-    assert entry["validated_test_id"] == tid
+    assert len(body["stable"]) == 1
+    stable = body["stable"][0]
+    assert stable["persisted"] is True
+    new_id = stable["new_entry_id"]
+    assert new_id is not None
+    assert new_id != eid
+
+    palette = client.get("/api/palette").json()
+    src = next(e for e in palette if e["id"] == eid)
+    assert src["is_validated"] is False  # original untouched
+    new_entry = next(e for e in palette if e["id"] == new_id)
+    assert new_entry["is_validated"] is True
+    assert new_entry["validated_test_id"] == tid
+    assert new_entry["source"] == "averaged"
+    # New entry's lab IS the burn-mean (≈ 41, 5, -10).
+    assert abs(new_entry["lab"][0] - 41.0) < 0.5
+    # validated_lab mirrors lab on these new entries (same value).
+    assert new_entry["validated_lab"] == new_entry["lab"]
+    # Stability gate value lands on validated_residual_de.
+    assert new_entry["validated_residual_de"] is not None
+    assert new_entry["validated_residual_de"] < 1.0
 
 
-def test_batch_validate_far_drift_goes_to_flagged(client, mid):
-    """A burn-mean far outside the tolerance lands in the flagged
-    bucket and is NOT persisted unless explicitly accepted."""
+def test_batch_validate_unstable_runs_go_to_drifted(client, mid):
+    """Two runs whose per-cell means are far apart land in the
+    ``drifted`` bucket and are NOT persisted by default — even if
+    each individual run looks tight on its own."""
     tid, eid = _seed_validation_with_n_results(
         mid,
         expected_lab=[40.0, 5.0, -10.0],
-        # Both runs around (60, 5, -10) — ΔE = 20 vs expected.
-        measured_labs=[[60.0, 5.0, -10.0], [60.0, 5.0, -10.0]],
+        # Run 0 at (40, 5, -10); Run 1 at (60, 5, -10) — consensus
+        # ≈ (50, 5, -10) but each run is 10 ΔE from consensus.
+        measured_labs=[[40.0, 5.0, -10.0], [60.0, 5.0, -10.0]],
     )
     r = client.post(
         f"/api/tests/{tid}/validate",
         json={"tolerance_de": 8},
     )
     body = r.json()
-    assert len(body["auto_validated"]) == 0
-    assert len(body["flagged"]) == 1
-    assert body["flagged"][0]["palette_entry_id"] == eid
-    assert body["flagged"][0]["persisted"] is False
-    entry = next(
-        e for e in client.get("/api/palette").json() if e["id"] == eid
-    )
-    assert entry["is_validated"] is False
+    assert len(body["stable"]) == 0
+    assert len(body["drifted"]) == 1
+    drifted = body["drifted"][0]
+    assert drifted["palette_entry_id"] == eid
+    assert drifted["persisted"] is False
+    assert drifted["new_entry_id"] is None
+    assert drifted["stability_de"] >= 8  # over tolerance
+    # No new entry created.
+    palette = client.get("/api/palette").json()
+    assert all(e["validated_test_id"] != tid for e in palette)
 
 
-def test_batch_validate_override_accepts_flagged_cell(client, mid):
-    """A user can force a flagged cell to persist via the overrides
-    list — "yes, the original entry was wrong, take this new
-    measurement"."""
-    tid, eid = _seed_validation_with_n_results(
+def test_batch_validate_stable_far_from_expected_still_stable(client, mid):
+    """A burn-mean far from the *original* expected Lab is fine as
+    long as it's stable across runs — the gate is intra-cell σ, not
+    closeness-to-original. Original might be wrong."""
+    tid, _eid = _seed_validation_with_n_results(
         mid,
         expected_lab=[40.0, 5.0, -10.0],
+        # Both runs at (60, 5, -10) — far from expected (ΔE 20) but
+        # tightly clustered (stability_de ≈ 0).
         measured_labs=[[60.0, 5.0, -10.0], [60.0, 5.0, -10.0]],
+    )
+    r = client.post(
+        f"/api/tests/{tid}/validate",
+        json={"tolerance_de": 8, "dry_run": True},
+    )
+    body = r.json()
+    assert len(body["stable"]) == 1
+    stable = body["stable"][0]
+    assert stable["stability_de"] < 1.0
+    assert stable["de_vs_expected"] >= 19  # informational, not gating
+
+
+def test_batch_validate_override_accepts_drifted_cell(client, mid):
+    """The user can force a drifted cell to persist via the
+    overrides list — "yes, save this colour even though it wandered
+    between runs"."""
+    tid, _eid = _seed_validation_with_n_results(
+        mid,
+        expected_lab=[40.0, 5.0, -10.0],
+        measured_labs=[[40.0, 5.0, -10.0], [60.0, 5.0, -10.0]],
     )
     r = client.post(
         f"/api/tests/{tid}/validate",
@@ -712,22 +753,24 @@ def test_batch_validate_override_accepts_flagged_cell(client, mid):
         },
     )
     body = r.json()
-    assert len(body["flagged"]) == 1
-    assert body["flagged"][0]["persisted"] is True
-    entry = next(
-        e for e in client.get("/api/palette").json() if e["id"] == eid
+    assert len(body["drifted"]) == 1
+    drifted = body["drifted"][0]
+    assert drifted["persisted"] is True
+    assert drifted["new_entry_id"] is not None
+    new_entry = next(
+        e for e in client.get("/api/palette").json()
+        if e["id"] == drifted["new_entry_id"]
     )
-    assert entry["is_validated"] is True
-    # Validated lab is the burn-mean of the (60, 5, -10) cluster.
-    assert abs(entry["validated_lab"][0] - 60.0) < 0.5
+    assert new_entry["is_validated"] is True
 
 
-def test_batch_validate_override_skips_auto_cell(client, mid):
-    """The user can also veto an auto-classified cell."""
-    tid, eid = _seed_validation_with_n_results(
+def test_batch_validate_override_skips_stable_cell(client, mid):
+    """The user can also veto a stable cell — "I don't want this in
+    the palette". No new entry is created."""
+    tid, _eid = _seed_validation_with_n_results(
         mid,
         expected_lab=[40.0, 5.0, -10.0],
-        measured_labs=[[41.0, 5.5, -9.0], [41.5, 5.2, -9.2]],
+        measured_labs=[[41.0, 5.0, -10.0], [41.0, 5.0, -10.0]],
     )
     r = client.post(
         f"/api/tests/{tid}/validate",
@@ -737,18 +780,18 @@ def test_batch_validate_override_skips_auto_cell(client, mid):
         },
     )
     body = r.json()
-    assert len(body["auto_validated"]) == 1
-    assert body["auto_validated"][0]["persisted"] is False
-    entry = next(
-        e for e in client.get("/api/palette").json() if e["id"] == eid
-    )
-    assert entry["is_validated"] is False
+    assert len(body["stable"]) == 1
+    stable = body["stable"][0]
+    assert stable["persisted"] is False
+    assert stable["new_entry_id"] is None
+    palette = client.get("/api/palette").json()
+    assert all(e["validated_test_id"] != tid for e in palette)
 
 
-def test_batch_validate_skips_cells_without_palette_link(client, mid):
-    """Validation cells with NULL palette_entry_id can't be
-    validated — they land in skipped with reason
-    ``no_palette_link``."""
+def test_batch_validate_unlinked_cells_create_fresh_entries(client, mid):
+    """Validation cells with NULL palette_entry_id are first-class
+    citizens — no longer skipped. They get bucketed normally and on
+    save produce a brand-new palette entry on their own."""
     from xcs_gen_web.repositories import results as r_repo
     from xcs_gen_web.repositories import validation_cells as vc_repo
 
@@ -765,8 +808,7 @@ def test_batch_validate_skips_cells_without_palette_link(client, mid):
             "cell_index": 0,
             "expected_hex": "#aabbcc",
             "expected_lab": [40.0, 5.0, -10.0],
-            # No palette_entry_id — older test creation flow.
-            "palette_entry_id": None,
+            "palette_entry_id": None,  # unlinked
             "params": {"power": 14.6},
         },
     ])
@@ -781,14 +823,24 @@ def test_batch_validate_skips_cells_without_palette_link(client, mid):
         )
     r = client.post(f"/api/tests/{tid}/validate", json={"tolerance_de": 8})
     body = r.json()
-    assert len(body["skipped"]) == 1
-    assert body["skipped"][0]["reason"] == "no_palette_link"
-    assert body["skipped"][0]["palette_entry_id"] is None
+    # No skipped — unlinked cells should bucket like any other.
+    assert len(body["skipped"]) == 0
+    assert len(body["stable"]) == 1
+    stable = body["stable"][0]
+    assert stable["palette_entry_id"] is None
+    assert stable["persisted"] is True
+    assert stable["new_entry_id"] is not None
+    new_entry = next(
+        e for e in client.get("/api/palette").json()
+        if e["id"] == stable["new_entry_id"]
+    )
+    assert new_entry["is_validated"] is True
+    assert new_entry["validated_test_id"] == tid
 
 
 def test_batch_validate_skips_cells_with_one_run(client, mid):
-    """Single-result validation falls into skipped — the
-    cluster-robust mean math wants ≥ 2 runs by design."""
+    """Single-result validation falls into skipped — stability is
+    undefined when there's only one cross-run datapoint."""
     from xcs_gen_web.repositories import results as r_repo
     from xcs_gen_web.repositories import validation_cells as vc_repo
 
@@ -830,18 +882,17 @@ def test_batch_validate_skips_cells_with_one_run(client, mid):
 
 def test_batch_validate_filters_by_result_ids(client, mid):
     """``result_ids`` restricts the contributing results — useful
-    for "validate from this specific run only" workflows."""
-    tid, eid = _seed_validation_with_n_results(
+    for "validate from these specific runs only" workflows."""
+    tid, _eid = _seed_validation_with_n_results(
         mid,
         expected_lab=[40.0, 5.0, -10.0],
         measured_labs=[[41.0, 5.0, -10.0], [60.0, 5.0, -10.0]],
     )
-    # All results: burn-mean ≈ (50.5) — outside 8 ΔE → flagged.
+    # All results: stability_de ≈ 9 → drifted at tol=8.
     r_all = client.post(
         f"/api/tests/{tid}/validate",
         json={"tolerance_de": 8, "dry_run": True},
     ).json()
-    # Now only the first result.
     rids = [
         r["id"] for r in client.get(f"/api/tests/{tid}/results").json()
     ]
@@ -852,11 +903,11 @@ def test_batch_validate_filters_by_result_ids(client, mid):
             "result_ids": [rids[0]],
         },
     ).json()
-    # First-result-only burn-mean = (41, 5, -10) → ΔE ≈ 1 (auto).
-    # But MIN_RESULTS=2 means a single result skips the entry.
+    # Single result → can't measure stability → skipped.
     assert r_one["result_count"] == 1
     assert len(r_one["skipped"]) == 1
     assert r_one["skipped"][0]["reason"] == "insufficient_runs"
-    # All-results dry-run had ≥ 2 measurements per cell → bucketed.
+    # Both results → bucketed (drifted because each run is 9.5 from mean).
     assert r_all["result_count"] == 2
     assert len(r_all["skipped"]) == 0
+    assert len(r_all["drifted"]) == 1

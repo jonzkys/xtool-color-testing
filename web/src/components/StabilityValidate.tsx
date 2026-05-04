@@ -11,18 +11,22 @@ import { cn } from "../ui";
 import type { SeriesInput } from "./stabilityChartMath";
 
 /* StabilityValidate — sixth canvas of the stability page. Asks the
- * backend to bucket each validation cell into auto-accept / flagged /
- * skipped against an adjustable ΔE tolerance, then lets the user
- * accept or reject individual rows before persisting the validated
- * Lab back onto the palette entries. The API math (robust mean, ΔE
- * computation) lives in src/xcs_gen_web/services/validate.py — this
- * component is purely a thin UI over the dry-run / save round-trip.
+ * backend to bucket each validation cell into stable / drifted /
+ * skipped by *cross-run stability* (max ΔE between any single run's
+ * per-cell mean and the across-run consensus). Save creates a fresh
+ * palette entry from the burn-mean for every accepted cell. Linked
+ * source entries stay untouched — the new entry sits alongside.
+ *
+ * The ΔE-vs-original is shown as informational only and never gates
+ * the bucketing; the original entry might itself be wrong from a bad
+ * first-ingest photo. Math lives in
+ * src/xcs_gen_web/services/validate.py.
  */
 
-type Bucket = "auto" | "flagged" | "skipped";
+type Bucket = "stable" | "drifted" | "skipped";
 
 interface RowEntry {
-  bucket: "auto" | "flagged";
+  bucket: "stable" | "drifted";
   data: ValidateBatchEntry;
 }
 
@@ -66,9 +70,9 @@ export function StabilityValidate({ cells, series, testId, onSaved }: Props) {
   const resultIds = useMemo(() => series.map((s) => s.resultId), [series]);
   const resultIdsKey = resultIds.join(",");
 
-  // Stable lookup: cell_index → palette_entry_id, used to render
-  // "no palette link" rows alongside accepted rows so the user can
-  // see which cells *would* have been validated if they were linked.
+  // Quick cell_index → ValidationCell lookup so the row renderer can
+  // pull the original expected hex for the EXPECTED swatch column
+  // without re-iterating the cells array.
   const cellByIndex = useMemo(() => {
     const m = new Map<number, ValidationCell>();
     for (const c of cells) m.set(c.cell_index, c);
@@ -101,8 +105,8 @@ export function StabilityValidate({ cells, series, testId, onSaved }: Props) {
       // override map doesn't grow unbounded across tolerance sweeps.
       setOverrides((prev) => {
         const visible = new Set<number>();
-        res.auto_validated.forEach((e) => visible.add(e.cell_index));
-        res.flagged.forEach((e) => visible.add(e.cell_index));
+        res.stable.forEach((e) => visible.add(e.cell_index));
+        res.drifted.forEach((e) => visible.add(e.cell_index));
         res.skipped.forEach((e) => visible.add(e.cell_index));
         const next = new Map<number, boolean>();
         for (const [k, v] of prev) if (visible.has(k)) next.set(k, v);
@@ -127,52 +131,53 @@ export function StabilityValidate({ cells, series, testId, onSaved }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testId, tolerance, resultIdsKey]);
 
-  // Compose ordered rows: auto rows sorted by cell_index, then flagged
-  // (worst ΔE first), then skipped. Tone follows the bucket so the
-  // table reads like a triage list.
+  // Compose ordered rows: stable (sorted by cell_index), then
+  // drifted (worst stability_de first so the user reviews the
+  // wobbliest cells first), then skipped. Tone follows the bucket
+  // so the table reads like a triage list.
   const rows = useMemo<Row[]>(() => {
     if (preview == null) return [];
-    const auto: RowEntry[] = preview.auto_validated.map((e) => ({
-      bucket: "auto",
+    const stable: RowEntry[] = preview.stable.map((e) => ({
+      bucket: "stable",
       data: e,
     }));
-    auto.sort((a, b) => a.data.cell_index - b.data.cell_index);
-    const flagged: RowEntry[] = preview.flagged.map((e) => ({
-      bucket: "flagged",
+    stable.sort((a, b) => a.data.cell_index - b.data.cell_index);
+    const drifted: RowEntry[] = preview.drifted.map((e) => ({
+      bucket: "drifted",
       data: e,
     }));
-    flagged.sort((a, b) => b.data.de_burn_vs_expected - a.data.de_burn_vs_expected);
+    drifted.sort((a, b) => b.data.stability_de - a.data.stability_de);
     const skipped: RowSkipped[] = preview.skipped.map((s) => ({
       bucket: "skipped",
       data: s,
     }));
     skipped.sort((a, b) => a.data.cell_index - b.data.cell_index);
-    return [...auto, ...flagged, ...skipped];
+    return [...stable, ...drifted, ...skipped];
   }, [preview]);
 
   // Accept-state per cell, after applying user overrides on top of the
   // bucket default. Skipped cells are never accepted (the backend
-  // refuses to persist them — no palette link / not enough runs).
+  // refuses to persist them — no measurements or fewer than two runs).
   const acceptStateOf = useCallback(
     (row: Row): boolean => {
       if (row.bucket === "skipped") return false;
       const ov = overrides.get(row.data.cell_index);
       if (ov != null) return ov;
-      return row.bucket === "auto";
+      return row.bucket === "stable";
     },
     [overrides],
   );
 
   const counts = useMemo(() => {
     let toAccept = 0;
-    let flagged = 0;
+    let drifted = 0;
     let skipped = 0;
     for (const r of rows) {
       if (r.bucket === "skipped") skipped++;
       else if (acceptStateOf(r)) toAccept++;
-      else flagged++;
+      else drifted++;
     }
-    return { toAccept, flagged, skipped };
+    return { toAccept, drifted, skipped };
   }, [rows, acceptStateOf]);
 
   // Build the override list to send on save: any cell whose effective
@@ -183,11 +188,11 @@ export function StabilityValidate({ cells, series, testId, onSaved }: Props) {
   }[] => {
     if (preview == null) return [];
     const out: { cell_index: number; accept: boolean }[] = [];
-    for (const e of preview.auto_validated) {
+    for (const e of preview.stable) {
       const accept = overrides.get(e.cell_index);
       if (accept === false) out.push({ cell_index: e.cell_index, accept: false });
     }
-    for (const e of preview.flagged) {
+    for (const e of preview.drifted) {
       const accept = overrides.get(e.cell_index);
       if (accept === true) out.push({ cell_index: e.cell_index, accept: true });
     }
@@ -235,7 +240,7 @@ export function StabilityValidate({ cells, series, testId, onSaved }: Props) {
       const next = !current;
       setOverrides((prev) => {
         const m = new Map(prev);
-        const defaultAccept = row.bucket === "auto";
+        const defaultAccept = row.bucket === "stable";
         if (next === defaultAccept) m.delete(cellIndex);
         else m.set(cellIndex, next);
         return m;
@@ -259,7 +264,7 @@ export function StabilityValidate({ cells, series, testId, onSaved }: Props) {
     return <Empty tone="warning" message={previewError} />;
   }
   if (loading && preview == null) {
-    return <Empty message="Computing burn-mean Lab for each cell…" />;
+    return <Empty message="Measuring per-cell stability across runs…" />;
   }
   if (preview == null) {
     return <Empty message="No preview yet." />;
@@ -313,16 +318,20 @@ function ValidateCaption({
   return (
     <div className="px-5 py-3 border-b border-[color:var(--color-border)] bg-[color:var(--color-surface)]">
       <p className="font-mono text-[11px] text-[color:var(--color-ink-muted)] leading-relaxed m-0">
-        Locks in the burn-mean Lab from{" "}
+        Bucket each cell of{" "}
         <span className="font-semibold text-[color:var(--color-ink)]">
           {testName}
         </span>{" "}
-        ({runCount} run{runCount === 1 ? "" : "s"}) as the authoritative
-        colour for each cell&rsquo;s palette entry.{" "}
+        ({runCount} run{runCount === 1 ? "" : "s"}) by{" "}
+        <span className="font-semibold text-[color:var(--color-ink)]">
+          stability across runs
+        </span>{" "}
+        — i.e. how tightly the per-run burn-mean clusters.{" "}
         <span className="text-[color:var(--color-ink-subtle)]">
-          Auto-validate accepts cells whose burn-mean is within the
-          tolerance of the palette&rsquo;s current target. Flagged
-          cells need a manual call before they&rsquo;ll save.
+          Stable cells save by default; drifted cells need a manual
+          call. Save creates a new palette entry from the consensus —
+          the original entry, if any, is left untouched. ΔE-vs-original
+          is shown for context but never gates the bucket.
         </span>
       </p>
     </div>
@@ -340,13 +349,13 @@ function ToleranceBar({
   tolerance: number;
   onToleranceChange: (v: number) => void;
   loading: boolean;
-  counts: { toAccept: number; flagged: number; skipped: number };
+  counts: { toAccept: number; drifted: number; skipped: number };
 }) {
   return (
     <div className="px-5 py-3 border-b border-[color:var(--color-border)] flex flex-wrap items-center gap-x-6 gap-y-2">
       <label className="flex items-center gap-3">
         <span className="font-mono text-[10px] font-semibold tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
-          Tolerance ΔE
+          Stability ΔE
         </span>
         <input
           type="range"
@@ -362,8 +371,8 @@ function ToleranceBar({
         </span>
       </label>
       <div className="flex flex-wrap items-center gap-2 ml-auto">
-        <CountPill tone="success" label="auto" value={counts.toAccept} />
-        <CountPill tone="warning" label="flagged" value={counts.flagged} />
+        <CountPill tone="success" label="stable" value={counts.toAccept} />
+        <CountPill tone="warning" label="drifted" value={counts.drifted} />
         <CountPill tone="muted" label="skipped" value={counts.skipped} />
         {loading && (
           <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-[color:var(--color-ink-subtle)]">
@@ -428,7 +437,7 @@ function RowsTable({
     <section className="p-5">
       <PanelHeading
         title="Per-cell preview"
-        subtitle="Accept rows individually; flagged rows are off by default."
+        subtitle="Accept rows individually; drifted rows are off by default."
       />
       <div className="mt-3 overflow-x-auto">
         <table className="w-full font-mono text-[10.5px] tabular-nums">
@@ -437,7 +446,8 @@ function RowsTable({
               <th className="px-2 py-1 w-[44px]">Cell</th>
               <th className="px-2 py-1">Expected</th>
               <th className="px-2 py-1">Burn-mean</th>
-              <th className="px-2 py-1 text-right">ΔE</th>
+              <th className="px-2 py-1 text-right">Stability ΔE</th>
+              <th className="px-2 py-1 text-right">vs expected</th>
               <th className="px-2 py-1 text-right">N runs</th>
               <th className="px-2 py-1 text-center w-[120px]">Action</th>
             </tr>
@@ -486,7 +496,7 @@ function RowItem({
             <Swatch hex={expectedHex} label={expectedHex} />
           )}
         </td>
-        <td className="px-2 py-1.5 text-[color:var(--color-ink-subtle)]" colSpan={3}>
+        <td className="px-2 py-1.5 text-[color:var(--color-ink-subtle)]" colSpan={4}>
           {skipReasonLabel(row.data.reason, row.data.run_count ?? null)}
         </td>
         <td className="px-2 py-1.5 text-center">
@@ -500,10 +510,11 @@ function RowItem({
 
   const burn = row.data;
   const burnHex = labToHex(burn.burn_mean_lab as Lab);
-  const tone =
-    row.bucket === "auto"
+  const stabilityTone =
+    row.bucket === "stable"
       ? "text-[color:var(--color-success)]"
       : "text-[color:var(--color-warning,#b8860b)]";
+  const isUnlinked = burn.palette_entry_id == null;
   return (
     <tr
       className={cn(
@@ -512,7 +523,14 @@ function RowItem({
       )}
     >
       <td className="px-2 py-1.5 text-[color:var(--color-ink-subtle)]">
-        #{cellIndex}
+        <span title={isUnlinked ? "Cell has no palette entry — save creates a new one" : undefined}>
+          #{cellIndex}
+          {isUnlinked && (
+            <span className="ml-1 text-[8px] tracking-[0.16em] uppercase text-[color:var(--color-primary)]">
+              new
+            </span>
+          )}
+        </span>
       </td>
       <td className="px-2 py-1.5">
         <Swatch hex={expectedHex} label={expectedHex} />
@@ -520,8 +538,11 @@ function RowItem({
       <td className="px-2 py-1.5">
         <Swatch hex={burnHex} label={burnHex} />
       </td>
-      <td className={cn("px-2 py-1.5 text-right font-semibold", tone)}>
-        {burn.de_burn_vs_expected.toFixed(1)}
+      <td className={cn("px-2 py-1.5 text-right font-semibold", stabilityTone)}>
+        {burn.stability_de.toFixed(1)}
+      </td>
+      <td className="px-2 py-1.5 text-right text-[color:var(--color-ink-muted)]">
+        {burn.de_vs_expected.toFixed(1)}
       </td>
       <td className="px-2 py-1.5 text-right text-[color:var(--color-ink-muted)]">
         {burn.run_count}
@@ -535,7 +556,7 @@ function RowItem({
       <td className="px-2 py-1.5 text-center">
         <AcceptToggle
           accepted={accepted}
-          flagged={row.bucket === "flagged"}
+          drifted={row.bucket === "drifted"}
           onToggle={onToggle}
         />
       </td>
@@ -545,21 +566,32 @@ function RowItem({
 
 function AcceptToggle({
   accepted,
-  flagged,
+  drifted,
   onToggle,
 }: {
   accepted: boolean;
-  flagged: boolean;
+  drifted: boolean;
   onToggle: () => void;
 }) {
-  const label = accepted ? "Accept" : flagged ? "Flagged — accept" : "Skip";
+  // Bucket (stable / drifted) is already conveyed by the row's
+  // colour-coded stability_de and dim tone, so the button itself just
+  // shows the toggle action. The title attribute carries the longer
+  // explanation for drifted rows so the affordance isn't lost.
+  const title = drifted
+    ? accepted
+      ? "Accepted — will save despite drift"
+      : "Drifted — click to accept anyway"
+    : accepted
+      ? "Stable — will save by default"
+      : "Skipped — won't save";
   return (
     <button
       type="button"
       onClick={onToggle}
       aria-pressed={accepted}
+      title={title}
       className={cn(
-        "h-6 px-2 rounded-[4px] inline-flex items-center gap-1.5",
+        "h-6 px-2 min-w-[68px] rounded-[4px] inline-flex items-center justify-center gap-1.5 whitespace-nowrap",
         "font-mono text-[9.5px] font-semibold tracking-[0.14em] uppercase",
         "border transition-colors focus-visible:outline-none",
         "focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
@@ -577,7 +609,7 @@ function AcceptToggle({
             : "bg-[color:var(--color-ink-subtle)]",
         )}
       />
-      {label}
+      {accepted ? "Accept" : "Skip"}
     </button>
   );
 }
@@ -607,7 +639,7 @@ function SaveBar({
   canSave,
   onSave,
 }: {
-  counts: { toAccept: number; flagged: number; skipped: number };
+  counts: { toAccept: number; drifted: number; skipped: number };
   saving: boolean;
   savedAt: number | null;
   saveError: string | null;
@@ -619,8 +651,8 @@ function SaveBar({
   return (
     <div className="border-t border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-5 py-3 flex flex-wrap items-center gap-3">
       <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-[color:var(--color-ink-subtle)]">
-        will save: <span className="text-[color:var(--color-ink)]">{counts.toAccept}</span>{" "}
-        cell{counts.toAccept === 1 ? "" : "s"}
+        will create: <span className="text-[color:var(--color-ink)]">{counts.toAccept}</span>{" "}
+        new entr{counts.toAccept === 1 ? "y" : "ies"}
       </span>
       {saveError && (
         <span className="font-mono text-[10.5px] text-[color:var(--color-warning,#b8860b)]">
@@ -646,7 +678,7 @@ function SaveBar({
           "disabled:opacity-40 disabled:cursor-not-allowed",
         )}
       >
-        {saving ? "Saving…" : "Save validated colours"}
+        {saving ? "Saving…" : "Save as new palette entries"}
       </button>
     </div>
   );
@@ -689,12 +721,10 @@ function skipReasonLabel(
   runCount: number | null,
 ): string {
   switch (reason) {
-    case "no_palette_link":
-      return "No palette entry linked — can't write back.";
     case "insufficient_runs":
       return runCount != null
-        ? `Only ${runCount} run${runCount === 1 ? "" : "s"} — need ≥ 2 to robust-mean.`
-        : "Not enough runs to robust-mean.";
+        ? `Only ${runCount} run${runCount === 1 ? "" : "s"} — need ≥ 2 to measure stability.`
+        : "Not enough runs to measure stability.";
     case "no_measurements":
       return "No measurements found in the selected results.";
   }

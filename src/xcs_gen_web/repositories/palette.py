@@ -18,7 +18,7 @@ from sqlalchemy import and_, select
 from ..config import DEFAULT_VISIBILITY, STANDALONE_USER_ID
 from ..db import session_scope
 from ..models import palette_entries
-from ..palette import delta_e_2000, hex_to_lab
+from ..palette import delta_e_2000, hex_to_lab, lab_to_hex
 
 
 class NotMutableError(Exception):
@@ -695,6 +695,72 @@ def validate_entry(
         )
         out = s.execute(
             select(palette_entries).where(palette_entries.c.id == eid),
+        ).one()
+    return _row_to_entry(out)
+
+
+def create_validated_entry(
+    *,
+    machine_id: str,
+    material_id: int,
+    burn_mean_lab: tuple[float, float, float],
+    validated_test_id: int,
+    run_count: int,
+    stability_de: float,
+    params: dict[str, Any] | None = None,
+    notes: str = "",
+    sigma: float = 0.0,
+    owner_id: int = STANDALONE_USER_ID,
+    visibility: str = DEFAULT_VISIBILITY,
+) -> dict[str, Any]:
+    """Insert a brand-new palette entry from a validated burn-mean Lab.
+
+    The Stability page's VALIDATE save calls this once per cell that
+    the user accepted as stable. The new entry's ``lab_*`` IS the
+    consensus Lab — no separation between "first-ingested colour" and
+    "validated colour" — but the ``validated_*`` columns are still
+    populated for query convenience (so ``WHERE is_validated`` rolls
+    up cleanly without a UNION). ``validated_residual_de`` stores
+    the *stability* gate value (max cross-run drift) since that's the
+    quality signal worth surfacing on the entry, not a residual
+    against an obsolete pre-validation Lab.
+
+    Returns the inserted entry dict.
+    """
+    L, a, b = float(burn_mean_lab[0]), float(burn_mean_lab[1]), float(burn_mean_lab[2])
+    hex_ = lab_to_hex(L, a, b)
+    now = _now()
+    row = {
+        "test_id": None,
+        "material_id": material_id,
+        "x_value": 0,
+        "y_value": None,
+        "hex": hex_,
+        "lab_l": L, "lab_a": a, "lab_b": b,
+        "params_json": json.dumps(params or {}, separators=(",", ":")),
+        "sigma": sigma,
+        "source": "averaged",
+        "source_result_id": None,
+        "notes": notes,
+        "created_at": now,
+        "owner_id": owner_id,
+        "visibility": visibility,
+        "machine_id": machine_id,
+        "favorited": False,
+        "is_validated": True,
+        "validated_at": now,
+        "validated_test_id": validated_test_id,
+        "validated_lab_l": L,
+        "validated_lab_a": a,
+        "validated_lab_b": b,
+        "validated_run_count": run_count,
+        "validated_residual_de": stability_de,
+    }
+    with session_scope() as s:
+        res = s.execute(palette_entries.insert().values(**row))
+        new_id = res.inserted_primary_key[0]
+        out = s.execute(
+            select(palette_entries).where(palette_entries.c.id == new_id),
         ).one()
     return _row_to_entry(out)
 

@@ -150,22 +150,34 @@ export interface ValidateBatchRequest {
 
 export interface ValidateBatchEntry {
   cell_index: number;
-  palette_entry_id: number;
+  /** Existing palette entry the cell links to, if any. Carried as
+   *  provenance only — save always creates a new entry. */
+  palette_entry_id: number | null;
   burn_mean_lab: [number, number, number];
   expected_lab: [number, number, number];
-  de_burn_vs_expected: number;
+  /** Stability gate: max ΔE between any single run's per-cell mean
+   *  and the across-run consensus. ≤ tolerance → "stable" bucket. */
+  stability_de: number;
+  /** Informational ΔE from the cell's original expected colour.
+   *  Never gates anything (the original may be wrong) but useful to
+   *  surface "how much did this colour move from where we thought
+   *  it was?". */
+  de_vs_expected: number;
   run_count: number;
   n_inputs: number;
+  /** Server-side: was this cell actually persisted on save? */
   persisted: boolean;
+  /** Server-side: id of the freshly-created palette entry on save. */
+  new_entry_id: number | null;
 }
 
 export interface ValidateBatchSkipped {
   cell_index: number;
   palette_entry_id: number | null;
-  reason:
-    | "no_palette_link"
-    | "insufficient_runs"
-    | "no_measurements";
+  /** ``no_palette_link`` is gone — unlinked cells now create new
+   *  entries on save. The remaining reasons are about whether the
+   *  measurements are usable. */
+  reason: "insufficient_runs" | "no_measurements";
   run_count?: number;
 }
 
@@ -175,8 +187,8 @@ export interface ValidateBatchResponse {
   tolerance_de: number;
   result_count: number;
   dry_run: boolean;
-  auto_validated: ValidateBatchEntry[];
-  flagged: ValidateBatchEntry[];
+  stable: ValidateBatchEntry[];
+  drifted: ValidateBatchEntry[];
   skipped: ValidateBatchSkipped[];
 }
 

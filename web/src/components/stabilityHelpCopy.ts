@@ -352,9 +352,9 @@ export const MODE_HELP: Record<ModeHelpKey, AxisHelp> = {
   validate: {
     heading: "Validate",
     definition:
-      "Lock in burn-mean Lab as the authoritative colour for each cell's palette entry.",
+      "Bucket each cell by *cross-run stability*; save the consensus burn-mean as a fresh palette entry.",
     guide:
-      "Per-cell preview of original / burn-mean / ΔE. Cells inside tolerance auto-validate; ones outside flag for review. Saves write the corrected Lab back to the palette + flip is_validated, so auto-match's 'Prefer validated' filter can use them.",
+      "Per-cell preview of expected / burn-mean / stability ΔE / ΔE-vs-expected. Stable cells (consensus tight across runs) save by default; drifted cells need a manual call. Save creates a NEW palette entry with is_validated=true — the original entry, if any, is left untouched. ΔE-vs-original is informational; the gate is intra-cell consistency, not closeness to a colour the original photo might have got wrong.",
     schematic: "pair",
   },
 };

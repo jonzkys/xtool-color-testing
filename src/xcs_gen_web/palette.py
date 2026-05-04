@@ -48,6 +48,35 @@ def hex_to_lab(hex_: str) -> tuple[float, float, float]:
     return _xyz_to_lab(*_linear_srgb_to_xyz(lr, lg, lb))
 
 
+def lab_to_hex(L: float, a: float, b: float) -> str:
+    """Convert CIE Lab (D65) back to ``#rrggbb``. Inverse of
+    ``hex_to_lab``; round-trips through XYZ → linear sRGB → sRGB
+    with channels clamped to [0,1] so out-of-gamut Labs (typical of
+    burn-mean averages) still produce a valid hex.
+    """
+    def f_inv(t: float) -> float:
+        return t ** 3 if t ** 3 > 0.008856 else (t - 16 / 116) / 7.787
+
+    fy = (L + 16) / 116
+    fx = fy + a / 500
+    fz = fy - b / 200
+    xn, yn, zn = 0.95047, 1.00000, 1.08883
+    X, Y, Z = f_inv(fx) * xn, f_inv(fy) * yn, f_inv(fz) * zn
+    r =  3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z
+    g = -0.9692660 * X + 1.8760108 * Y + 0.0415560 * Z
+    b_ = 0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z
+
+    def to_srgb(u: float) -> int:
+        if u <= 0:
+            return 0
+        if u >= 1:
+            return 255
+        v = 12.92 * u if u <= 0.0031308 else 1.055 * (u ** (1 / 2.4)) - 0.055
+        return max(0, min(255, round(v * 255)))
+
+    return f"#{to_srgb(r):02x}{to_srgb(g):02x}{to_srgb(b_):02x}"
+
+
 def delta_e_2000(
     lab1: tuple[float, float, float] | list[float],
     lab2: tuple[float, float, float] | list[float],

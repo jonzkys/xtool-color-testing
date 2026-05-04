@@ -1725,9 +1725,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         user_id: int = Depends(get_current_user),
     ) -> ValidateBatchResponse:
         """Walk a validation test's cells against its uploaded
-        results, bucket them auto / flagged / skipped, and (unless
-        ``dry_run``) persist the validated state on the linked
-        palette entries.
+        results, bucket them stable / drifted / skipped by intra-cell
+        cross-run stability, and (unless ``dry_run``) create new
+        validated palette entries from the consensus Lab of each
+        accepted cell.
+
+        Save semantics: each accepted cell *creates a brand-new
+        palette entry* with ``source='averaged'`` and the burn-mean
+        as its Lab. Linked cells produce a new entry alongside the
+        original; unlinked cells produce an entry on their own. There
+        is no in-place update path — the original entry might itself
+        be wrong, and the new entry is the authoritative record.
 
         The Stability page's VALIDATE mode hits this in dry_run
         mode first to show the preview, then again with
@@ -1766,9 +1774,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # ``vc_repo.list_for_test`` is owner-agnostic — owner is
         # enforced via the parent test's ``t_repo.get`` above.
         cells_full = vc_repo.list_for_test(test_id=tid)
-        # Materialise lab columns the bucketing math expects on each
-        # cell dict — repo returns them under the structured key.
+        # Materialise lab columns + params dict the bucketing + save
+        # path needs. ``params`` is preserved on the new palette entry
+        # so the validated colour records the burn parameters that
+        # produced it (otherwise auto-match has no recipe to apply).
         cells_for_buckets = []
+        cell_params: dict[int, dict] = {}
         for c in cells_full:
             exp = c.get("expected_lab")
             if not isinstance(exp, list) or len(exp) != 3:
@@ -1780,6 +1791,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "expected_lab_a": exp[1],
                 "expected_lab_b": exp[2],
             })
+            cell_params[c["cell_index"]] = c.get("params") or {}
 
         buckets = validate_service.compute_validation_buckets(
             cells=cells_for_buckets,
@@ -1788,39 +1800,47 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             tolerance_de=body.tolerance_de,
         )
 
-        # Apply per-cell overrides: build a target set of cells to
-        # persist. Cells in ``auto`` are persisted by default; cells
-        # in ``flagged`` only if explicitly accepted.
+        # Apply per-cell overrides: build the persist set. Stable
+        # entries persist by default; drifted entries only when
+        # explicitly accepted by the user.
         override_map = {o.cell_index: o.accept for o in body.overrides}
-        to_persist: list[dict] = []
-        auto_response: list[ValidateBatchEntry] = []
-        flagged_response: list[ValidateBatchEntry] = []
-        for entry in buckets["auto_validated"]:
-            persisted = override_map.get(entry["cell_index"], True) and not body.dry_run
-            if persisted:
-                to_persist.append(entry)
-            auto_response.append(ValidateBatchEntry(
-                **entry, persisted=persisted,
-            ))
-        for entry in buckets["flagged"]:
-            persisted = override_map.get(entry["cell_index"], False) and not body.dry_run
-            if persisted:
-                to_persist.append(entry)
-            flagged_response.append(ValidateBatchEntry(
-                **entry, persisted=persisted,
-            ))
+
+        def decide(entry: dict, default_accept: bool) -> bool:
+            return override_map.get(entry["cell_index"], default_accept) and not body.dry_run
+
+        stable_decisions = [(entry, decide(entry, True)) for entry in buckets["stable"]]
+        drifted_decisions = [(entry, decide(entry, False)) for entry in buckets["drifted"]]
 
         # Persist outside the bucketing loop so a partial failure
-        # doesn't leave half the rows updated.
-        for entry in to_persist:
-            pal_repo.validate_entry(
-                entry["palette_entry_id"],
-                validated_lab=tuple(entry["burn_mean_lab"]),
+        # doesn't leave half the rows created. Each accepted cell
+        # gets a brand-new palette entry.
+        machine_id = t.get("machine_id") or "F2Ultra"
+        material_id = t["material_id"]
+        new_ids: dict[int, int] = {}
+        for entry, persist in (*stable_decisions, *drifted_decisions):
+            if not persist:
+                continue
+            new_entry = pal_repo.create_validated_entry(
+                machine_id=machine_id,
+                material_id=material_id,
+                burn_mean_lab=tuple(entry["burn_mean_lab"]),
                 validated_test_id=tid,
-                run_count=entry["run_count"],
+                run_count=int(entry["run_count"]),
+                stability_de=float(entry["stability_de"]),
+                params=cell_params.get(entry["cell_index"]) or {},
                 owner_id=user_id,
             )
+            new_ids[entry["cell_index"]] = new_entry["id"]
 
+        def to_response(entry: dict, persisted: bool) -> ValidateBatchEntry:
+            return ValidateBatchEntry(
+                **entry,
+                persisted=persisted,
+                new_entry_id=new_ids.get(entry["cell_index"]),
+            )
+
+        stable_response = [to_response(e, p) for e, p in stable_decisions]
+        drifted_response = [to_response(e, p) for e, p in drifted_decisions]
         skipped_response = [
             ValidateBatchSkipped(**s) for s in buckets["skipped"]
         ]
@@ -1830,8 +1850,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             tolerance_de=body.tolerance_de,
             result_count=result_count,
             dry_run=body.dry_run,
-            auto_validated=auto_response,
-            flagged=flagged_response,
+            stable=stable_response,
+            drifted=drifted_response,
             skipped=skipped_response,
         )
 
