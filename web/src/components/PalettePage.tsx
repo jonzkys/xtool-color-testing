@@ -13,7 +13,7 @@ import type { PaletteEntry, PaletteQueryResult, TestRecord } from "../types";
 import type { Material } from "../library";
 import { listMaterials, listPresets } from "../api/library";
 import { listTests } from "../api/tests";
-import { formatRoute } from "../router";
+import { formatRoute, type Route } from "../router";
 import { PaletteEntryDialog } from "./PaletteEntryDialog";
 import { getCurrentMachineId } from "../state/machine";
 import { StarToggle } from "./StarToggle";
@@ -439,7 +439,11 @@ function BrowseView({ materials }: { materials: Material[] }) {
 
       <Dialog open={infoEntry !== null} onOpenChange={(o) => !o && setInfoId(null)}>
         {infoEntry && (
-          <InfoModalContent entry={infoEntry} materials={materials} />
+          <InfoModalContent
+            entry={infoEntry}
+            materials={materials}
+            testNames={testNames}
+          />
         )}
       </Dialog>
     </div>
@@ -823,9 +827,14 @@ function FavoritesView({ materials }: { materials: Material[] }) {
 function InfoModalContent({
   entry,
   materials,
+  testNames,
 }: {
   entry: PaletteEntry;
   materials: Material[];
+  /** ``testId → name`` lookup so the test row can read "Test #N ·
+   *  Name" instead of just the bare id. Optional — fall back to the
+   *  bare id when the caller hasn't pre-loaded the map. */
+  testNames?: Record<number, string>;
 }) {
   const [copied, setCopied] = useState(false);
   const materialName =
@@ -964,8 +973,38 @@ function InfoModalContent({
           <FactLabel>Material</FactLabel>
           <FactValue>{materialName}</FactValue>
 
+          {/* Test back-reference — clickable when an id is set. For
+              entries created by the batch validate route, the ingest-
+              time ``test_id`` is null but ``validated_test_id`` carries
+              the source. We surface whichever one points at a real
+              test, biased toward the validation reference because that
+              also gives us a per-cell deep link below. */}
           <FactLabel>Test</FactLabel>
-          <FactValue mono>#{entry.test_id}</FactValue>
+          <dd className="self-center font-mono tabular-nums text-[12.5px] text-[color:var(--color-ink)]">
+            <TestRefLink
+              entry={entry}
+              testNames={testNames ?? {}}
+            />
+          </dd>
+
+          {entry.validated_test_id != null
+            && entry.validated_cell_index != null && (
+              <>
+                <FactLabel>Source cell</FactLabel>
+                <dd className="self-center text-[12.5px]">
+                  <a
+                    href={formatRoute({
+                      name: "stability",
+                      id: entry.validated_test_id,
+                      cell: entry.validated_cell_index,
+                    })}
+                    className="font-mono tabular-nums text-[color:var(--color-secondary)] hover:underline"
+                  >
+                    #{entry.validated_cell_index} · open in stability
+                  </a>
+                </dd>
+              </>
+            )}
 
           <FactLabel>Captured</FactLabel>
           <FactValue mono>{capturedPretty}</FactValue>
@@ -1054,6 +1093,40 @@ function SectionLabel({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
+/* Test back-reference link inside the entry detail panel. Picks
+ * whichever of ``test_id`` / ``validated_test_id`` actually points at
+ * a real test and renders a clickable label. Sweep entries link to
+ * test-detail; validation-derived entries link to stability so the
+ * adjacent "source cell" deep-link can take you straight to the
+ * relevant cell. */
+function TestRefLink({
+  entry,
+  testNames,
+}: {
+  entry: PaletteEntry;
+  testNames: Record<number, string>;
+}) {
+  // Validation-derived entries tend to have ``test_id`` null but
+  // ``validated_test_id`` set — prefer that since it pairs with the
+  // cell deep-link. Fall back to ``test_id`` for sweep entries.
+  const tid = entry.validated_test_id ?? entry.test_id;
+  if (tid == null) return <span>—</span>;
+  const route: Route = entry.validated_test_id != null
+    ? { name: "stability", id: tid }
+    : { name: "test-detail", id: tid };
+  const name = testNames[tid];
+  return (
+    <a
+      href={formatRoute(route)}
+      className="text-[color:var(--color-secondary)] hover:underline"
+    >
+      #{tid}
+      {name ? <span className="text-[color:var(--color-ink-muted)]"> · {name}</span> : null}
+    </a>
+  );
+}
+
 
 function FactLabel({ children }: { children: ReactNode }) {
   return (

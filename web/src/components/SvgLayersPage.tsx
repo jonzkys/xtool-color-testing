@@ -376,11 +376,20 @@ export function SvgLayersPage() {
   }
   function applyPaletteMatch(
     color: string,
-    params: Partial<LayerSpec["base_params"]>,
+    patch: LayerPatch,
     predictedHex: string,
     entryId: number | undefined,
   ) {
-    updateBase(color, params);
+    // Apply both the base_params slice AND the top-level layer fields
+    // (scan_angle / angle_mode / crosshatch). The earlier behaviour
+    // applied only base_params, so a recipe that needed crosshatch=1
+    // got applied as crosshatch=false — visible engraving regression.
+    updateBase(color, patch.base_params);
+    const layerOnly: Partial<LayerSpec> = {};
+    if (patch.scan_angle != null) layerOnly.scan_angle = patch.scan_angle;
+    if (patch.angle_mode != null) layerOnly.angle_mode = patch.angle_mode;
+    if (patch.crosshatch != null) layerOnly.crosshatch = patch.crosshatch;
+    if (Object.keys(layerOnly).length > 0) updateLayer(color, layerOnly);
     setPredictedByColor((prev) => ({ ...prev, [color]: predictedHex }));
     if (entryId != null) {
       setMatchedEntryIdByColor((prev) => ({ ...prev, [color]: entryId }));
@@ -435,13 +444,24 @@ export function SvgLayersPage() {
             noMatch += 1;
             return l;
           }
-          const newParams = paletteParamsToBaseParams(match.best.entry.params);
-          // Compare to what's already there: if the predicted hex is the
-          // same and base_params already match, this is a no-op.
-          const alreadyMatched =
-            predictedByColor[l.color] === match.best.entry.hex &&
-            (Object.entries(newParams) as [keyof typeof newParams, unknown][])
+          const patch = paletteParamsToLayerPatch(match.best.entry.params);
+          // Compare to what's already there: if the predicted hex is
+          // the same AND base_params + the top-level layer fields all
+          // match, this is a no-op. Comparing only base_params (the
+          // earlier behaviour) declared the layer "already matched"
+          // even when crosshatch/angle_mode hadn't yet been applied
+          // — the source of the wrong-colour bug we're fixing.
+          const baseMatches =
+            (Object.entries(patch.base_params) as [keyof BaseParams, unknown][])
               .every(([k, v]) => l.base_params[k] === v);
+          const layerFieldsMatch =
+            (patch.crosshatch == null || l.crosshatch === patch.crosshatch)
+            && (patch.angle_mode == null || l.angle_mode === patch.angle_mode)
+            && (patch.scan_angle == null || l.scan_angle === patch.scan_angle);
+          const alreadyMatched =
+            predictedByColor[l.color] === match.best.entry.hex
+            && baseMatches
+            && layerFieldsMatch;
           nextPredicted[l.color] = match.best.entry.hex;
           nextEntryIds[l.color] = match.best.entry.id;
           if (alreadyMatched) {
@@ -449,7 +469,13 @@ export function SvgLayersPage() {
             return l;
           }
           applied += 1;
-          return { ...l, base_params: { ...l.base_params, ...newParams } };
+          return {
+            ...l,
+            base_params: { ...l.base_params, ...patch.base_params },
+            ...(patch.scan_angle != null ? { scan_angle: patch.scan_angle } : {}),
+            ...(patch.angle_mode != null ? { angle_mode: patch.angle_mode } : {}),
+            ...(patch.crosshatch != null ? { crosshatch: patch.crosshatch } : {}),
+          };
         }),
       }));
       setPredictedByColor(nextPredicted);
@@ -1523,7 +1549,7 @@ function LayerEditor({
   onPatch: (p: Partial<LayerSpec>) => void;
   onBasePatch: (p: Partial<LayerSpec["base_params"]>) => void;
   onPaletteApply: (
-    params: Partial<LayerSpec["base_params"]>,
+    patch: LayerPatch,
     predictedHex: string,
     entryId: number,
   ) => void;
@@ -1825,13 +1851,36 @@ function deltaEToPercent(dE: number): number {
   return Math.max(0, Math.min(100, Math.round(100 - dE * 2)));
 }
 
-function paletteParamsToBaseParams(
+/* Project a palette entry's stored params onto the *layer-shaped*
+ * patch the auto-match path applies. Returns both the
+ * ``base_params`` slice (power/speed/frequency/etc.) AND the
+ * top-level layer fields (``scan_angle``, ``angle_mode``,
+ * ``crosshatch``) — those last three live on ``LayerSpec`` directly,
+ * not inside ``base_params``, and the backend's XCS exporter reads
+ * them from the top level (see ``svg_layers_converter.py``: ``angle_mode=layer.angle_mode``,
+ * ``crosshatch=layer.crosshatch``, ``scan_angle=layer.scan_angle``).
+ *
+ * The previous version returned only the base_params slice, which
+ * silently dropped ``crosshatch`` and ``angle_mode`` from every
+ * auto-matched layer — so a recipe burned with crosshatch=1 was
+ * applied as crosshatch=false, producing the wrong colour. Surfaced
+ * by a user noticing their engrave didn't match the validated swatch
+ * even though everything looked aligned.
+ */
+type LayerPatch = {
+  base_params: Partial<BaseParams>;
+  scan_angle?: number;
+  angle_mode?: "fixed" | "incremental";
+  crosshatch?: boolean;
+};
+
+export function paletteParamsToLayerPatch(
   params: { [k: string]: string | number },
-): Partial<BaseParams> {
+): LayerPatch {
   const laser = params["laser"];
   const toInt = (v: string | number) =>
     typeof v === "number" ? Math.round(v) : Math.round(Number(v));
-  return {
+  const base_params: Partial<BaseParams> = {
     power: typeof params["power"] === "number" ? params["power"] : Number(params["power"]),
     speed: toInt(params["speed"]),
     frequency: toInt(params["frequency"]),
@@ -1840,6 +1889,35 @@ function paletteParamsToBaseParams(
     pulse_width: toInt(params["pulse_width"]),
     laser: laser === "blue" ? "blue" : "red",
   };
+  const out: LayerPatch = { base_params };
+  // ``scan_angle`` is duplicated on BaseParams + LayerSpec; the
+  // exporter reads top-level, so write the layer field here. Keep
+  // it on base_params too for round-trip consistency with how tests
+  // serialise their own scan_angle.
+  const sa = params["scan_angle"];
+  if (sa !== undefined && sa !== null && sa !== "") {
+    const n = typeof sa === "number" ? sa : Number(sa);
+    if (Number.isFinite(n)) {
+      out.scan_angle = n;
+      base_params.scan_angle = n;
+    }
+  }
+  const am = params["angle_mode"];
+  if (am === "fixed" || am === "incremental") {
+    out.angle_mode = am;
+  }
+  const ch = params["crosshatch"];
+  if (ch !== undefined && ch !== null && ch !== "") {
+    // Stored as ``1``/``0`` in palette entry params (validation cells
+    // serialise the bool that way); also tolerate the string forms a
+    // future writer might send.
+    out.crosshatch =
+      ch === 1
+      || ch === "1"
+      || ch === "true"
+      || (typeof ch === "number" && ch > 0);
+  }
+  return out;
 }
 
 function PaletteMatchSection({
@@ -1851,7 +1929,7 @@ function PaletteMatchSection({
   layerColor: string;
   materialId: string;
   onApply: (
-    params: Partial<BaseParams>,
+    patch: LayerPatch,
     predictedHex: string,
     entryId: number,
   ) => void;
@@ -1996,7 +2074,7 @@ function PaletteMatchSection({
                         // Apply propagates a new appliedHex up to the
                         // parent → re-render → derived selectedId picks
                         // up the new chip. No local highlight state.
-                        onApply(paletteParamsToBaseParams(r.entry.params), r.entry.hex, r.entry.id);
+                        onApply(paletteParamsToLayerPatch(r.entry.params), r.entry.hex, r.entry.id);
                       }}
                       aria-pressed={isActive}
                       aria-label={`Apply palette match ${r.entry.hex}`}
@@ -2080,9 +2158,19 @@ function PaletteMatchSection({
             refreshKey={favoritesNonce}
           />
           <div className="font-mono text-[11px] text-[color:var(--color-ink-subtle)]">
-            {Object.entries(paletteParamsToBaseParams(selected.entry.params))
-              .map(([k, v]) => `${k}=${v}`)
-              .join("  ·  ")}
+            {(() => {
+              // Show *everything* the apply path will set on the
+              // layer — base_params plus the top-level layer fields
+              // (scan_angle / angle_mode / crosshatch). Flattening
+              // here matches what actually lands on export, so the
+              // user sees crosshatch=true beside power/speed/etc.
+              const patch = paletteParamsToLayerPatch(selected.entry.params);
+              const flat: Record<string, unknown> = { ...patch.base_params };
+              if (patch.scan_angle != null) flat["scan_angle"] = patch.scan_angle;
+              if (patch.angle_mode != null) flat["angle_mode"] = patch.angle_mode;
+              if (patch.crosshatch != null) flat["crosshatch"] = patch.crosshatch;
+              return Object.entries(flat).map(([k, v]) => `${k}=${v}`).join("  ·  ");
+            })()}
           </div>
         </div>
       )}
@@ -2104,7 +2192,7 @@ function PaletteFavoritesRow({
    *  favourited chip outside the matcher's top-N still highlights here. */
   appliedHex?: string;
   onApply: (
-    params: Partial<BaseParams>,
+    patch: LayerPatch,
     predictedHex: string,
     entryId: number,
   ) => void;
@@ -2205,7 +2293,7 @@ function PaletteFavoritesRow({
             <button
               key={entry.id}
               type="button"
-              onClick={() => onApply(paletteParamsToBaseParams(entry.params), entry.hex, entry.id)}
+              onClick={() => onApply(paletteParamsToLayerPatch(entry.params), entry.hex, entry.id)}
               aria-pressed={isActive}
               title={`ΔE ${dE.toFixed(2)} · ${entry.params.power}% · ${entry.params.speed} mm/s · ${laser}`}
               className={cn(

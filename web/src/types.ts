@@ -283,6 +283,24 @@ export interface PaletteEntry {
   notes: string;
   favorited: boolean;
   created_at: string;
+  /** Validated state — populated by the validation flow on the
+   *  Stability page or by per-entry validate. ``is_validated`` is the
+   *  filter the auto-match's "Prefer validated" toggle uses. The
+   *  ``validated_*`` columns describe the validation event:
+   *  ``validated_test_id`` + ``validated_cell_index`` pinpoint the
+   *  source cell so the palette UI can deep-link "this entry → that
+   *  cell". For entries created by the batch-validate route the
+   *  primary ``lab`` IS the validated value (validated_lab mirrors
+   *  it); for entries that were validated in place via the per-entry
+   *  route the two can differ. ``validated_residual_de`` carries the
+   *  cross-run stability ΔE (i.e. how tight the consensus was). */
+  is_validated?: boolean;
+  validated_at?: string | null;
+  validated_test_id?: number | null;
+  validated_cell_index?: number | null;
+  validated_lab?: number[] | null;
+  validated_run_count?: number | null;
+  validated_residual_de?: number | null;
 }
 
 export interface PaletteQueryResult {
