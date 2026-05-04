@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { labToHex, type Lab } from "../color/math";
-import type { ResultRecord, TestRecord } from "../types";
+import type { GridLayout, ResultRecord, TestRecord } from "../types";
 import { cn } from "../ui";
 import { seriesColour, type FocusedCell } from "./StabilityChart";
 import { cellResidual, signedNum } from "./stabilityStatsMath";
+import { cellRectInImagePx } from "./cellInspectorMath";
+import { useAuthedImage } from "../hooks/useAuthedImage";
 
 interface FocusedCellPanelProps {
   test: TestRecord;
@@ -158,6 +160,23 @@ export function StabilityFocusedCellPanel({
         </div>
       </Section>
 
+      {/* Cell-on-image preview. Defaults to the whole warped photo with
+          a primary-tinted box around the focused cell — the "where on
+          the print did I just click?" answer. The CROP toggle zooms in
+          to just the cell rectangle for a closer read. Renders only
+          when the first selected run has loaded its grid layout; we
+          skip silently rather than show a stub so the panel doesn't
+          flash a placeholder on every focus change. */}
+      {cellsPerRow != null && presentMeasurements.length > 0 && (
+        <CellImagePreview
+          result={presentMeasurements[0]!.result}
+          resultLabel={shortStamp(presentMeasurements[0]!.result.uploaded_at)}
+          seriesIndex={presentMeasurements[0]!.seriesIndex}
+          cellIndex={cellIndex}
+          cellsPerRow={cellsPerRow}
+        />
+      )}
+
       {presentMeasurements.length > 0 && expectedLab != null && (
         <Section
           label={`Measured · ${presentMeasurements.length} run${presentMeasurements.length === 1 ? "" : "s"}`}
@@ -279,7 +298,7 @@ function Section({
   label,
   children,
 }: {
-  label: string;
+  label: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -294,6 +313,239 @@ function Section({
         {label}
       </div>
       {children}
+    </div>
+  );
+}
+
+/** Cell-on-image preview. Lazy-loads the run's warped image + grid
+ *  layout and renders the focused cell either as a primary-tinted box
+ *  on the full photo (default) or zoomed-in to just the cell rect.
+ *
+ *  The toggle is sticky per panel mount: once the user picks CROP
+ *  they keep that mode as they hover/click around the chart, since
+ *  the affordance is consistent (every cell is shown the same way).
+ *  Esc-clearing focus tears the panel down anyway.
+ *
+ *  Failures (missing layout, image fetch error) collapse to a small
+ *  caption rather than spinning forever — the rest of the focus
+ *  panel still grounds the user, and the per-result modal covers the
+ *  diagnostic path if the user really needs the photo. */
+function CellImagePreview({
+  result,
+  resultLabel,
+  seriesIndex,
+  cellIndex,
+  cellsPerRow,
+}: {
+  result: ResultRecord;
+  resultLabel: string;
+  seriesIndex: number;
+  cellIndex: number;
+  cellsPerRow: number;
+}) {
+  const [mode, setMode] = useState<"box" | "crop">("box");
+  const [layout, setLayout] = useState<GridLayout | null>(null);
+  const [layoutErr, setLayoutErr] = useState<string | null>(null);
+  const blobUrl = useAuthedImage(`/api/results/${result.id}/warped-image`);
+  const seriesRing = seriesColour(seriesIndex);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLayout(null);
+    setLayoutErr(null);
+    (async () => {
+      try {
+        const { getGridLayout } = await import("../api/results");
+        const l = await getGridLayout(result.id);
+        if (!cancelled) setLayout(l);
+      } catch (err) {
+        if (!cancelled) setLayoutErr((err as Error).message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [result.id]);
+
+  const physicalRow = Math.floor(cellIndex / cellsPerRow);
+  const displayedCol = cellIndex % cellsPerRow;
+  const rect =
+    layout != null
+      ? cellRectInImagePx(layout, { physicalRow, displayedCol })
+      : null;
+
+  return (
+    <Section
+      label={
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="inline-block h-1.5 w-1.5 rounded-full shrink-0"
+            style={{ backgroundColor: seriesRing }}
+          />
+          <span>Cell on photo · {resultLabel}</span>
+        </span>
+      }
+    >
+      <div className="flex items-center gap-1 mb-1.5">
+        <CellPreviewModeButton
+          on={mode === "box"}
+          onClick={() => setMode("box")}
+          label="Box"
+          title="Whole warped photo with a box on the focused cell"
+        />
+        <CellPreviewModeButton
+          on={mode === "crop"}
+          onClick={() => setMode("crop")}
+          label="Crop"
+          title="Zoom in to just the focused cell"
+        />
+      </div>
+      <CellImageCanvas
+        mode={mode}
+        blobUrl={blobUrl}
+        layout={layout}
+        layoutErr={layoutErr}
+        rect={rect}
+      />
+    </Section>
+  );
+}
+
+function CellPreviewModeButton({
+  on,
+  onClick,
+  label,
+  title,
+}: {
+  on: boolean;
+  onClick: () => void;
+  label: string;
+  title: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      title={title}
+      className={cn(
+        "h-5 px-2 rounded-[3px] font-mono text-[9px] font-semibold tracking-[0.18em] uppercase tabular-nums border transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
+        on
+          ? "bg-[color:var(--color-primary)] text-white border-[color:var(--color-primary)]"
+          : "bg-[color:var(--color-surface)] border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+function CellImageCanvas({
+  mode,
+  blobUrl,
+  layout,
+  layoutErr,
+  rect,
+}: {
+  mode: "box" | "crop";
+  blobUrl: string | null;
+  layout: GridLayout | null;
+  layoutErr: string | null;
+  rect: { left: number; top: number; width: number; height: number } | null;
+}) {
+  if (layoutErr != null) {
+    return (
+      <div className="aspect-[4/3] rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] flex items-center justify-center px-2 text-center font-mono text-[9.5px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
+        layout unavailable
+      </div>
+    );
+  }
+  if (blobUrl == null || layout == null || rect == null) {
+    return (
+      <div className="aspect-[4/3] rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] flex items-center justify-center font-mono text-[9.5px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
+        loading…
+      </div>
+    );
+  }
+  const { image_width_px: imgW, image_height_px: imgH } = layout;
+  if (mode === "crop") {
+    // viewBox crops the image to the cell rect — clean SVG-native
+    // approach with no CSS background-position arithmetic. The aspect
+    // box matches the cell's aspect to avoid letterboxing.
+    const aspect = `${rect.width} / ${rect.height}`;
+    return (
+      <div
+        className="rounded-[4px] border-2 border-[color:var(--color-primary)] bg-[color:var(--color-surface)] overflow-hidden"
+        style={{ aspectRatio: aspect, maxHeight: 200 }}
+      >
+        <svg
+          viewBox={`${rect.left} ${rect.top} ${rect.width} ${rect.height}`}
+          preserveAspectRatio="xMidYMid meet"
+          className="w-full h-full block"
+        >
+          <image
+            href={blobUrl}
+            x={0}
+            y={0}
+            width={imgW}
+            height={imgH}
+            preserveAspectRatio="none"
+          />
+        </svg>
+      </div>
+    );
+  }
+  // Default: full image with a primary-tinted box around the cell.
+  // Stroke width scales so the box stays visible regardless of how
+  // large the photo is in image-pixel units.
+  const stroke = Math.max(2, Math.min(imgW, imgH) / 200);
+  return (
+    <div
+      className="rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-hidden"
+      style={{ aspectRatio: `${imgW} / ${imgH}`, maxHeight: 200 }}
+    >
+      <svg
+        viewBox={`0 0 ${imgW} ${imgH}`}
+        preserveAspectRatio="xMidYMid meet"
+        className="w-full h-full block"
+      >
+        <image
+          href={blobUrl}
+          x={0}
+          y={0}
+          width={imgW}
+          height={imgH}
+          preserveAspectRatio="none"
+        />
+        <rect
+          x={rect.left}
+          y={rect.top}
+          width={rect.width}
+          height={rect.height}
+          fill="none"
+          stroke="var(--color-primary)"
+          strokeWidth={stroke}
+        />
+        {/* Subtle dimmer ring outside the box so the cell pops without
+            obscuring its colour. Achieved via a path with even-odd
+            fill: outer rect minus inner rect. */}
+        <path
+          d={`M0 0 H${imgW} V${imgH} H0 Z M${rect.left} ${rect.top} V${rect.top + rect.height} H${rect.left + rect.width} V${rect.top} Z`}
+          fillRule="evenodd"
+          fill="rgba(0,0,0,0.32)"
+        />
+        <rect
+          x={rect.left}
+          y={rect.top}
+          width={rect.width}
+          height={rect.height}
+          fill="none"
+          stroke="var(--color-primary)"
+          strokeWidth={stroke}
+        />
+      </svg>
     </div>
   );
 }
