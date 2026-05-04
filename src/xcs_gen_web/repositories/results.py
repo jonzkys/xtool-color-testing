@@ -81,6 +81,34 @@ def get(rid: int, *, owner_id: int = STANDALONE_USER_ID) -> dict[str, Any] | Non
         return _row(row) if row else None
 
 
+def find_by_hash_for_test(
+    tid: int,
+    sha256: str,
+    *,
+    owner_id: int = STANDALONE_USER_ID,
+) -> dict[str, Any] | None:
+    """Return the existing result row whose ``image_sha256`` matches the
+    given hash for this test (owner-scoped), or ``None`` if no match.
+
+    Drives the upload-time dedup check: re-uploading the same photo to
+    the same test 409s instead of duplicating disk + DB rows. Hard-
+    deleting a result removes the row and its hash, so the user can
+    delete-and-re-upload any time. ``include_excluded`` is intentionally
+    not configurable — an excluded row still occupies storage and the
+    user almost certainly meant the same upload, just hidden."""
+    with session_scope() as s:
+        row = s.execute(
+            select(results).where(
+                and_(
+                    results.c.test_id == tid,
+                    results.c.image_sha256 == sha256,
+                    results.c.owner_id == owner_id,
+                ),
+            ).limit(1)
+        ).one_or_none()
+        return _row(row) if row else None
+
+
 def list_by_test(
     tid: int, *, owner_id: int = STANDALONE_USER_ID, include_excluded: bool = True,
 ) -> list[dict[str, Any]]:

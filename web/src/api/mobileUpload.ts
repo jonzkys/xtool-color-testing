@@ -71,6 +71,25 @@ export async function uploadFromMobile(
       { kind: "no_markers" },
     );
   }
+  if (r.status === 409) {
+    // SHA-256 dedup — surface the existing result id so the row
+    // renderer can read "duplicate of #N" instead of a generic
+    // failure.
+    const body = await r.json().catch(() => ({}));
+    const detail = body?.detail;
+    const existingId =
+      detail && typeof detail === "object" && typeof detail.existing_result_id === "number"
+        ? detail.existing_result_id
+        : undefined;
+    throw Object.assign(
+      new Error(
+        (detail && typeof detail.message === "string"
+          ? detail.message
+          : null) ?? "duplicate of an existing result",
+      ),
+      { kind: "duplicate", existingResultId: existingId },
+    );
+  }
   if (!r.ok) {
     throw Object.assign(
       new Error(`upload failed: ${r.status}`),

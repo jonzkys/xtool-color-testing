@@ -55,18 +55,29 @@ describe("MobileUploadPage", () => {
     });
     render(<MobileUploadPage mid="abc" />);
     await waitFor(() =>
-      expect(screen.getByText(/Take or choose photo/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Take or choose photos/i)).toBeInTheDocument(),
     );
 
     const input = screen.getByTestId("file-input") as HTMLInputElement;
     const file = new File(["bytes"], "p.jpg", { type: "image/jpeg" });
     Object.defineProperty(input, "files", { value: [file] });
+    // ``URL.createObjectURL`` isn't implemented in jsdom — stub it for
+    // the new multi-file row's thumbnail preview.
+    if (typeof URL.createObjectURL !== "function") {
+      Object.defineProperty(URL, "createObjectURL", {
+        value: () => "blob:fake",
+      });
+      Object.defineProperty(URL, "revokeObjectURL", { value: () => {} });
+    }
     fireEvent.change(input);
 
     await waitFor(() =>
       expect(screen.getByText(/Speed test #4/)).toBeInTheDocument(),
     );
-    expect(screen.getByRole("button", { name: /upload another/i }))
-      .toBeInTheDocument();
+    // After a successful upload the per-file queue is in place, and
+    // the primary button flips to "Add more photos" so the user can
+    // keep going.
+    expect(screen.getByText(/Add more photos/i)).toBeInTheDocument();
+    expect(screen.getByText(/Uploaded — Speed test #4/)).toBeInTheDocument();
   });
 });
