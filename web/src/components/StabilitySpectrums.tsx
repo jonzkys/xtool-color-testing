@@ -412,6 +412,38 @@ function SpectrumsCanvas({
         >
           {yMeta.label}{simulationActive ? " · simulated" : ""}
         </text>
+        {/* Per-cell hue strip — only when the ordering is by expected
+            hue. Each cell renders as a tiny swatch tinted with its
+            palette hex, aligned exactly with that cell's bar above.
+            Reads as a continuous spectrum when the palette covers
+            the wheel, and lets the user map "this dent in the bars"
+            back to "that orange". Sits 8 px below the tick labels
+            and 8 px above the axis title for breathing room. */}
+        {order === "expected_hue" && sorted.length > 0 && (() => {
+          const stripY = plotBottom + 26;
+          const stripH = 6;
+          // Use the same slot width as the bars so swatches and bars
+          // share the X grid exactly. 1 px left out so adjacent
+          // swatches read as separate ticks at low cell counts; at
+          // high counts the rounding floors that out and we get a
+          // continuous gradient.
+          const w = Math.max(1, slot - 1);
+          return (
+            <g aria-hidden>
+              {sorted.map((s, i) => (
+                <rect
+                  key={`hue-strip-${s.cellIndex}`}
+                  x={xForIndex(i) - w / 2}
+                  y={stripY}
+                  width={w}
+                  height={stripH}
+                  fill={s.expectedHex}
+                />
+              ))}
+            </g>
+          );
+        })()}
+
         {/* X axis label band. */}
         <text
           x={(plotRight - plotLeft) / 2 + plotLeft}
