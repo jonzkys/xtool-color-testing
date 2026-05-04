@@ -40,6 +40,15 @@ export interface PixelArtLayerRow {
   enabled: boolean;
   /** Member fraction within the post-quantise grid; 0..1. */
   areaPct: number;
+  /** Absolute count of grid cells assigned to this centroid — the
+   *  quantitative analogue of svg-layers' "× shapes" stat. Lets the
+   *  user gauge layer significance beyond the percentage. */
+  cellCount: number;
+  /** Whether the centroid is near-white (bright + neutral). The page
+   *  hides these by default — same convention as svg-layers — since
+   *  they almost always represent the photo background and engraving
+   *  them wastes time. */
+  isNearWhite: boolean;
   matchedEntry: PaletteEntry | null;
   baseParams: BaseParams;
   materialId: string | null;
@@ -248,13 +257,24 @@ function LayerRow({
         style={{ background: row.color }}
       />
       <div className="min-w-0 flex-1 flex flex-col">
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-baseline gap-2 flex-wrap">
           <span className="font-mono text-[11.5px] text-[color:var(--color-ink)] truncate">
             {row.color}
           </span>
-          <span className="font-mono text-[10.5px] tabular-nums text-[color:var(--color-ink-subtle)]">
-            · {(row.areaPct * 100).toFixed(0)}%
+          <span
+            className="font-mono text-[10.5px] tabular-nums text-[color:var(--color-ink-subtle)]"
+            title={`${row.cellCount} cell${row.cellCount === 1 ? "" : "s"} · ${(row.areaPct * 100).toFixed(1)}% of grid`}
+          >
+            · {row.cellCount.toLocaleString()} cells · {(row.areaPct * 100).toFixed(0)}%
           </span>
+          {row.isNearWhite && (
+            <span
+              className="font-mono text-[9px] tracking-[0.14em] uppercase px-1 py-0.5 rounded-[3px] border border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)]"
+              title="Near-white — disabled by default to skip the background. Tick the box to engrave it anyway."
+            >
+              white
+            </span>
+          )}
         </div>
         <div className="text-[11px] text-[color:var(--color-ink-muted)] truncate">
           {!row.enabled ? (
