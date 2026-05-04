@@ -45,3 +45,30 @@ def test_single_rect_emits_one_rect_element():
     assert rect.layer_color == "#000000"
     assert rect.width == 2
     assert rect.height == 2
+
+
+def test_disabled_layer_drops_its_rects():
+    req = _req(
+        rects=[
+            PixelArtRectSpec(x=0, y=0, width=2, height=2, color="#000000"),  # enabled
+            PixelArtRectSpec(x=4, y=0, width=2, height=2, color="#ffffff"),  # disabled
+            PixelArtRectSpec(x=8, y=0, width=2, height=2, color="#000000"),  # enabled
+        ],
+        layers=[
+            PixelArtLayerSpec(color="#000000", enabled=True, base_params=_params()),
+            PixelArtLayerSpec(color="#ffffff", enabled=False, base_params=_params()),
+        ],
+    )
+    project = build_pixel_art_project(req)
+    assert len(project.elements) == 2
+    assert all(e.layer_color == "#000000" for e in project.elements)
+
+
+def test_all_disabled_raises():
+    import pytest
+
+    req = _req(
+        layers=[PixelArtLayerSpec(color="#000000", enabled=False, base_params=_params())],
+    )
+    with pytest.raises(ValueError, match="No enabled rects"):
+        build_pixel_art_project(req)
