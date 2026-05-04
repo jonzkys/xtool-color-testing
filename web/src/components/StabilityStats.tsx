@@ -108,7 +108,10 @@ export function StabilityStats({
           Stats
         </span>
       </div>
-      <div className="flex-1 min-h-0 overflow-auto p-3 flex flex-col gap-3">
+      <div
+        className="flex-1 min-h-0 overflow-y-scroll p-3 flex flex-col gap-3"
+        style={{ scrollbarGutter: "stable" }}
+      >
         {prependSlot}
         {series.length === 0 ? (
           <div className="px-1 py-6 text-center font-mono text-[10px] tracking-[0.16em] uppercase text-[color:var(--color-ink-subtle)]">

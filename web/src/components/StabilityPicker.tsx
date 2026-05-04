@@ -132,7 +132,10 @@ export function StabilityPicker({
       </div>
 
       {/* ── Test list ────────────────────────────────────────────────── */}
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div
+        className="flex-1 min-h-0 overflow-y-scroll"
+        style={{ scrollbarGutter: "stable" }}
+      >
         {tests.length === 0 ? (
           <EmptyState
             title="No validation tests"
@@ -207,7 +210,10 @@ export function StabilityPicker({
             </span>
           )}
         </div>
-        <div className="max-h-[260px] overflow-auto border-t border-[color:var(--color-border)]/60">
+        <div
+          className="max-h-[260px] overflow-y-scroll border-t border-[color:var(--color-border)]/60"
+          style={{ scrollbarGutter: "stable" }}
+        >
           {selectedTestId == null ? (
             <div className="px-3 py-6 text-center font-mono text-[10px] tracking-[0.16em] uppercase text-[color:var(--color-ink-subtle)]">
               Pick a base test ↑
