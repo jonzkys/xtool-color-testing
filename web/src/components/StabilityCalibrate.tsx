@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { deltaE76, type Lab } from "../color/math";
+import { deltaE76, labToHex, type Lab } from "../color/math";
 import type { ValidationCell } from "../types";
 import { cn } from "../ui";
 import {
@@ -90,10 +90,16 @@ export function StabilityCalibrate({
   const fit = fitResult.fit;
   return (
     <div className="flex-1 min-h-0 overflow-auto rounded-[10px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]">
+      <CalibrateCaption referenceLabel={reference?.label ?? "—"} />
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-px bg-[color:var(--color-border)]">
         <TransformPanel transform={fit.transform} />
         <FitQualityPanel fit={fit} />
       </div>
+      <PerCellPreview
+        cells={cells}
+        reference={reference!}
+        transform={fit.transform}
+      />
       <DistributionPanel
         before={distribution.before}
         after={distribution.after}
@@ -102,6 +108,169 @@ export function StabilityCalibrate({
         onApplyToChartChange={onApplyToChartChange}
       />
     </div>
+  );
+}
+
+/* ─── Caption ──────────────────────────────────────────────────────────
+ *
+ * One-line orientation: what the calibrate tab fits and what the
+ * APPLY toggle does. Every other tab is "show the data"; this tab
+ * is "fit a model and preview a correction" — the user should know
+ * which run feeds the fit before they read the matrix.
+ */
+function CalibrateCaption({ referenceLabel }: { referenceLabel: string }) {
+  return (
+    <div className="px-5 py-3 border-b border-[color:var(--color-border)] bg-[color:var(--color-surface)]">
+      <p className="font-mono text-[11px] text-[color:var(--color-ink-muted)] leading-relaxed m-0">
+        Fits a Lab → Lab affine that pulls{" "}
+        <span className="font-semibold text-[color:var(--color-ink)]">
+          {referenceLabel}
+        </span>
+        ’s measured cells back toward the palette’s expected colours.{" "}
+        <span className="text-[color:var(--color-ink-subtle)]">
+          A is the 3 × 3 channel mix; b is the per-channel offset.
+        </span>{" "}
+        Toggle <span className="font-semibold">APPLY TO CHART</span> below
+        to preview the correction in SCATTER / SPATIAL / SPECTRUMS / POLAR.
+      </p>
+    </div>
+  );
+}
+
+/* ─── Per-cell preview ────────────────────────────────────────────────
+ *
+ * One row per validation cell, three swatches each:
+ *   EXPECTED — the palette's target colour (cell.expected_hex)
+ *   BEFORE   — the reference run's measured Lab → hex
+ *   AFTER    — applyTransform(measured) → hex (post-correction)
+ *
+ * Plus a ΔE label per row for before / after so the user can see
+ * which cells the calibration helps vs hurts. Sorted by BEFORE ΔE
+ * descending so the worst offenders sit at the top.
+ */
+function PerCellPreview({
+  cells,
+  reference,
+  transform,
+}: {
+  cells: ValidationCell[];
+  reference: SeriesInput;
+  transform: AffineTransform;
+}) {
+  const rows = useMemo(() => {
+    const out: {
+      cellIndex: number;
+      expectedHex: string;
+      beforeHex: string;
+      afterHex: string;
+      beforeDe: number;
+      afterDe: number;
+    }[] = [];
+    for (const c of cells) {
+      const exp = c.expected_lab as Lab | number[];
+      if (!Array.isArray(exp) || exp.length !== 3) continue;
+      const m = reference.cells.get(c.cell_index);
+      if (m == null) continue;
+      const measured: Lab = [m.lab[0], m.lab[1], m.lab[2]];
+      const expected: Lab = [exp[0], exp[1], exp[2]];
+      const correctedLab = applyTransform(transform, measured);
+      out.push({
+        cellIndex: c.cell_index,
+        expectedHex: c.expected_hex,
+        beforeHex: m.hex,
+        afterHex: labToHex(correctedLab),
+        beforeDe: deltaE76(measured, expected),
+        afterDe: deltaE76(correctedLab, expected),
+      });
+    }
+    out.sort((a, b) => b.beforeDe - a.beforeDe);
+    return out;
+  }, [cells, reference, transform]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <section className="border-t border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] p-5">
+      <PanelHeading
+        title="Per-cell preview"
+        subtitle={`${rows.length} cell${rows.length === 1 ? "" : "s"} · sorted by pre-correction ΔE`}
+      />
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full font-mono text-[10.5px] tabular-nums">
+          <thead>
+            <tr className="text-left text-[9px] font-semibold tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
+              <th className="px-2 py-1 w-[44px]">Cell</th>
+              <th className="px-2 py-1">Expected</th>
+              <th className="px-2 py-1">Before</th>
+              <th className="px-2 py-1">After</th>
+              <th className="px-2 py-1 text-right">ΔE before</th>
+              <th className="px-2 py-1 text-right">ΔE after</th>
+              <th className="px-2 py-1 text-right">Δ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const improved = r.afterDe < r.beforeDe;
+              const delta = r.afterDe - r.beforeDe;
+              return (
+                <tr
+                  key={r.cellIndex}
+                  className="border-t border-[color:var(--color-border)]/60"
+                >
+                  <td className="px-2 py-1 text-[color:var(--color-ink-subtle)]">
+                    #{r.cellIndex}
+                  </td>
+                  <td className="px-2 py-1">
+                    <PreviewSwatch hex={r.expectedHex} label={r.expectedHex} />
+                  </td>
+                  <td className="px-2 py-1">
+                    <PreviewSwatch hex={r.beforeHex} label={r.beforeHex} />
+                  </td>
+                  <td className="px-2 py-1">
+                    <PreviewSwatch hex={r.afterHex} label={r.afterHex} />
+                  </td>
+                  <td className="px-2 py-1 text-right text-[color:var(--color-ink-muted)]">
+                    {r.beforeDe.toFixed(1)}
+                  </td>
+                  <td className="px-2 py-1 text-right text-[color:var(--color-ink)]">
+                    {r.afterDe.toFixed(1)}
+                  </td>
+                  <td
+                    className={cn(
+                      "px-2 py-1 text-right",
+                      improved
+                        ? "text-[color:var(--color-success)]"
+                        : "text-[color:var(--color-warning,#b8860b)]",
+                    )}
+                  >
+                    {delta >= 0 ? "+" : ""}
+                    {delta.toFixed(1)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function PreviewSwatch({ hex, label }: { hex: string; label: string }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5"
+      title={label}
+    >
+      <span
+        aria-hidden
+        className="inline-block h-4 w-7 rounded-[3px] border border-[color:var(--color-border-strong)] shrink-0"
+        style={{ background: hex }}
+      />
+      <span className="font-mono text-[10px] tabular-nums text-[color:var(--color-ink-muted)] uppercase">
+        {hex}
+      </span>
+    </span>
   );
 }
 
