@@ -133,6 +133,7 @@ def list_all(
     material_id: int | None = None,
     status: str | None = None,
     machine_id: str | None = None,
+    kind: str | None = None,
 ) -> list[dict[str, Any]]:
     with session_scope() as s:
         q = select(tests).where(tests.c.owner_id == owner_id)
@@ -144,6 +145,8 @@ def list_all(
             q = q.where(tests.c.status == status)
         else:
             q = q.where(tests.c.status != "deleted")
+        if kind is not None:
+            q = q.where(tests.c.kind == kind)
         q = q.order_by(tests.c.id.desc())
         rows = s.execute(q).all()
         ingested = _ingested_test_ids(s, owner_id=owner_id)

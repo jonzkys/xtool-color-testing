@@ -3,12 +3,20 @@ import { ApiError, j } from "./_fetch";
 import { captureHandledError } from "../sentry";
 
 export async function listTests(params: {
-  material_id?: number; status?: string; machine_id?: string;
+  material_id?: number;
+  status?: string;
+  machine_id?: string;
+  /** Restrict to tests of a single kind. Used by the Stability page,
+   *  which only ever cares about validation tests, so it doesn't have
+   *  to download every sweep test for the user just to client-filter
+   *  them out. */
+  kind?: "sweep" | "validation";
 } = {}): Promise<TestRecord[]> {
   const qs = new URLSearchParams();
   if (params.material_id) qs.set("material_id", String(params.material_id));
   if (params.status) qs.set("status", params.status);
   if (params.machine_id) qs.set("machine_id", params.machine_id);
+  if (params.kind) qs.set("kind", params.kind);
   return j(await fetch(`/api/tests?${qs.toString()}`));
 }
 export async function getTest(id: number): Promise<TestRecord> {
