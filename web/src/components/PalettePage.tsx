@@ -497,11 +497,22 @@ function EntryCard({
         className="aspect-[4/3] w-full border-b border-[color:var(--color-border)] relative"
         style={{ background: entry.hex }}
       >
-        {isManual && (
-          <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-[4px] text-[9px] font-mono font-semibold tracking-[0.08em] uppercase bg-[color:var(--color-accent,#caa14b)] text-black/85">
-            MAN
-          </span>
-        )}
+        <div className="absolute top-1.5 left-1.5 flex flex-col items-start gap-1">
+          {isManual && (
+            <span className="px-1.5 py-0.5 rounded-[4px] text-[9px] font-mono font-semibold tracking-[0.08em] uppercase bg-[color:var(--color-accent,#caa14b)] text-black/85">
+              MAN
+            </span>
+          )}
+          {entry.is_validated && (
+            <span
+              className="px-1.5 py-0.5 rounded-[4px] text-[9px] font-mono font-semibold tracking-[0.08em] uppercase bg-[color:var(--color-success)] text-white inline-flex items-center gap-0.5"
+              title={validatedTooltip(entry)}
+            >
+              <Check className="h-2.5 w-2.5" strokeWidth={3} />
+              VAL
+            </span>
+          )}
+        </div>
         <StarToggle
           favorited={entry.favorited}
           onChange={(next) => onFavoriteToggle(entry, next)}
@@ -1014,6 +1025,36 @@ function InfoModalContent({
             <SourceBadge source={entry.source} />
           </dd>
 
+          {entry.is_validated && (
+            <>
+              <FactLabel>Validated</FactLabel>
+              <dd className="self-center flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] bg-[color:var(--color-success)]/15 text-[color:var(--color-success)] text-[11px] font-semibold">
+                  <Check className="h-3 w-3" strokeWidth={3} />
+                  Validated
+                </span>
+                {entry.validated_residual_de != null && (
+                  <span
+                    className="font-mono tabular-nums text-[12px] text-[color:var(--color-ink-muted)]"
+                    title="Residual ΔE — the validation event's quality signal. For entries created by the batch validate flow this is the cross-run stability (max ΔE between any single run and the consensus). For per-entry validates it's the residual between the original and validated Lab."
+                  >
+                    ΔE {entry.validated_residual_de.toFixed(2)}
+                  </span>
+                )}
+                {entry.validated_run_count != null && (
+                  <span className="font-mono tabular-nums text-[11.5px] text-[color:var(--color-ink-subtle)]">
+                    · {entry.validated_run_count} run{entry.validated_run_count === 1 ? "" : "s"}
+                  </span>
+                )}
+                {entry.validated_at && (
+                  <span className="font-mono tabular-nums text-[11.5px] text-[color:var(--color-ink-subtle)]">
+                    · {entry.validated_at.slice(0, 10)}
+                  </span>
+                )}
+              </dd>
+            </>
+          )}
+
           <FactLabel>Deviation</FactLabel>
           <dd className="self-center flex items-center gap-3">
             <SigmaMeter sigma={entry.sigma} />
@@ -1125,6 +1166,25 @@ function TestRefLink({
       {name ? <span className="text-[color:var(--color-ink-muted)]"> · {name}</span> : null}
     </a>
   );
+}
+
+
+/* Hover string for the VAL pill on entry cards. Crisp single line —
+ * the detail panel surfaces the same numbers in a more spacious
+ * format, so we keep the swatch hover to the at-a-glance summary. */
+function validatedTooltip(entry: PaletteEntry): string {
+  const parts: string[] = ["Validated"];
+  if (entry.validated_residual_de != null) {
+    parts.push(`ΔE ${entry.validated_residual_de.toFixed(1)}`);
+  }
+  if (entry.validated_run_count != null) {
+    parts.push(`${entry.validated_run_count} run${entry.validated_run_count === 1 ? "" : "s"}`);
+  }
+  if (entry.validated_at) {
+    const d = new Date(entry.validated_at);
+    if (!Number.isNaN(d.getTime())) parts.push(d.toISOString().slice(0, 10));
+  }
+  return parts.join(" · ");
 }
 
 
