@@ -18,7 +18,7 @@ from sqlalchemy import and_, or_ as sa_or, select
 from ..config import DEFAULT_VISIBILITY, STANDALONE_USER_ID
 from ..db import session_scope
 from ..models import palette_entries
-from ..palette import delta_e_2000, hex_to_lab, lab_to_hex
+from ..palette import delta_e_76, hex_to_lab, lab_to_hex
 
 
 class NotMutableError(Exception):
@@ -420,7 +420,16 @@ def query_by_hex(
     machine_id: str | None = None,
     validated_only: bool = False,
 ) -> list[dict[str, Any]]:
-    """Closest-ΔE2000 search inside the caller's palette.
+    """Closest-ΔE76 search inside the caller's palette.
+
+    Was ΔE2000 — switched to ΔE76 because CIEDE2000 has a known edge
+    case for low-chroma references (greys) where the averaged hue
+    accidentally hits the dΘ Gaussian centred at 275° and pulls ΔE
+    down by tens of units. We saw a vivid magenta rank closer to a
+    grey than to an actual pink (15.06 vs 17.40) — perceptually
+    nonsense (real ΔE76 was 98.5 vs 59.5). ΔE76 has no edge cases
+    and matches what the FPS auto-pick already uses, so rankings
+    are now consistent across both surfaces.
 
     ``validated_only=True`` restricts the candidate set to entries
     where ``is_validated`` is set — i.e. drop the lowest-ΔE match
@@ -434,7 +443,7 @@ def query_by_hex(
     )
     scored = []
     for r in rows:
-        de = delta_e_2000(target, tuple(r["lab"]))
+        de = delta_e_76(target, tuple(r["lab"]))
         scored.append({"entry": r, "delta_e": de})
     scored.sort(key=lambda x: x["delta_e"])
     return scored[:limit]

@@ -33,6 +33,39 @@ def _seed_result(tid: int) -> int:
     )["id"]
 
 
+def test_query_by_hex_ranks_magenta_closer_to_pink_than_grey(fresh_db):
+    """Regression: a vivid magenta target should rank a pink entry
+    above a grey entry. Under the old ΔE2000 ranking the magenta
+    landed closer to grey than to pink (15.06 vs 17.40 — a known
+    CIEDE2000 quirk where the dΘ Gaussian fires when the averaged
+    hue lands at ~275° because the grey's atan2 noise pulled the
+    average there). ΔE76 has no edge case and ranks correctly:
+    magenta vs grey ≈ 98, magenta vs pink ≈ 60."""
+    mid = _seed_material()
+    tid = _seed_test(mid)
+    # The exact hexes the user reported on prod. ``#d546f2`` is the
+    # query target; ``#798f96`` is the offending grey; ``#d67db0``
+    # is the actual perceptual nearest-neighbour.
+    repo.insert_bulk([
+        dict(test_id=tid, material_id=mid, x_value=1, y_value=None,
+             hex="#798f96", sigma=0.0, source="averaged",
+             source_result_id=None, params={}),
+        dict(test_id=tid, material_id=mid, x_value=2, y_value=None,
+             hex="#d67db0", sigma=0.0, source="averaged",
+             source_result_id=None, params={}),
+    ])
+    results = repo.query_by_hex("#d546f2", limit=2, material_id=mid)
+    assert results[0]["entry"]["hex"] == "#d67db0", (
+        "Expected pink to rank #1 against vivid magenta; got "
+        f"{results[0]['entry']['hex']} (the old ΔE2000 ranking would "
+        "have put grey #798f96 first)"
+    )
+    assert results[1]["entry"]["hex"] == "#798f96"
+    # Sanity: the ΔE76 numbers should match the math we expect.
+    assert results[0]["delta_e"] < 80   # pink is well under the grey
+    assert results[1]["delta_e"] > 90   # grey is far
+
+
 def test_insert_and_query(fresh_db):
     mid = _seed_material()
     tid = _seed_test(mid)
