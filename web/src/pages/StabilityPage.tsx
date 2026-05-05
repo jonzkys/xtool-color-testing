@@ -61,6 +61,14 @@ export function StabilityPage() {
   // sweep cells from the spec + reference run when the toggle is on).
   type StabilityKind = "validation" | "sweep";
   const [kindFilter, setKindFilter] = useState<StabilityKind>("validation");
+  // Deep-link guard: if the URL points at a specific test id, the
+  // picker has to fetch *that test's* kind first and seed kindFilter
+  // from it. Otherwise the default kindFilter="validation" wins, the
+  // initial listTests call returns the wrong family, and the page
+  // resets ``selectedTestId`` to the newest in-family test —
+  // silently swallowing the deep link. ``kindResolved`` gates the
+  // listTests effect until the kind seed has finished.
+  const [kindResolved, setKindResolved] = useState<boolean>(routeId == null);
 
   // Cache base-test detail (with validation_cells) by id so re-selection
   // is instant. The list endpoint also carries validation_cells, so
@@ -197,12 +205,40 @@ export function StabilityPage() {
       .catch(() => {});
   }, []);
 
-  // Test list re-fetches whenever the kind toggle flips. Backend filters
-  // by ``kind`` so the dropdown doesn't pull both families. Resetting
-  // ``selectedTestId`` on the way in prevents a stale id from one
-  // family carrying across into the other (which would render an empty
-  // chart with no obvious cause).
+  // Resolve the URL test's kind on mount (if any) so kindFilter snaps
+  // to the right family before the listTests effect fires. Without
+  // this, a deep link to a sweep test gets clobbered: kindFilter
+  // defaults to "validation", listTests returns validation results,
+  // the deep-linked id isn't in there, and the picker silently jumps
+  // to the newest validation. Runs once per page mount — subsequent
+  // user-driven kind toggles don't refetch the test, they just flip
+  // ``kindFilter`` directly.
   useEffect(() => {
+    if (routeId == null) return;
+    let cancelled = false;
+    getTest(routeId)
+      .then((t) => {
+        if (cancelled) return;
+        if (t.kind === "sweep" || t.kind === "validation") {
+          setKindFilter(t.kind);
+        }
+        setKindResolved(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setKindResolved(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Test list re-fetches whenever the kind toggle flips. Backend filters
+  // by ``kind`` so the dropdown doesn't pull both families. Gated on
+  // ``kindResolved`` so the deep-link kind seed has a chance to land
+  // before we start filtering — see the ``kindResolved`` doc above.
+  useEffect(() => {
+    if (!kindResolved) return;
     let cancelled = false;
     listTests({ machine_id: getCurrentMachineId(), kind: kindFilter })
       .then((next) => {
@@ -220,7 +256,7 @@ export function StabilityPage() {
     return () => {
       cancelled = true;
     };
-  }, [kindFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [kindFilter, kindResolved]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hydrate the selected test's detail (validation_cells) from cache
   // when possible, else refetch. The list endpoint already carries

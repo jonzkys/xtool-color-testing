@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Bug, Camera, RotateCcw, Trash2, Upload } from "lucide-react";
-import type { AveragedSwatch, ResultRecord } from "../types";
+import { AlertTriangle, Bug, Camera, LineChart, RotateCcw, Trash2, Upload } from "lucide-react";
+import type { ResultRecord } from "../types";
 import { useAuthedImage } from "../hooks/useAuthedImage";
 import { ResultDetailDialog } from "./ResultDetailDialog";
 import { ResultDebugDialog } from "./ResultDebugDialog";
@@ -10,23 +10,18 @@ import {
   patchResult,
   deleteResult,
   reingestResult,
-  getAveragedSwatches,
-  ingestToPalette,
 } from "../api/results";
 import { useIsDemo } from "../hooks/useIsDemo";
 import { formatMissingCorners } from "./captureWarnings";
+import { useRoute } from "../router";
 import {
   Badge,
   Button,
-  Card,
   cn,
   DemoLock,
   EmptyState,
   Section,
-  Select,
 } from "../ui";
-
-const SIGMA_WARN = 10;
 
 export function ResultsPanel({
   testId,
@@ -36,41 +31,26 @@ export function ResultsPanel({
   locked: boolean;
 }) {
   const isDemo = useIsDemo();
+  const [, navigate] = useRoute();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [results, setResults] = useState<ResultRecord[]>([]);
-  const [averaged, setAveragedSwatches] = useState<AveragedSwatch[]>([]);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const [selected, setSelected] = useState<Record<number, boolean>>({});
-  const [mode, setMode] = useState<"averaged" | "single_result">("averaged");
-  const [sourceResultId, setSourceResultId] = useState<number | null>(null);
-  const [replaceExisting, setReplaceExisting] = useState(false);
   const [detailId, setDetailId] = useState<number | null>(null);
   const detailResult = results.find((r) => r.id === detailId) ?? null;
   const [debugId, setDebugId] = useState<number | null>(null);
   const [reingestingId, setReingestingId] = useState<number | null>(null);
 
-  async function refresh(opts: { autoSelect?: boolean } = {}) {
+  async function refresh() {
     try {
-      const [r, a] = await Promise.all([
-        listResults(testId),
-        getAveragedSwatches(testId),
-      ]);
+      const r = await listResults(testId);
       setResults(r);
-      setAveragedSwatches(a);
-      if (opts.autoSelect) {
-        const picks: Record<number, boolean> = {};
-        a.forEach((s, i) => {
-          if (s.sample_count > 0) picks[i] = true;
-        });
-        setSelected(picks);
-      }
     } catch (e) {
       setError((e as Error).message);
     }
   }
   useEffect(() => {
-    refresh({ autoSelect: true });
+    void refresh();
   }, [testId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cross-page refresh signal — dispatched by UploadResultDialog
@@ -89,21 +69,6 @@ export function ResultsPanel({
     return () => window.removeEventListener("result:refetch", onRefetch);
   }, [testId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function selectAll() {
-    const picks: Record<number, boolean> = {};
-    averaged.forEach((s, i) => {
-      if (s.sample_count > 0) picks[i] = true;
-    });
-    setSelected(picks);
-  }
-  function clearSelection() {
-    setSelected({});
-  }
-  const availableCount = averaged.filter((s) => s.sample_count > 0).length;
-  const allSelected =
-    availableCount > 0 &&
-    availableCount === Object.values(selected).filter(Boolean).length;
-
   async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -111,7 +76,7 @@ export function ResultsPanel({
     setError(undefined);
     try {
       await uploadResult(testId, file);
-      await refresh({ autoSelect: true });
+      await refresh();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -144,51 +109,44 @@ export function ResultsPanel({
     }
   }
 
-  const indices = Object.entries(selected)
-    .filter(([, v]) => v)
-    .map(([k]) => Number(k));
-
-  async function doIngest() {
-    if (indices.length === 0) return;
-    try {
-      await ingestToPalette(testId, {
-        swatch_indices: indices,
-        mode,
-        result_id:
-          mode === "single_result" && sourceResultId !== null
-            ? sourceResultId
-            : undefined,
-        replace_existing: replaceExisting,
-      });
-      setSelected({});
-      setReplaceExisting(false);
-      alert("Ingested.");
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     void onUpload(e);
   }
 
   return (
-    <div className="flex h-full flex-col gap-5 p-4">
-      <DemoLock label="Uploading photos is disabled in the demo.">
+    <div className="flex h-full flex-col gap-3 p-4">
+      <div className="shrink-0 flex flex-col gap-2">
+        <DemoLock label="Uploading photos is disabled in the demo.">
+          <Button
+            variant="primary"
+            className="w-full"
+            disabled={busy}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {busy ? (
+              <Upload className="h-4 w-4 animate-pulse" />
+            ) : (
+              <Camera className="h-4 w-4" />
+            )}
+            {busy ? "Uploading…" : "Upload photo"}
+          </Button>
+        </DemoLock>
+        {/* Cross-link to the Stability page's deep-dive view for this
+         *  test — handles burn-vs-camera σ stats, calibrate fits, and
+         *  the per-cell consensus → palette ingest flow. The averaged-
+         *  swatch picker that used to live below the results list got
+         *  removed once Stability gained the same capability with a
+         *  much roomier canvas. */}
         <Button
-          variant="primary"
+          variant="ghost"
           className="w-full"
-          disabled={busy}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => navigate({ name: "stability", id: testId })}
+          title="Open this test in Stability — multi-result analysis, calibration, and palette ingest live there"
         >
-          {busy ? (
-            <Upload className="h-4 w-4 animate-pulse" />
-          ) : (
-            <Camera className="h-4 w-4" />
-          )}
-          {busy ? "Uploading…" : "Upload photo"}
+          <LineChart className="h-4 w-4" />
+          View in Stability
         </Button>
-      </DemoLock>
+      </div>
       <input
         ref={fileInputRef}
         type="file"
@@ -204,9 +162,12 @@ export function ResultsPanel({
         </div>
       )}
 
-      {/* Results: pinned above the swatches; if many retests pile up,
-       *  scrolls internally so the panel doesn't push swatches off-screen. */}
-      <div className="min-h-0 max-h-[40vh] overflow-y-auto pr-1 shrink">
+      {/* Results fill the remaining panel height. The averaged-swatch
+       *  selection grid + "Ingest to palette" card that used to share
+       *  this column got moved to the Stability page (INGEST mode for
+       *  sweep tests, VALIDATE for validation), so the results list
+       *  no longer needs to compete for vertical space. */}
+      <div className="flex-1 min-h-0 overflow-y-auto pr-1">
         <Section
           title={`Results (${results.length})`}
           dense
@@ -339,143 +300,6 @@ export function ResultsPanel({
             </div>
           )}
         </Section>
-      </div>
-
-      {/* Averaged swatches + ingest controls: take the rest of the panel,
-       *  scroll internally as more swatches arrive. */}
-      <div className="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-5">
-        <Section
-          title="Averaged swatches"
-          dense
-          actions={
-            availableCount > 0 ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={allSelected ? clearSelection : selectAll}
-              >
-                {allSelected ? "Clear selection" : `Select all (${availableCount})`}
-              </Button>
-            ) : undefined
-          }
-        >
-          {averaged.length === 0 ? (
-            <p className="text-[12.5px] text-[color:var(--color-ink-subtle)]">
-              No swatches yet — upload a result.
-            </p>
-          ) : (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(68px,1fr))] gap-1.5">
-              {averaged.map((s, i) => {
-                const unavailable = s.sample_count === 0;
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() =>
-                      !unavailable &&
-                      setSelected((p) => ({ ...p, [i]: !p[i] }))
-                    }
-                    disabled={unavailable}
-                    className={cn(
-                      "flex flex-col gap-1 p-1 rounded-[6px] text-left",
-                      "border transition-colors",
-                      selected[i]
-                        ? "border-[color:var(--color-primary)] ring-2 ring-[color:var(--color-primary-tint)]"
-                        : unavailable
-                          ? "border-dashed border-[color:var(--color-border-strong)]"
-                          : "border-[color:var(--color-border)] hover:border-[color:var(--color-ink-subtle)]",
-                      unavailable ? "opacity-40 cursor-default" : "cursor-pointer",
-                    )}
-                  >
-                    <div
-                      className="h-8 rounded-[3px] border border-[color:var(--color-border)]"
-                      style={{ background: s.hex }}
-                    />
-                    <div className="font-mono text-[9px] text-[color:var(--color-ink)] leading-none">
-                      {s.hex}
-                    </div>
-                    <div
-                      className={cn(
-                        "font-mono text-[9px] tabular-nums leading-none",
-                        s.sigma >= SIGMA_WARN
-                          ? "text-[color:var(--color-warning)]"
-                          : "text-[color:var(--color-ink-subtle)]",
-                      )}
-                    >
-                      n={s.sample_count} σ={s.sigma.toFixed(1)}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </Section>
-
-        <Card variant="elevated" className="flex flex-col gap-3">
-          <div className="text-[13px] font-medium text-[color:var(--color-ink)]">
-            Ingest {indices.length} swatch{indices.length === 1 ? "" : "es"} to palette
-          </div>
-          <div className="flex flex-wrap items-center gap-3 text-[12px] text-[color:var(--color-ink-muted)]">
-            <label className="flex items-center gap-1.5">
-              <input
-                type="radio"
-                name="mode"
-                checked={mode === "averaged"}
-                onChange={() => setMode("averaged")}
-              />
-              averaged
-            </label>
-            <label className="flex items-center gap-1.5">
-              <input
-                type="radio"
-                name="mode"
-                checked={mode === "single_result"}
-                onChange={() => setMode("single_result")}
-              />
-              from specific result
-            </label>
-            {mode === "single_result" && (
-              <Select
-                value={sourceResultId ?? ""}
-                onChange={(e) => setSourceResultId(Number(e.target.value))}
-                className="w-[120px]"
-              >
-                <option value="">— pick —</option>
-                {results
-                  .filter((r) => !r.excluded)
-                  .map((r) => (
-                    <option key={r.id} value={r.id}>
-                      #{r.id}
-                    </option>
-                  ))}
-              </Select>
-            )}
-          </div>
-          <label className="flex items-center gap-1.5 text-[12px] text-[color:var(--color-ink-muted)]">
-            <input
-              type="checkbox"
-              checked={replaceExisting}
-              onChange={(e) => setReplaceExisting(e.target.checked)}
-            />
-            replace existing palette entries for this test
-          </label>
-          <div className="flex items-center justify-between gap-3">
-            <DemoLock label="Saving to palette is disabled in the demo.">
-              <Button
-                variant="primary"
-                onClick={doIngest}
-                disabled={indices.length === 0}
-              >
-                Ingest to palette
-              </Button>
-            </DemoLock>
-            {indices.length > 0 && (
-              <Badge variant="info" size="sm">
-                {indices.length} selected
-              </Badge>
-            )}
-          </div>
-        </Card>
       </div>
 
       <ResultDetailDialog
