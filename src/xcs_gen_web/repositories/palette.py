@@ -13,7 +13,7 @@ import math
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_ as sa_or, select
 
 from ..config import DEFAULT_VISIBILITY, STANDALONE_USER_ID
 from ..db import session_scope
@@ -99,25 +99,6 @@ def _build_row(
     }
 
 
-def _check_machine_matches_test(s, e: dict[str, Any]) -> None:
-    """Raise MachineMismatchError if e's machine_id doesn't match its test's machine_id."""
-    if e.get("test_id") is None:
-        return
-    from ..models import tests as tests_table
-    row = s.execute(
-        select(tests_table.c.machine_id).where(tests_table.c.id == e["test_id"])
-    ).one_or_none()
-    if row is None:
-        return  # test deletion is allowed; the FK handles dangling refs
-    test_machine = row.machine_id
-    entry_machine = e.get("machine_id", "F2Ultra")
-    if test_machine != entry_machine:
-        raise MachineMismatchError(
-            f"palette entry machine_id {entry_machine!r} does not match "
-            f"test {e['test_id']} machine_id {test_machine!r}",
-        )
-
-
 # Capture-derived columns refreshed on re-ingest; user-curated columns
 # (notes, favorited, created_at) are preserved.
 _REFRESH_COLUMNS = ("hex", "lab_l", "lab_a", "lab_b", "sigma", "params_json")
@@ -170,6 +151,15 @@ def insert_bulk(
 
     Returns the list of row ids (existing or newly-inserted) in input
     order, so callers can correlate ``ids[i]`` with ``entries[i]``.
+
+    Was previously 3N round-trips per call (per-entry machine check +
+    per-entry existing-row lookup + per-entry insert/update). For a
+    typical 60-cell test ingest that's 180 queries; a 200-cell test
+    is 600. Both pre-checks are now batched: one query collects the
+    unique test_ids' machine_ids, and one query pulls every potential
+    existing-row candidate for the (test_id, owner_id, source) tuples
+    we're about to write. The per-entry inserts/updates remain — they
+    have to be individual statements to capture the inserted_primary_key.
     """
     entries = list(entries)
     now = _now()
@@ -177,11 +167,18 @@ def insert_bulk(
     if not rows:
         return []
     with session_scope() as s:
-        for e in entries:
-            _check_machine_matches_test(s, e)
+        _check_machine_matches_tests_bulk(s, entries)
+
+        # Pre-fetch candidate existing rows in one query, then build
+        # an in-memory lookup. The natural-key shape is large but the
+        # row count is bounded by the entry count we're writing × the
+        # entries already in the table for the same (test_id, source,
+        # owner_id) — typically small for ingestion.
+        existing_lookup = _build_existing_lookup(s, rows)
+
         ids: list[int] = []
         for row in rows:
-            existing_id = _find_existing_id(s, row)
+            existing_id = existing_lookup.get(_natural_key(row))
             if existing_id is not None:
                 refresh_values = {col: row[col] for col in _REFRESH_COLUMNS}
                 s.execute(
@@ -192,8 +189,104 @@ def insert_bulk(
                 ids.append(existing_id)
             else:
                 res = s.execute(palette_entries.insert().values(**row))
-                ids.append(res.inserted_primary_key[0])
+                new_id = res.inserted_primary_key[0]
+                # Keep the lookup in sync so a later entry with the
+                # same natural key in this same call updates the row
+                # we just inserted instead of inserting a duplicate.
+                existing_lookup[_natural_key(row)] = new_id
+                ids.append(new_id)
         return ids
+
+
+def _natural_key(
+    row: dict[str, Any],
+) -> tuple[Any, Any, Any, Any, Any, Any]:
+    """The (test_id, x_value, y_value, source, source_result_id,
+    owner_id) tuple that ``_find_existing_id`` keyed on. Hashable, so
+    the bulk path can use it as a dict key."""
+    return (
+        row.get("test_id"),
+        row.get("x_value"),
+        row.get("y_value"),
+        row.get("source"),
+        row.get("source_result_id"),
+        row.get("owner_id"),
+    )
+
+
+def _build_existing_lookup(
+    s, rows: list[dict[str, Any]],
+) -> dict[tuple[Any, Any, Any, Any, Any, Any], int]:
+    """One query to fetch every existing row that could collide with
+    the rows we're about to write. Bounded by the (test_id, source,
+    owner_id) tuples we're touching — usually one or two per call.
+    Returns a ``{natural_key: id}`` map for O(1) lookup."""
+    if not rows:
+        return {}
+    # Group by the (test_id, source, owner_id) prefix so we can issue
+    # one OR-of-ANDs query that covers them all.
+    groups: dict[tuple[Any, Any, Any], None] = {}
+    for r in rows:
+        groups[(r.get("test_id"), r.get("source"), r.get("owner_id"))] = None
+    if not groups:
+        return {}
+    cond = sa_or(*(
+        and_(
+            palette_entries.c.test_id == tid
+            if tid is not None
+            else palette_entries.c.test_id.is_(None),
+            palette_entries.c.source == src,
+            palette_entries.c.owner_id == oid,
+        )
+        for tid, src, oid in groups
+    ))
+    fetched = s.execute(
+        select(
+            palette_entries.c.id,
+            palette_entries.c.test_id,
+            palette_entries.c.x_value,
+            palette_entries.c.y_value,
+            palette_entries.c.source,
+            palette_entries.c.source_result_id,
+            palette_entries.c.owner_id,
+        ).where(cond),
+    ).all()
+    return {
+        (r.test_id, r.x_value, r.y_value, r.source, r.source_result_id, r.owner_id): r.id
+        for r in fetched
+    }
+
+
+def _check_machine_matches_tests_bulk(s, entries: list[dict[str, Any]]) -> None:
+    """Raise ``MachineMismatchError`` if any entry's ``machine_id``
+    disagrees with its referenced test's. Batched: one query for the
+    unique ``test_id`` set, then iterate entries in Python instead of
+    re-querying the same test row 60+ times during a single ingest."""
+    test_ids = {e["test_id"] for e in entries if e.get("test_id") is not None}
+    if not test_ids:
+        return
+    from ..models import tests as tests_table
+    rows = s.execute(
+        select(tests_table.c.id, tests_table.c.machine_id).where(
+            tests_table.c.id.in_(test_ids),
+        ),
+    ).all()
+    by_id = {int(r.id): r.machine_id for r in rows}
+    for e in entries:
+        tid = e.get("test_id")
+        if tid is None:
+            continue
+        test_machine = by_id.get(int(tid))
+        if test_machine is None:
+            # FK ON DELETE may have left a dangling test_id; the row
+            # would be rejected at insert time anyway.
+            continue
+        entry_machine = e.get("machine_id", "F2Ultra")
+        if test_machine != entry_machine:
+            raise MachineMismatchError(
+                f"palette entry machine_id {entry_machine!r} does not match "
+                f"test {tid} machine_id {test_machine!r}",
+            )
 
 
 def replace_for_test(
@@ -205,8 +298,7 @@ def replace_for_test(
     now = _now()
     rows = [_build_row(e, now, owner_id, visibility) for e in entries]
     with session_scope() as s:
-        for e in entries:
-            _check_machine_matches_test(s, e)
+        _check_machine_matches_tests_bulk(s, entries)
         s.execute(
             palette_entries.delete().where(
                 and_(
