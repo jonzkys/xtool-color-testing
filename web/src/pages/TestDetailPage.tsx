@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  AlertCircle, Check, Copy, Download, Loader2, Lock, Save, Trash2,
+  AlertCircle, Check, Copy, Download, Loader2, Lock, LockOpen, Save, Trash2,
 } from "lucide-react";
 import { useIsDemo } from "../hooks/useIsDemo";
 import type { Material, Preset } from "../library";
@@ -12,6 +12,7 @@ import {
   generateTestXcs,
   retestTest,
   createTest,
+  setTestLock,
 } from "../api/tests";
 import { listMaterials, listPresets } from "../api/library";
 import { ParamTestEditor } from "../components/ParamTestEditor";
@@ -353,6 +354,21 @@ export function TestDetailPage({ testId }: Props) {
     }
   }
 
+  async function onLockToggle() {
+    if (!test) return;
+    // The badge is the affordance — clicking flips the lock. Once a
+    // result has been uploaded the auto-lock is permanent (server
+    // returns 409); we surface that as a toast rather than a modal
+    // since it's an inevitability the user can plan around.
+    setError(undefined);
+    try {
+      const updated = await setTestLock(test.id, !test.locked);
+      setTest(updated);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
@@ -378,12 +394,39 @@ export function TestDetailPage({ testId }: Props) {
                 >
                   {test.status}
                 </Badge>
-                {test.locked && (
-                  <Badge variant="neutral" size="sm">
+                <button
+                  type="button"
+                  onClick={onLockToggle}
+                  disabled={test.locked && test.status === "tested"}
+                  title={
+                    test.locked && test.status === "tested"
+                      ? "Auto-locked once a result was uploaded — duplicate this test to change the spec."
+                      : test.locked
+                        ? "Manually locked. Click to unlock."
+                        : "Click to lock the test (prevents accidental spec edits while engraving). Re-clickable until a result is uploaded."
+                  }
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] border text-[11px] font-semibold uppercase tracking-[0.06em] transition-colors disabled:cursor-not-allowed disabled:opacity-80"
+                  style={{
+                    borderColor: test.locked
+                      ? "var(--color-border-strong)"
+                      : "var(--color-border)",
+                    background: test.locked
+                      ? "var(--color-surface-elevated)"
+                      : "transparent",
+                    color: test.locked
+                      ? "var(--color-ink)"
+                      : "var(--color-ink-subtle)",
+                  }}
+                  aria-pressed={test.locked}
+                  aria-label={test.locked ? "Unlock test" : "Lock test"}
+                >
+                  {test.locked ? (
                     <Lock className="h-3 w-3" />
-                    locked
-                  </Badge>
-                )}
+                  ) : (
+                    <LockOpen className="h-3 w-3" />
+                  )}
+                  {test.locked ? "locked" : "lock"}
+                </button>
               </>
             )}
           </div>

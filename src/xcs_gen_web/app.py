@@ -67,6 +67,7 @@ from .schemas import (
     UserRegisterRequest,
     UserResponse,
     ValidationCellsPatch,
+    TestLockBody,
 )
 from .pixel_art_converter import pixel_art_to_svg, pixel_art_to_xcs_bytes
 from .svg_converter import svg_stack_to_xcs_bytes
@@ -1226,6 +1227,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             row = t_repo.bump_retest_index(tid, owner_id=user_id)
         except KeyError:
+            raise HTTPException(status_code=404, detail="test not found")
+        return TestResponse(**row)
+
+    @app.post("/api/tests/{tid}/lock", response_model=TestResponse)
+    def tests_set_lock(
+        tid: int,
+        body: TestLockBody,
+        user_id: int = Depends(get_current_user),
+    ) -> TestResponse:
+        """Manually lock / unlock a test.
+
+        Use case: lock while engraving so accidental knob fiddling at
+        the machine doesn't silently change the spec before the user
+        uploads the photo. Unlocking after results have landed is
+        refused (409) — that lock is permanent and the user duplicates
+        the test instead.
+        """
+        try:
+            row = t_repo.set_locked(tid, locked=body.locked, owner_id=user_id)
+        except t_repo.LockedError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        if row is None:
             raise HTTPException(status_code=404, detail="test not found")
         return TestResponse(**row)
 

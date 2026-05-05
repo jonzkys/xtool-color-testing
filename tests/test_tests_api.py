@@ -203,3 +203,61 @@ def test_tests_create_f1_clamps_high_frequency_to_profile_max(fresh_db):
     # F1Ultra STANDARD profile has frequency in [30, 60] kHz — the
     # excessive 400_000 should snap down to 60.
     assert saved["spec"]["base_params"]["frequency"] == 60
+
+
+def test_tests_lock_route_locks_and_unlocks_before_results(fresh_db):
+    """``POST /api/tests/{id}/lock`` flips the manual lock flag both
+    ways while the test has no results uploaded. Use case: lock
+    while engraving so accidental knob fiddling doesn't change the
+    spec before the photo lands."""
+    c, mid = _client_and_material(fresh_db)
+    r = c.post("/api/tests", json={
+        "name": "lockable", "material_id": mid,
+        "machine_id": "F2Ultra", "spec": SPEC,
+    })
+    tid = r.json()["id"]
+    assert r.json()["locked"] is False
+
+    # Lock manually.
+    r = c.post(f"/api/tests/{tid}/lock", json={"locked": True})
+    assert r.status_code == 200
+    assert r.json()["locked"] is True
+
+    # Spec edits refused.
+    r = c.patch(f"/api/tests/{tid}", json={"spec": SPEC})
+    assert r.status_code == 409
+
+    # Unlock manually — allowed because no results yet.
+    r = c.post(f"/api/tests/{tid}/lock", json={"locked": False})
+    assert r.status_code == 200
+    assert r.json()["locked"] is False
+
+    # Spec edits work again.
+    r = c.patch(f"/api/tests/{tid}", json={"spec": SPEC})
+    assert r.status_code == 200
+
+
+def test_tests_lock_unlock_refused_after_results(fresh_db):
+    """Once a result has been uploaded the auto-lock is permanent.
+    The user duplicates the test to change the spec — re-burning the
+    same QR has to use the same recipe."""
+    from xcs_gen_web.repositories import results as r_repo
+
+    c, mid = _client_and_material(fresh_db)
+    r = c.post("/api/tests", json={
+        "name": "post-result", "material_id": mid,
+        "machine_id": "F2Ultra", "spec": SPEC,
+    })
+    tid = r.json()["id"]
+
+    # Drop a result directly via the repo to trigger mark_tested_and_lock.
+    r_repo.create(
+        test_id=tid, image_path="/dev/null", image_sha256="x" * 64,
+        swatches=[],
+    )
+    t_repo.mark_tested_and_lock(tid)
+
+    # Manual unlock refused — auto-lock stays.
+    r = c.post(f"/api/tests/{tid}/lock", json={"locked": False})
+    assert r.status_code == 409
+    assert "duplicate" in r.json()["detail"].lower()

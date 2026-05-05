@@ -67,3 +67,18 @@ export async function generateTestXcs(id: number): Promise<Blob> {
 export async function retestTest(id: number): Promise<TestRecord> {
   return j(await fetch(`/api/tests/${id}/retest`, { method: "POST" }));
 }
+
+/** Manually lock / unlock a test. Use case: lock while engraving so
+ *  accidental knob fiddling at the machine doesn't change the spec
+ *  before the photo lands. Unlocking after results have uploaded
+ *  returns 409 — that auto-lock is permanent. */
+export async function setTestLock(
+  id: number,
+  locked: boolean,
+): Promise<TestRecord> {
+  return j(await fetch(`/api/tests/${id}/lock`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ locked }),
+  }));
+}
