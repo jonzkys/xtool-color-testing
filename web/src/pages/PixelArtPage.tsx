@@ -49,6 +49,7 @@ import {
 import { sampleCellGrid } from "../components/pixelArtImage";
 import { isNearWhite } from "../color/math";
 import { defaultBaseParams } from "../defaults";
+import { sanitiseProjectName } from "../projectName";
 import type {
   PaletteEntry,
   PixelArtRequest,
@@ -298,18 +299,12 @@ export function PixelArtPage() {
         setImageData(data);
         const cropInit = defaultCrop(bitmap.width, bitmap.height, widthMm, heightMm);
         setCrop(cropInit);
-        // Sanitise the filename stem to match the backend's project-
-        // name pattern (^[A-Za-z0-9._\- ]+$). Photo-app exports
-        // routinely include commas / colons (e.g. "ChatGPT Image
-        // May 1, 2026, 06:42:33 PM"), which would 422 if dropped in
-        // verbatim — replace any disallowed run with a single
-        // hyphen, then trim leading/trailing whitespace + hyphens.
-        const stem = file.name
-          .replace(/\.[^.]+$/, "")
-          .replace(/[^A-Za-z0-9._\- ]+/g, "-")
-          .replace(/-{2,}/g, "-")
-          .replace(/^[-\s]+|[-\s]+$/g, "")
-          .slice(0, 64);
+        // Photo-app exports routinely include commas / colons (e.g.
+        // "ChatGPT Image May 1, 2026, 06:42:33 PM") that the backend
+        // ``name`` pattern would 422 on — sanitiseProjectName lifts
+        // the cleanup into one shared helper used by Loom + SVG
+        // layers + here.
+        const stem = sanitiseProjectName(file.name);
         if (stem) setName(stem);
         // Reset picks: a new image gets a fresh quantise + match flow.
         setEnabledByColor({});
