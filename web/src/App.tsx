@@ -1,28 +1,76 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { TopBar } from "./components/TopBar";
-import { LoomPage } from "./pages/LoomPage";
-import { SvgLayersPage } from "./components/SvgLayersPage";
-import { PixelArtPage } from "./pages/PixelArtPage";
-import { LibraryPage } from "./components/LibraryPage";
-import { PalettePage } from "./components/PalettePage";
 import { TestsPage } from "./pages/TestsPage";
-import { TestDetailPage } from "./pages/TestDetailPage";
-import { SpectrumPage } from "./pages/SpectrumPage";
-import { Spectrum2DPage } from "./pages/Spectrum2DPage";
-import { StabilityPage } from "./pages/StabilityPage";
-import { StyleguidePage } from "./pages/StyleguidePage";
-import { GuidePage } from "./pages/GuidePage";
-import { ChangelogPage } from "./pages/ChangelogPage";
-import { SavedSpectrumsPage } from "./pages/SavedSpectrumsPage";
 import { WelcomeDialog } from "./components/WelcomeDialog";
 import { getHealth } from "./api/users";
 import { hasStoredKey } from "./api/users";
 import { useRoute } from "./router";
-import { MobileUploadPage } from "./pages/MobileUploadPage";
 import { enterDemo } from "./api/userHeader";
 import { useIsDemo } from "./hooks/useIsDemo";
 import { DemoBanner } from "./components/DemoBanner";
 import { ToastHost } from "./ui";
+
+/* Route components are lazy-loaded so the initial bundle ships only
+ * the Tests landing + the chrome (TopBar, WelcomeDialog, ToastHost).
+ * Each page becomes its own chunk; cold visits don't pay for code
+ * the user hasn't navigated to yet. ``TestsPage`` stays eager
+ * because it's the default landing — lazy-loading it would add a
+ * Suspense flash to every fresh visit.
+ *
+ * Pages export named symbols, so we wrap each ``import()`` to
+ * surface ``default`` for ``React.lazy``.
+ */
+const TestDetailPage = lazy(() =>
+  import("./pages/TestDetailPage").then((m) => ({ default: m.TestDetailPage })),
+);
+const LoomPage = lazy(() =>
+  import("./pages/LoomPage").then((m) => ({ default: m.LoomPage })),
+);
+const SvgLayersPage = lazy(() =>
+  import("./components/SvgLayersPage").then((m) => ({ default: m.SvgLayersPage })),
+);
+const PixelArtPage = lazy(() =>
+  import("./pages/PixelArtPage").then((m) => ({ default: m.PixelArtPage })),
+);
+const LibraryPage = lazy(() =>
+  import("./components/LibraryPage").then((m) => ({ default: m.LibraryPage })),
+);
+const PalettePage = lazy(() =>
+  import("./components/PalettePage").then((m) => ({ default: m.PalettePage })),
+);
+const SpectrumPage = lazy(() =>
+  import("./pages/SpectrumPage").then((m) => ({ default: m.SpectrumPage })),
+);
+const Spectrum2DPage = lazy(() =>
+  import("./pages/Spectrum2DPage").then((m) => ({ default: m.Spectrum2DPage })),
+);
+const StabilityPage = lazy(() =>
+  import("./pages/StabilityPage").then((m) => ({ default: m.StabilityPage })),
+);
+const StyleguidePage = lazy(() =>
+  import("./pages/StyleguidePage").then((m) => ({ default: m.StyleguidePage })),
+);
+const GuidePage = lazy(() =>
+  import("./pages/GuidePage").then((m) => ({ default: m.GuidePage })),
+);
+const ChangelogPage = lazy(() =>
+  import("./pages/ChangelogPage").then((m) => ({ default: m.ChangelogPage })),
+);
+const SavedSpectrumsPage = lazy(() =>
+  import("./pages/SavedSpectrumsPage").then((m) => ({ default: m.SavedSpectrumsPage })),
+);
+const MobileUploadPage = lazy(() =>
+  import("./pages/MobileUploadPage").then((m) => ({ default: m.MobileUploadPage })),
+);
+
+/* Suspense fallback — deliberately minimal. The page-load delay is
+ * dominated by network for the chunk fetch (a few hundred KB on a
+ * cold hit, instant on a warm cache), so a spinner-or-shimmer would
+ * just flash. The empty fallback preserves the page's frame so the
+ * user doesn't see content jump when the chunk arrives. */
+function PageFallback() {
+  return <div className="flex-1 min-h-0" aria-hidden />;
+}
 
 export default function App() {
   const [route, navigate] = useRoute();
@@ -91,7 +139,11 @@ export default function App() {
     // Mobile page renders alone — no TopBar, no WelcomeDialog, no
     // multi-user gate. The page authenticates via the mid in the URL
     // and never touches the desktop's stored api_key.
-    return <MobileUploadPage mid={route.mid} />;
+    return (
+      <Suspense fallback={<PageFallback />}>
+        <MobileUploadPage mid={route.mid} />
+      </Suspense>
+    );
   }
 
   const title =
@@ -133,21 +185,23 @@ export default function App() {
       )}
       <TopBar title={title} route={route} onNavigate={navigate} />
       <main id="main-content" className="flex-1 min-h-0 overflow-auto">
-        {gate === "ready" && route.name === "tests"        && <TestsPage />}
-        {gate === "ready" && route.name === "test-new"     && <TestDetailPage testId="new" />}
-        {gate === "ready" && route.name === "test-detail"  && <TestDetailPage testId={route.id} />}
-        {gate === "ready" && route.name === "loom"         && <LoomPage />}
-        {gate === "ready" && route.name === "svg-layers"   && <SvgLayersPage />}
-        {gate === "ready" && route.name === "pixel-art"    && <PixelArtPage />}
-        {gate === "ready" && route.name === "library"      && <LibraryPage onMaterialsChange={() => {}} />}
-        {gate === "ready" && route.name === "palette"      && <PalettePage />}
-        {gate === "ready" && route.name === "spectrum"     && <SpectrumPage />}
-        {gate === "ready" && route.name === "spectrum-2d"  && <Spectrum2DPage />}
-        {gate === "ready" && route.name === "stability"    && <StabilityPage />}
-        {gate === "ready" && route.name === "styleguide"   && <StyleguidePage />}
-        {gate === "ready" && route.name === "guide"        && <GuidePage />}
-        {gate === "ready" && route.name === "changelog"    && <ChangelogPage />}
-        {gate === "ready" && route.name === "saved-spectrums" && <SavedSpectrumsPage />}
+        <Suspense fallback={<PageFallback />}>
+          {gate === "ready" && route.name === "tests"        && <TestsPage />}
+          {gate === "ready" && route.name === "test-new"     && <TestDetailPage testId="new" />}
+          {gate === "ready" && route.name === "test-detail"  && <TestDetailPage testId={route.id} />}
+          {gate === "ready" && route.name === "loom"         && <LoomPage />}
+          {gate === "ready" && route.name === "svg-layers"   && <SvgLayersPage />}
+          {gate === "ready" && route.name === "pixel-art"    && <PixelArtPage />}
+          {gate === "ready" && route.name === "library"      && <LibraryPage onMaterialsChange={() => {}} />}
+          {gate === "ready" && route.name === "palette"      && <PalettePage />}
+          {gate === "ready" && route.name === "spectrum"     && <SpectrumPage />}
+          {gate === "ready" && route.name === "spectrum-2d"  && <Spectrum2DPage />}
+          {gate === "ready" && route.name === "stability"    && <StabilityPage />}
+          {gate === "ready" && route.name === "styleguide"   && <StyleguidePage />}
+          {gate === "ready" && route.name === "guide"        && <GuidePage />}
+          {gate === "ready" && route.name === "changelog"    && <ChangelogPage />}
+          {gate === "ready" && route.name === "saved-spectrums" && <SavedSpectrumsPage />}
+        </Suspense>
       </main>
       <WelcomeDialog
         open={gate === "welcome"}
