@@ -154,9 +154,17 @@ export function SpectrumPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
-  // Load tests — only single-axis ones make sense here.
+  // Load tests — only single-axis SWEEP tests make sense here.
+  // Validation tests have a single x-axis too (y_param=null) so the
+  // legacy ``y_param == null`` filter let them through, but their
+  // metrics are per-cell rather than swept and the dedicated
+  // Stability page already covers them. Filter at the API level.
   useEffect(() => {
-    listTests({ status: "tested", machine_id: getCurrentMachineId() })
+    listTests({
+      status: "tested",
+      machine_id: getCurrentMachineId(),
+      kind: "sweep",
+    })
       .then((all) => {
         const mono = all.filter((t) => t.spec.y_param == null);
         setTests(mono);

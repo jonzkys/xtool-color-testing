@@ -162,7 +162,14 @@ export function Spectrum2DPage() {
   const [aboutOpen, setAboutOpen] = useState(false);
 
   useEffect(() => {
-    listTests({ status: "tested", machine_id: getCurrentMachineId() })
+    // Sweep-only — validation tests have y_param=null so they
+    // wouldn't pass the bi-axis filter below anyway, but ``kind=sweep``
+    // makes the intent explicit and saves the wire bytes.
+    listTests({
+      status: "tested",
+      machine_id: getCurrentMachineId(),
+      kind: "sweep",
+    })
       .then((all) => {
         const bi = all.filter((t) => t.spec.y_param != null);
         setTests(bi);
