@@ -383,6 +383,10 @@ function BrowseView({ materials }: { materials: Material[] }) {
         const materialName =
           materials.find((m) => m.id === group[0]?.material_id)?.name ??
           "(unknown material)";
+        // Validated count makes the per-test grouping a reliable
+        // "where do my trustworthy colours live?" surface, complementing
+        // the in-card VAL pills.
+        const validatedCount = group.filter((e) => e.is_validated).length;
         return (
           <Section
             key={testId}
@@ -397,6 +401,15 @@ function BrowseView({ materials }: { materials: Material[] }) {
                   </span>
                 )}
                 <Badge variant="info" size="sm">{materialName}</Badge>
+                {validatedCount > 0 && (
+                  <span
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] bg-[color:var(--color-success)]/15 text-[color:var(--color-success)] text-[10.5px] font-semibold tabular-nums"
+                    title={`${validatedCount} of ${group.length} entries validated`}
+                  >
+                    <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                    {validatedCount}
+                  </span>
+                )}
               </span>
             }
             actions={
