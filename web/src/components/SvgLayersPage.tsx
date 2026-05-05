@@ -2164,11 +2164,21 @@ function PaletteMatchSection({
                         className="aspect-[4/3] w-full relative"
                         style={{ background: r.entry.hex }}
                       >
-                        {r.entry.source === "manual" && (
-                          <span className="absolute top-1 left-1 px-1 py-0.5 rounded-[3px] text-[8px] font-mono font-semibold tracking-[0.08em] uppercase bg-[color:var(--color-accent,#caa14b)] text-black/85">
-                            MAN
-                          </span>
-                        )}
+                        <div className="absolute top-1 left-1 flex flex-col items-start gap-0.5">
+                          {r.entry.source === "manual" && (
+                            <span className="px-1 py-0.5 rounded-[3px] text-[8px] font-mono font-semibold tracking-[0.08em] uppercase bg-[color:var(--color-accent,#caa14b)] text-black/85">
+                              MAN
+                            </span>
+                          )}
+                          {r.entry.is_validated && (
+                            <span
+                              className="px-1 py-0.5 rounded-[3px] text-[8px] font-mono font-semibold tracking-[0.08em] uppercase bg-[color:var(--color-success)] text-white inline-flex items-center gap-0.5"
+                              title="Validated palette entry — confirmed to engrave correctly"
+                            >
+                              VAL
+                            </span>
+                          )}
+                        </div>
                         {r.entry.favorited ? (
                           <span
                             aria-label="Favorited"
