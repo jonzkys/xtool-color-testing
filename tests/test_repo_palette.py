@@ -506,6 +506,67 @@ def test_create_validated_entry_distinct_cells_dont_collide(fresh_db):
     assert a["id"] != b["id"]
 
 
+def test_list_all_marks_original_validated_when_results_uploaded(fresh_db):
+    """``list_all`` returns ``original_validated=True`` for each entry
+    that is the target of a validation cell on a test that has at
+    least one non-excluded result. The flag flips ON when the test's
+    first result lands — never before, even if cells reference the
+    entry — so picker autopick can use it as "have I tried this colour"."""
+    from xcs_gen_web.repositories import validation_cells as vc_repo
+
+    mid = m_repo.create(name="SS")["id"]
+    val_spec = {
+        **_SPEC,
+        "x_param": "power", "x_min": 0, "x_max": 0,
+        "x_steps": 1, "rows": 1, "cells_per_row": 1,
+    }
+    tid = t_repo.create(
+        name="V", material_id=mid, spec=val_spec, kind="validation",
+    )["id"]
+    # Distinct ``x_value``s give the two entries different natural
+    # keys; without that ``insert_bulk`` would upsert the second over
+    # the first (same test_id+source+x+y+...).
+    [used_id, unused_id] = repo.insert_bulk([
+        dict(test_id=None, material_id=mid, x_value=1, y_value=None,
+             hex="#aabbcc", sigma=0.5, source="manual",
+             source_result_id=None, params={}),
+        dict(test_id=None, material_id=mid, x_value=2, y_value=None,
+             hex="#ddeeff", sigma=0.5, source="manual",
+             source_result_id=None, params={}),
+    ])
+    vc_repo.replace_for_test(test_id=tid, cells=[
+        {
+            "cell_index": 0,
+            "expected_hex": "#aabbcc",
+            "expected_lab": [40.0, 5.0, -10.0],
+            "palette_entry_id": used_id,
+            "params": {},
+        },
+    ])
+
+    # Before any results land, ``original_validated`` is False even
+    # though the cell points at ``used_id``. The whole point of the
+    # signal is "I've burned this once", so the test having no
+    # results yet means it doesn't count.
+    rows = {r["id"]: r for r in repo.list_all()}
+    assert rows[used_id]["original_validated"] is False
+    assert rows[unused_id]["original_validated"] is False
+
+    # Drop a non-excluded result onto the test → flag flips on the
+    # linked entry only.
+    r_repo.create(
+        test_id=tid, image_path="/dev/null",
+        image_sha256="x" * 64,
+        swatches=[{
+            "row": 0, "col": 0, "x_value": 0,
+            "hex": "#aabbcc", "lab": [41.0, 5.0, -10.0], "sigma": 0.5,
+        }],
+    )
+    rows = {r["id"]: r for r in repo.list_all()}
+    assert rows[used_id]["original_validated"] is True
+    assert rows[unused_id]["original_validated"] is False
+
+
 def test_list_all_validated_only_filter(fresh_db):
     mid = m_repo.create(name="SS")["id"]
     tid = t_repo.create(name="T", material_id=mid, spec=_SPEC)["id"]

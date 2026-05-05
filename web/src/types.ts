@@ -301,6 +301,14 @@ export interface PaletteEntry {
   validated_lab?: number[] | null;
   validated_run_count?: number | null;
   validated_residual_de?: number | null;
+  /** Derived: this entry has been used as a target in a validation
+   *  test that has at least one non-excluded result — i.e. the user
+   *  has tried this colour at least once. Distinct from
+   *  ``is_validated`` (which means the explicit batch validate flow
+   *  flipped the flag). The picker's autopick uses it to skip
+   *  colours the user has already burned, so subsequent validation
+   *  tests cover new ground. */
+  original_validated?: boolean;
 }
 
 export interface PaletteQueryResult {

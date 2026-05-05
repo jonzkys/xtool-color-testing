@@ -77,6 +77,14 @@ export function MaterialPalettePicker({
   // keeps the full gamut so the user retains spatial context for what
   // they've picked vs. what's still available.
   const [showSelectedOnly, setShowSelectedOnly] = useState(false);
+  // "Skip already-tested" filter — when on, autopick only considers
+  // entries the user hasn't burned in any earlier validation test.
+  // Lets the second/third validation test cover new ground without
+  // rolling the same colours forward each time. The flag is derived
+  // server-side (``PaletteEntry.original_validated``); we apply it to
+  // both the picker grid + scatter visibility and the autopick pool.
+  const [skipTested, setSkipTested] = useState(false);
+  const testedCount = entries.filter((e) => e.original_validated).length;
 
   const selectedCount = entries.filter((e) => selectedIds.has(e.id)).length;
   const totalCount = entries.length;
@@ -96,7 +104,16 @@ export function MaterialPalettePicker({
   };
 
   const autoPick = () => {
-    onSelectionChange(seedFarthestPointSample(entries, seedN));
+    // The picker keeps every selected entry visible regardless of
+    // ``skipTested`` (the user might have manually picked a tested
+    // colour they want to keep). Autopick narrows the *candidate*
+    // pool to untested entries when the toggle is on, but the
+    // existing selection isn't otherwise touched here — the FPS
+    // result replaces it wholesale, same as before.
+    const pool = skipTested
+      ? entries.filter((e) => !e.original_validated)
+      : entries;
+    onSelectionChange(seedFarthestPointSample(pool, seedN));
   };
 
   const clear = () => onSelectionChange(new Set());
@@ -121,6 +138,9 @@ export function MaterialPalettePicker({
         showSelectedOnly={showSelectedOnly}
         onToggleSelectedOnly={() => setShowSelectedOnly((v) => !v)}
         toggleDisabled={selectedCount === 0 && !showSelectedOnly}
+        skipTested={skipTested}
+        onToggleSkipTested={() => setSkipTested((v) => !v)}
+        testedCount={testedCount}
         rightSlot={rightSlot}
       />
 
@@ -232,6 +252,9 @@ function PickerHeader({
   showSelectedOnly,
   onToggleSelectedOnly,
   toggleDisabled,
+  skipTested,
+  onToggleSkipTested,
+  testedCount,
   rightSlot,
 }: {
   materialLabel?: string;
@@ -246,6 +269,12 @@ function PickerHeader({
   showSelectedOnly: boolean;
   onToggleSelectedOnly: () => void;
   toggleDisabled: boolean;
+  skipTested: boolean;
+  onToggleSkipTested: () => void;
+  /** How many entries already carry ``original_validated``. Surfaces
+   *  on the toggle button so the user can see the filter's impact
+   *  without flipping it. */
+  testedCount: number;
   rightSlot?: React.ReactNode;
 }) {
   return (
@@ -325,6 +354,34 @@ function PickerHeader({
             <Eye className="h-3 w-3" strokeWidth={2.2} />
             <span className="font-mono tracking-[0.12em] uppercase text-[11px]">
               {showSelectedOnly ? "Showing picked" : "Picked only"}
+            </span>
+          </Button>
+          <Button
+            variant={skipTested ? "secondary" : "ghost"}
+            size="sm"
+            onClick={onToggleSkipTested}
+            disabled={testedCount === 0}
+            aria-pressed={skipTested}
+            title={
+              testedCount === 0
+                ? "No palette entries have been used in a previous validation test yet"
+                : skipTested
+                  ? `Auto-pick is restricted to entries you haven't burned before (${testedCount} already-tested ${testedCount === 1 ? "entry" : "entries"} excluded)`
+                  : `Restrict auto-pick to colours you haven't burned in any previous validation test (${testedCount} already-tested)`
+            }
+            className="gap-1.5"
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "h-1.5 w-1.5 rounded-full",
+                skipTested
+                  ? "bg-[color:var(--color-success)]"
+                  : "bg-[color:var(--color-ink-subtle)]",
+              )}
+            />
+            <span className="font-mono tracking-[0.12em] uppercase text-[11px]">
+              Skip already-tested{testedCount > 0 ? ` · ${testedCount}` : ""}
             </span>
           </Button>
         </div>
@@ -467,6 +524,21 @@ function SwatchPickerTile({
           >
             <Check className="h-2.5 w-2.5" strokeWidth={3} />
           </span>
+        )}
+        {entry.original_validated && (
+          /* Tiny dot in the top-left signals "you've burned this
+           * colour at least once". Pairs with the "Skip already-
+           * tested" toggle in the header — at a glance the user can
+           * see which entries the toggle would exclude. */
+          <span
+            aria-hidden
+            title="Already burned in a previous validation test"
+            className={cn(
+              "absolute top-1 left-1 h-2.5 w-2.5 rounded-full",
+              "bg-[color:var(--color-success)]",
+              "shadow-[0_0_0_1.5px_var(--color-surface)]",
+            )}
+          />
         )}
         {/* Tiny L* pip — bottom-left, mix-blend so it stays legible */}
         <span

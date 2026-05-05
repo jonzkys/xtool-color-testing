@@ -33,7 +33,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _row_to_entry(r) -> dict[str, Any]:
+def _row_to_entry(r, *, original_validated: bool = False) -> dict[str, Any]:
     validated_lab: list[float] | None = None
     if (
         r.validated_lab_l is not None
@@ -72,6 +72,14 @@ def _row_to_entry(r) -> dict[str, Any]:
         "validated_lab": validated_lab,
         "validated_run_count": r.validated_run_count,
         "validated_residual_de": r.validated_residual_de,
+        # Derived: this entry has been used as a validation cell in a
+        # test that has at least one non-excluded result — i.e. the
+        # user has tried to validate it once. Distinct from
+        # ``is_validated`` (which means an explicit validate call
+        # flipped the flag). Lets the picker's autopick skip colours
+        # the user has already burned once. Computed by ``list_all``;
+        # other callers default to False.
+        "original_validated": original_validated,
     }
 
 
@@ -328,6 +336,14 @@ def list_all(
     ``is_validated`` is set — the auto-match's "Prefer validated"
     toggle on the SVG layers tab uses this path so it doesn't have
     to do a second filter pass client-side.
+
+    Each returned entry carries an ``original_validated`` derived
+    flag — true iff this entry has been used as a validation cell
+    in a test that has at least one non-excluded result. Lets the
+    test creator's autopick skip colours they've already burned
+    once before. Computed in one extra batch query rather than a
+    correlated subquery per row so the cost is bounded regardless
+    of how many entries the owner has.
     """
     with session_scope() as s:
         q = select(palette_entries).where(
@@ -344,7 +360,44 @@ def list_all(
         if validated_only:
             q = q.where(palette_entries.c.is_validated == True)  # noqa: E712
         q = q.order_by(palette_entries.c.created_at.desc())
-        return [_row_to_entry(r) for r in s.execute(q).all()]
+        rows = s.execute(q).all()
+        tested_ids = _ids_referenced_by_a_tested_validation_cell(
+            s, owner_id=owner_id,
+        )
+        return [
+            _row_to_entry(r, original_validated=r.id in tested_ids)
+            for r in rows
+        ]
+
+
+def _ids_referenced_by_a_tested_validation_cell(
+    s, *, owner_id: int,
+) -> set[int]:
+    """Set of palette entry ids that have been used as a validation
+    cell in a test (owner-scoped) that has at least one non-excluded
+    result.
+
+    Used by ``list_all`` to populate the ``original_validated`` flag
+    on each entry. One query per call; the JOINs are over indexed
+    columns (``validation_cells.palette_entry_id``,
+    ``tests.id``, ``results.test_id``).
+    """
+    from ..models import results as results_table
+    from ..models import tests as tests_table
+    from ..models import validation_cells as vc_table
+
+    rows = s.execute(
+        select(vc_table.c.palette_entry_id)
+        .distinct()
+        .join(tests_table, tests_table.c.id == vc_table.c.test_id)
+        .join(results_table, results_table.c.test_id == tests_table.c.id)
+        .where(
+            tests_table.c.owner_id == owner_id,
+            results_table.c.excluded == 0,  # type: ignore[arg-type]
+            vc_table.c.palette_entry_id.is_not(None),
+        ),
+    ).all()
+    return {int(r[0]) for r in rows}
 
 
 def get_by_id(eid: int, *, owner_id: int = STANDALONE_USER_ID) -> dict[str, Any] | None:
