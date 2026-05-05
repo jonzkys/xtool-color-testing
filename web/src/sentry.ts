@@ -59,6 +59,14 @@ export async function initSentry(): Promise<void> {
       // until there's a real need.
       replaysSessionSampleRate: 0,
       replaysOnErrorSampleRate: 0,
+      // Strip request bodies + auth headers before anything leaves
+      // the browser. CLAUDE.md asserts this invariant on both BE and
+      // FE — the BE hook is in ``src/xcs_gen_web/sentry.py``; this
+      // is its FE counterpart. Without it, the fetch-breadcrumb
+      // integration could carry an ``X-API-Key`` header or a request
+      // body containing user content into the Sentry dashboard.
+      beforeSend: scrubEvent,
+      beforeBreadcrumb: scrubBreadcrumb,
     });
     _sentry = Sentry;
     _initialised = true;
@@ -72,6 +80,58 @@ export async function initSentry(): Promise<void> {
     console.warn("[sentry] init failed:", err);
   }
 }
+
+/* Headers Sentry should never see, regardless of integration source.
+ * Mirrors the backend's allowlist. ``X-User-Id`` is the demo /
+ * standalone identity carrier; ``X-API-Key`` and ``Authorization``
+ * carry the multi-user credentials we definitely don't want in the
+ * dashboard. ``Cookie`` covers any future cookie auth. */
+const SENSITIVE_HEADERS = new Set([
+  "authorization",
+  "cookie",
+  "x-user-id",
+  "x-api-key",
+]);
+
+export function scrubHeaders(headers: unknown): unknown {
+  if (!headers || typeof headers !== "object") return headers;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(headers as Record<string, unknown>)) {
+    out[k] = SENSITIVE_HEADERS.has(k.toLowerCase()) ? "<stripped>" : v;
+  }
+  return out;
+}
+
+export function scrubEvent<T extends { request?: unknown }>(event: T): T {
+  const req = (event.request as Record<string, unknown> | undefined) ?? undefined;
+  if (req) {
+    if ("data" in req) req.data = "<stripped>";
+    if ("headers" in req) req.headers = scrubHeaders(req.headers);
+  }
+  return event;
+}
+
+// ``fetch`` / ``xhr`` breadcrumbs carry ``data: { url, method,
+// status_code, request_body_size, ... }``. The default Sentry
+// breadcrumb processor doesn't capture headers in ``data`` but does
+// include the URL. URLs in this app are server-side (e.g.
+// /api/palette/query?hex=...) so they're fine to keep. For ``http``
+// breadcrumbs we still scrub headers defensively if they appear, in
+// case a future integration adds them.
+//
+// Typed via the Sentry Breadcrumb shape — the cast inside the body
+// is needed because ``data`` is declared as ``{ [key: string]: any }``
+// optional, and we narrow before mutating.
+export function scrubBreadcrumb<B extends { data?: { [key: string]: unknown } | undefined }>(
+  breadcrumb: B,
+): B | null {
+  const data = breadcrumb.data;
+  if (!data || typeof data !== "object") return breadcrumb;
+  if ("headers" in data) data.headers = scrubHeaders(data.headers);
+  if ("body" in data) data.body = "<stripped>";
+  return breadcrumb;
+}
+
 
 /** Capture a handled error to Sentry. No-op when the SDK isn't
  *  initialised (e.g. dev or DSN unset). Tags are flat string→string
