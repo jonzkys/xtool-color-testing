@@ -600,6 +600,12 @@ export function PixelArtPage() {
                   />
                 </Field>
               </Section>
+
+              <PixelArtStats
+                rows={rows}
+                cols={pipelineResult?.cols ?? 0}
+                rasterRows={pipelineResult?.rows ?? 0}
+              />
             </Card>
           </div>
 
@@ -637,5 +643,97 @@ export function PixelArtPage() {
         </div>
       </PageContainer>
     </div>
+  );
+}
+
+/* Mirrors the svg-layers section title's "Layers (N · M shapes ·
+ * K verts)" surface, broken out into a standalone block on the left
+ * sidebar so the user can read it without scanning the per-colour
+ * cards on the right. The numbers reflect the *export* — i.e. only
+ * enabled centroids contribute to layers / shapes / vertices, since
+ * disabled colours are skipped at download time. The grid total is
+ * separate so a glance tells the user "this many laser shapes
+ * (enabled) out of this many positions (whole grid)". */
+function PixelArtStats({
+  rows,
+  cols,
+  rasterRows,
+}: {
+  rows: PixelArtLayerRow[];
+  /** Pipeline grid columns (cells across). 0 before the first
+   *  pipeline run. */
+  cols: number;
+  /** Pipeline grid rows. Renamed locally to avoid colliding with
+   *  the ``rows`` prop above. */
+  rasterRows: number;
+}) {
+  const layerCount = rows.filter((r) => r.enabled).length;
+  const enabledCellCount = rows
+    .filter((r) => r.enabled)
+    .reduce((n, r) => n + r.cellCount, 0);
+  // Each enabled cell exports as one rect path = 4 vertices. Closing
+  // back to the start point isn't counted (svg-layers doesn't either).
+  const vertexCount = enabledCellCount * 4;
+  const totalGridCells = cols * rasterRows;
+  const skippedCells = Math.max(0, totalGridCells - enabledCellCount);
+  return (
+    <Section title="Stats" dense>
+      <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 font-mono text-[11px] tabular-nums">
+        <Stat label="Layers" value={layerCount.toLocaleString()} />
+        <Stat
+          label="Shapes"
+          value={enabledCellCount.toLocaleString()}
+          hint={`one rect per enabled cell (${enabledCellCount === 1 ? "shape" : "shapes"})`}
+        />
+        <Stat
+          label="Vertices"
+          value={vertexCount.toLocaleString()}
+          hint="rect paths × 4 corners"
+        />
+        <Stat
+          label="Grid total"
+          value={
+            totalGridCells > 0
+              ? `${cols.toLocaleString()} × ${rasterRows.toLocaleString()} = ${totalGridCells.toLocaleString()}`
+              : "—"
+          }
+          hint="cells across × down"
+        />
+        {skippedCells > 0 && (
+          <Stat
+            label="Skipped"
+            value={skippedCells.toLocaleString()}
+            hint="cells in disabled (e.g. near-white) layers"
+          />
+        )}
+      </dl>
+    </Section>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <>
+      <dt
+        className="text-[color:var(--color-ink-subtle)] font-semibold tracking-[0.06em] uppercase text-[10px] self-center"
+        title={hint}
+      >
+        {label}
+      </dt>
+      <dd
+        className="text-[color:var(--color-ink)] text-right self-center"
+        title={hint}
+      >
+        {value}
+      </dd>
+    </>
   );
 }
