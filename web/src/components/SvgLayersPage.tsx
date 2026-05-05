@@ -52,7 +52,7 @@ import {
   queryPalette,
 } from "../api/palette";
 import { getCurrentMachineId } from "../state/machine";
-import { deltaE2000, hexToLab, type Lab } from "../color/math";
+import { deltaE76, hexToLab, type Lab } from "../color/math";
 import { computePager } from "../svg/favoritesPager";
 import { normalizeColor } from "../svg/color";
 import {
@@ -438,7 +438,7 @@ export function SvgLayersPage() {
           const entryLab = entry.lab.length >= 3
             ? ([entry.lab[0], entry.lab[1], entry.lab[2]] as Lab)
             : hexToLab(entry.hex);
-          const d = deltaE2000(target, entryLab);
+          const d = deltaE76(target, entryLab);
           if (d < bestDelta) {
             bestDelta = d;
             bestEntry = entry;
@@ -2319,7 +2319,7 @@ function PaletteFavoritesRow({
     return [...favorites].sort((a, b) => {
       const la = a.lab.length >= 3 ? ([a.lab[0], a.lab[1], a.lab[2]] as Lab) : hexToLab(a.hex);
       const lb = b.lab.length >= 3 ? ([b.lab[0], b.lab[1], b.lab[2]] as Lab) : hexToLab(b.hex);
-      return deltaE2000(target, la) - deltaE2000(target, lb);
+      return deltaE76(target, la) - deltaE76(target, lb);
     });
   }, [favorites, layerColor]);
 
@@ -2366,7 +2366,7 @@ function PaletteFavoritesRow({
           const lab = entry.lab.length >= 3
             ? ([entry.lab[0], entry.lab[1], entry.lab[2]] as Lab)
             : hexToLab(entry.hex);
-          const dE = target ? deltaE2000(target, lab) : 0;
+          const dE = target ? deltaE76(target, lab) : 0;
           const laser = String(entry.params["laser"] ?? "red");
           const isActive = !!appliedHex && entry.hex.toLowerCase() === appliedHex.toLowerCase();
           return (
