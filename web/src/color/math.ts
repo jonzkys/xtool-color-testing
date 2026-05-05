@@ -18,6 +18,27 @@ export function hexToRgb(hex: string): Rgb {
   ];
 }
 
+/* "Bright + nearly neutral" colour test — the same heuristic
+ * ``xcs_gen.svg_source.is_near_white`` uses on the backend. Catches
+ * pure white plus quantization artefacts like #dbdcdd / #f0f0f1 /
+ * #faeef0 that almost always represent the photo background. The
+ * SVG layers page and the pixel-art page both default-hide layers
+ * matching this so the user doesn't accidentally engrave them.
+ */
+const NEAR_WHITE_THRESHOLD = 220;
+const NEAR_WHITE_MAX_SPREAD = 20;
+
+export function isNearWhite(hex: string): boolean {
+  const h = (hex || "").trim();
+  if (h.length !== 7 || !h.startsWith("#")) return false;
+  const [r, g, b] = hexToRgb(h);
+  if (r < NEAR_WHITE_THRESHOLD || g < NEAR_WHITE_THRESHOLD || b < NEAR_WHITE_THRESHOLD) {
+    return false;
+  }
+  const spread = Math.max(r, g, b) - Math.min(r, g, b);
+  return spread <= NEAR_WHITE_MAX_SPREAD;
+}
+
 export function rgbToHex(r: number, g: number, b: number): string {
   const clamp = (v: number) =>
     Math.max(0, Math.min(255, Math.round(v)))

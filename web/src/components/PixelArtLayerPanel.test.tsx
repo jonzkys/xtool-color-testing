@@ -26,6 +26,8 @@ function row(color: string, areaPct: number, enabled = true): PixelArtLayerRow {
     color,
     enabled,
     areaPct,
+    cellCount: Math.max(1, Math.round(areaPct * 1000)),
+    isNearWhite: false,
     matchedEntry: null,
     baseParams: defaultBaseParams(),
     materialId: null,

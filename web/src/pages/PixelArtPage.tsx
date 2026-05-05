@@ -47,6 +47,7 @@ import {
   type KMeansResult,
 } from "../components/pixelArtMath";
 import { sampleCellGrid } from "../components/pixelArtImage";
+import { isNearWhite } from "../color/math";
 import { defaultBaseParams } from "../defaults";
 import type {
   PaletteEntry,
@@ -228,13 +229,20 @@ export function PixelArtPage() {
       total++;
     }
     return pipelineResult.centroidsHex.map((color, i) => {
-      const enabled = enabledByColor[color] ?? true;
+      const nearWhite = isNearWhite(color);
+      // Default-disable near-white centroids on first encounter so
+      // the user doesn't accidentally engrave the photo background.
+      // ``enabledByColor`` is the user's explicit override and wins
+      // when set — flipping a near-white back on stays on.
+      const enabled = enabledByColor[color] ?? !nearWhite;
       const matched =
         matchByColor[color] ?? nearestPaletteEntry(color, paletteEntries);
       return {
         color,
         enabled,
         areaPct: total > 0 ? counts[i] / total : 0,
+        cellCount: counts[i],
+        isNearWhite: nearWhite,
         matchedEntry: matched,
         baseParams: defaultBaseParams(),
         materialId,
@@ -290,8 +298,19 @@ export function PixelArtPage() {
         setImageData(data);
         const cropInit = defaultCrop(bitmap.width, bitmap.height, widthMm, heightMm);
         setCrop(cropInit);
-        const stem = file.name.replace(/\.[^.]+$/, "").trim();
-        if (stem) setName(stem.slice(0, 64));
+        // Sanitise the filename stem to match the backend's project-
+        // name pattern (^[A-Za-z0-9._\- ]+$). Photo-app exports
+        // routinely include commas / colons (e.g. "ChatGPT Image
+        // May 1, 2026, 06:42:33 PM"), which would 422 if dropped in
+        // verbatim — replace any disallowed run with a single
+        // hyphen, then trim leading/trailing whitespace + hyphens.
+        const stem = file.name
+          .replace(/\.[^.]+$/, "")
+          .replace(/[^A-Za-z0-9._\- ]+/g, "-")
+          .replace(/-{2,}/g, "-")
+          .replace(/^[-\s]+|[-\s]+$/g, "")
+          .slice(0, 64);
+        if (stem) setName(stem);
         // Reset picks: a new image gets a fresh quantise + match flow.
         setEnabledByColor({});
         setMatchByColor({});

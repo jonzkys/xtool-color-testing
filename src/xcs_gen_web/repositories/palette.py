@@ -273,9 +273,20 @@ def query_by_hex(
     hex_: str, *, owner_id: int = STANDALONE_USER_ID, limit: int = 5,
     material_id: int | None = None,
     machine_id: str | None = None,
+    validated_only: bool = False,
 ) -> list[dict[str, Any]]:
+    """Closest-ΔE2000 search inside the caller's palette.
+
+    ``validated_only=True`` restricts the candidate set to entries
+    where ``is_validated`` is set — i.e. drop the lowest-ΔE match
+    that wasn't actually verified to engrave the colour it claims.
+    Defers the gate to ``list_all`` so the filter happens in SQL.
+    """
     target = hex_to_lab(hex_)
-    rows = list_all(owner_id=owner_id, material_id=material_id, machine_id=machine_id)
+    rows = list_all(
+        owner_id=owner_id, material_id=material_id, machine_id=machine_id,
+        validated_only=validated_only,
+    )
     scored = []
     for r in rows:
         de = delta_e_2000(target, tuple(r["lab"]))
@@ -468,171 +479,47 @@ def validation_status_for_material(
     material_id: int,
     owner_id: int = STANDALONE_USER_ID,
     machine_id: str | None = None,
-    max_de: float = 5.0,
+    max_de: float = 5.0,  # noqa: ARG001 — kept for wire-compat
 ) -> list[dict[str, Any]]:
     """Validation status per palette entry for a given material/machine.
 
-    For each palette entry scoped to ``material_id`` (and optionally
-    ``machine_id``), find every validation cell that points to the
-    entry via ``palette_entry_id``. Across all non-excluded results of
-    those tests, compute ΔE76 between the cell's measured Lab and its
-    expected Lab. The entry's ``best_de`` is the minimum across all
-    matched (test, result, cell) tuples; ``last_validated_at`` is the
-    upload timestamp of the result that produced ``best_de``.
+    Returns one row per palette entry: ``validated`` is the canonical
+    ``is_validated`` flag, ``best_de`` is the stored
+    ``validated_residual_de`` (cross-run stability ΔE the validate
+    flow recorded at save time), ``last_validated_at`` is the
+    timestamp the entry was last validated.
 
-    An entry is ``validated`` when ``best_de`` is finite and ≤
-    ``max_de`` (default 5.0 — at the just-perceptible boundary). The
-    threshold is a knob the caller can tighten for stricter palettes.
-
-    Returns one dict per palette entry, even those with no matching
-    validation cells (``best_de = None``, ``validated = False``). The
-    SVG-layers UI uses this to badge layers whose auto-matched colour
-    is known to print correctly.
+    Originally a heavy on-the-fly compute that loaded every result's
+    swatch JSON and ran a ΔE76 loop per (cell, result) pair to
+    decide. Phase 2 added an explicit ``is_validated`` column that
+    the validate flow sets directly, so this endpoint can short-
+    circuit to a single SELECT — no swatch JSON parse, no per-cell
+    loop, no result table scan. The ``max_de`` arg stays in the
+    signature for wire-compat with callers that still pass it but is
+    no longer consulted (the validation flow chose the gate when the
+    entry was saved).
     """
-    # Imported lazily to avoid circular imports — the models module
-    # can pull in this repo via the FK-relationship surface.
-    from ..models import results as results_table
-    from ..models import tests as tests_table
-    from ..models import validation_cells as vc_table
-
     with session_scope() as s:
-        entries_q = select(palette_entries.c.id).where(
+        q = select(
+            palette_entries.c.id,
+            palette_entries.c.is_validated,
+            palette_entries.c.validated_at,
+            palette_entries.c.validated_residual_de,
+        ).where(
             palette_entries.c.owner_id == owner_id,
             palette_entries.c.material_id == material_id,
         )
         if machine_id is not None:
-            entries_q = entries_q.where(
-                palette_entries.c.machine_id == machine_id,
-            )
-        entry_ids = [r.id for r in s.execute(entries_q).all()]
-        if not entry_ids:
-            return []
-
-        # Bring in every validation cell that targets one of our
-        # entries. ``palette_entry_id`` is indexed; the IN list size
-        # is bounded by the entry count which is typically small.
-        cells_q = select(
-            vc_table.c.id,
-            vc_table.c.test_id,
-            vc_table.c.cell_index,
-            vc_table.c.palette_entry_id,
-            vc_table.c.expected_lab_l,
-            vc_table.c.expected_lab_a,
-            vc_table.c.expected_lab_b,
-        ).where(vc_table.c.palette_entry_id.in_(entry_ids))
-        cells = list(s.execute(cells_q).all())
-
-        per_entry: dict[int, dict[str, Any]] = {
-            eid: {"best_de": None, "last_at": None} for eid in entry_ids
-        }
-        if not cells:
-            return [
-                {
-                    "entry_id": eid,
-                    "best_de": None,
-                    "last_validated_at": None,
-                    "validated": False,
-                }
-                for eid in entry_ids
-            ]
-
-        test_ids = list({int(c.test_id) for c in cells})
-        # Pull spec_json so we can derive cells_per_row to map a
-        # swatch's (row, col) → cell_index. Only validation tests
-        # have validation cells in the first place, but we read spec
-        # values defensively.
-        test_specs: dict[int, dict[str, Any]] = {}
-        for r in s.execute(
-            select(tests_table.c.id, tests_table.c.spec_json).where(
-                tests_table.c.id.in_(test_ids),
-            ),
-        ).all():
-            try:
-                test_specs[int(r.id)] = json.loads(r.spec_json) or {}
-            except Exception:
-                test_specs[int(r.id)] = {}
-
-        # Group cells per test for the per-result loop below; also
-        # count cells per test for the cells_per_row fallback when
-        # the spec doesn't carry one (older validation tests).
-        cells_by_test: dict[int, list[Any]] = {}
-        for c in cells:
-            cells_by_test.setdefault(int(c.test_id), []).append(c)
-
-        # Pull every non-excluded result for these tests in one go.
-        results_q = select(
-            results_table.c.id,
-            results_table.c.test_id,
-            results_table.c.uploaded_at,
-            results_table.c.swatches_json,
-            results_table.c.excluded,
-        ).where(results_table.c.test_id.in_(test_ids))
-        result_rows = list(s.execute(results_q).all())
-
-        for r in result_rows:
-            if r.excluded:
-                continue
-            tid = int(r.test_id)
-            spec = test_specs.get(tid, {})
-            cells_per_row = spec.get("cells_per_row")
-            if not cells_per_row or cells_per_row <= 0:
-                rows_count = max(1, int(spec.get("rows") or 1))
-                cell_count = max(1, len(cells_by_test.get(tid, [])))
-                cells_per_row = max(1, math.ceil(cell_count / rows_count))
-
-            try:
-                swatches = json.loads(r.swatches_json) or []
-            except Exception:
-                continue
-
-            sw_by_idx: dict[int, dict[str, Any]] = {}
-            for sw in swatches:
-                try:
-                    row_n = int(sw.get("row", 0))
-                    col_n = int(sw.get("col", 0))
-                except (TypeError, ValueError):
-                    continue
-                sw_by_idx[row_n * cells_per_row + col_n] = sw
-
-            for c in cells_by_test.get(tid, []):
-                sw = sw_by_idx.get(int(c.cell_index))
-                if sw is None:
-                    continue
-                lab = sw.get("lab")
-                if not isinstance(lab, list) or len(lab) != 3:
-                    continue
-                try:
-                    measured = (float(lab[0]), float(lab[1]), float(lab[2]))
-                except (TypeError, ValueError):
-                    continue
-                expected = (
-                    float(c.expected_lab_l),
-                    float(c.expected_lab_a),
-                    float(c.expected_lab_b),
-                )
-                de = math.sqrt(
-                    (expected[0] - measured[0]) ** 2
-                    + (expected[1] - measured[1]) ** 2
-                    + (expected[2] - measured[2]) ** 2
-                )
-                eid = int(c.palette_entry_id)
-                slot = per_entry.get(eid)
-                if slot is None:
-                    continue
-                if slot["best_de"] is None or de < slot["best_de"]:
-                    slot["best_de"] = de
-                    slot["last_at"] = r.uploaded_at
-
+            q = q.where(palette_entries.c.machine_id == machine_id)
+        rows = s.execute(q).all()
         return [
             {
-                "entry_id": eid,
-                "best_de": v["best_de"],
-                "last_validated_at": v["last_at"],
-                "validated": (
-                    v["best_de"] is not None and v["best_de"] <= max_de
-                ),
+                "entry_id": int(r.id),
+                "best_de": r.validated_residual_de,
+                "last_validated_at": r.validated_at,
+                "validated": bool(r.is_validated),
             }
-            for eid, v in per_entry.items()
+            for r in rows
         ]
 
 
@@ -715,46 +602,37 @@ def create_validated_entry(
     owner_id: int = STANDALONE_USER_ID,
     visibility: str = DEFAULT_VISIBILITY,
 ) -> dict[str, Any]:
-    """Insert a brand-new palette entry from a validated burn-mean Lab.
+    """Upsert a validated palette entry for ``(validated_test_id,
+    validated_cell_index, owner_id)``.
 
     The Stability page's VALIDATE save calls this once per cell that
     the user accepted as stable. The new entry's ``lab_*`` IS the
     consensus Lab — no separation between "first-ingested colour" and
     "validated colour" — but the ``validated_*`` columns are still
     populated for query convenience (so ``WHERE is_validated`` rolls
-    up cleanly without a UNION). ``validated_residual_de`` stores
-    the *stability* gate value (max cross-run drift) since that's the
+    up cleanly without a UNION). ``validated_residual_de`` stores the
+    *stability* gate value (max cross-run drift) since that's the
     quality signal worth surfacing on the entry, not a residual
     against an obsolete pre-validation Lab.
 
-    Returns the inserted entry dict.
+    Re-running validate on the same (test, cell) refreshes the
+    existing row's capture-derived columns (Lab, hex, params,
+    validated_*) and leaves user-curated columns alone (``notes``,
+    ``favorited``, ``created_at``). This makes the save endpoint
+    idempotent under retries / double-clicks / re-validation after
+    uploading more results — one cell, one entry, regardless of how
+    many times the user hits Save.
+
+    Returns the entry dict (newly-inserted or freshly-updated).
     """
     L, a, b = float(burn_mean_lab[0]), float(burn_mean_lab[1]), float(burn_mean_lab[2])
     hex_ = lab_to_hex(L, a, b)
     now = _now()
-    # ``test_id`` mirrors ``validated_test_id`` so the entry surfaces
-    # in the palette page's per-test BrowseView grouping (which keys
-    # off ``test_id``). Otherwise validated entries would only show
-    # up via the Query tab and the user couldn't browse them next to
-    # the original test's swatches. The ``validated_*`` columns then
-    # carry the cell + stability provenance separately.
-    row = {
-        "test_id": validated_test_id,
-        "material_id": material_id,
-        "x_value": 0,
-        "y_value": None,
+    refresh_values = {
         "hex": hex_,
         "lab_l": L, "lab_a": a, "lab_b": b,
         "params_json": json.dumps(params or {}, separators=(",", ":")),
         "sigma": sigma,
-        "source": "averaged",
-        "source_result_id": None,
-        "notes": notes,
-        "created_at": now,
-        "owner_id": owner_id,
-        "visibility": visibility,
-        "machine_id": machine_id,
-        "favorited": False,
         "is_validated": True,
         "validated_at": now,
         "validated_test_id": validated_test_id,
@@ -766,8 +644,49 @@ def create_validated_entry(
         "validated_residual_de": stability_de,
     }
     with session_scope() as s:
-        res = s.execute(palette_entries.insert().values(**row))
-        new_id = res.inserted_primary_key[0]
+        # Natural key: (validated_test_id, validated_cell_index, owner_id).
+        # We require ``is_validated=True`` on the existing row so an
+        # entry that was deliberately invalidated (validated_test_id
+        # cleared by ``invalidate_entry``) doesn't get reused.
+        existing = s.execute(
+            select(palette_entries.c.id).where(
+                and_(
+                    palette_entries.c.validated_test_id == validated_test_id,
+                    palette_entries.c.validated_cell_index == validated_cell_index,
+                    palette_entries.c.owner_id == owner_id,
+                    palette_entries.c.is_validated == True,  # noqa: E712
+                ),
+            )
+        ).one_or_none()
+        if existing is not None:
+            s.execute(
+                palette_entries.update()
+                .where(palette_entries.c.id == existing.id)
+                .values(**refresh_values)
+            )
+            new_id = existing.id
+        else:
+            # ``test_id`` mirrors ``validated_test_id`` so the entry
+            # surfaces in the palette page's per-test BrowseView
+            # grouping (which keys off ``test_id``). Otherwise
+            # validated entries would only show up via the Query tab.
+            row = {
+                "test_id": validated_test_id,
+                "material_id": material_id,
+                "x_value": 0,
+                "y_value": None,
+                "source": "averaged",
+                "source_result_id": None,
+                "notes": notes,
+                "created_at": now,
+                "owner_id": owner_id,
+                "visibility": visibility,
+                "machine_id": machine_id,
+                "favorited": False,
+                **refresh_values,
+            }
+            res = s.execute(palette_entries.insert().values(**row))
+            new_id = res.inserted_primary_key[0]
         out = s.execute(
             select(palette_entries).where(palette_entries.c.id == new_id),
         ).one()
