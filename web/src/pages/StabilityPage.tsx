@@ -173,9 +173,11 @@ export function StabilityPage() {
     listMaterials()
       .then(setMaterials)
       .catch(() => {});
-    listTests({ machine_id: getCurrentMachineId() })
-      .then((all) => {
-        const validation = all.filter((t) => t.kind === "validation");
+    listTests({ machine_id: getCurrentMachineId(), kind: "validation" })
+      .then((validation) => {
+        // Backend already filters by kind=validation, so no client-side
+        // filter pass is needed. Drops payload size + browser work for
+        // users with many sweep tests.
         setTests(validation);
         if (selectedTestId == null && validation.length > 0) {
           // Newest first — backend sorts by created_at DESC.

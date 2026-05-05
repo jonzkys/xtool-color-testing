@@ -1137,11 +1137,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         material_id: int | None = None,
         status: str | None = None,
         machine_id: str | None = None,
+        kind: str | None = None,
         user_id: int = Depends(get_current_user),
     ) -> list[TestResponse]:
         return [TestResponse(**t) for t in t_repo.list_all(
             owner_id=user_id, material_id=material_id, status=status,
-            machine_id=machine_id,
+            machine_id=machine_id, kind=kind,
         )]
 
     @app.get("/api/tests/{tid}", response_model=TestResponse)
