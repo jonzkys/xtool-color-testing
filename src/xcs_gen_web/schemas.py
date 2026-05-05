@@ -409,6 +409,14 @@ class PaletteEntryResponse(BaseModel):
     validated_lab: list[float] | None = None
     validated_run_count: int | None = None
     validated_residual_de: float | None = None
+    # Derived: this entry has been used as a target in a validation
+    # test that has at least one non-excluded result. Distinct from
+    # ``is_validated`` — that flag means the user explicitly ran the
+    # batch validate flow; ``original_validated`` just means "I've
+    # tried this colour at least once". Used by the test creator's
+    # autopick to skip colours the user has already burned, so
+    # subsequent validation tests cover new ground.
+    original_validated: bool = False
 
 
 class PaletteQueryResult(BaseModel):
