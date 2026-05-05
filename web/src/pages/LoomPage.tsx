@@ -45,6 +45,7 @@ import type {
   SvgLayersRequest,
 } from "../types";
 import { defaultBaseParams } from "../defaults";
+import { sanitiseProjectName } from "../projectName";
 import type { LibraryState } from "../library";
 import { listMaterials, listPresets } from "../api/library";
 import { getCurrentMachineId } from "../state/machine";
@@ -343,7 +344,7 @@ export function LoomPage() {
           kind: "svg",
           rasterDataUrl: null,
           svgContent: collapseFills(text),
-          filename: file.name.replace(/\.[^.]+$/, ""),
+          filename: sanitiseProjectName(file.name, "loom"),
         });
       } else {
         setUploadKind("raster");
@@ -357,7 +358,7 @@ export function LoomPage() {
               kind: "raster",
               rasterDataUrl: dataUrl,
               svgContent: collapseFills(svg),
-              filename: file.name.replace(/\.[^.]+$/, ""),
+              filename: sanitiseProjectName(file.name, "loom"),
             });
           } catch (err) {
             setError(`Trace failed: ${(err as Error).message}`);

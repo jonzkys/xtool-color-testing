@@ -13,6 +13,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { defaultBaseParams, defaultHatchPass } from "../defaults";
+import { sanitiseProjectName } from "../projectName";
 import { PulseWidthSelect } from "./PulseWidthSelect";
 import {
   DEFAULT_RASTER_TRACE_OPTIONS,
@@ -620,11 +621,7 @@ export function SvgLayersPage() {
     if (!file) return;
     setDetectError(undefined);
     setFilename(file.name);
-    const suggested =
-      file.name
-        .replace(/\.(svg|png|jpe?g)$/i, "")
-        .replace(/[^A-Za-z0-9._\- ]/g, "_")
-        .slice(0, 64) || "svg-layers";
+    const suggested = sanitiseProjectName(file.name, "svg-layers");
 
     const isRaster =
       /\.(png|jpe?g)$/i.test(file.name) || file.type.startsWith("image/");
