@@ -37,6 +37,17 @@ import type { PaletteEntry } from "../types";
 
 const AB_RANGE = 60;
 
+/** Drag-defined sub-region of the a*-b* gamut. ``center`` is in
+ *  (a*, b*) space; ``radius`` is the same units (so a circle with
+ *  ``radius=20`` covers entries within ~20 ΔE of the centre on the
+ *  a*-b* plane — L* is ignored since the scatter is L*-projected).
+ *  Surfaced by the LabScatterPicker via drag, consumed by autopick
+ *  and "include all" actions in the picker header. */
+export interface RegionSelection {
+  center: [number, number];
+  radius: number;
+}
+
 export interface MaterialPalettePickerProps {
   /** All palette entries for the active material (already filtered by
    *  the parent — this component does not call the API). */
@@ -86,6 +97,26 @@ export function MaterialPalettePicker({
   const [skipTested, setSkipTested] = useState(false);
   const testedCount = entries.filter((e) => e.original_validated).length;
 
+  // Region selection — drag a circle on the a*-b* scatter to define
+  // a sub-gamut (e.g. yellows, reds). When set, ``Auto-pick`` runs
+  // FPS over just that region, and an ``Include all`` button lets
+  // the user grab every entry inside in one click. ``null`` when no
+  // region is active. Center is in (a*, b*) space; radius is in the
+  // same units (so a 20-unit radius selects entries within 20 ΔE of
+  // the centre on the a*-b* plane).
+  const [region, setRegion] = useState<RegionSelection | null>(null);
+
+  const entriesInRegion = useMemo<PaletteEntry[]>(() => {
+    if (!region) return [];
+    const r2 = region.radius * region.radius;
+    return entries.filter((e) => {
+      if (!e.lab || e.lab.length < 3) return false;
+      const da = e.lab[1] - region.center[0];
+      const db = e.lab[2] - region.center[1];
+      return da * da + db * db <= r2;
+    });
+  }, [entries, region]);
+
   const selectedCount = entries.filter((e) => selectedIds.has(e.id)).length;
   const totalCount = entries.length;
   const visibleGridEntries = useMemo(
@@ -104,16 +135,28 @@ export function MaterialPalettePicker({
   };
 
   const autoPick = () => {
-    // The picker keeps every selected entry visible regardless of
-    // ``skipTested`` (the user might have manually picked a tested
-    // colour they want to keep). Autopick narrows the *candidate*
-    // pool to untested entries when the toggle is on, but the
-    // existing selection isn't otherwise touched here — the FPS
-    // result replaces it wholesale, same as before.
-    const pool = skipTested
-      ? entries.filter((e) => !e.original_validated)
-      : entries;
+    // Build the FPS pool by stacking filters in order:
+    //   1. Region (if active) narrows to a sub-gamut.
+    //   2. ``skipTested`` (if on) drops original_validated entries.
+    // Both can apply at once — "auto-pick yellows I haven't burned
+    // yet" is a natural workflow. Existing selection is replaced
+    // wholesale either way.
+    let pool = region != null ? entriesInRegion : entries;
+    if (skipTested) pool = pool.filter((e) => !e.original_validated);
     onSelectionChange(seedFarthestPointSample(pool, seedN));
+  };
+
+  const includeAllInRegion = () => {
+    // Add every in-region entry to the existing selection; existing
+    // picks outside the region survive. Useful when the region is
+    // small enough that the user wants "everything yellow" rather
+    // than "N spread-out yellows". Intentionally ignores
+    // ``skipTested`` — "include all" is an explicit "everything in
+    // this circle" gesture and the count on the button reflects
+    // exactly what gets added.
+    const next = new Set(selectedIds);
+    for (const e of entriesInRegion) next.add(e.id);
+    onSelectionChange(next);
   };
 
   const clear = () => onSelectionChange(new Set());
@@ -133,7 +176,9 @@ export function MaterialPalettePicker({
         onSeedNChange={onSeedNChange}
         onAutoPick={autoPick}
         onClear={clear}
-        autoPickDisabled={entries.length === 0}
+        autoPickDisabled={
+          region != null ? entriesInRegion.length === 0 : entries.length === 0
+        }
         clearDisabled={selectedCount === 0}
         showSelectedOnly={showSelectedOnly}
         onToggleSelectedOnly={() => setShowSelectedOnly((v) => !v)}
@@ -141,6 +186,9 @@ export function MaterialPalettePicker({
         skipTested={skipTested}
         onToggleSkipTested={() => setSkipTested((v) => !v)}
         testedCount={testedCount}
+        regionEntryCount={region != null ? entriesInRegion.length : null}
+        onIncludeRegion={includeAllInRegion}
+        onClearRegion={() => setRegion(null)}
         rightSlot={rightSlot}
       />
 
@@ -159,6 +207,8 @@ export function MaterialPalettePicker({
               hoveredId={hoveredId}
               onHover={setHoveredId}
               onToggle={toggle}
+              region={region}
+              onRegionChange={setRegion}
             />
             {/* Inline legend — same mono register as InspectMatchDialog's
                 ReadoutCells; pads the column so the scatter stays
@@ -169,6 +219,11 @@ export function MaterialPalettePicker({
                 {labRange(entries)}
               </span>
             </div>
+            <p className="mt-1 font-mono text-[9.5px] tracking-[0.04em] text-[color:var(--color-ink-subtle)] leading-snug">
+              {region
+                ? `Region · ${entriesInRegion.length} ${entriesInRegion.length === 1 ? "entry" : "entries"} inside · auto-pick + include-all narrow to it.`
+                : "Drag any empty area to scope auto-pick to a sub-gamut (yellows, reds, …). Click a dot to toggle it as before."}
+            </p>
           </div>
 
           {/* Right: swatch grid — scrolls internally to fill column. */}
@@ -255,6 +310,9 @@ function PickerHeader({
   skipTested,
   onToggleSkipTested,
   testedCount,
+  regionEntryCount,
+  onIncludeRegion,
+  onClearRegion,
   rightSlot,
 }: {
   materialLabel?: string;
@@ -275,6 +333,12 @@ function PickerHeader({
    *  on the toggle button so the user can see the filter's impact
    *  without flipping it. */
   testedCount: number;
+  /** When non-null, a sub-region of the gamut is active and this
+   *  many entries lie inside. Drives the "Include all" + clear-region
+   *  buttons + the auto-pick label. ``null`` when no region is set. */
+  regionEntryCount: number | null;
+  onIncludeRegion: () => void;
+  onClearRegion: () => void;
   rightSlot?: React.ReactNode;
 }) {
   return (
@@ -318,14 +382,50 @@ function PickerHeader({
             size="sm"
             onClick={onAutoPick}
             disabled={autoPickDisabled}
-            title="Replace selection with N farthest-point picks across the palette"
+            title={
+              regionEntryCount != null
+                ? `Replace selection with N farthest-point picks from inside the active gamut region (${regionEntryCount} entries)`
+                : "Replace selection with N farthest-point picks across the palette"
+            }
             className="gap-1.5"
           >
             <RotateCw className="h-3 w-3" strokeWidth={2.2} />
             <span className="font-mono tracking-[0.12em] uppercase text-[11px]">
-              Auto-pick
+              {regionEntryCount != null ? "Auto-pick · region" : "Auto-pick"}
             </span>
           </Button>
+          {regionEntryCount != null && (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onIncludeRegion}
+                disabled={regionEntryCount === 0}
+                title="Add every entry inside the active gamut region to the current selection"
+                className="gap-1.5"
+              >
+                <span
+                  aria-hidden
+                  className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-primary)]"
+                />
+                <span className="font-mono tracking-[0.12em] uppercase text-[11px]">
+                  Include all · {regionEntryCount}
+                </span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClearRegion}
+                title="Clear the gamut region"
+                className="gap-1.5"
+              >
+                <XIcon className="h-3 w-3" strokeWidth={2.2} />
+                <span className="font-mono tracking-[0.12em] uppercase text-[11px]">
+                  Clear region
+                </span>
+              </Button>
+            </>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -569,20 +669,121 @@ function SwatchPickerTile({
 
 // ─── Lab scatter — picker variant ──────────────────────────────────────────
 
+/* Pixels-of-mouse-movement before a press becomes a drag rather
+ * than a click. Below this, the user almost certainly meant to
+ * click a dot, not draw a region — flipping the threshold keeps
+ * fast clicks from accidentally registering as 2-pixel circles. */
+const DRAG_THRESHOLD_PX = 5;
+
 function LabScatterPicker({
   entries,
   selectedIds,
   hoveredId,
   onHover,
   onToggle,
+  region,
+  onRegionChange,
 }: {
   entries: PaletteEntry[];
   selectedIds: Set<number>;
   hoveredId: number | null;
   onHover: (id: number | null) => void;
   onToggle: (id: number) => void;
+  region: RegionSelection | null;
+  onRegionChange: (r: RegionSelection | null) => void;
 }) {
   const valid = entries.filter((e) => e.lab && e.lab.length >= 3);
+
+  // Drag state — kept in component-local state because rerender on
+  // every mouse-move is what gives us live circle preview. Tracked
+  // in (a*, b*) space so the math matches the on-disk units.
+  const [drag, setDrag] = useState<{
+    start: [number, number];
+    current: [number, number];
+    /** Pixel distance from the press point. Threshold-gates whether
+     *  the gesture has graduated from "click" to "drag". */
+    pxDist: number;
+    /** Original press point in pixels — needed to measure pxDist. */
+    startPx: [number, number];
+  } | null>(null);
+
+  function svgPoint(
+    evt: React.MouseEvent<SVGSVGElement>,
+  ): { ab: [number, number]; px: [number, number] } {
+    const svg = evt.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const px = evt.clientX - rect.left;
+    const py = evt.clientY - rect.top;
+    // viewBox is (-AB_RANGE, -AB_RANGE) to (+AB_RANGE, +AB_RANGE).
+    // ``preserveAspectRatio="xMidYMid meet"`` + a square aspect-ratio
+    // container means the rendered area exactly fills the bounding
+    // box, so the mapping is a straight linear scale.
+    const a = (px / rect.width) * (AB_RANGE * 2) - AB_RANGE;
+    const yInSvg = (py / rect.height) * (AB_RANGE * 2) - AB_RANGE;
+    // SVG y inverts b*: b* = -ySvg.
+    return { ab: [a, -yInSvg], px: [px, py] };
+  }
+
+  function onMouseDown(evt: React.MouseEvent<SVGSVGElement>) {
+    // Left button only — leave right-click free for browser context
+    // menu (which the user may want for "Inspect element").
+    if (evt.button !== 0) return;
+    const { ab, px } = svgPoint(evt);
+    setDrag({ start: ab, current: ab, pxDist: 0, startPx: px });
+  }
+
+  function onMouseMove(evt: React.MouseEvent<SVGSVGElement>) {
+    if (!drag) return;
+    const { ab, px } = svgPoint(evt);
+    const dxPx = px[0] - drag.startPx[0];
+    const dyPx = px[1] - drag.startPx[1];
+    const pxDist = Math.sqrt(dxPx * dxPx + dyPx * dyPx);
+    setDrag({ ...drag, current: ab, pxDist });
+  }
+
+  function onMouseUp() {
+    if (!drag) return;
+    if (drag.pxDist >= DRAG_THRESHOLD_PX) {
+      // Crossed the drag threshold → commit region. Centre = press
+      // point; radius = a*/b* distance from press to release.
+      const dx = drag.current[0] - drag.start[0];
+      const dy = drag.current[1] - drag.start[1];
+      const r = Math.sqrt(dx * dx + dy * dy);
+      if (r > 0) {
+        onRegionChange({ center: drag.start, radius: r });
+      }
+    }
+    // Sub-threshold gestures fall through to the dot's onClick (which
+    // fires on the same release) — no region committed.
+    setDrag(null);
+  }
+
+  // Live preview circle while dragging. After commit, we render the
+  // committed ``region`` instead.
+  const previewRadius = drag
+    ? Math.sqrt(
+        (drag.current[0] - drag.start[0]) ** 2
+        + (drag.current[1] - drag.start[1]) ** 2,
+      )
+    : 0;
+  const showPreview = drag != null && drag.pxDist >= DRAG_THRESHOLD_PX;
+  const activeRegion = region;
+
+  // Set of in-region entry ids — used to dim out-of-region dots
+  // while the region is active so the user can see the subset at a
+  // glance. Recomputed cheaply: O(N) over the palette per render.
+  const inRegionIds = useMemo(() => {
+    if (!activeRegion) return null;
+    const r2 = activeRegion.radius * activeRegion.radius;
+    const ids = new Set<number>();
+    for (const e of valid) {
+      const da = e.lab[1] - activeRegion.center[0];
+      const db = e.lab[2] - activeRegion.center[1];
+      if (da * da + db * db <= r2) ids.add(e.id);
+    }
+    return ids;
+  }, [activeRegion, valid]);
+
   return (
     <div
       className="mt-2 relative rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] overflow-hidden"
@@ -591,8 +792,13 @@ function LabScatterPicker({
       <svg
         viewBox={`${-AB_RANGE} ${-AB_RANGE} ${AB_RANGE * 2} ${AB_RANGE * 2}`}
         preserveAspectRatio="xMidYMid meet"
-        className="absolute inset-0 w-full h-full"
-        aria-label={`Lab a*/b* picker · ${valid.length} swatches`}
+        className="absolute inset-0 w-full h-full select-none"
+        style={{ cursor: drag ? "crosshair" : "crosshair" }}
+        aria-label={`Lab a*/b* picker · ${valid.length} swatches · drag to define a region`}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={() => setDrag(null)}
       >
         {/* Neutral-axis crosshairs */}
         <line
@@ -617,9 +823,63 @@ function LabScatterPicker({
         />
         {/* Render unselected first (under), then selected, so rings sit on top. */}
         {valid.filter((e) => !selectedIds.has(e.id)).map((e) =>
-          renderDot(e, false, hoveredId === e.id, onHover, onToggle))}
+          renderDot(
+            e,
+            false,
+            hoveredId === e.id,
+            onHover,
+            onToggle,
+            inRegionIds == null ? true : inRegionIds.has(e.id),
+          ))}
         {valid.filter((e) => selectedIds.has(e.id)).map((e) =>
-          renderDot(e, true, hoveredId === e.id, onHover, onToggle))}
+          renderDot(
+            e,
+            true,
+            hoveredId === e.id,
+            onHover,
+            onToggle,
+            inRegionIds == null ? true : inRegionIds.has(e.id),
+          ))}
+        {/* Live preview circle — drawn while the user is dragging */}
+        {showPreview && drag != null && (
+          <circle
+            cx={drag.start[0]}
+            cy={-drag.start[1]}
+            r={previewRadius}
+            fill="var(--color-primary)"
+            fillOpacity={0.08}
+            stroke="var(--color-primary)"
+            strokeWidth={0.6}
+            strokeDasharray="2 1.5"
+            vectorEffect="non-scaling-stroke"
+            pointerEvents="none"
+          />
+        )}
+        {/* Committed region — drawn after a drag commits, until the
+            user clears it. */}
+        {activeRegion != null && !drag && (
+          <g pointerEvents="none">
+            <circle
+              cx={activeRegion.center[0]}
+              cy={-activeRegion.center[1]}
+              r={activeRegion.radius}
+              fill="var(--color-primary)"
+              fillOpacity={0.08}
+              stroke="var(--color-primary)"
+              strokeWidth={0.7}
+              vectorEffect="non-scaling-stroke"
+            />
+            {/* Tiny centre tick so the region's anchor stays visible
+                even if the radius is close to its bounds */}
+            <circle
+              cx={activeRegion.center[0]}
+              cy={-activeRegion.center[1]}
+              r={0.7}
+              fill="var(--color-primary)"
+              vectorEffect="non-scaling-stroke"
+            />
+          </g>
+        )}
       </svg>
       {/* Axis labels — ditto to ResultDetailDialog.LabScatter */}
       <ScatterLabel pos="tl" text="+b* yellow" />
@@ -636,16 +896,31 @@ function renderDot(
   hovered: boolean,
   onHover: (id: number | null) => void,
   onToggle: (id: number) => void,
+  /** When false, the dot is outside the active region — dim it
+   *  further so the user can see the in-region subset at a glance.
+   *  Always true when no region is set (the region argument is
+   *  ``null`` upstream, which collapses to "everything's in"). */
+  inRegion: boolean = true,
 ) {
   const a = clamp(e.lab[1], -AB_RANGE, AB_RANGE);
   const b = clamp(e.lab[2], -AB_RANGE, AB_RANGE);
+  // Out-of-region entries fade to ~25% so the in-region cluster
+  // pops, but they're not invisible — clicking still toggles them.
+  const opacity = !inRegion
+    ? 0.18
+    : selected
+      ? 1
+      : 0.55;
   return (
     <g
       key={e.id}
       transform={`translate(${a}, ${-b})`}
       onMouseEnter={() => onHover(e.id)}
       onMouseLeave={() => onHover(null)}
-      onClick={() => onToggle(e.id)}
+      onClick={(evt) => {
+        evt.stopPropagation();
+        onToggle(e.id);
+      }}
       style={{ cursor: "pointer" }}
     >
       <title>{`${e.hex} · L* ${e.lab[0].toFixed(0)} a* ${e.lab[1].toFixed(1)} b* ${e.lab[2].toFixed(1)}`}</title>
@@ -665,7 +940,7 @@ function renderDot(
         fill={e.hex}
         stroke={selected ? "var(--color-primary)" : "rgba(0,0,0,0.25)"}
         strokeWidth={selected ? 1.2 : 0.5}
-        opacity={selected ? 1 : 0.55}
+        opacity={opacity}
         vectorEffect="non-scaling-stroke"
       />
     </g>
