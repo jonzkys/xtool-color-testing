@@ -217,3 +217,69 @@ export async function validateBatch(
     body: JSON.stringify(body),
   }));
 }
+
+/* ─── Sweep ingest ─────────────────────────────────────────────────────
+ *
+ * Mirror surface for ``POST /api/tests/{id}/ingest`` — the sweep-only
+ * sister to ``validateBatch`` / `validate`. Sweep tests have no
+ * authored expected colour, so the bucket axis collapses to "stable
+ * across runs" (within the user's σ threshold) vs "unstable", with
+ * ``skipped`` reserved for insufficient_runs / no_measurements.
+ */
+
+export interface IngestBatchOverride {
+  cell_index: number;
+  accept: boolean;
+}
+
+export interface IngestBatchRequest {
+  max_sigma_de?: number;
+  result_ids?: number[];
+  overrides?: IngestBatchOverride[];
+  dry_run?: boolean;
+}
+
+export interface IngestBatchEntry {
+  cell_index: number;
+  row: number;
+  col: number;
+  burn_mean_lab: [number, number, number];
+  /** Max kept-run ΔE76 from the consensus. ≤ max_sigma_de → stable. */
+  stability_de: number;
+  run_count: number;
+  n_inputs: number;
+  /** First-run swatch axes — surfaced for the recipe column so the
+   *  user can see what burn settings produced the colour. */
+  x_value: number | null;
+  y_value: number | null;
+  persisted: boolean;
+  new_entry_id: number | null;
+}
+
+export interface IngestBatchSkipped {
+  cell_index: number;
+  reason: "insufficient_runs" | "no_measurements";
+  run_count?: number;
+}
+
+export interface IngestBatchResponse {
+  test_id: number;
+  test_name: string;
+  max_sigma_de: number;
+  result_count: number;
+  dry_run: boolean;
+  stable: IngestBatchEntry[];
+  unstable: IngestBatchEntry[];
+  skipped: IngestBatchSkipped[];
+}
+
+export async function ingestBatch(
+  testId: number,
+  body: IngestBatchRequest = {},
+): Promise<IngestBatchResponse> {
+  return j(await fetch(`/api/tests/${testId}/ingest`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }));
+}

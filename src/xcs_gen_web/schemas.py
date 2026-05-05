@@ -539,6 +539,78 @@ class ValidateBatchResponse(BaseModel):
     skipped: list[ValidateBatchSkipped]
 
 
+class IngestBatchAcceptOverride(BaseModel):
+    """Per-cell override carried in a batch sweep-ingest request.
+    Mirrors ``ValidateBatchAcceptOverride`` — flips a cell between
+    accept (create entry) and skip regardless of the stable/unstable
+    bucket. Accepting an unstable cell = "save this colour even
+    though it drifted between runs"; skipping a stable cell =
+    "don't add this one to the palette right now"."""
+
+    cell_index: int
+    accept: bool
+
+
+class IngestBatchRequest(BaseModel):
+    """POST /api/tests/{tid}/ingest body.
+
+    Sister to ``ValidateBatchRequest`` — the sweep-test variant that
+    has no authored expected colour, so the only gate is intra-cell
+    cross-run stability. ``max_sigma_de`` seeds the bucket: cells
+    whose max kept-run ΔE76 from the consensus is within this
+    threshold are ``stable``, larger spread goes to ``unstable``.
+    ``result_ids`` restricts which results contribute (defaults to
+    all non-excluded). ``overrides`` lets the UI flip per-cell
+    decisions before commit. ``dry_run=true`` returns the bucketing
+    without persisting — drives the preview pane."""
+
+    max_sigma_de: float = 3.0
+    result_ids: list[int] | None = None
+    overrides: list[IngestBatchAcceptOverride] = []
+    dry_run: bool = False
+
+
+class IngestBatchEntry(BaseModel):
+    cell_index: int
+    row: int
+    col: int
+    burn_mean_lab: list[float]
+    # Stability gate — max cross-run ΔE between any kept run's mean
+    # and the consensus. ≤ ``max_sigma_de`` → stable bucket.
+    stability_de: float
+    run_count: int
+    n_inputs: int
+    # First-run swatch (x, y) — used by the route to project per-cell
+    # ``params`` and surfaced to the UI for the recipe column.
+    x_value: float | None = None
+    y_value: float | None = None
+    # Response-side: was this cell actually persisted on save?
+    persisted: bool = False
+    # Response-side: id of the freshly-created palette entry when
+    # ``persisted=true``; ``None`` for dry-run or skipped saves.
+    new_entry_id: int | None = None
+
+
+class IngestBatchSkipped(BaseModel):
+    cell_index: int
+    # Allowed values: "insufficient_runs", "no_measurements".
+    reason: str
+    run_count: int | None = None
+
+
+class IngestBatchResponse(BaseModel):
+    """Bucketed result of a batch sweep ingest, with provenance."""
+
+    test_id: int
+    test_name: str
+    max_sigma_de: float
+    result_count: int
+    dry_run: bool
+    stable: list[IngestBatchEntry]
+    unstable: list[IngestBatchEntry]
+    skipped: list[IngestBatchSkipped]
+
+
 class PaletteEntryCreateManual(BaseModel):
     material_id: int
     hex: str

@@ -176,11 +176,16 @@ export function StabilityPage() {
 
   // Sweep tests don't carry an authored expected Lab, so POLAR (hue
   // ring) and VALIDATE (cell → palette save) are dropped from the
-  // mode pill row. If the user lands on sweep while one of those is
-  // active, snap back to SCATTER so they're not staring at a missing
-  // toolbar.
+  // mode pill row. INGEST is the inverse — sweep-only, since
+  // validation tests already have VALIDATE. Snap to SCATTER on the
+  // way out either way so the user isn't staring at a hidden mode.
   useEffect(() => {
-    if (kindFilter === "sweep" && (chartMode === "polar" || chartMode === "validate")) {
+    if (
+      kindFilter === "sweep" &&
+      (chartMode === "polar" || chartMode === "validate")
+    ) {
+      setChartMode("scatter");
+    } else if (kindFilter === "validation" && chartMode === "ingest") {
       setChartMode("scatter");
     }
   }, [kindFilter, chartMode]);
@@ -564,6 +569,7 @@ export function StabilityPage() {
             onApplyToChartChange={setApplyToChart}
             validateTestId={selectedTestId}
             kind={kindFilter}
+            test={testDetail}
           />
         </main>
         <StabilityStats
