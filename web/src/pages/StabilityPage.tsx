@@ -53,6 +53,14 @@ export function StabilityPage() {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [tests, setTests] = useState<TestRecord[]>([]);
   const [selectedTestId, setSelectedTestId] = useState<number | undefined>(routeId);
+  // Which test family the picker is currently showing. Stability was
+  // originally validation-only; sweep tests benefit from the same
+  // multi-photo comparison + cross-run stats. The toggle just gates
+  // which list of tests is loaded — the chart math takes a unified
+  // shape downstream (see ``cells`` derivation, which synthesises
+  // sweep cells from the spec + reference run when the toggle is on).
+  type StabilityKind = "validation" | "sweep";
+  const [kindFilter, setKindFilter] = useState<StabilityKind>("validation");
 
   // Cache base-test detail (with validation_cells) by id so re-selection
   // is instant. The list endpoint also carries validation_cells, so
@@ -166,26 +174,48 @@ export function StabilityPage() {
     setSelectedResultIdForModal(null);
   }, [selectedTestId]);
 
-  // Load materials + validation tests on mount; if a test id arrived
-  // via the URL, ensure we hydrate its detail. Otherwise pre-select
-  // the most-recent.
+  // Sweep tests don't carry an authored expected Lab, so POLAR (hue
+  // ring) and VALIDATE (cell → palette save) are dropped from the
+  // mode pill row. If the user lands on sweep while one of those is
+  // active, snap back to SCATTER so they're not staring at a missing
+  // toolbar.
+  useEffect(() => {
+    if (kindFilter === "sweep" && (chartMode === "polar" || chartMode === "validate")) {
+      setChartMode("scatter");
+    }
+  }, [kindFilter, chartMode]);
+
+  // Materials list is kind-agnostic; load it once on mount.
   useEffect(() => {
     listMaterials()
       .then(setMaterials)
       .catch(() => {});
-    listTests({ machine_id: getCurrentMachineId(), kind: "validation" })
-      .then((validation) => {
-        // Backend already filters by kind=validation, so no client-side
-        // filter pass is needed. Drops payload size + browser work for
-        // users with many sweep tests.
-        setTests(validation);
-        if (selectedTestId == null && validation.length > 0) {
-          // Newest first — backend sorts by created_at DESC.
-          setSelectedTestId(validation[0].id);
+  }, []);
+
+  // Test list re-fetches whenever the kind toggle flips. Backend filters
+  // by ``kind`` so the dropdown doesn't pull both families. Resetting
+  // ``selectedTestId`` on the way in prevents a stale id from one
+  // family carrying across into the other (which would render an empty
+  // chart with no obvious cause).
+  useEffect(() => {
+    let cancelled = false;
+    listTests({ machine_id: getCurrentMachineId(), kind: kindFilter })
+      .then((next) => {
+        if (cancelled) return;
+        setTests(next);
+        // If the previously selected id isn't in the new list, fall
+        // back to the most-recent test in this family. Newest first —
+        // backend sorts by created_at DESC.
+        const stillThere = next.some((t) => t.id === selectedTestId);
+        if (!stillThere) {
+          setSelectedTestId(next[0]?.id);
         }
       })
       .catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => {
+      cancelled = true;
+    };
+  }, [kindFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hydrate the selected test's detail (validation_cells) from cache
   // when possible, else refetch. The list endpoint already carries
@@ -303,7 +333,63 @@ export function StabilityPage() {
       .filter((s): s is NonNullable<typeof s> => s !== null);
   }, [chartSeries, resultCache]);
 
-  const cells = testDetail?.validation_cells ?? [];
+  const cellsPerRow = useMemo(
+    () => (testDetail ? inferCellsPerRow(testDetail) : null),
+    [testDetail],
+  );
+
+  // Resolve the reference run for the calibration fit. Defaults to the
+  // first selected result when the user hasn't picked an explicit run
+  // (or the picked one has been unticked). Recomputed any time the
+  // pick or the selection changes. Sweep tests reuse the same slot as
+  // the source of "expected" Labs (see ``cells`` below) so the toggle
+  // also picks the primary run for cross-result comparison.
+  const resolvedReferenceId = useMemo<number | null>(() => {
+    if (chartSeries.length === 0) return null;
+    if (
+      referenceResultId != null &&
+      chartSeries.some((s) => s.resultId === referenceResultId)
+    ) {
+      return referenceResultId;
+    }
+    return chartSeries[0].resultId;
+  }, [chartSeries, referenceResultId]);
+
+  // Cells drive every chart axis, the focus panel, and the result
+  // modal. Validation tests own a real cells list; sweep tests don't,
+  // so we synthesise one from the reference run's measured swatches —
+  // each measured Lab becomes the "expected" for that grid position,
+  // and every other selected run is plotted as drift relative to it.
+  // The result is the same multi-photo comparison view validation gets,
+  // applied to "how stable is this burn across N photos / N retests?"
+  // for sweep tests.
+  const cells = useMemo(() => {
+    if (testDetail == null) return [];
+    if (testDetail.kind !== "sweep") {
+      return testDetail.validation_cells;
+    }
+    if (resolvedReferenceId == null || cellsPerRow == null) return [];
+    const ref = chartSeries.find((s) => s.resultId === resolvedReferenceId);
+    if (ref == null) return [];
+    const synthesized: typeof testDetail.validation_cells = [];
+    // Iterate the ref's measurements (already keyed by cell_index) so
+    // we don't synthesize "expected" entries for cells the reference
+    // run failed to measure. Stable order on cell_index keeps the
+    // SPATIAL grid + stats list deterministic across renders.
+    const sorted = [...ref.cells.entries()].sort((a, b) => a[0] - b[0]);
+    for (const [cell_index, m] of sorted) {
+      synthesized.push({
+        id: -cell_index, // synthetic — never round-trips to the API
+        test_id: testDetail.id,
+        cell_index,
+        palette_entry_id: null,
+        expected_hex: m.hex,
+        expected_lab: [m.lab[0], m.lab[1], m.lab[2]],
+        params: {},
+      });
+    }
+    return synthesized;
+  }, [testDetail, resolvedReferenceId, chartSeries, cellsPerRow]);
 
   // Apply ``?cell=`` deep-link when the matching test's cells become
   // available. Reapplies whenever the (id, cell) tuple changes —
@@ -322,25 +408,6 @@ export function StabilityPage() {
     setPinnedCell({ cellIndex: routeCell, source: "deep-link" });
     lastAppliedDeepLink.current = { id: routeId, cell: routeCell };
   }, [cells, selectedTestId, routeId, routeCell]);
-  const cellsPerRow = useMemo(
-    () => (testDetail ? inferCellsPerRow(testDetail) : null),
-    [testDetail],
-  );
-
-  // Resolve the reference run for the calibration fit. Defaults to the
-  // first selected result when the user hasn't picked an explicit run
-  // (or the picked one has been unticked). Recomputed any time the
-  // pick or the selection changes.
-  const resolvedReferenceId = useMemo<number | null>(() => {
-    if (chartSeries.length === 0) return null;
-    if (
-      referenceResultId != null &&
-      chartSeries.some((s) => s.resultId === referenceResultId)
-    ) {
-      return referenceResultId;
-    }
-    return chartSeries[0].resultId;
-  }, [chartSeries, referenceResultId]);
 
   // Fit the affine transform on the reference run's measured cells so
   // we can pass it down when ``applyToChart`` is on. ``null`` whenever
@@ -462,6 +529,8 @@ export function StabilityPage() {
         <StabilityPicker
           tests={tests}
           materials={materials}
+          kind={kindFilter}
+          onKindChange={setKindFilter}
           selectedTestId={selectedTestId}
           onSelectTest={setSelectedTestId}
           results={results}
@@ -494,6 +563,7 @@ export function StabilityPage() {
             applyToChart={applyToChart}
             onApplyToChartChange={setApplyToChart}
             validateTestId={selectedTestId}
+            kind={kindFilter}
           />
         </main>
         <StabilityStats

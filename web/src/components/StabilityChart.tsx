@@ -123,6 +123,11 @@ interface Props {
    *  the per-entry chip on the palette page, etc.). Only relevant
    *  when VALIDATE is active. */
   onValidateSaved?: () => void;
+  /** Whether the page is currently showing validation tests or sweep
+   *  tests. Drives mode-pill availability — POLAR and VALIDATE both
+   *  rely on a real "expected" Lab the user authored, which sweep
+   *  tests don't have, so they're hidden in sweep mode. */
+  kind?: "validation" | "sweep";
 }
 
 /**
@@ -154,6 +159,7 @@ export function StabilityChart({
   onApplyToChartChange,
   validateTestId,
   onValidateSaved,
+  kind = "validation",
 }: Props) {
   const xMeta = X_AXES.find((a) => a.id === xAxis)!;
   const yMeta = Y_AXES.find((a) => a.id === yAxis)!;
@@ -330,6 +336,7 @@ export function StabilityChart({
         simulationActive={simulationActive}
         referenceResultId={referenceResultId}
         onReferenceResultIdChange={onReferenceResultIdChange}
+        kind={kind}
       />
       <div className="flex-1 min-h-0 px-4 pb-4 flex flex-col">
         {mode === "scatter" ? (
@@ -477,6 +484,7 @@ function ChartHeader({
   simulationActive,
   referenceResultId,
   onReferenceResultIdChange,
+  kind,
 }: {
   xAxis: XAxis;
   yAxis: YAxis;
@@ -492,6 +500,7 @@ function ChartHeader({
   simulationActive: boolean;
   referenceResultId: number | null;
   onReferenceResultIdChange: (id: number | null) => void;
+  kind: "validation" | "sweep";
 }) {
   // In spatial mode the X axis is meaningless (no abscissa to vary
   // along); the Y axis row keeps its segmented look but its options
@@ -527,6 +536,7 @@ function ChartHeader({
           mode={mode}
           onChange={onModeChange}
           simulationActive={simulationActive}
+          kind={kind}
         />
         {mode === "calibrate" ? (
           <ReferenceRunRow
@@ -609,17 +619,23 @@ function ModeToggleRow({
   mode,
   onChange,
   simulationActive,
+  kind,
 }: {
   mode: ChartMode;
   onChange: (m: ChartMode) => void;
   simulationActive: boolean;
+  kind: "validation" | "sweep";
 }) {
   // Each mode pill carries its own help — hovering reveals what that
   // mode actually shows, so the user doesn't have to switch modes
   // blind to discover them. The CALIBRATE pill carries a small dot
   // when the "apply to chart" toggle is active so users see at a
   // glance that the other modes are showing simulated values.
-  const options: {
+  // POLAR + VALIDATE both depend on a real authored "expected" Lab
+  // (polar's hue ring, validate's cell-by-cell save). Sweep tests
+  // synthesise their expected from the reference run, so neither
+  // pill is meaningful — drop them from the row entirely.
+  const allOptions: {
     id: ChartMode;
     label: string;
     help: AxisHelp;
@@ -631,6 +647,10 @@ function ModeToggleRow({
     { id: "calibrate", label: "Calibrate", help: MODE_HELP.calibrate },
     { id: "validate", label: "Validate", help: MODE_HELP.validate },
   ];
+  const options =
+    kind === "sweep"
+      ? allOptions.filter((o) => o.id !== "polar" && o.id !== "validate")
+      : allOptions;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <RowLabel label="Mode" />

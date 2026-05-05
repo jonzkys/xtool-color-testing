@@ -3,11 +3,18 @@ import type { ResultRecord, TestRecord } from "../types";
 import type { Material } from "../library";
 import { cn, EmptyState, Input, Select } from "../ui";
 
+export type StabilityKind = "validation" | "sweep";
+
 interface Props {
-  /** All validation tests on the current machine. */
+  /** Tests on the current machine, already filtered to ``kind``. */
   tests: TestRecord[];
   /** Active material set, used for the test filter dropdown. */
   materials: Material[];
+  /** Which test family is currently visible. Drives empty-state copy
+   *  and the per-row summary line; the page is responsible for
+   *  re-fetching when the user flips this. */
+  kind: StabilityKind;
+  onKindChange: (next: StabilityKind) => void;
   /** Currently selected base test id (or undefined when none). */
   selectedTestId: number | undefined;
   onSelectTest: (id: number | undefined) => void;
@@ -37,6 +44,8 @@ interface Props {
 export function StabilityPicker({
   tests,
   materials,
+  kind,
+  onKindChange,
   selectedTestId,
   onSelectTest,
   results,
@@ -105,6 +114,7 @@ export function StabilityPicker({
             direction="left"
           />
         </div>
+        <KindToggle kind={kind} onChange={onKindChange} />
         <div className="flex flex-col gap-1.5">
           <Select
             value={materialFilter === "all" ? "" : String(materialFilter)}
@@ -126,7 +136,7 @@ export function StabilityPicker({
             placeholder="Search by name or #id…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            aria-label="Search validation tests"
+            aria-label={kind === "sweep" ? "Search sweep tests" : "Search validation tests"}
           />
         </div>
       </div>
@@ -138,8 +148,12 @@ export function StabilityPicker({
       >
         {tests.length === 0 ? (
           <EmptyState
-            title="No validation tests"
-            description="Create a validation test on the Tests page to compare its results here."
+            title={kind === "sweep" ? "No sweep tests" : "No validation tests"}
+            description={
+              kind === "sweep"
+                ? "Create a sweep test on the Tests page to compare its results here."
+                : "Create a validation test on the Tests page to compare its results here."
+            }
           />
         ) : filteredTests.length === 0 ? (
           <div className="px-3 py-6 text-center font-mono text-[10px] tracking-[0.16em] uppercase text-[color:var(--color-ink-subtle)]">
@@ -176,7 +190,7 @@ export function StabilityPicker({
                         #{t.id}
                       </span>
                       <span className="font-mono text-[9.5px] tracking-[0.12em] uppercase text-[color:var(--color-ink-subtle)]">
-                        {t.spec.cells_per_row ?? "—"}×{t.validation_cells.length}
+                        {summariseGrid(t)}
                       </span>
                     </div>
                     <div
@@ -428,6 +442,63 @@ function RailLabel({ text }: { text: string }) {
       {text}
     </span>
   );
+}
+
+function KindToggle({
+  kind,
+  onChange,
+}: {
+  kind: StabilityKind;
+  onChange: (next: StabilityKind) => void;
+}) {
+  const options: { id: StabilityKind; label: string }[] = [
+    { id: "validation", label: "Validation" },
+    { id: "sweep", label: "Sweep" },
+  ];
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Test family"
+      className="inline-flex h-7 rounded-[6px] border border-[color:var(--color-border)] overflow-hidden"
+    >
+      {options.map((o, i) => {
+        const active = o.id === kind;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(o.id)}
+            className={cn(
+              "flex-1 px-2 font-mono text-[10px] tracking-[0.16em] uppercase font-semibold tabular-nums",
+              "transition-colors",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
+              i > 0 && "border-l border-[color:var(--color-border)]",
+              active
+                ? "bg-[color:var(--color-primary)] text-white"
+                : "bg-[color:var(--color-surface)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)]",
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Per-row dimensions blurb on the right of each test card. Validation
+ *  tests carry a real cell list so we report ``cpr × cells``; sweep
+ *  tests don't, so we fall back to the spec's grid (``x_steps × rows``)
+ *  which is what the user authored anyway. */
+function summariseGrid(t: TestRecord): string {
+  if (t.kind === "sweep") {
+    const xs = t.spec.x_steps ?? 0;
+    const rows = t.spec.rows ?? 0;
+    return `${xs}×${rows}`;
+  }
+  return `${t.spec.cells_per_row ?? "—"}×${t.validation_cells.length}`;
 }
 
 function ResultRow({
