@@ -1003,6 +1003,15 @@ class ValidationCellsPatch(BaseModel):
     cells: list[ValidationCellIn]
 
 
+class TestLockBody(BaseModel):
+    """``POST /api/tests/{id}/lock`` payload — toggle the manual lock
+    flag. Unlocking a test that already has results uploaded returns
+    a 409: that auto-lock is permanent (re-engraving the same QR
+    needs the same spec), and the user duplicates the test instead."""
+
+    locked: bool
+
+
 # ── Text/registration default ProcessingParams ───────────────────────────────
 
 

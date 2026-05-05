@@ -217,6 +217,39 @@ def mark_tested_and_lock(tid: int, *, owner_id: int = STANDALONE_USER_ID) -> Non
         )
 
 
+def set_locked(
+    tid: int,
+    *,
+    locked: bool,
+    owner_id: int = STANDALONE_USER_ID,
+) -> dict[str, Any] | None:
+    """Manually lock or unlock a test.
+
+    Use case: lock the test while it's engraving so a stray click on
+    a slider at the machine doesn't silently change the spec the user
+    is about to upload a photo of. Unlocking after results have
+    landed is refused — the post-result lock is permanent (the user
+    duplicates the test to change anything), so the user can re-burn
+    against the same QR. Returns the updated test, ``None`` for
+    unknown / wrong-owner ids, raises ``LockedError`` for the
+    refused unlock case.
+    """
+    cur = get(tid, owner_id=owner_id)
+    if cur is None:
+        return None
+    if not locked and cur["status"] == "tested":
+        raise LockedError(
+            f"test {tid} has results uploaded; duplicate it to change spec",
+        )
+    with session_scope() as s:
+        s.execute(
+            tests.update()
+            .where(and_(tests.c.id == tid, tests.c.owner_id == owner_id))
+            .values(locked=1 if locked else 0, updated_at=_now())
+        )
+    return get(tid, owner_id=owner_id)
+
+
 def soft_delete(tid: int, *, owner_id: int = STANDALONE_USER_ID) -> None:
     with session_scope() as s:
         s.execute(
