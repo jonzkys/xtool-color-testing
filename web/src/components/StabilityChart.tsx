@@ -7,6 +7,7 @@ import { StabilityHeatmap } from "./StabilityHeatmap";
 import { StabilityPolar } from "./StabilityPolar";
 import { StabilitySpectrums, SpectrumOrderRow } from "./StabilitySpectrums";
 import { StabilityCalibrate } from "./StabilityCalibrate";
+import { StabilityIngest } from "./StabilityIngest";
 import { StabilityValidate } from "./StabilityValidate";
 import type { SpectrumOrder } from "./stabilitySpectrumsMath";
 import {
@@ -51,7 +52,8 @@ export type ChartMode =
   | "spectrums"
   | "polar"
   | "calibrate"
-  | "validate";
+  | "validate"
+  | "ingest";
 
 /** Surface a hover/click came from. Drives the page-level "should this
  *  view's mouse-leave clear the transient focus?" decision so a
@@ -126,8 +128,15 @@ interface Props {
   /** Whether the page is currently showing validation tests or sweep
    *  tests. Drives mode-pill availability — POLAR and VALIDATE both
    *  rely on a real "expected" Lab the user authored, which sweep
-   *  tests don't have, so they're hidden in sweep mode. */
+   *  tests don't have, so they're hidden in sweep mode. INGEST is
+   *  the inverse — only visible in sweep mode. */
   kind?: "validation" | "sweep";
+  /** Hooked through to ``StabilityIngest`` so the panel can read the
+   *  spec's ``x_param`` / ``y_param`` for the recipe column. The
+   *  page already passes the test record into the focused-cell
+   *  panel, so we don't need a separate "test" prop everywhere — but
+   *  ingest needs the spec axes specifically. */
+  test?: import("../types").TestRecord | null;
 }
 
 /**
@@ -160,6 +169,7 @@ export function StabilityChart({
   validateTestId,
   onValidateSaved,
   kind = "validation",
+  test,
 }: Props) {
   const xMeta = X_AXES.find((a) => a.id === xAxis)!;
   const yMeta = Y_AXES.find((a) => a.id === yAxis)!;
@@ -421,6 +431,16 @@ export function StabilityChart({
             applyToChart={applyToChart}
             onApplyToChartChange={onApplyToChartChange}
           />
+        ) : mode === "ingest" ? (
+          // INGEST mode — sweep-only sister to VALIDATE. The mode
+          // pill row hides this option for validation tests; the
+          // panel itself surfaces a "no run picked" empty state if
+          // the user untitled every result.
+          <StabilityIngest
+            test={test ?? null}
+            series={series}
+            onSaved={onValidateSaved}
+          />
         ) : (
           // VALIDATE mode — locks in burn-mean Lab as the
           // authoritative colour for each cell's palette entry. The
@@ -544,7 +564,11 @@ function ChartHeader({
             referenceResultId={referenceResultId}
             onChange={onReferenceResultIdChange}
           />
-        ) : mode === "polar" ? null : (
+        ) : mode === "polar" || mode === "ingest" ? null : (
+          // INGEST takes the full canvas like POLAR; the Y axis pill
+          // row would be dead chrome (ingest doesn't read it). VALIDATE
+          // keeps the row for backward-compat — long-standing minor
+          // issue, not worth fixing in this PR.
           <AxisRow
             legend={yLegend}
             axes={yAxes}
@@ -634,7 +658,9 @@ function ModeToggleRow({
   // POLAR + VALIDATE both depend on a real authored "expected" Lab
   // (polar's hue ring, validate's cell-by-cell save). Sweep tests
   // synthesise their expected from the reference run, so neither
-  // pill is meaningful — drop them from the row entirely.
+  // pill is meaningful — drop them from the row entirely. INGEST is
+  // the inverse — sweep-only, since validation tests already have a
+  // dedicated VALIDATE flow.
   const allOptions: {
     id: ChartMode;
     label: string;
@@ -646,11 +672,12 @@ function ModeToggleRow({
     { id: "polar", label: "Polar", help: MODE_HELP.polar },
     { id: "calibrate", label: "Calibrate", help: MODE_HELP.calibrate },
     { id: "validate", label: "Validate", help: MODE_HELP.validate },
+    { id: "ingest", label: "Ingest", help: MODE_HELP.ingest },
   ];
   const options =
     kind === "sweep"
       ? allOptions.filter((o) => o.id !== "polar" && o.id !== "validate")
-      : allOptions;
+      : allOptions.filter((o) => o.id !== "ingest");
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <RowLabel label="Mode" />

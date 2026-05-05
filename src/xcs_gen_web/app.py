@@ -21,6 +21,10 @@ from .security import (
 from .schemas import (
     AveragedSwatch,
     BaseParams,
+    IngestBatchEntry,
+    IngestBatchRequest,
+    IngestBatchResponse,
+    IngestBatchSkipped,
     IngestToPaletteRequest,
     MaterialCreate,
     MaterialResponse,
@@ -1911,6 +1915,149 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             stable=stable_response,
             drifted=drifted_response,
             skipped=skipped_response,
+        )
+
+    @app.post(
+        "/api/tests/{tid}/ingest",
+        response_model=IngestBatchResponse,
+    )
+    def tests_ingest_batch(
+        tid: int,
+        body: IngestBatchRequest,
+        user_id: int = Depends(get_current_user),
+    ) -> IngestBatchResponse:
+        """Walk a sweep test's grid against its uploaded results,
+        bucket cells stable / unstable / skipped by intra-cell
+        cross-run stability, and (unless ``dry_run``) create new
+        validated palette entries from the consensus Lab of each
+        accepted cell.
+
+        Sister route to ``/api/tests/{tid}/validate``: same
+        robust-mean math, same per-cell upsert semantics
+        (``(test_id, cell_index)`` is the natural key, so re-running
+        is idempotent), but no authored expected colour to compare
+        against — sweeps don't have one. Per-cell ``params`` are
+        projected from the spec axes + base params + the first run's
+        swatch (x_value, y_value), matching how the
+        ``ingest-to-palette`` endpoint already projects them for
+        per-swatch picking.
+
+        The Stability page's INGEST mode hits this in dry_run mode
+        first to show the preview, then again with ``dry_run=false``
+        and any per-cell overrides the user flipped. The math lives
+        in ``services/ingest.compute_ingest_buckets``.
+        """
+        from .services import ingest as ingest_service
+
+        t = t_repo.get(tid, owner_id=user_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="test not found")
+        if (t.get("kind") or "sweep") != "sweep":
+            raise HTTPException(
+                status_code=400,
+                detail="ingest is only valid on kind=sweep tests",
+            )
+
+        results = r_repo.list_by_test(
+            tid, owner_id=user_id, include_excluded=False,
+        )
+        if body.result_ids:
+            allowed = set(body.result_ids)
+            results = [r for r in results if r["id"] in allowed]
+        result_count = len(results)
+        swatches_per_result = [r.get("swatches") or [] for r in results]
+
+        buckets = ingest_service.compute_ingest_buckets(
+            swatches_per_result=swatches_per_result,
+            spec=t["spec"],
+            max_sigma_de=body.max_sigma_de,
+        )
+
+        # Apply per-cell overrides: build the persist set. Stable
+        # entries persist by default; unstable entries only when
+        # explicitly accepted by the user.
+        override_map = {o.cell_index: o.accept for o in body.overrides}
+
+        def decide(entry: dict, default_accept: bool) -> bool:
+            return (
+                override_map.get(entry["cell_index"], default_accept)
+                and not body.dry_run
+            )
+
+        stable_decisions = [
+            (entry, decide(entry, True)) for entry in buckets["stable"]
+        ]
+        unstable_decisions = [
+            (entry, decide(entry, False)) for entry in buckets["unstable"]
+        ]
+
+        # Project per-cell ``params`` from the spec axes the same way
+        # ``tests_ingest_to_palette`` does for sweep tests:
+        # x_param ← x_value, optional y_param ← y_value, on top of
+        # base_params + spec-level angle_mode/crosshatch. That keeps
+        # palette recipes consistent across the two ingest paths so a
+        # downstream re-burn produces the same colour.
+        spec = t["spec"]
+        base = dict(spec.get("base_params") or {})
+        x_param = spec.get("x_param")
+        y_param = spec.get("y_param")
+        spec_angle_mode = spec.get("angle_mode", "fixed")
+        spec_crosshatch = bool(spec.get("crosshatch", False))
+        # Legacy ``angle_mode="crosshatch"`` is the same as
+        # ``angle_mode="fixed", crosshatch=True``; snap on the way out
+        # so palette consumers don't have to know about the legacy
+        # form.
+        if spec_angle_mode == "crosshatch":
+            spec_angle_mode = "fixed"
+            spec_crosshatch = True
+
+        def params_for(entry: dict) -> dict:
+            params = dict(base)
+            params["angle_mode"] = spec_angle_mode
+            params["crosshatch"] = spec_crosshatch
+            if x_param and entry.get("x_value") is not None:
+                params[x_param] = entry["x_value"]
+            if y_param and entry.get("y_value") is not None:
+                params[y_param] = entry["y_value"]
+            return params
+
+        machine_id = t.get("machine_id") or "F2Ultra"
+        material_id = t["material_id"]
+        new_ids: dict[int, int] = {}
+        for entry, persist in (*stable_decisions, *unstable_decisions):
+            if not persist:
+                continue
+            new_entry = pal_repo.create_validated_entry(
+                machine_id=machine_id,
+                material_id=material_id,
+                burn_mean_lab=tuple(entry["burn_mean_lab"]),
+                validated_test_id=tid,
+                validated_cell_index=int(entry["cell_index"]),
+                run_count=int(entry["run_count"]),
+                stability_de=float(entry["stability_de"]),
+                params=params_for(entry),
+                owner_id=user_id,
+            )
+            new_ids[entry["cell_index"]] = new_entry["id"]
+
+        def to_response(entry: dict, persisted: bool) -> IngestBatchEntry:
+            return IngestBatchEntry(
+                **entry,
+                persisted=persisted,
+                new_entry_id=new_ids.get(entry["cell_index"]),
+            )
+
+        return IngestBatchResponse(
+            test_id=tid,
+            test_name=t["name"],
+            max_sigma_de=body.max_sigma_de,
+            result_count=result_count,
+            dry_run=body.dry_run,
+            stable=[to_response(e, p) for e, p in stable_decisions],
+            unstable=[to_response(e, p) for e, p in unstable_decisions],
+            skipped=[
+                IngestBatchSkipped(**s) for s in buckets["skipped"]
+            ],
         )
 
     @app.post("/api/tests/{tid}/ingest-to-palette")

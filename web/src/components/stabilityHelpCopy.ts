@@ -306,7 +306,8 @@ export type ModeHelpKey =
   | "spectrums"
   | "polar"
   | "calibrate"
-  | "validate";
+  | "validate"
+  | "ingest";
 
 export const MODE_HELP: Record<ModeHelpKey, AxisHelp> = {
   scatter: {
@@ -355,6 +356,14 @@ export const MODE_HELP: Record<ModeHelpKey, AxisHelp> = {
       "Bucket each cell by *cross-run stability*; save the consensus burn-mean as a fresh palette entry.",
     guide:
       "Per-cell preview of expected / burn-mean / stability ΔE / ΔE-vs-expected. Stable cells (consensus tight across runs) save by default; drifted cells need a manual call. Save creates a NEW palette entry with is_validated=true — the original entry, if any, is left untouched. ΔE-vs-original is informational; the gate is intra-cell consistency, not closeness to a colour the original photo might have got wrong.",
+    schematic: "pair",
+  },
+  ingest: {
+    heading: "Ingest",
+    definition:
+      "Sweep-only sister to Validate — bucket each cell by stability across runs, then save the stable consensus colours as fresh palette entries.",
+    guide:
+      "Sweep tests have no authored expected colour, so the only gate is intra-cell σ across the picked runs. The σ slider sets the threshold; cells under it land in stable and tick on by default, cells over it land in unstable and need a manual accept. Save keys per (test, cell) so re-running on a fresh upload upserts the existing entry rather than duplicating.",
     schematic: "pair",
   },
 };
