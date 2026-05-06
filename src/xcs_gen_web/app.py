@@ -21,11 +21,14 @@ from .security import (
 from .schemas import (
     AveragedSwatch,
     BaseParams,
+    CalibrationMeasureRequest,
     IngestBatchEntry,
     IngestBatchRequest,
     IngestBatchResponse,
     IngestBatchSkipped,
     IngestToPaletteRequest,
+    MaterialCalibrationConfig,
+    MaterialCalibrationPatch,
     MaterialCreate,
     MaterialResponse,
     MaterialUpdate,
@@ -986,6 +989,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not m_repo.set_default(mid, owner_id=user_id):
             raise HTTPException(status_code=404, detail="material not found")
         return Response(status_code=204)
+
+    # Material calibration ----------------------------------------------
+    @app.get(
+        "/api/materials/{material_id}/calibration",
+        response_model=MaterialCalibrationConfig,
+    )
+    def get_material_calibration(
+        material_id: int, user_id: int = Depends(get_current_user),
+    ) -> MaterialCalibrationConfig:
+        material = m_repo.get(material_id, owner_id=user_id)
+        if material is None:
+            raise HTTPException(status_code=404, detail="material not found")
+        return MaterialCalibrationConfig(
+            wb_supported=material.get("wb_supported", True),
+            clean_pass_params=material.get("clean_pass_params"),
+            calibration_patches=material.get("calibration_patches"),
+        )
+
+    @app.patch(
+        "/api/materials/{material_id}/calibration",
+        response_model=MaterialCalibrationConfig,
+    )
+    def patch_material_calibration(
+        material_id: int,
+        body: MaterialCalibrationPatch,
+        user_id: int = Depends(get_current_user),
+    ) -> MaterialCalibrationConfig:
+        try:
+            m_repo.update_material_calibration(
+                material_id,
+                owner_id=user_id,
+                wb_supported=body.wb_supported,
+                clean_pass_params=(
+                    body.clean_pass_params.model_dump()
+                    if body.clean_pass_params else None
+                ),
+                calibration_patches=(
+                    [p.model_dump() for p in body.calibration_patches]
+                    if body.calibration_patches else None
+                ),
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail="material not found")
+        return get_material_calibration(material_id, user_id=user_id)
 
     # Presets ------------------------------------------------------------
     @app.post("/api/presets", response_model=PresetResponse, status_code=201)
