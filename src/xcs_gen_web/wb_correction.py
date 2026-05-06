@@ -66,3 +66,68 @@ def chromaticity_correct(
         measured_rgb=unburned_rgb,
         scales=(sR, sG, sB),
     )
+
+
+class AnchoredFitError(ValueError):
+    """Raised when the anchored fit can't be computed (too few patches,
+    degenerate inputs)."""
+
+
+@dataclass
+class AnchoredResult:
+    """Output of anchored correction (linear or gamma)."""
+    frame: np.ndarray
+    measured_rgbs: list[tuple[float, float, float]]
+    fit_kind: str             # "linear" | "gamma"
+    fit: list[tuple[float, ...]]   # per-channel coefficients
+
+
+def anchored_correct_linear(
+    frame_bgr: np.ndarray,
+    *,
+    measured_rgbs: list[tuple[float, float, float]],
+    canonical_rgbs: list[tuple[float, float, float]],
+) -> AnchoredResult:
+    """Fit a per-channel linear ``corrected = a * raw + b`` from two
+    or more (measured, canonical) anchor pairs and apply.
+    """
+    if len(measured_rgbs) < 2 or len(canonical_rgbs) < 2:
+        raise AnchoredFitError(
+            f"need at least 2 anchors, got {len(measured_rgbs)}"
+        )
+    if len(measured_rgbs) != len(canonical_rgbs):
+        raise AnchoredFitError(
+            "measured_rgbs and canonical_rgbs must have same length"
+        )
+
+    n = len(measured_rgbs)
+    measured = np.asarray(measured_rgbs, dtype=np.float64)
+    canonical = np.asarray(canonical_rgbs, dtype=np.float64)
+
+    fit: list[tuple[float, ...]] = []
+    for c in range(3):
+        x = measured[:, c]
+        y = canonical[:, c]
+        A = np.column_stack([x, np.ones(n)])
+        try:
+            coeffs, *_ = np.linalg.lstsq(A, y, rcond=None)
+        except np.linalg.LinAlgError as e:
+            raise AnchoredFitError(f"channel {c} fit failed: {e}") from e
+        a, b = float(coeffs[0]), float(coeffs[1])
+        fit.append((a, b))
+
+    f = frame_bgr.astype(np.float32)
+    aR, bR = fit[0]
+    aG, bG = fit[1]
+    aB, bB = fit[2]
+    f[:, :, 0] = f[:, :, 0] * aB + bB
+    f[:, :, 1] = f[:, :, 1] * aG + bG
+    f[:, :, 2] = f[:, :, 2] * aR + bR
+    out = np.clip(f, 0, 255).astype(np.uint8)
+
+    return AnchoredResult(
+        frame=out,
+        measured_rgbs=list(measured_rgbs),
+        fit_kind="linear",
+        fit=fit,
+    )

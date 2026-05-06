@@ -46,3 +46,55 @@ def test_chromaticity_records_scale_factors():
     assert abs(out.scales[1] - 1.0) < 1e-9
     assert out.scales[0] != 1.0
     assert out.scales[2] != 1.0
+
+
+from xcs_gen_web.wb_correction import (
+    AnchoredResult,
+    anchored_correct_linear,
+    AnchoredFitError,
+)
+
+
+def test_anchored_linear_recovers_inverse_transform():
+    base = _frame((100, 100, 100))   # neutral grey
+    tinted = base.astype(np.float32)
+    tinted[:, :, 2] = np.clip(tinted[:, :, 2] * 1.2 + 5, 0, 255)
+    tinted[:, :, 0] = np.clip(tinted[:, :, 0] * 0.8 + 5, 0, 255)
+    tinted_u8 = tinted.astype(np.uint8)
+    measured_dark_rgb = (
+        50 * 1.2 + 5,
+        50,
+        50 * 0.8 + 5,
+    )
+    measured_light_rgb = (
+        200 * 1.2 + 5,
+        200,
+        200 * 0.8 + 5,
+    )
+    canonical_dark = (50.0, 50.0, 50.0)
+    canonical_light = (200.0, 200.0, 200.0)
+
+    out = anchored_correct_linear(
+        tinted_u8,
+        measured_rgbs=[measured_dark_rgb, measured_light_rgb],
+        canonical_rgbs=[canonical_dark, canonical_light],
+    )
+    px = out.frame[50, 50]
+    assert abs(int(px[2]) - 100) <= 2
+    assert abs(int(px[1]) - 100) <= 2
+    assert abs(int(px[0]) - 100) <= 2
+    assert isinstance(out, AnchoredResult)
+    assert out.fit_kind == "linear"
+    assert len(out.fit) == 3   # one (a, b) per channel
+
+
+def test_anchored_linear_raises_when_too_few_patches():
+    import pytest
+
+    img = _frame((100, 100, 100))
+    with pytest.raises(AnchoredFitError):
+        anchored_correct_linear(
+            img,
+            measured_rgbs=[(100.0, 100.0, 100.0)],
+            canonical_rgbs=[(100.0, 100.0, 100.0)],
+        )
