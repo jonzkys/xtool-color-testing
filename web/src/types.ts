@@ -260,6 +260,10 @@ export interface ResultRecord {
    *  constrained. UI surfaces this as a warning so users know which
    *  corner's colours may be unreliable. */
   missing_markers?: number[];
+  /** WB-correction state recorded at ingest time. ``null`` when the
+   *  pipeline didn't run WB (no calibration, toggle off, or pre-WB
+   *  burn). */
+  wb?: ResultWBState | null;
 }
 
 export interface AveragedSwatch extends ResultSwatch {
@@ -518,4 +522,36 @@ export interface PixelArtRequest {
   cell_mm: number;
   rects: PixelArtRectSpec[];
   layers: PixelArtLayerSpec[];
+}
+
+// ---------------------------------------------------------------------------
+// WB calibration (mirrors src/xcs_gen_web/schemas.py).
+// ---------------------------------------------------------------------------
+
+export interface CalibrationPatchSpec {
+  label: string;
+  params: BaseParams;
+  canonical_rgb: [number, number, number] | null;
+}
+
+export interface MaterialCalibrationConfig {
+  wb_supported: boolean;
+  clean_pass_params: BaseParams | null;
+  calibration_patches: CalibrationPatchSpec[] | null;
+}
+
+export interface CalibrationMeasurePatch {
+  label: string;
+  measured_rgb: [number, number, number];
+}
+
+export interface CalibrationMeasureRequest {
+  measurements: CalibrationMeasurePatch[];
+}
+
+export interface ResultWBState {
+  mode: "anchored" | "chromaticity" | "skipped" | "disabled" | null;
+  anchor_rgb: [number, number, number] | [number, number, number][] | null;
+  correction: Record<string, number[]> | null;
+  canonical_id: string | null;
 }

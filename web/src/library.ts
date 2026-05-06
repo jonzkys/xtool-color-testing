@@ -19,9 +19,12 @@ export interface Material {
    *  page. At most one material per owner has this set; promoting a
    *  different material clears it on the previous holder server-side. */
   is_default: boolean;
+  /** Per-substrate WB calibration config; absent / null when the
+   *  material has no calibration profile yet. */
+  calibration?: MaterialCalibrationConfig | null;
 }
 
-import type { BaseParams } from "./types";
+import type { BaseParams, MaterialCalibrationConfig } from "./types";
 
 export interface Preset {
   id: number;
