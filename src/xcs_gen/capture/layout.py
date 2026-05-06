@@ -14,6 +14,10 @@ MARKER_MARGIN_MM = 1.5
 QR_SIZE_DEFAULT_MM = 5.0
 ARUCO_SIZE_DEFAULT_MM = 2.0
 
+PATCH_SIZE_DEFAULT_MM = 5.0
+PATCH_GAP_DEFAULT_MM = 1.0
+PATCH_BORDER_DEFAULT_MM = 2.0
+
 # ArUco IDs assigned to each corner. The QR sits at top-left; the ArUcos
 # at the other three corners carry IDs 1, 2, 3.
 ARUCO_ID_TOP_RIGHT = 1
@@ -30,9 +34,33 @@ class MarkerPosition:
 
 
 @dataclass
+class CalibrationPatch:
+    label: str           # "light" | "mid" | "dark"
+    x: float             # top-left, mm
+    y: float
+    width_mm: float
+    height_mm: float
+
+
+@dataclass
+class CalibrationCleanPassBBox:
+    x: float
+    y: float
+    width_mm: float
+    height_mm: float
+
+
+@dataclass
+class CalibrationStrip:
+    patches: list[CalibrationPatch]
+    clean_pass_bbox: CalibrationCleanPassBBox
+
+
+@dataclass
 class RegistrationLayout:
     qr: MarkerPosition | None
     arucos: list[MarkerPosition]
+    calibration_strip: CalibrationStrip | None = None
 
 
 def registration_reservation_mm(
@@ -62,6 +90,12 @@ def compute_layout(
     mode: Literal["on", "off"] = "on",
     qr_size_mm: float | None = None,
     aruco_size_mm: float | None = None,
+    with_calibration_strip: bool = False,
+    patch_count: int = 3,
+    patch_size_mm: float = PATCH_SIZE_DEFAULT_MM,
+    patch_gap_mm: float = PATCH_GAP_DEFAULT_MM,
+    patch_border_mm: float = PATCH_BORDER_DEFAULT_MM,
+    patch_labels: tuple[str, ...] = ("light", "mid", "dark"),
 ) -> RegistrationLayout:
     if mode == "off":
         return RegistrationLayout(qr=None, arucos=[])
@@ -88,7 +122,41 @@ def compute_layout(
         y=grid_y + grid_h + MARKER_MARGIN_MM,
         size=aruco_size, marker_id=ARUCO_ID_BOTTOM_RIGHT,
     )
+
+    strip: CalibrationStrip | None = None
+    if with_calibration_strip:
+        strip_w = (
+            patch_count * patch_size_mm
+            + (patch_count - 1) * patch_gap_mm
+        )
+        clean_w = strip_w + 2 * patch_border_mm
+        clean_h = patch_size_mm + 2 * patch_border_mm
+        margin = MARKER_MARGIN_MM
+        avail_x_start = qr_x + qr_size + margin
+        avail_x_end = tr.x - margin
+        if avail_x_end - avail_x_start < clean_w:
+            strip = None
+        else:
+            clean_x = avail_x_start + (avail_x_end - avail_x_start - clean_w) / 2
+            clean_y = grid_y - clean_h - margin
+            patches: list[CalibrationPatch] = []
+            for i, label in enumerate(patch_labels[:patch_count]):
+                px = clean_x + patch_border_mm + i * (patch_size_mm + patch_gap_mm)
+                py = clean_y + patch_border_mm
+                patches.append(CalibrationPatch(
+                    label=label, x=px, y=py,
+                    width_mm=patch_size_mm, height_mm=patch_size_mm,
+                ))
+            strip = CalibrationStrip(
+                patches=patches,
+                clean_pass_bbox=CalibrationCleanPassBBox(
+                    x=clean_x, y=clean_y,
+                    width_mm=clean_w, height_mm=clean_h,
+                ),
+            )
+
     return RegistrationLayout(
         qr=MarkerPosition(x=qr_x, y=qr_y, size=qr_size, marker_id=0),
         arucos=[tr, bl, br],
+        calibration_strip=strip,
     )
