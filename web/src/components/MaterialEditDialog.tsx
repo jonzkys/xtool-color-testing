@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Plus, Sparkles, Target, Trash2, X } from "lucide-react";
 import {
   Button,
   cn,
@@ -17,8 +17,19 @@ import {
 } from "../ui";
 import { useIsDemo } from "../hooks/useIsDemo";
 import { listPaletteEntries, deletePaletteByMaterial } from "../api/palette";
+import {
+  getMaterialCalibration,
+  patchMaterialCalibration,
+} from "../api/wbCalibration";
 import { notify } from "../ui";
 import type { Material, MaterialShape } from "../library";
+import type {
+  BaseParams,
+  CalibrationPatchSpec,
+  MaterialCalibrationConfig,
+} from "../types";
+import { defaultBaseParams } from "../defaults";
+import { BaseParamsEditor } from "./BaseParamsEditor";
 
 /**
  * Modal for creating or editing a material. Replaces the bare
@@ -51,6 +62,63 @@ export interface SubmitValues {
 
 type ShapeChoice = "none" | "circle" | "rect";
 
+/** Sensible starter calibration patches for stainless-steel substrates.
+ *  Three rows spanning light → mid → dark so the WB orchestrator has
+ *  enough range to fit a usable correction. Users can tweak or replace
+ *  these once the plate is burned. */
+const STAINLESS_DEFAULTS: CalibrationPatchSpec[] = [
+  {
+    label: "light",
+    params: {
+      power: 8.0,
+      speed: 1500,
+      frequency: 30,
+      density: 800,
+      passes: 1,
+      pulse_width: 120,
+      laser: "red",
+      scan_angle: 90,
+    },
+    canonical_rgb: null,
+  },
+  {
+    label: "mid",
+    params: {
+      power: 18.0,
+      speed: 1000,
+      frequency: 80,
+      density: 1000,
+      passes: 1,
+      pulse_width: 160,
+      laser: "red",
+      scan_angle: 90,
+    },
+    canonical_rgb: null,
+  },
+  {
+    label: "dark",
+    params: {
+      power: 40.0,
+      speed: 400,
+      frequency: 120,
+      density: 1200,
+      passes: 2,
+      pulse_width: 240,
+      laser: "red",
+      scan_angle: 90,
+    },
+    canonical_rgb: null,
+  },
+];
+
+function rgbToHexString(rgb: [number, number, number]): string {
+  const clamp = (v: number) =>
+    Math.max(0, Math.min(255, Math.round(v)))
+      .toString(16)
+      .padStart(2, "0");
+  return `#${clamp(rgb[0])}${clamp(rgb[1])}${clamp(rgb[2])}`;
+}
+
 export function MaterialEditDialog({
   open,
   onOpenChange,
@@ -75,6 +143,14 @@ export function MaterialEditDialog({
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [clearing, setClearing] = useState(false);
 
+  // Calibration panel — only fetched in edit-mode. ``null`` while
+  // loading or for create-mode; once loaded the local copy is the
+  // single source of truth until the user hits Save.
+  const [calibration, setCalibration] = useState<MaterialCalibrationConfig | null>(null);
+  const [calibrationDirty, setCalibrationDirty] = useState(false);
+  const [calibrationOpen, setCalibrationOpen] = useState(true);
+  const [wizardOpen, setWizardOpen] = useState(false);
+
   // Reset draft state when the dialog opens with a different record.
   // Using ``open`` in the deps means a closed-then-reopened dialog
   // re-seeds from the initial value rather than holding stale edits.
@@ -91,6 +167,10 @@ export function MaterialEditDialog({
     setHeight(initial?.height_mm ?? 0);
     setConfirmingClear(false);
     setPaletteCount(null);
+    setCalibration(null);
+    setCalibrationDirty(false);
+    setCalibrationOpen(true);
+    setWizardOpen(false);
   }, [open, initial]);
 
   // Fetch the live palette-entry count for the material being edited
@@ -108,6 +188,34 @@ export function MaterialEditDialog({
         // generic "Clear palette" label and the API call is what
         // actually does the work.
         if (!cancelled) setPaletteCount(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, isEdit, initial]);
+
+  // Fetch the live calibration record so the panel shows the most
+  // recent state. Falls back to the seed shape (wb_supported=true,
+  // empty patches) if the GET fails so the user can still configure
+  // calibration on a material that doesn't have a row yet.
+  useEffect(() => {
+    if (!open || !isEdit || !initial) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cfg = await getMaterialCalibration(initial.id);
+        if (!cancelled) {
+          setCalibration(cfg);
+          setCalibrationDirty(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setCalibration({
+            wb_supported: true,
+            clean_pass_params: null,
+            calibration_patches: null,
+          });
+          setCalibrationDirty(false);
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -190,6 +298,13 @@ export function MaterialEditDialog({
     setError(null);
     try {
       await onSubmit(result);
+      // Persist calibration changes alongside the material patch when
+      // the user touched anything in the calibration panel. We only
+      // PATCH on dirty so a benign open-and-close doesn't clobber a
+      // calibration row the user filled in elsewhere.
+      if (isEdit && initial && calibrationDirty && calibration) {
+        await patchMaterialCalibration(initial.id, calibration);
+      }
       onOpenChange(false);
     } catch (e) {
       setError((e as Error).message);
@@ -197,6 +312,65 @@ export function MaterialEditDialog({
       setSubmitting(false);
     }
   }
+
+  // Helpers for the calibration panel ----------------------------------
+
+  function patchCalibration(p: Partial<MaterialCalibrationConfig>) {
+    setCalibration((prev) => {
+      const base = prev ?? {
+        wb_supported: true,
+        clean_pass_params: null,
+        calibration_patches: null,
+      };
+      return { ...base, ...p };
+    });
+    setCalibrationDirty(true);
+  }
+
+  function setPatches(
+    next: CalibrationPatchSpec[] | null,
+  ) {
+    patchCalibration({ calibration_patches: next });
+  }
+
+  function addPatch() {
+    const existing = calibration?.calibration_patches ?? [];
+    if (existing.length >= 8) return;
+    const idx = existing.length + 1;
+    setPatches([
+      ...existing,
+      {
+        label: `patch-${idx}`,
+        params: defaultBaseParams(),
+        canonical_rgb: null,
+      },
+    ]);
+  }
+
+  function loadStainlessDefaults() {
+    setPatches(STAINLESS_DEFAULTS.map((p) => ({ ...p, params: { ...p.params } })));
+  }
+
+  function updatePatch(index: number, p: Partial<CalibrationPatchSpec>) {
+    const existing = calibration?.calibration_patches ?? [];
+    const next = existing.map((row, i) => (i === index ? { ...row, ...p } : row));
+    setPatches(next);
+  }
+
+  function deletePatch(index: number) {
+    const existing = calibration?.calibration_patches ?? [];
+    const next = existing.filter((_, i) => i !== index);
+    setPatches(next.length === 0 ? null : next);
+  }
+
+  // Stub for Task 22 — the wizard that opens from this CTA lives in
+  // a follow-up commit. Keeping the button visible (and the readiness
+  // check live) lets the layout settle before the wizard lands.
+  function openWizard() {
+    setWizardOpen(true);
+  }
+  // Suppress "declared but unused" until the wizard is wired in.
+  void wizardOpen;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -296,6 +470,25 @@ export function MaterialEditDialog({
               </div>
             )}
           </Section>
+
+          {isEdit && initial && (
+            <CalibrationSection
+              calibration={calibration}
+              isDemo={isDemo}
+              wbSupported={calibration?.wb_supported ?? true}
+              cleanPass={calibration?.clean_pass_params ?? null}
+              patches={calibration?.calibration_patches ?? null}
+              onToggleWb={(v) => patchCalibration({ wb_supported: v })}
+              onCleanPassChange={(p) => patchCalibration({ clean_pass_params: p })}
+              onAddPatch={addPatch}
+              onLoadStainless={loadStainlessDefaults}
+              onUpdatePatch={updatePatch}
+              onDeletePatch={deletePatch}
+              onCalibrate={openWizard}
+              expanded={calibrationOpen}
+              onToggleExpanded={() => setCalibrationOpen((v) => !v)}
+            />
+          )}
 
           {error && (
             <div className={cn(
@@ -404,5 +597,321 @@ export function MaterialEditDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Calibration sub-section.
+// ---------------------------------------------------------------------------
+
+interface CalibrationSectionProps {
+  calibration: MaterialCalibrationConfig | null;
+  isDemo: boolean;
+  wbSupported: boolean;
+  cleanPass: BaseParams | null;
+  patches: CalibrationPatchSpec[] | null;
+  onToggleWb: (v: boolean) => void;
+  onCleanPassChange: (p: BaseParams | null) => void;
+  onAddPatch: () => void;
+  onLoadStainless: () => void;
+  onUpdatePatch: (index: number, p: Partial<CalibrationPatchSpec>) => void;
+  onDeletePatch: (index: number) => void;
+  onCalibrate: () => void;
+  expanded: boolean;
+  onToggleExpanded: () => void;
+}
+
+function CalibrationSection({
+  calibration,
+  isDemo,
+  wbSupported,
+  cleanPass,
+  patches,
+  onToggleWb,
+  onCleanPassChange,
+  onAddPatch,
+  onLoadStainless,
+  onUpdatePatch,
+  onDeletePatch,
+  onCalibrate,
+  expanded,
+  onToggleExpanded,
+}: CalibrationSectionProps) {
+  const dimmed = !wbSupported;
+  const patchList = patches ?? [];
+  const canCalibrate = wbSupported && patchList.length >= 2;
+
+  return (
+    <Section
+      title="Calibration"
+      description="Burn a strip on every test plate so palette colours stay consistent across lighting."
+      actions={
+        <button
+          type="button"
+          onClick={onToggleExpanded}
+          aria-expanded={expanded}
+          className="inline-flex items-center gap-1 text-[11px] font-mono uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-ink)]"
+        >
+          {expanded ? (
+            <ChevronDown className="h-3 w-3" strokeWidth={2.2} />
+          ) : (
+            <ChevronRight className="h-3 w-3" strokeWidth={2.2} />
+          )}
+          {expanded ? "Hide" : "Show"}
+        </button>
+      }
+      dense
+    >
+      {/* WB-supported toggle is always visible so users on tricky
+          substrates can opt out without expanding the panel. */}
+      <label className="flex items-start gap-2 text-[12.5px] text-[color:var(--color-ink-muted)]">
+        <input
+          type="checkbox"
+          checked={wbSupported}
+          onChange={(e) => onToggleWb(e.target.checked)}
+          className="mt-0.5"
+        />
+        <span>
+          White-balance correction supported
+          <span className="block text-[11px] text-[color:var(--color-ink-subtle)]">
+            {wbSupported
+              ? "Calibration will run on ingest when a strip is present."
+              : "Disable for substrates that don't tolerate the clean pass — calibration is skipped at ingest."}
+          </span>
+        </span>
+      </label>
+
+      {expanded && (
+        <div
+          className={cn(
+            "flex flex-col gap-4",
+            dimmed && "opacity-50 pointer-events-none",
+          )}
+          aria-disabled={dimmed}
+        >
+          {calibration === null ? (
+            <p className="font-mono text-[11px] text-[color:var(--color-ink-subtle)]">
+              Loading calibration…
+            </p>
+          ) : (
+            <>
+              {/* Clean-pass params --------------------------------- */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
+                    Clean-pass recipe
+                  </span>
+                  {cleanPass && (
+                    <button
+                      type="button"
+                      onClick={() => onCleanPassChange(null)}
+                      className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-destructive)]"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                {cleanPass ? (
+                  <BaseParamsEditor
+                    value={cleanPass}
+                    onChange={onCleanPassChange}
+                  />
+                ) : (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => onCleanPassChange(defaultBaseParams())}
+                  >
+                    Add clean-pass recipe
+                  </Button>
+                )}
+                <p className="text-[11px] text-[color:var(--color-ink-subtle)] leading-snug">
+                  A low-energy raster that wipes any prior toning before the patches go down.
+                </p>
+              </div>
+
+              {/* Patches ------------------------------------------ */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
+                    Patches
+                  </span>
+                  <span className="font-mono text-[11px] tabular-nums text-[color:var(--color-ink-subtle)]">
+                    {patchList.length}/8
+                  </span>
+                </div>
+
+                {patches === null && (
+                  <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] p-3 flex flex-col gap-2">
+                    <p className="text-[12px] text-[color:var(--color-ink-muted)] leading-snug">
+                      No patches configured yet. Start with the stainless defaults
+                      (light · mid · dark) or add your own.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={onLoadStainless}
+                        className="gap-1.5"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" strokeWidth={2.2} />
+                        Use stainless-steel defaults
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={onAddPatch}
+                        className="gap-1.5"
+                      >
+                        <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
+                        Add patch
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {patchList.map((patch, idx) => (
+                  <PatchRow
+                    key={idx}
+                    index={idx}
+                    patch={patch}
+                    onUpdate={(p) => onUpdatePatch(idx, p)}
+                    onDelete={() => onDeletePatch(idx)}
+                  />
+                ))}
+
+                {patches !== null && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={onAddPatch}
+                    disabled={patchList.length >= 8}
+                    className="gap-1.5 self-start"
+                  >
+                    <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
+                    Add patch
+                  </Button>
+                )}
+              </div>
+
+              {/* Calibrate CTA ------------------------------------ */}
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <p className="text-[11.5px] text-[color:var(--color-ink-subtle)] leading-snug max-w-[28ch]">
+                  {patchList.length < 2
+                    ? "Configure at least two patches to run the wizard."
+                    : "Burn a calibration plate, photograph it, and record measured colours."}
+                </p>
+                <DemoLock label="Calibration is disabled in the demo.">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    disabled={isDemo || !canCalibrate}
+                    onClick={onCalibrate}
+                    className="gap-1.5"
+                  >
+                    <Target className="h-3.5 w-3.5" strokeWidth={2.2} />
+                    Calibrate
+                  </Button>
+                </DemoLock>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// One row in the patches list.
+// ---------------------------------------------------------------------------
+
+interface PatchRowProps {
+  index: number;
+  patch: CalibrationPatchSpec;
+  onUpdate: (p: Partial<CalibrationPatchSpec>) => void;
+  onDelete: () => void;
+}
+
+function PatchRow({ patch, onUpdate, onDelete }: PatchRowProps) {
+  const [paramsOpen, setParamsOpen] = useState(false);
+  const swatchHex = patch.canonical_rgb
+    ? rgbToHexString(patch.canonical_rgb)
+    : null;
+
+  return (
+    <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] p-3 flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        {/* Canonical-RGB swatch — 24×24, neutral border, fixed grid
+            cell on a dashed track when unset so the row doesn't jitter
+            once a colour gets recorded. */}
+        {swatchHex ? (
+          <span
+            className="h-6 w-6 rounded-[4px] border border-[color:var(--color-border-strong)] shrink-0"
+            style={{ background: swatchHex }}
+            title={`canonical_rgb ${swatchHex}`}
+            aria-label={`Canonical RGB ${swatchHex}`}
+          />
+        ) : (
+          <span
+            className="h-6 w-6 rounded-[4px] border border-dashed border-[color:var(--color-border-strong)] shrink-0"
+            title="Not yet measured"
+            aria-label="Not yet measured"
+          />
+        )}
+        <Input
+          mono
+          value={patch.label}
+          maxLength={16}
+          placeholder="label"
+          onChange={(e) => onUpdate({ label: e.target.value })}
+          className="flex-1 min-w-0"
+        />
+        <button
+          type="button"
+          onClick={() => setParamsOpen((v) => !v)}
+          className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-ink)] inline-flex items-center gap-1 px-1.5"
+          aria-expanded={paramsOpen}
+        >
+          {paramsOpen ? (
+            <ChevronDown className="h-3 w-3" strokeWidth={2.2} />
+          ) : (
+            <ChevronRight className="h-3 w-3" strokeWidth={2.2} />
+          )}
+          Recipe
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label="Delete patch"
+          className="h-7 w-7 inline-flex items-center justify-center rounded-[4px] text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-destructive)] hover:bg-[color:var(--color-destructive-tint)]"
+        >
+          <Trash2 className="h-3.5 w-3.5" strokeWidth={2.2} />
+        </button>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
+          Canonical RGB
+        </span>
+        <span className="font-mono text-[11.5px] tabular-nums text-[color:var(--color-ink-muted)]">
+          {swatchHex
+            ? swatchHex
+            : <span className="italic">(not yet measured)</span>}
+        </span>
+      </div>
+      {paramsOpen && (
+        <div className="pt-2 border-t border-[color:var(--color-border)]">
+          <BaseParamsEditor
+            value={patch.params}
+            onChange={(params) => onUpdate({ params })}
+          />
+        </div>
+      )}
+    </div>
   );
 }
