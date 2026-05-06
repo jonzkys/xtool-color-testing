@@ -9,6 +9,7 @@ standalone and multi-user paths share identical not-found semantics.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -24,6 +25,13 @@ class InUseError(Exception):
 
 
 def _row_to_dict(r) -> dict[str, Any]:
+    # WB-calibration columns are nullable on legacy rows; default
+    # ``wb_supported`` to True so older materials still expose the
+    # capability without a backfill (matches the column's
+    # ``server_default="1"``).
+    wb_supported_raw = getattr(r, "wb_supported", None)
+    clean_pass_raw = getattr(r, "clean_pass_params_json", None)
+    patches_raw = getattr(r, "calibration_patches_json", None)
     return {
         "id": r.id, "name": r.name, "notes": r.notes or "",
         "created_at": r.created_at,
@@ -34,6 +42,9 @@ def _row_to_dict(r) -> dict[str, Any]:
         "width_mm": r.width_mm,
         "height_mm": r.height_mm,
         "is_default": bool(r.is_default),
+        "wb_supported": True if wb_supported_raw is None else bool(wb_supported_raw),
+        "clean_pass_params": json.loads(clean_pass_raw) if clean_pass_raw else None,
+        "calibration_patches": json.loads(patches_raw) if patches_raw else None,
     }
 
 
@@ -147,6 +158,78 @@ def set_default(mid: int, *, owner_id: int = STANDALONE_USER_ID) -> bool:
             .values(is_default=1)
         )
         return True
+
+
+def update_material_calibration(
+    mid: int,
+    *,
+    owner_id: int = STANDALONE_USER_ID,
+    wb_supported: bool | None = None,
+    clean_pass_params: dict | None = None,
+    calibration_patches: list[dict] | None = None,
+) -> None:
+    """Patch the WB-calibration columns on a material.
+
+    Owner-scoped like every other write here; raises ``KeyError`` if no
+    row matches (mirrors how callers expect a missing or wrong-owner row
+    to behave). Each parameter is independently optional — pass only the
+    fields you want to overwrite.
+    """
+    fields: dict[str, Any] = {}
+    if wb_supported is not None:
+        fields["wb_supported"] = wb_supported
+    if clean_pass_params is not None:
+        fields["clean_pass_params_json"] = json.dumps(clean_pass_params)
+    if calibration_patches is not None:
+        fields["calibration_patches_json"] = json.dumps(calibration_patches)
+    if not fields:
+        return
+    with session_scope() as s:
+        result = s.execute(
+            materials.update()
+            .where(
+                and_(materials.c.id == mid, materials.c.owner_id == owner_id),
+            )
+            .values(**fields)
+        )
+        if result.rowcount == 0:
+            raise KeyError(mid)
+
+
+def write_calibration_measurements(
+    mid: int,
+    rgb_by_label: dict[str, list[float]],
+    *,
+    owner_id: int = STANDALONE_USER_ID,
+) -> None:
+    """Update each calibration patch's ``canonical_rgb`` in-place.
+
+    ``rgb_by_label`` maps a patch label (e.g. ``"R"``) to the measured
+    RGB triple to store as that patch's canonical value. Labels not
+    present in the material's existing patch list are silently ignored
+    so the caller doesn't need to filter. Raises ``KeyError`` when the
+    material doesn't exist (or isn't owned by ``owner_id``) or has no
+    calibration patches configured yet.
+    """
+    with session_scope() as s:
+        row = s.execute(
+            select(materials.c.calibration_patches_json).where(
+                and_(materials.c.id == mid, materials.c.owner_id == owner_id),
+            )
+        ).first()
+        if row is None or row[0] is None:
+            raise KeyError(mid)
+        patches = json.loads(row[0])
+        for p in patches:
+            if p.get("label") in rgb_by_label:
+                p["canonical_rgb"] = rgb_by_label[p["label"]]
+        s.execute(
+            materials.update()
+            .where(
+                and_(materials.c.id == mid, materials.c.owner_id == owner_id),
+            )
+            .values(calibration_patches_json=json.dumps(patches))
+        )
 
 
 def delete(mid: int, *, owner_id: int = STANDALONE_USER_ID) -> None:
