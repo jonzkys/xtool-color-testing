@@ -54,6 +54,25 @@ export async function submitCalibrationMeasurement(
   }));
 }
 
+/** Server-side auto-measure: warps the photo to burn-space using the
+ *  detected fiducials and samples each calibration patch's centre.
+ *  Returns the same shape as ``CalibrationMeasureRequest`` so the
+ *  wizard can pre-fill its hex inputs (and the user can adjust before
+ *  submitting via ``submitCalibrationMeasurement``). */
+export async function measureCalibrationPhoto(
+  materialId: number,
+  file: File,
+): Promise<CalibrationMeasureRequest> {
+  const fd = new FormData();
+  fd.append("file", file);
+  return j(
+    await fetch(`/api/materials/${materialId}/calibration/measure-photo`, {
+      method: "POST",
+      body: fd,
+    }),
+  );
+}
+
 export async function reingestResult(resultId: number): Promise<unknown> {
   return j(await fetch(`/api/results/${resultId}/reingest`, { method: "POST" }));
 }

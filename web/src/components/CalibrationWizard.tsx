@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -20,9 +20,10 @@ import {
 } from "../ui";
 import {
   downloadCalibrationXcs,
+  measureCalibrationPhoto,
   submitCalibrationMeasurement,
 } from "../api/wbCalibration";
-import { hexToRgb } from "../color/math";
+import { hexToRgb, rgbToHex } from "../color/math";
 import type { CalibrationPatchSpec } from "../types";
 
 /**
@@ -39,6 +40,13 @@ import type { CalibrationPatchSpec } from "../types";
  */
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+
+/** Convert a measured-RGB tuple from the auto-measure endpoint
+ *  (floats in 0–255, possibly fractional) into the hex form the
+ *  step-3 inputs expect. */
+function rgbTupleToHex(rgb: [number, number, number] | number[]): string {
+  return rgbToHex(rgb[0] ?? 0, rgb[1] ?? 0, rgb[2] ?? 0);
+}
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -73,19 +81,32 @@ export function CalibrationWizard({
   const [saving, setSaving] = useState(false);
   const [confirmAbandon, setConfirmAbandon] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoMeasuring, setAutoMeasuring] = useState(false);
+  // Set when the server-side auto-measure couldn't lock onto fiducials
+  // → step 3 falls back to manual entry with a banner explaining why.
+  const [autoMeasureNote, setAutoMeasureNote] = useState<string | null>(null);
 
-  // Reseed local state when the wizard opens. Keeps the previous
-  // photo / rows so a re-open after dismissal preserves the user's
-  // work; users can hit "Back" to reach earlier steps.
+  // Reset step + transient flags ONLY on the open false→true transition.
+  // ``patches`` may change reference mid-flow (after step 4 saves and
+  // the parent re-fetches the material's calibration) — re-running
+  // setStep(1) on every patches change would yank the user back to
+  // step 1 right after they finished the wizard.
+  const wasOpenRef = useRef(false);
   useEffect(() => {
-    if (!open) return;
-    setStep(1);
-    setError(null);
-    setConfirmAbandon(false);
+    if (!open) {
+      wasOpenRef.current = false;
+      return;
+    }
+    if (!wasOpenRef.current) {
+      setStep(1);
+      setError(null);
+      setConfirmAbandon(false);
+      setAutoMeasureNote(null);
+      wasOpenRef.current = true;
+    }
+    // Re-align rows to the current patch list every time it changes
+    // (labels can be edited upstream). Carry over any hex match by label.
     setRows((prev) => {
-      // Re-align to the current patch list — labels can change
-      // upstream between opens. Carry over any hex value that
-      // matches by label.
       const byLabel = new Map(prev.map((r) => [r.label, r.hex]));
       return patches.map((p) => ({
         label: p.label,
@@ -142,6 +163,39 @@ export function CalibrationWizard({
   function handlePhoto(file: File) {
     if (photoUrl) URL.revokeObjectURL(photoUrl);
     setPhotoUrl(URL.createObjectURL(file));
+    void autoMeasure(file);
+  }
+
+  /** Hand the photo to the backend's measure-photo endpoint, which warps
+   *  it to burn-space using the QR/ArUco fiducials and samples each
+   *  patch's centre. On success, prefill the step-3 hex inputs. On
+   *  failure (markers undetectable, decode error), surface a banner and
+   *  fall back to manual entry. */
+  async function autoMeasure(file: File) {
+    setAutoMeasuring(true);
+    setAutoMeasureNote(null);
+    try {
+      const result = await measureCalibrationPhoto(materialId, file);
+      const byLabel = new Map(
+        result.measurements.map((m) => [m.label, m.measured_rgb]),
+      );
+      setRows((prev) =>
+        prev.map((r) => {
+          const rgb = byLabel.get(r.label);
+          if (!rgb) return r;
+          return { ...r, hex: rgbTupleToHex(rgb) };
+        }),
+      );
+      setAutoMeasureNote(
+        "Auto-measured from the photo — adjust any swatch that looks off.",
+      );
+    } catch (e) {
+      setAutoMeasureNote(
+        `Couldn't auto-measure (${(e as Error).message}). Enter values manually.`,
+      );
+    } finally {
+      setAutoMeasuring(false);
+    }
   }
 
   function setRowHex(idx: number, hex: string) {
@@ -261,6 +315,8 @@ export function CalibrationWizard({
               allMeasured={allMeasured}
               saving={saving}
               onSave={handleSave}
+              autoMeasuring={autoMeasuring}
+              autoMeasureNote={autoMeasureNote}
             />
           )}
           {step === 4 && (
@@ -496,6 +552,8 @@ function StepMeasure({
   allMeasured,
   saving,
   onSave,
+  autoMeasuring,
+  autoMeasureNote,
 }: {
   rows: MeasurementRow[];
   photoUrl: string | null;
@@ -504,12 +562,30 @@ function StepMeasure({
   allMeasured: boolean;
   saving: boolean;
   onSave: () => void;
+  autoMeasuring: boolean;
+  autoMeasureNote: string | null;
 }) {
   return (
     <div className="flex flex-col gap-3">
+      {autoMeasuring && (
+        <div className="text-[12px] text-[color:var(--color-ink-muted)] italic">
+          Auto-measuring patches from your photo…
+        </div>
+      )}
+      {autoMeasureNote && !autoMeasuring && (
+        <div
+          className={cn(
+            "rounded-[6px] border border-[color:var(--color-border)]",
+            "bg-[color:var(--color-surface-elevated)] px-3 py-2",
+            "text-[12px] text-[color:var(--color-ink-muted)] leading-snug",
+          )}
+        >
+          {autoMeasureNote}
+        </div>
+      )}
       <p className="text-[13px] text-[color:var(--color-ink-muted)] leading-relaxed">
-        Eyeball each burned patch against the reference photo and record
-        its hex below.
+        Confirm each measured patch against the reference photo. Adjust
+        any swatch that looks off.
       </p>
       <div className="flex gap-3">
         {photoUrl && (
@@ -570,23 +646,37 @@ function MeasureRow({
   onChange: (hex: string) => void;
 }) {
   const valid = HEX_RE.test(row.hex);
+  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="flex items-center gap-2">
-      <span
-        className="h-7 w-7 rounded-[4px] border border-[color:var(--color-border-strong)] shrink-0"
+      {/* Single big swatch — click anywhere on it to open the native
+          colour picker. The actual ``<input type="color">`` lives inside
+          and is visually transparent so we control the look while still
+          delegating the picker UI to the browser. */}
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        aria-label={`Pick colour for ${row.label}`}
+        className={cn(
+          "relative h-9 w-9 rounded-[6px] border shrink-0 cursor-pointer",
+          "border-[color:var(--color-border-strong)]",
+          "hover:border-[color:var(--color-primary)]",
+          valid ? "" : "border-dashed",
+        )}
         style={{ background: valid ? row.hex : "transparent" }}
-        aria-hidden="true"
-      />
+      >
+        <input
+          ref={inputRef}
+          type="color"
+          value={valid ? row.hex : "#888888"}
+          onChange={(e) => onChange(e.target.value)}
+          tabIndex={-1}
+          className="absolute inset-0 opacity-0 cursor-pointer"
+        />
+      </button>
       <span className="font-mono text-[11px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)] w-[68px] truncate">
         {row.label}
       </span>
-      <input
-        type="color"
-        value={valid ? row.hex : "#888888"}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label={`Pick colour for ${row.label}`}
-        className="h-9 w-10 rounded-[6px] border border-[color:var(--color-border-strong)] cursor-pointer p-1 shrink-0"
-      />
       <Input
         mono
         value={row.hex}

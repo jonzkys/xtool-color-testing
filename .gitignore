@@ -42,3 +42,4 @@ web/dist/
 web/*.tsbuildinfo
 web/vite.config.d.ts
 web/vite.config.js
+.review-*.db
