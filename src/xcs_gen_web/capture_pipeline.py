@@ -387,3 +387,43 @@ def apply_wb_correction_to_warped(
         unburned_rgb=unburned_rgb,
         canonical_id=canonical_id,
     )
+
+
+def reingest_with_wb(result_id: int) -> None:
+    """Re-runs WB correction on an existing result.
+
+    Reads ``warped_image_path``, applies correction with the latest
+    settings, persists the new ``wb_*`` columns. Cell re-sampling
+    happens via the existing repo update path (out of scope for v1
+    of this helper — chromaticity-only fallback is exercised here).
+
+    Raises:
+        FileNotFoundError: when warped_image_path is not on disk.
+    """
+    from .repositories import results as r_repo
+
+    result = r_repo.get(result_id)
+    if result is None:
+        raise KeyError(result_id)
+    warped_path = result.get("warped_image_path")
+    if warped_path is None:
+        raise FileNotFoundError(
+            f"result {result_id} has no warped_image_path; "
+            "re-shoot the original photo to recompute"
+        )
+    img = cv2.imread(warped_path)
+    if img is None:
+        raise FileNotFoundError(f"can't read warped image at {warped_path}")
+    outcome = apply_wb_correction_to_warped(
+        img,
+        strip_anchors=None,
+        unburned_rgb=None,
+        canonical_id=None,
+    )
+    r_repo.update_wb_state(
+        result_id,
+        mode=outcome.mode,
+        anchor_rgb=outcome.measured_rgbs,
+        correction=outcome.fit,
+        canonical_id=outcome.canonical_id,
+    )

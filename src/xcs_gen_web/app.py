@@ -1494,6 +1494,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if refreshed is None:
             # Owner check passed in r_repo.get; row should still exist.
             raise HTTPException(status_code=500, detail="reingest write failed")
+        # Best-effort WB re-correction. Skip silently if the warped
+        # sidecar isn't on disk (legacy rows, deleted cache) — the
+        # capture above is still a useful refresh on its own.
+        from .capture_pipeline import reingest_with_wb
+        try:
+            reingest_with_wb(rid)
+        except (FileNotFoundError, KeyError):
+            pass
         return _result_to_response(refreshed)
 
     @app.get(
