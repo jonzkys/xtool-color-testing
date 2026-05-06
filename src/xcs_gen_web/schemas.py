@@ -1251,5 +1251,8 @@ class ResultWBState(BaseModel):
 
     mode: str | None = None
     anchor_rgb: list[float] | list[list[float]] | None = None
-    correction: dict[str, list[float]] | None = None
+    # Anchored fits store a list of 3 per-channel coefficient tuples
+    # (length-2 for linear, length-3 for gamma). Chromaticity stores a
+    # flat list of 3 per-channel scale factors. Either shape is valid.
+    correction: list[list[float]] | list[float] | None = None
     canonical_id: str | None = None

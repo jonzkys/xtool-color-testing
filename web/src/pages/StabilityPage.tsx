@@ -22,7 +22,8 @@ import type { Material } from "../library";
 import { useRoute } from "../router";
 import { getCurrentMachineId } from "../state/machine";
 import type { Lab } from "../color/math";
-import type { ResultRecord, TestRecord } from "../types";
+import { hexToLab, hexToRgb, rgbToHex } from "../color/math";
+import type { ResultRecord, ResultWBState, TestRecord } from "../types";
 
 /**
  * Top-level Stability page. The base test carries the expected
@@ -36,6 +37,53 @@ import type { ResultRecord, TestRecord } from "../types";
  * cell × result matrix and stay in lockstep — clicking a worst-cell
  * link in the stats strip pulses the matching cell in the chart.
  */
+
+/** Reverse-apply the WB correction recorded on a result so the chart
+ *  can render the raw (pre-correction) RGB. Anchored stores per-channel
+ *  ``[a, b]`` (linear) or ``[a, b, gamma]`` (gamma fit); chromaticity
+ *  stores a flat ``[sR, sG, sB]``. Out-of-range outputs are clamped to
+ *  0–255 since a perfect reverse on a clipped channel can't be
+ *  recovered. */
+function reverseApplyWB(
+  rgb: [number, number, number],
+  wb: ResultWBState | null | undefined,
+): [number, number, number] {
+  if (!wb || !wb.correction) return rgb;
+  const c = wb.correction;
+  if (c.length === 0) return rgb;
+  if (typeof c[0] === "number") {
+    const s = c as number[];
+    return [
+      s[0] !== 0 ? rgb[0] / s[0] : rgb[0],
+      s[1] !== 0 ? rgb[1] / s[1] : rgb[1],
+      s[2] !== 0 ? rgb[2] / s[2] : rgb[2],
+    ];
+  }
+  const m = c as number[][];
+  if (m.length !== 3) return rgb;
+  const out: [number, number, number] = [rgb[0], rgb[1], rgb[2]];
+  for (let i = 0; i < 3; i++) {
+    const t = m[i];
+    if (!t) continue;
+    if (t.length === 2) {
+      const [a, b] = t;
+      if (a !== 0) out[i] = (rgb[i] - b) / a;
+    } else if (t.length >= 3) {
+      const [a, b, gamma] = t;
+      const adj = rgb[i] - b;
+      if (a !== 0 && gamma !== 0 && adj > 0) {
+        out[i] = Math.pow(adj / a, 1 / gamma);
+      }
+    }
+  }
+  return [
+    Math.max(0, Math.min(255, out[0])),
+    Math.max(0, Math.min(255, out[1])),
+    Math.max(0, Math.min(255, out[2])),
+  ];
+}
+
+
 export function StabilityPage() {
   const [route, navigate] = useRoute();
   const routeId = route.name === "stability" ? route.id : undefined;
@@ -97,6 +145,11 @@ export function StabilityPage() {
     null,
   );
   const [applyToChart, setApplyToChart] = useState(false);
+  // ``wbApplied`` lets the user A/B-compare the chart with vs without
+  // the per-result WB correction. Default ON because the data is
+  // ingested with WB applied; flipping OFF reverse-applies the stored
+  // fit per swatch so the user can see the raw measurements.
+  const [wbApplied, setWbApplied] = useState(true);
 
   // Unified focused-cell state. Conceptually one slot read by every
   // view, but stored as two independent buckets so a transient hover
@@ -347,13 +400,27 @@ export function StabilityPage() {
       const r = resultCache[id];
       if (!r) continue;
       const cells = new Map<number, { hex: string; lab: Lab }>();
+      const wb = r.wb;
+      const reverse = !wbApplied && wb && wb.mode === "anchored";
       for (const sw of r.swatches) {
         const idx = sw.row * cellsPerRow + sw.col;
         if (!Array.isArray(sw.lab) || sw.lab.length !== 3) continue;
-        cells.set(idx, {
-          hex: sw.hex,
-          lab: [sw.lab[0], sw.lab[1], sw.lab[2]],
-        });
+        if (reverse) {
+          // Reverse-apply this result's stored fit so the chart shows
+          // the raw measurement instead of the WB-corrected one.
+          const rgb = hexToRgb(sw.hex);
+          const raw = reverseApplyWB(
+            [rgb[0], rgb[1], rgb[2]],
+            wb,
+          );
+          const rawHex = rgbToHex(raw[0], raw[1], raw[2]);
+          cells.set(idx, { hex: rawHex, lab: hexToLab(rawHex) });
+        } else {
+          cells.set(idx, {
+            hex: sw.hex,
+            lab: [sw.lab[0], sw.lab[1], sw.lab[2]],
+          });
+        }
       }
       out.push({
         resultId: id,
@@ -362,7 +429,7 @@ export function StabilityPage() {
       });
     }
     return out;
-  }, [testDetail, selectedResultIds, resultCache]);
+  }, [testDetail, selectedResultIds, resultCache, wbApplied]);
 
   const statsSeries = useMemo(() => {
     return chartSeries
@@ -583,6 +650,29 @@ export function StabilityPage() {
           onToggleCollapsed={() => setLeftCollapsed((v) => !v)}
         />
         <main className="flex-1 min-w-0 min-h-0 flex flex-col">
+          {/* WB-correction toggle — lets the user A/B-compare the
+              scatter with vs without per-result WB correction so they
+              can verify whether anchored mode is actually tightening
+              the spread. Hidden when no selected result has a WB fit
+              recorded so legacy-only views don't clutter. */}
+          {selectedResultIds.some((id) => {
+            const r = resultCache[id];
+            return r?.wb?.mode === "anchored";
+          }) && (
+            <div
+              className="flex items-center justify-end gap-2 px-3 py-1.5 border-b border-[color:var(--color-border)] text-[11px] font-mono uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)]"
+            >
+              <label className="inline-flex items-center gap-1.5 cursor-pointer normal-case font-mono tracking-[0.14em]">
+                <input
+                  type="checkbox"
+                  checked={wbApplied}
+                  onChange={(e) => setWbApplied(e.target.checked)}
+                  className="h-3.5 w-3.5 cursor-pointer accent-[color:var(--color-primary)]"
+                />
+                <span>WB CORRECTION</span>
+              </label>
+            </div>
+          )}
           <StabilityChart
             cells={cells}
             series={chartSeries}

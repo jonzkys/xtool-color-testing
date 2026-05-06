@@ -552,6 +552,9 @@ export interface CalibrationMeasureRequest {
 export interface ResultWBState {
   mode: "anchored" | "chromaticity" | "skipped" | "disabled" | null;
   anchor_rgb: [number, number, number] | [number, number, number][] | null;
-  correction: Record<string, number[]> | null;
+  /** Anchored: list of per-channel `[a, b]` (linear) or `[a, b, gamma]`
+   *  (gamma fit). Chromaticity: flat list of 3 per-channel scale
+   *  factors. Either shape may arrive on the wire. */
+  correction: number[][] | number[] | null;
   canonical_id: string | null;
 }

@@ -48,6 +48,23 @@ def _row(r) -> dict[str, Any]:
         "wb_anchor_rgb": json.loads(wb_anchor_raw) if wb_anchor_raw else None,
         "wb_correction": json.loads(wb_correction_raw) if wb_correction_raw else None,
         "wb_canonical_id": getattr(r, "wb_canonical_id", None),
+        # Nested ``wb`` matches ``ResultWBState`` on the wire — the API
+        # surfaces this single field; flat keys above stay for any
+        # internal callers that already read them.
+        "wb": (
+            {
+                "mode": getattr(r, "wb_mode", None),
+                "anchor_rgb": (
+                    json.loads(wb_anchor_raw) if wb_anchor_raw else None
+                ),
+                "correction": (
+                    json.loads(wb_correction_raw) if wb_correction_raw else None
+                ),
+                "canonical_id": getattr(r, "wb_canonical_id", None),
+            }
+            if getattr(r, "wb_mode", None) is not None
+            else None
+        ),
     }
 
 
