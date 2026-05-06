@@ -388,7 +388,7 @@ export function MaterialEditDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         width="sm"
-        className="p-0 max-w-[480px] flex flex-col"
+        className="p-0 max-w-[480px] max-h-[calc(100vh-4rem)] overflow-hidden flex flex-col"
         aria-describedby={undefined}
       >
         <header className="flex items-center justify-between px-5 py-3 border-b border-[color:var(--color-border)] shrink-0">
@@ -413,8 +413,9 @@ export function MaterialEditDialog({
             e.preventDefault();
             void handleSubmit();
           }}
-          className="flex flex-col gap-5 p-5"
+          className="flex flex-col flex-1 min-h-0"
         >
+          <div className="flex-1 overflow-y-auto flex flex-col gap-5 p-5">
           <Section title="Identity" dense>
             <Field label="Name">
               <Input
@@ -592,7 +593,8 @@ export function MaterialEditDialog({
             </Section>
           )}
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[color:var(--color-border)] -mx-5 px-5 -mb-5 pb-4">
+          </div>
+          <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-[color:var(--color-border)] shrink-0 bg-[color:var(--color-surface)]">
             <DialogClose asChild>
               <Button type="button" variant="ghost" size="sm">
                 Cancel
