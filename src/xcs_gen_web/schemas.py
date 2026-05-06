@@ -135,6 +135,14 @@ class ParamTest(BaseModel):
     # ``rows`` / cell count, but the frontend persists an explicit
     # value so the editor's preview reflects what the user picked.
     cells_per_row: int | None = None
+    # Optional override telling the validation-test palette picker
+    # *which material's* palette to seed cells from. Defaults to the
+    # test's own ``material_id`` (the burned material). Use case: pick
+    # known-good colours from material A's palette and run the burn on
+    # material B to see how close the colours land — the typical flow
+    # for "metals usually burn similarly, but each one varies a bit".
+    # Null/omitted = same as test material. Sweep tests ignore this.
+    source_material_id: int | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -786,6 +794,10 @@ class TestSpec(BaseModel):
     # and the frontend's square-cells logic + preview both honour it.
     # Sweep tests ignore this field. Persists across the API round-trip.
     cells_per_row: int | None = None
+    # Validation tests only — material to seed the palette picker from
+    # (defaults to the test's own ``material_id`` when None). See
+    # ``ParamTest.source_material_id`` for the why.
+    source_material_id: int | None = None
     base_params: BaseParams
     registration: RegistrationConfig = Field(default_factory=RegistrationConfig)
 

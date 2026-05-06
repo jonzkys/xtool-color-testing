@@ -177,6 +177,11 @@ export interface TestSpec {
   /** Validation tests only — how many cells per physical row on the
    *  burn. Sweep tests ignore this. */
   cells_per_row?: number;
+  /** Validation tests only — material to seed the palette picker
+   *  from. Defaults to the test's own material when omitted; set to
+   *  another material's id to validate "would material A's palette
+   *  burn the same on material B?" without re-running every sweep. */
+  source_material_id?: number;
   base_params: BaseParams;
   registration: RegistrationConfig;
 }
