@@ -1493,9 +1493,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 },
             )
 
+        # Look up the test's material so the capture pipeline can pick
+        # anchored mode when calibration patches are configured. None is
+        # fine — capture_service falls back through chromaticity → skip.
+        test_row = t_repo.get(tid, owner_id=user_id)
+        material_row = None
+        if test_row is not None:
+            mat_id = test_row.get("material_id")
+            if mat_id is not None:
+                material_row = m_repo.get(mat_id, owner_id=user_id)
+
         try:
             cap_result = capture_service.run_capture(
                 image_bytes=data, test_id=tid, spec=spec,
+                material=material_row,
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -1519,6 +1530,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 models.results.update()
                 .where(models.results.c.id == placeholder["id"])
                 .values(image_path=rec["path"])
+            )
+        # Persist WB outcome on the row we just inserted. update_wb_state
+        # is owner-scoped + raises KeyError on miss; we just confirmed the
+        # row exists, so a miss here would be a bug worth surfacing.
+        if cap_result.wb_outcome is not None:
+            outcome = cap_result.wb_outcome
+            r_repo.update_wb_state(
+                placeholder["id"],
+                mode=outcome.mode,
+                anchor_rgb=outcome.measured_rgbs,
+                correction=outcome.fit,
+                canonical_id=outcome.canonical_id,
+                owner_id=user_id,
             )
         t_repo.mark_tested_and_lock(tid, owner_id=user_id)
         refreshed = r_repo.get(placeholder["id"], owner_id=user_id)

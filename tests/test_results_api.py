@@ -20,7 +20,7 @@ SPEC = {
 }
 
 
-def _fake_capture(*, image_bytes, test_id, spec):
+def _fake_capture(*, image_bytes, test_id, spec, **_kwargs):
     return cap.CaptureResult(
         swatches=[
             {"row": 0, "col": 0, "x_value": 500, "y_value": None,
@@ -175,7 +175,7 @@ def test_upload_response_includes_missing_markers(fresh_db, monkeypatch, tmp_pat
     ResultResponse — the UI relies on it to render the warning pill."""
     monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
 
-    def _capture_with_missing_marker(*, image_bytes, test_id, spec):
+    def _capture_with_missing_marker(*, image_bytes, test_id, spec, **_kwargs):
         return cap.CaptureResult(
             swatches=[
                 {"row": 0, "col": 0, "x_value": 500, "y_value": None,
@@ -240,7 +240,7 @@ def test_reingest_happy_path(fresh_db, monkeypatch, tmp_path):
 
     # Swap to a different fake_capture so we can confirm the swatches
     # were actually replaced rather than left untouched.
-    def _new_capture(*, image_bytes, test_id, spec):
+    def _new_capture(*, image_bytes, test_id, spec, **_kwargs):
         return cap.CaptureResult(
             swatches=[
                 {"row": 0, "col": 0, "x_value": 999, "y_value": None,
@@ -305,7 +305,7 @@ def _setup_for_warped_cache(monkeypatch, tmp_path) -> tuple[TestClient, int, lis
     monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
     counter = [0]
 
-    def _counting_capture(*, image_bytes, test_id, spec):
+    def _counting_capture(*, image_bytes, test_id, spec, **_kwargs):
         counter[0] += 1
         return cap.CaptureResult(
             swatches=[
@@ -517,7 +517,7 @@ def test_swatch_preview_missing_aggregator_returns_422(fresh_db, monkeypatch, tm
     assert r.status_code == 422
 
 
-def _fake_capture_large(*, image_bytes, test_id, spec):
+def _fake_capture_large(*, image_bytes, test_id, spec, **_kwargs):
     """Like _fake_capture but returns a 200x200 warped image so inspect_cell
     has enough pixels to crop a valid cell region."""
     return cap.CaptureResult(

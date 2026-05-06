@@ -21,6 +21,7 @@ from xcs_gen.text import text_height
 from ..capture_pipeline import (
     QR_BL, QR_BR, QR_TL, QR_TR,
     DetectionError,
+    correct_with_strip_or_fallback,
     decode_image_bytes,
     detect_fiducials,
     warp_to_burn_space,
@@ -102,10 +103,20 @@ class CaptureResult:
     # extrapolated rather than constrained — sample colours near the
     # corresponding corner are unreliable.
     missing_markers: list[int] = field(default_factory=list)
+    # WB-correction outcome (None when correction not attempted, e.g.
+    # callers that didn't pass ``material``). When present, mirrors the
+    # CorrectionOutcome shape so callers can persist via update_wb_state.
+    wb_outcome: Any | None = None
+
+
+# Hardcoded for v1 — Task 19 (UI toggle / per-material override) is
+# deferred. When that lands, this string moves into the material settings.
+_DEFAULT_CANONICAL_ID = "v1.steel-default.2026-05-06"
 
 
 def run_capture(*, image_bytes: bytes, test_id: int,
-                spec: dict[str, Any]) -> CaptureResult:
+                spec: dict[str, Any],
+                material: dict[str, Any] | None = None) -> CaptureResult:
     try:
         img = decode_image_bytes(image_bytes)
     except Exception as e:
@@ -182,6 +193,27 @@ def run_capture(*, image_bytes: bytes, test_id: int,
     except DetectionError as e:
         raise CaptureError(str(e)) from e
 
+    # WB correction step: when a material with calibration patches is
+    # available, sample the strip and apply anchored correction (or fall
+    # back through chromaticity → skip). Markers come from the same
+    # ``layout.arucos`` we already computed for the homography.
+    wb_outcome = None
+    if material is not None:
+        strip_patches = material.get("calibration_patches")
+        markers = [
+            {"x": ar.x, "y": ar.y, "size_mm": ar.size}
+            for ar in layout.arucos
+        ]
+        wb_outcome = correct_with_strip_or_fallback(
+            warped,
+            px_per_mm=10.0,
+            strip_patches=strip_patches,
+            markers=markers,
+            canonical_id=_DEFAULT_CANONICAL_ID,
+            enabled=True,
+        )
+        warped = wb_outcome.frame
+
     # sample_grid's wrapped branch derives cell height from grid_size_mm[1] /
     # rows, which assumes no inter-row gap. Pass the cells-only height and
     # the explicit stride so the sampler hits each row's cells, not the gaps.
@@ -219,6 +251,7 @@ def run_capture(*, image_bytes: bytes, test_id: int,
         warped_image_bgr=warped,
         retest_index=retest_index,
         missing_markers=missing_markers,
+        wb_outcome=wb_outcome,
     )
 
 

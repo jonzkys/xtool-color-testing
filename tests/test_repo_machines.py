@@ -108,7 +108,7 @@ def test_palette_ingest_inherits_test_machine(fresh_db, monkeypatch, tmp_path):
     """Swatches ingested into the palette inherit the test's machine_id."""
     monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
 
-    def _fake_cap(*, image_bytes, test_id, spec):
+    def _fake_cap(*, image_bytes, test_id, spec, **_kwargs):
         return cap.CaptureResult(
             swatches=[
                 {"row": 0, "col": 0, "x_value": 10, "y_value": None,

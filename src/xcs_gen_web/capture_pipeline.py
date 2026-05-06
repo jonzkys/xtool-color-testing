@@ -389,6 +389,59 @@ def apply_wb_correction_to_warped(
     )
 
 
+def correct_with_strip_or_fallback(
+    frame_bgr: np.ndarray,
+    *,
+    px_per_mm: float,
+    strip_patches: list[dict] | None,
+    markers: list[dict],
+    canonical_id: str | None,
+    enabled: bool,
+) -> "CorrectionOutcome":
+    """Sample anchors from the warped frame and call the orchestrator.
+
+    ``strip_patches`` is the list of {label, x, y, size_mm,
+    canonical_rgb} from the material's calibration config. ``markers``
+    is the list of {x, y, size_mm} for unburned-material sampling.
+    """
+    from .wb_correction import (
+        sample_strip_anchors,
+        sample_unburned_around_markers,
+    )
+    if not enabled:
+        return apply_wb_correction_to_warped(
+            frame_bgr,
+            strip_anchors=None,
+            unburned_rgb=None,
+            canonical_id=canonical_id,
+            enabled=False,
+        )
+
+    strip_anchors = None
+    if strip_patches:
+        # Need every patch to have canonical_rgb to use anchored mode.
+        if all(p.get("canonical_rgb") is not None for p in strip_patches):
+            measured = sample_strip_anchors(
+                frame_bgr, strip_patches, px_per_mm=px_per_mm,
+            )
+            canonical = [tuple(p["canonical_rgb"]) for p in strip_patches]
+            strip_anchors = list(zip(measured, canonical))
+
+    unburned = None
+    if strip_anchors is None:
+        unburned = sample_unburned_around_markers(
+            frame_bgr, markers, px_per_mm=px_per_mm,
+        )
+
+    return apply_wb_correction_to_warped(
+        frame_bgr,
+        strip_anchors=strip_anchors,
+        unburned_rgb=unburned,
+        canonical_id=canonical_id,
+        enabled=True,
+    )
+
+
 def reingest_with_wb(result_id: int) -> None:
     """Re-runs WB correction on an existing result.
 
