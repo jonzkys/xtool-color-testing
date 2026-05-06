@@ -311,6 +311,7 @@ export function ResultsPanel({
         open={debugId !== null}
         onOpenChange={(o) => !o && setDebugId(null)}
         resultId={debugId}
+        wb={results.find((r) => r.id === debugId)?.wb ?? null}
       />
     </div>
   );

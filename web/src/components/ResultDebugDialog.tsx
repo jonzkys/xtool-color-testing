@@ -8,11 +8,17 @@ import {
   MetalBar,
 } from "../ui";
 import { useAuthedImage } from "../hooks/useAuthedImage";
+import { WBBadge } from "./WBBadge";
+import type { ResultWBState } from "../types";
 
 export interface ResultDebugDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   resultId: number | null;
+  /** Optional WB-correction state to render in the header / panel.
+   *  Passed by the parent because the debug dialog itself only fetches
+   *  debug-grade payloads — the parent already holds the full result. */
+  wb?: ResultWBState | null;
 }
 
 /**
@@ -27,15 +33,22 @@ export function ResultDebugDialog({
   open,
   onOpenChange,
   resultId,
+  wb,
 }: ResultDebugDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {resultId !== null && <ResultDebugBody resultId={resultId} />}
+      {resultId !== null && <ResultDebugBody resultId={resultId} wb={wb} />}
     </Dialog>
   );
 }
 
-function ResultDebugBody({ resultId }: { resultId: number }) {
+function ResultDebugBody({
+  resultId,
+  wb,
+}: {
+  resultId: number;
+  wb?: ResultWBState | null;
+}) {
   const wwgUrl = `/api/results/${resultId}/debug/warped-with-grid`;
   const wwgBlob = useAuthedImage(wwgUrl);
 
@@ -70,13 +83,16 @@ function ResultDebugBody({ resultId }: { resultId: number }) {
       </DialogTitle>
 
       <header className="flex items-center justify-between px-5 py-3 border-b border-[color:var(--color-border)] shrink-0">
-        <div>
-          <div className="font-mono text-[10px] tracking-[0.22em] uppercase font-semibold text-[color:var(--color-ink-subtle)]">
-            Debug
+        <div className="flex items-center gap-3">
+          <div>
+            <div className="font-mono text-[10px] tracking-[0.22em] uppercase font-semibold text-[color:var(--color-ink-subtle)]">
+              Debug
+            </div>
+            <div className="font-mono text-[14px] text-[color:var(--color-ink)] mt-0.5">
+              Result #{resultId}
+            </div>
           </div>
-          <div className="font-mono text-[14px] text-[color:var(--color-ink)] mt-0.5">
-            Result #{resultId}
-          </div>
+          <WBBadge wb={wb} />
         </div>
         <DialogClose
           aria-label="Close"
@@ -108,6 +124,9 @@ function ResultDebugBody({ resultId }: { resultId: number }) {
               <div className="h-[180px] w-full animate-pulse" />
             )}
           </div>
+          {wb && wb.mode != null && wb.mode !== "disabled" && (
+            <WBDiagnosticPanel wb={wb} />
+          )}
         </section>
 
         <MetalBar variant="soft" />
@@ -133,6 +152,48 @@ function ResultDebugBody({ resultId }: { resultId: number }) {
         </section>
       </div>
     </DialogContent>
+  );
+}
+
+/**
+ * Textual diagnostic readout for the WB pass: which canonical
+ * calibration the capture matched, the measured anchor RGB, and the
+ * per-channel correction (gain/gamma) applied. Hidden when the
+ * pipeline didn't run WB. Hex anchors stay JSON-formatted for v1 — a
+ * swatch-strip rendering is future work.
+ */
+function WBDiagnosticPanel({ wb }: { wb: ResultWBState }) {
+  return (
+    <div className="mt-4 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] p-3 font-mono text-[11px]">
+      <div className="text-[10px] uppercase tracking-[0.22em] font-semibold text-[color:var(--color-ink-subtle)] mb-2">
+        WB · {(wb.mode ?? "").toUpperCase()}
+        {wb.canonical_id && (
+          <span className="ml-2 normal-case tracking-[0.12em] text-[color:var(--color-ink-muted)]">
+            {wb.canonical_id}
+          </span>
+        )}
+      </div>
+      {wb.anchor_rgb && (
+        <div className="space-y-1">
+          <div className="text-[color:var(--color-ink-muted)]">
+            Measured anchor RGB
+          </div>
+          <pre className="text-[11px] text-[color:var(--color-ink)] whitespace-pre-wrap break-all">
+            {JSON.stringify(wb.anchor_rgb, null, 2)}
+          </pre>
+        </div>
+      )}
+      {wb.correction && (
+        <div className="mt-2 space-y-1">
+          <div className="text-[color:var(--color-ink-muted)]">
+            Per-channel correction
+          </div>
+          <pre className="text-[11px] text-[color:var(--color-ink)] whitespace-pre-wrap break-all">
+            {JSON.stringify(wb.correction, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
   );
 }
 
