@@ -12,6 +12,7 @@ appears to cap around 750 rects before processing fails).
 from __future__ import annotations
 
 import io
+from typing import Any
 
 import cv2
 import numpy as np
@@ -22,9 +23,10 @@ from ..model import (
     ANNOTATION_LAYER_COLOR,
     Bitmap,
     ProcessingParams,
+    Rect,
     XCSProject,
 )
-from .layout import MarkerPosition, RegistrationLayout
+from .layout import CalibrationStrip, MarkerPosition, RegistrationLayout
 from .qr_payload import encode_id
 
 # Oversample factor: each logical marker module (QR/ArUco bit) is rendered
@@ -143,3 +145,48 @@ def emit_registration_markers(
     )
     for ar in layout.arucos:
         emit_aruco(project, position=ar, annotation_params=annotation_params)
+
+
+def render_calibration_strip(
+    strip: CalibrationStrip,
+    *,
+    clean_pass_params: dict[str, Any],
+    patches_params: list[dict[str, Any]],
+) -> list[Rect]:
+    """Emit the calibration strip as Rect elements.
+
+    Returns elements in burn order: clean-pass first (so it sits
+    beneath the calibration burns), then each calibration patch in
+    left-to-right order.
+    """
+    if len(patches_params) != len(strip.patches):
+        raise ValueError(
+            f"patches_params length {len(patches_params)} != "
+            f"strip.patches length {len(strip.patches)}"
+        )
+
+    def _to_pp(d: dict[str, Any]) -> ProcessingParams:
+        return ProcessingParams(
+            power=d["power"], speed=d["speed"],
+            mopa_frequency=d["frequency"], density=d["density"],
+            repeat=d["passes"], pulse_width=d["pulse_width"],
+            processing_light_source=d["laser"],
+        )
+
+    out: list[Rect] = []
+    cp = strip.clean_pass_bbox
+    out.append(Rect(
+        x=cp.x, y=cp.y, width=cp.width_mm, height=cp.height_mm,
+        params=_to_pp(clean_pass_params),
+        processing_type="COLOR_FILL_ENGRAVE",
+        layer_color="#7f7f7f",
+    ))
+    for patch, params in zip(strip.patches, patches_params):
+        out.append(Rect(
+            x=patch.x, y=patch.y,
+            width=patch.width_mm, height=patch.height_mm,
+            params=_to_pp(params),
+            processing_type="COLOR_FILL_ENGRAVE",
+            layer_color=f"#cal_{patch.label}",
+        ))
+    return out
