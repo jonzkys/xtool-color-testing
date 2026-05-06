@@ -7,7 +7,10 @@ from dataclasses import replace
 
 from .builder import build_device_entry, build_line_display
 from .capture.layout import compute_layout, registration_reservation_mm
-from .capture.marker_render import emit_registration_markers
+from .capture.marker_render import (
+    emit_registration_markers,
+    render_calibration_strip,
+)
 from .pulse_width import allowed_pulse_widths_in_range, snap_pulse_width
 from .model import (
     ANNOTATION_LAYER_COLOR,
@@ -115,6 +118,8 @@ def generate_gradient(
     material_id: str | None = None,
     hide_axis_labels: bool = False,
     per_cell_params: list[ProcessingParams] | None = None,
+    calibration_clean_pass_params: dict | None = None,
+    calibration_patches: list[dict] | None = None,
 ) -> XCSProject:
     """Generate a gradient test pattern with axis annotations.
 
@@ -288,6 +293,13 @@ def generate_gradient(
         else:
             grid_h = total_height
 
+        # When the material has a calibration recipe configured, emit
+        # the strip alongside the registration markers so every test
+        # plate carries the anchors the ingest pipeline needs for
+        # anchored WB correction.
+        strip_enabled = bool(
+            calibration_clean_pass_params and calibration_patches
+        )
         layout = compute_layout(
             grid_x=start_x,
             grid_y=gradient_start_y,
@@ -296,6 +308,13 @@ def generate_gradient(
             mode=registration_mode,  # type: ignore[arg-type]
             qr_size_mm=registration_qr_size_mm,
             aruco_size_mm=registration_aruco_size_mm,
+            with_calibration_strip=strip_enabled,
+            patch_count=(
+                len(calibration_patches) if strip_enabled else 3
+            ),
+            patch_labels=tuple(
+                p["label"] for p in (calibration_patches or [])
+            ) if strip_enabled else ("light", "mid", "dark"),
         )
         emit_registration_markers(
             project,
@@ -304,6 +323,16 @@ def generate_gradient(
             retest_index=retest_index,
             annotation_params=annotation_params,
         )
+        if strip_enabled and layout.calibration_strip is not None:
+            project.elements.extend(
+                render_calibration_strip(
+                    layout.calibration_strip,
+                    clean_pass_params=calibration_clean_pass_params,
+                    patches_params=[
+                        p["params"] for p in calibration_patches
+                    ],
+                )
+            )
 
     return project
 

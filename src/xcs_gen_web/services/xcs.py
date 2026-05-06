@@ -214,7 +214,29 @@ def bytes_for_test(*, test_id: int, name: str, material_id: int,
             machine_id=machine_id,
             material_id=material_id,
         )
+
+    # When the material has a calibration recipe, plumb it through so
+    # ``generate_gradient`` emits the calibration strip alongside the
+    # registration markers — every test plate then carries the anchors
+    # the ingest pipeline needs for anchored WB correction.
+    calibration_by_material_id: dict[str, dict] = {}
+    if material_id and owner_id is not None:
+        from ..repositories import materials as m_repo
+        try:
+            mat = m_repo.get(int(material_id), owner_id=owner_id)
+        except (TypeError, ValueError):
+            mat = None
+        if mat:
+            cp = mat.get("clean_pass_params")
+            patches = mat.get("calibration_patches")
+            if cp and patches:
+                calibration_by_material_id[str(material_id)] = {
+                    "clean_pass_params": cp,
+                    "calibration_patches": patches,
+                }
+
     return converter.project_to_xcs_bytes(
         Project.model_validate(project), machine_id=machine_id,
         annotation_params=annotation_params,
+        calibration_by_material_id=calibration_by_material_id or None,
     )

@@ -234,11 +234,35 @@ def _compute_grid_offsets(project: Project) -> dict[str, tuple[float, float]]:
     return offsets
 
 
+def _calibration_kwargs(
+    by_material: dict[str, dict] | None,
+    material_id: str | None,
+) -> dict[str, object]:
+    """Pull calibration data for a given material out of the per-material
+    dict so we can splat it into ``generate_gradient`` without bloating
+    its signature at every other call-site.
+    """
+    if not by_material or material_id is None:
+        return {}
+    cal = by_material.get(str(material_id))
+    if not cal:
+        return {}
+    cp = cal.get("clean_pass_params")
+    patches = cal.get("calibration_patches")
+    if not cp or not patches:
+        return {}
+    return {
+        "calibration_clean_pass_params": cp,
+        "calibration_patches": patches,
+    }
+
+
 def project_to_xcs(
     project: Project,
     *,
     machine_id: str = "F2Ultra",
     annotation_params: ProcessingParams | None = None,
+    calibration_by_material_id: dict[str, dict] | None = None,
 ) -> XCSProject:
     """Convert a Project into a single merged XCSProject.
 
@@ -368,6 +392,9 @@ def project_to_xcs(
             material_id=t.material_id,
             hide_axis_labels=t.hide_axis_labels,
             per_cell_params=per_cell_params,
+            **_calibration_kwargs(
+                calibration_by_material_id, t.material_id,
+            ),
         )
 
         if i == 0:
@@ -387,10 +414,12 @@ def project_to_xcs_bytes(
     *,
     machine_id: str = "F2Ultra",
     annotation_params: ProcessingParams | None = None,
+    calibration_by_material_id: dict[str, dict] | None = None,
 ) -> bytes:
     """Convert a Project to .xcs file bytes."""
     xcs = project_to_xcs(
         project, machine_id=machine_id, annotation_params=annotation_params,
+        calibration_by_material_id=calibration_by_material_id,
     )
     data = build_xcs(xcs)
     return json.dumps(data, separators=(",", ":")).encode("utf-8")

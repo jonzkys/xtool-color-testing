@@ -166,10 +166,26 @@ def run_capture(*, image_bytes: bytes, test_id: int,
     burn_w = grid_origin_mm[0] + grid_w + aruco_size + margin
     burn_h = grid_origin_mm[1] + grid_h + aruco_size + margin
 
+    # Enable the calibration strip in the layout when the material
+    # has a calibration recipe — that's where the burn-space x/y/size
+    # of each patch comes from. Without it, ``correct_with_strip_or_fallback``
+    # has nothing to sample (the material's patch records carry only
+    # label / params / canonical_rgb — no geometry).
+    cal_patches_for_layout = (
+        (material.get("calibration_patches") if material else None) or []
+    )
+    strip_in_layout = bool(cal_patches_for_layout) and bool(
+        material and material.get("clean_pass_params")
+    )
     layout = compute_layout(
         grid_x=grid_origin_mm[0], grid_y=grid_origin_mm[1],
         grid_w=grid_w, grid_h=grid_h,
         mode="on", qr_size_mm=qr_size, aruco_size_mm=aruco_size,
+        with_calibration_strip=strip_in_layout,
+        patch_count=len(cal_patches_for_layout) if strip_in_layout else 3,
+        patch_labels=tuple(
+            p["label"] for p in cal_patches_for_layout
+        ) if strip_in_layout else ("light", "mid", "dark"),
     )
     # QR anchors (4 corners of the QR square, burn-space mm) plus ArUco
     # centres (converted from layout's top-left + half-size offsets).
@@ -196,10 +212,28 @@ def run_capture(*, image_bytes: bytes, test_id: int,
     # WB correction step: when a material with calibration patches is
     # available, sample the strip and apply anchored correction (or fall
     # back through chromaticity → skip). Markers come from the same
-    # ``layout.arucos`` we already computed for the homography.
+    # ``layout.arucos`` we already computed for the homography. The
+    # strip patches need burn-space geometry (x/y/size_mm) merged with
+    # the material's canonical_rgb — the layout has positions, the
+    # material row has the canonicals.
     wb_outcome = None
     if material is not None:
-        strip_patches = material.get("calibration_patches")
+        strip_patches = None
+        if layout.calibration_strip is not None:
+            canonical_by_label: dict[str, list[float] | None] = {
+                p["label"]: p.get("canonical_rgb")
+                for p in (material.get("calibration_patches") or [])
+            }
+            strip_patches = [
+                {
+                    "label": p.label,
+                    "x": p.x,
+                    "y": p.y,
+                    "size_mm": p.width_mm,
+                    "canonical_rgb": canonical_by_label.get(p.label),
+                }
+                for p in layout.calibration_strip.patches
+            ]
         markers = [
             {"x": ar.x, "y": ar.y, "size_mm": ar.size}
             for ar in layout.arucos
