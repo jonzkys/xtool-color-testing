@@ -1060,18 +1060,86 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 detail="material has no clean-pass / calibration patches configured",
             )
 
-        # Default footprint for the calibration plate: a 60x80 mm working
-        # area with the strip in the top band (per the spec).
+        # Pack the calibration plate as tight as possible — the user
+        # burns this on a real (often small) substrate, so grid_w/grid_h
+        # should be just big enough to host the strip + leave the
+        # bottom-row markers room to breathe.
+        from xcs_gen.capture.layout import (
+            ARUCO_SIZE_DEFAULT_MM,
+            MARKER_MARGIN_MM,
+            PATCH_BORDER_DEFAULT_MM,
+            PATCH_GAP_DEFAULT_MM,
+            PATCH_SIZE_DEFAULT_MM,
+            QR_SIZE_DEFAULT_MM,
+        )
+
+        n_patches = len(patches)
+        strip_w = (
+            n_patches * PATCH_SIZE_DEFAULT_MM
+            + (n_patches - 1) * PATCH_GAP_DEFAULT_MM
+        )
+        clean_w = strip_w + 2 * PATCH_BORDER_DEFAULT_MM
+        clean_h = PATCH_SIZE_DEFAULT_MM + 2 * PATCH_BORDER_DEFAULT_MM
+        # grid_w must be ≥ clean_w for the strip to fit between QR and
+        # the top-right ArUco; add a hair of slack so centring math has
+        # room without rounding edge cases.
+        grid_w = clean_w + 0.5
+        # grid_h is mostly cosmetic — markers anchor to its corners.
+        # Keep small but nonzero so bottom markers don't overlap the
+        # strip's clean-pass area.
+        grid_h = 4.0
+        # grid_x / grid_y must accommodate the QR (top-left) and the
+        # strip (above the grid) within the plate.
+        grid_x = QR_SIZE_DEFAULT_MM + MARKER_MARGIN_MM + 0.5
+        grid_y = clean_h + MARKER_MARGIN_MM + 0.5
+
         layout = compute_layout(
-            grid_x=20, grid_y=20, grid_w=80, grid_h=60,
+            grid_x=grid_x, grid_y=grid_y, grid_w=grid_w, grid_h=grid_h,
             with_calibration_strip=True,
-            patch_count=len(patches),
+            patch_count=n_patches,
+            patch_labels=tuple(p["label"] for p in patches),
         )
         if layout.calibration_strip is None:
             raise HTTPException(
                 status_code=400,
                 detail="calibration strip doesn't fit at default geometry",
             )
+
+        # Footprint check against the material's physical extent so the
+        # user gets a clean error rather than a plate that's too big to
+        # burn. Plate spans from (qr.x, min(qr.y, clean_y)) to
+        # (br.x + aruco_size, br.y + aruco_size).
+        plate_w = (
+            (layout.qr.x + QR_SIZE_DEFAULT_MM if layout.qr else 0)
+            + grid_w + 2 * MARKER_MARGIN_MM + ARUCO_SIZE_DEFAULT_MM
+            - (layout.qr.x if layout.qr else 0)
+        )
+        plate_h = grid_y + grid_h + MARKER_MARGIN_MM + ARUCO_SIZE_DEFAULT_MM
+        shape = material.get("shape")
+        if shape == "rect":
+            mw = material.get("width_mm") or 0
+            mh = material.get("height_mm") or 0
+            if mw and mh and (plate_w > mw or plate_h > mh):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"calibration plate ({plate_w:.1f}×{plate_h:.1f} mm) "
+                        f"won't fit on material ({mw:.1f}×{mh:.1f} mm). "
+                        "Reduce the patch count."
+                    ),
+                )
+        elif shape == "circle":
+            d = material.get("diameter_mm") or 0
+            # Plate's diagonal must fit inside the diameter.
+            if d and (plate_w**2 + plate_h**2) ** 0.5 > d:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"calibration plate ({plate_w:.1f}×{plate_h:.1f} mm) "
+                        f"won't fit on circular material (Ø{d:.1f} mm). "
+                        "Reduce the patch count."
+                    ),
+                )
 
         project = XCSProject()
 

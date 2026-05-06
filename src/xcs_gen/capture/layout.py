@@ -14,9 +14,9 @@ MARKER_MARGIN_MM = 1.5
 QR_SIZE_DEFAULT_MM = 5.0
 ARUCO_SIZE_DEFAULT_MM = 2.0
 
-PATCH_SIZE_DEFAULT_MM = 5.0
-PATCH_GAP_DEFAULT_MM = 1.0
-PATCH_BORDER_DEFAULT_MM = 2.0
+PATCH_SIZE_DEFAULT_MM = 3.0
+PATCH_GAP_DEFAULT_MM = 0.5
+PATCH_BORDER_DEFAULT_MM = 1.0
 
 # ArUco IDs assigned to each corner. The QR sits at top-left; the ArUcos
 # at the other three corners carry IDs 1, 2, 3.
@@ -140,7 +140,13 @@ def compute_layout(
             clean_x = avail_x_start + (avail_x_end - avail_x_start - clean_w) / 2
             clean_y = grid_y - clean_h - margin
             patches: list[CalibrationPatch] = []
-            for i, label in enumerate(patch_labels[:patch_count]):
+            # When the caller supplies fewer labels than patch_count, fall
+            # back to numeric placeholders ("p4", "p5", …) rather than
+            # silently dropping patches — earlier behaviour truncated to
+            # the default 3 labels and the downstream renderer raised on
+            # the length mismatch.
+            for i in range(patch_count):
+                label = patch_labels[i] if i < len(patch_labels) else f"p{i + 1}"
                 px = clean_x + patch_border_mm + i * (patch_size_mm + patch_gap_mm)
                 py = clean_y + patch_border_mm
                 patches.append(CalibrationPatch(
