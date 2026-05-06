@@ -212,3 +212,99 @@ def anchored_correct_gamma(
         fit_kind="gamma",
         fit=fit,
     )
+
+
+@dataclass
+class CorrectionOutcome:
+    """High-level result returned to the capture pipeline."""
+    frame: np.ndarray
+    mode: str             # "anchored" | "chromaticity" | "skipped"
+    applied: bool
+    measured_rgbs: list[tuple[float, float, float]] | None
+    fit: list[tuple[float, ...]] | tuple[float, float, float] | None
+    fit_kind: str | None  # "linear" | "gamma" | "chromaticity_scale" | None
+    canonical_id: str | None
+
+
+def correct_warped_frame(
+    frame_bgr: np.ndarray,
+    *,
+    strip_anchors: list[tuple[
+        tuple[float, float, float], tuple[float, float, float]
+    ]] | None,
+    unburned_rgb: tuple[float, float, float] | None,
+    canonical_chromaticity_rgb: tuple[float, float, float] = (1.0, 1.0, 0.91),
+    canonical_id: str | None = None,
+) -> CorrectionOutcome:
+    """Top-level correction entry point.
+
+    Picks the best mode given what's available:
+
+    - Anchored mode if ``strip_anchors`` has >=2 (measured, canonical)
+      pairs. Tries gamma first if N>=3; on AnchoredFitError or N==2,
+      falls back to linear.
+    - Chromaticity-only mode if ``unburned_rgb`` is provided.
+    - Skip otherwise (frame returned unchanged).
+    """
+    if strip_anchors and len(strip_anchors) >= 2:
+        measured = [m for m, _ in strip_anchors]
+        canonical = [c for _, c in strip_anchors]
+        anch: AnchoredResult | None = None
+        try:
+            if len(strip_anchors) >= 3:
+                anch = anchored_correct_gamma(
+                    frame_bgr,
+                    measured_rgbs=measured,
+                    canonical_rgbs=canonical,
+                )
+            else:
+                anch = anchored_correct_linear(
+                    frame_bgr,
+                    measured_rgbs=measured,
+                    canonical_rgbs=canonical,
+                )
+        except AnchoredFitError:
+            try:
+                anch = anchored_correct_linear(
+                    frame_bgr,
+                    measured_rgbs=measured,
+                    canonical_rgbs=canonical,
+                )
+            except AnchoredFitError:
+                anch = None
+        if anch is not None:
+            return CorrectionOutcome(
+                frame=anch.frame,
+                mode="anchored",
+                applied=True,
+                measured_rgbs=anch.measured_rgbs,
+                fit=anch.fit,
+                fit_kind=anch.fit_kind,
+                canonical_id=canonical_id,
+            )
+
+    if unburned_rgb is not None:
+        chrom = chromaticity_correct(
+            frame_bgr,
+            unburned_rgb=unburned_rgb,
+            canonical_rgb=canonical_chromaticity_rgb,
+        )
+        return CorrectionOutcome(
+            frame=chrom.frame,
+            mode="chromaticity",
+            applied=True,
+            measured_rgbs=[chrom.measured_rgb],
+            fit=chrom.scales,
+            fit_kind="chromaticity_scale",
+            canonical_id=canonical_id,
+        )
+
+    return CorrectionOutcome(
+        frame=frame_bgr.copy(),
+        mode="skipped",
+        applied=False,
+        measured_rgbs=None,
+        fit=None,
+        fit_kind=None,
+        canonical_id=canonical_id,
+    )

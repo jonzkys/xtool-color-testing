@@ -135,3 +135,51 @@ def test_anchored_gamma_better_fit_with_three_anchors():
     assert len(out.fit) == 3
     px = out.frame[50, 50]
     assert abs(int(px[2]) - 100) <= 5
+
+
+from xcs_gen_web.wb_correction import (
+    correct_warped_frame,
+    CorrectionOutcome,
+)
+
+
+def test_orchestrator_picks_anchored_when_strip_present():
+    img = _frame((150, 140, 110))
+    strip = [
+        ((50.0, 47.0, 38.0), (50.0, 50.0, 45.5)),
+        ((128.0, 120.0, 96.0), (128.0, 128.0, 117.0)),
+        ((200.0, 188.0, 152.0), (200.0, 200.0, 182.0)),
+    ]
+    out = correct_warped_frame(img, strip_anchors=strip, unburned_rgb=None)
+    assert isinstance(out, CorrectionOutcome)
+    assert out.mode == "anchored"
+    assert out.applied is True
+
+
+def test_orchestrator_falls_back_to_chromaticity_when_no_strip():
+    img = _frame((150, 140, 110))
+    out = correct_warped_frame(
+        img, strip_anchors=None, unburned_rgb=(150.0, 140.0, 110.0)
+    )
+    assert out.mode == "chromaticity"
+    assert out.applied is True
+
+
+def test_orchestrator_skips_when_no_inputs():
+    img = _frame((150, 140, 110))
+    out = correct_warped_frame(img, strip_anchors=None, unburned_rgb=None)
+    assert out.mode == "skipped"
+    assert out.applied is False
+    assert np.array_equal(out.frame, img)
+
+
+def test_orchestrator_falls_back_to_linear_when_gamma_pathological():
+    img = _frame((100, 100, 100))
+    strip = [
+        ((50.0, 50.0, 50.0), (50.0, 50.0, 50.0)),
+        ((100.0, 100.0, 100.0), (100.0, 100.0, 100.0)),
+        ((200.0, 200.0, 200.0), (200.0, 200.0, 200.0)),
+    ]
+    out = correct_warped_frame(img, strip_anchors=strip, unburned_rgb=None)
+    assert out.mode == "anchored"
+    assert out.applied is True
