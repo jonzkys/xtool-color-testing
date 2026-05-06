@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 
@@ -1033,6 +1034,79 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError:
             raise HTTPException(status_code=404, detail="material not found")
         return get_material_calibration(material_id, user_id=user_id)
+
+    @app.post("/api/materials/{material_id}/calibration/test-xcs")
+    def calibration_test_xcs(
+        material_id: int,
+        user_id: int = Depends(get_current_user),
+    ) -> Response:
+        """Emit a minimal calibration plate: registration frame + strip."""
+        from xcs_gen.builder import build_xcs
+        from xcs_gen.capture.layout import compute_layout
+        from xcs_gen.capture.marker_render import (
+            emit_registration_markers,
+            render_calibration_strip,
+        )
+        from xcs_gen.model import ProcessingParams, XCSProject
+
+        material = m_repo.get(material_id, owner_id=user_id)
+        if material is None:
+            raise HTTPException(status_code=404, detail="material not found")
+        clean_pass = material.get("clean_pass_params")
+        patches = material.get("calibration_patches")
+        if clean_pass is None or not patches:
+            raise HTTPException(
+                status_code=400,
+                detail="material has no clean-pass / calibration patches configured",
+            )
+
+        # Default footprint for the calibration plate: a 60x80 mm working
+        # area with the strip in the top band (per the spec).
+        layout = compute_layout(
+            grid_x=20, grid_y=20, grid_w=80, grid_h=60,
+            with_calibration_strip=True,
+            patch_count=len(patches),
+        )
+        if layout.calibration_strip is None:
+            raise HTTPException(
+                status_code=400,
+                detail="calibration strip doesn't fit at default geometry",
+            )
+
+        project = XCSProject()
+
+        # Conservative annotation burn so QR/ArUco markers come out as
+        # crisp dark on light without ablating through the substrate.
+        annotation_params = ProcessingParams(
+            power=20.0, speed=1500,
+            mopa_frequency=60, density=1000,
+            repeat=1, pulse_width=120,
+            processing_light_source="red",
+        )
+        emit_registration_markers(
+            project,
+            layout=layout,
+            # Calibration plates carry no real test id; ``encode_id``
+            # rejects non-positive ints, so use 1 as the placeholder.
+            test_id=1,
+            annotation_params=annotation_params,
+            retest_index=0,
+        )
+
+        strip_elements = render_calibration_strip(
+            layout.calibration_strip,
+            clean_pass_params=clean_pass,
+            patches_params=[p["params"] for p in patches],
+        )
+        project.elements.extend(strip_elements)
+
+        body = json.dumps(build_xcs(project), separators=(",", ":")).encode("utf-8")
+        filename = f"{material['name']}-calibration.xcs"
+        return Response(
+            content=body,
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     @app.post(
         "/api/materials/{material_id}/calibration/measure",

@@ -85,3 +85,45 @@ def test_calibration_measure_writes_canonical_rgb():
     by_label = {p["label"]: p for p in cfg["calibration_patches"]}
     assert by_label["light"]["canonical_rgb"] == [200.0, 195.0, 178.0]
     assert by_label["dark"]["canonical_rgb"] == [50.0, 45.0, 40.0]
+
+
+def test_calibration_test_xcs_400_when_no_patches_configured():
+    client = TestClient(create_app())
+    mid = _create_material(client)
+    resp = client.post(f"/api/materials/{mid}/calibration/test-xcs")
+    assert resp.status_code == 400
+
+
+def test_calibration_test_xcs_returns_xcs_bytes_when_configured():
+    client = TestClient(create_app())
+    mid = _create_material(client)
+    client.patch(f"/api/materials/{mid}/calibration", json={
+        "clean_pass_params": {
+            "power": 30, "speed": 800, "frequency": 60, "density": 1000,
+            "passes": 2, "pulse_width": 200, "laser": "red",
+        },
+        "calibration_patches": [
+            {"label": "light",
+             "params": {"power": 8, "speed": 1500, "frequency": 30, "density": 800,
+                        "passes": 1, "pulse_width": 120, "laser": "red"},
+             "canonical_rgb": None},
+            {"label": "mid",
+             "params": {"power": 18, "speed": 1000, "frequency": 80, "density": 1000,
+                        "passes": 1, "pulse_width": 160, "laser": "red"},
+             "canonical_rgb": None},
+            {"label": "dark",
+             "params": {"power": 40, "speed": 400, "frequency": 120, "density": 1200,
+                        "passes": 2, "pulse_width": 240, "laser": "red"},
+             "canonical_rgb": None},
+        ],
+    })
+    resp = client.post(f"/api/materials/{mid}/calibration/test-xcs")
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-disposition"].startswith("attachment;")
+    import json as _json
+    body = _json.loads(resp.content.decode("utf-8"))
+    assert isinstance(body, dict)
+    # Sanity: project should have at least one display element + bitmaps for markers.
+    # (The exact internal shape comes from build_xcs; just confirm the response is
+    # valid JSON of the right top-level kind.)
+    assert body
