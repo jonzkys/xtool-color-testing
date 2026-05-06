@@ -352,3 +352,38 @@ def warp_to_burn_space(
     w_px = int(burn_size_mm[0] * px_per_mm)
     h_px = int(burn_size_mm[1] * px_per_mm)
     return cv2.warpPerspective(image, H, (w_px, h_px))
+
+
+from .wb_correction import correct_warped_frame, CorrectionOutcome  # noqa: E402
+
+
+def apply_wb_correction_to_warped(
+    frame_bgr: np.ndarray,
+    *,
+    strip_anchors: list[tuple[
+        tuple[float, float, float], tuple[float, float, float]
+    ]] | None,
+    unburned_rgb: tuple[float, float, float] | None,
+    canonical_id: str | None,
+    enabled: bool = True,
+) -> CorrectionOutcome:
+    """Pipeline-facing wrapper around ``wb_correction.correct_warped_frame``.
+
+    When ``enabled`` is False, returns a CorrectionOutcome with
+    ``mode="disabled"`` and the frame untouched. Otherwise delegates."""
+    if not enabled:
+        return CorrectionOutcome(
+            frame=frame_bgr.copy(),
+            mode="disabled",
+            applied=False,
+            measured_rgbs=None,
+            fit=None,
+            fit_kind=None,
+            canonical_id=canonical_id,
+        )
+    return correct_warped_frame(
+        frame_bgr,
+        strip_anchors=strip_anchors,
+        unburned_rgb=unburned_rgb,
+        canonical_id=canonical_id,
+    )
