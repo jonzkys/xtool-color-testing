@@ -106,6 +106,17 @@ materials = Table(
     # test page. At most one material per owner has ``is_default=1``;
     # promoting a material clears the flag on the previous one.
     Column("is_default", Integer, nullable=False, server_default="0"),
+    # WB calibration support — see docs/superpowers/specs/2026-05-06-marker-chromaticity-correction-design.md
+    Column("wb_supported", Boolean, nullable=False, server_default="1"),
+    # Burn parameters for the clean pass that standardises the substrate
+    # under each calibration patch. Stored as a JSON-encoded BaseParams
+    # dict. NULL means "use the per-substrate default from
+    # calibration_defaults.py".
+    Column("clean_pass_params_json", Text, nullable=True),
+    # JSON list of {label, params: BaseParams, canonical_rgb: [R,G,B] | null}.
+    # NULL means "this material isn't calibrated yet"; anchored mode
+    # falls back to chromaticity-only.
+    Column("calibration_patches_json", Text, nullable=True),
     CheckConstraint(_VISIBILITY_CHECK, name="materials_visibility_chk"),
     Index("ix_materials_owner", "owner_id"),
 )
@@ -186,6 +197,19 @@ results = Table(
     # Cleared by reingest + delete. Pure cache — losing it just means
     # the next read re-computes once.
     Column("warped_image_path", Text, nullable=True),
+    # WB correction state — populated at ingest. NULL on legacy rows.
+    # ``wb_mode`` is one of "anchored", "chromaticity", "skipped",
+    # "disabled" (or NULL for pre-feature legacy rows).
+    Column("wb_mode", String(16), nullable=True),
+    # For chromaticity: [Ru, Gu, Bu] (single anchor).
+    # For anchored: list of [Ri, Gi, Bi] per patch.
+    Column("wb_anchor_rgb_json", Text, nullable=True),
+    # For anchored: per-channel {(a, b)} or {(a, b, gamma)}.
+    # For chromaticity: per-channel scale factors.
+    Column("wb_correction_json", Text, nullable=True),
+    # Versioning hook for canonical RGB recalibration; e.g.
+    # "v1.steel-default.2026-05-06".
+    Column("wb_canonical_id", String(64), nullable=True),
     CheckConstraint(_VISIBILITY_CHECK, name="results_visibility_chk"),
     CheckConstraint(_VIA_CHECK, name="results_via_chk"),
     Index("ix_results_test_id", "test_id"),
