@@ -1034,6 +1034,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="material not found")
         return get_material_calibration(material_id, user_id=user_id)
 
+    @app.post(
+        "/api/materials/{material_id}/calibration/measure",
+        response_model=MaterialCalibrationConfig,
+    )
+    def calibration_measure(
+        material_id: int,
+        body: CalibrationMeasureRequest,
+        user_id: int = Depends(get_current_user),
+    ) -> MaterialCalibrationConfig:
+        try:
+            m_repo.write_calibration_measurements(
+                material_id,
+                {m.label: list(m.measured_rgb) for m in body.measurements},
+                owner_id=user_id,
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail="material not found")
+        return get_material_calibration(material_id, user_id=user_id)
+
     # Presets ------------------------------------------------------------
     @app.post("/api/presets", response_model=PresetResponse, status_code=201)
     def presets_create(
