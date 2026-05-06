@@ -61,6 +61,7 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
   const [previewAggregator, setPreviewAggregator] = useState<SampleAggregator | null>(null);
   const [previewSwatchesData, setPreviewSwatchesData] = useState<ResultSwatch[] | null>(null);
   const [savingDefault, setSavingDefault] = useState(false);
+  const [reingesting, setReingesting] = useState(false);
   const [inspectingCell, setInspectingCell] = useState<{ row: number; col: number } | null>(null);
   const [testSpec, setTestSpec] = useState<TestSpec | null>(null);
   const [testRecord, setTestRecord] = useState<TestRecord | null>(null);
@@ -171,6 +172,24 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
       console.error("Save failed:", err);
     } finally {
       setSavingDefault(false);
+    }
+  }
+
+  // Re-run ingest against the latest pipeline + WB calibration. Cheap
+  // way for the operator to pick up a freshly-measured calibration on
+  // an already-uploaded photo without re-uploading the file. Mirrors
+  // the existing "result:refetch" broadcast so the parent ResultsPanel
+  // pulls the new ``wb`` state.
+  async function onReingest() {
+    setReingesting(true);
+    try {
+      const { reingestResult } = await import("../api/results");
+      await reingestResult(result.id);
+      window.dispatchEvent(new CustomEvent("result:refetch"));
+    } catch (err) {
+      console.error("Re-ingest failed:", err);
+    } finally {
+      setReingesting(false);
     }
   }
 
@@ -345,6 +364,8 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
           isPreviewing={isPreviewing}
           onAggregatorChange={onAggregatorChange}
           onSaveAsDefault={onSaveAsDefault}
+          onReingest={onReingest}
+          isReingesting={reingesting}
           isDemo={isDemo}
           isSaving={savingDefault}
         />
@@ -524,6 +545,8 @@ function AggregatorControlBar({
   isPreviewing,
   onAggregatorChange,
   onSaveAsDefault,
+  onReingest,
+  isReingesting,
   isDemo,
   isSaving,
 }: {
@@ -532,6 +555,8 @@ function AggregatorControlBar({
   isPreviewing: boolean;
   onAggregatorChange: (agg: SampleAggregator) => void;
   onSaveAsDefault: () => void;
+  onReingest: () => void;
+  isReingesting: boolean;
   isDemo: boolean;
   isSaving: boolean;
 }) {
@@ -620,6 +645,32 @@ function AggregatorControlBar({
             )}
           >
             {isSaving ? "Saving…" : "Save as default"}
+          </button>
+          {/* Re-ingest with WB — runs the latest pipeline + calibration
+              against the already-uploaded photo. Useful after a fresh
+              calibration measure: pulls in the new WB state without a
+              re-upload. */}
+          <button
+            type="button"
+            disabled={isDemo || isReingesting || isSaving}
+            onClick={onReingest}
+            title={
+              isDemo
+                ? "Not available in demo mode"
+                : isReingesting
+                  ? "Re-ingesting…"
+                  : "Re-run ingest with the current WB calibration"
+            }
+            className={cn(
+              "font-mono text-[9.5px] tracking-[0.18em] uppercase font-semibold",
+              "px-2.5 py-1 rounded-[3px]",
+              "border transition-colors duration-150",
+              isDemo || isReingesting || isSaving
+                ? "border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)] opacity-40 cursor-not-allowed"
+                : "border-[color:var(--color-border-strong)] text-[color:var(--color-ink)] hover:bg-[color:var(--color-surface)] cursor-pointer",
+            )}
+          >
+            {isReingesting ? "Re-ingesting…" : "Re-ingest with WB"}
           </button>
         </div>
       </div>
