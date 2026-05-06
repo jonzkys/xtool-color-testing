@@ -84,6 +84,12 @@ interface Props {
   /** Validation-only: full palette for the active material. Empty
    *  array is fine — sweep tests don't need this. */
   palette?: PaletteEntry[];
+  /** Validation-only: palette entries that the test's picks reference
+   *  but that *aren't* in the active source's palette (e.g. picks
+   *  made before the user toggled ``source_material_id`` to another
+   *  material). Used by ``ValidationPaletteTab`` to render "Picks
+   *  from {material}" groups above the picker. */
+  crossSourceEntries?: PaletteEntry[];
 }
 
 /** Default mode when none is stored — picks the most representative mode
@@ -132,6 +138,7 @@ export function ParamTestEditor({
   validationCells = [],
   onValidationCellsChange,
   palette = [],
+  crossSourceEntries = [],
 }: Props) {
   const t = spec;
   const isValidation = kind === "validation";
@@ -687,9 +694,15 @@ export function ParamTestEditor({
         <ValidationPaletteTab
           testId={testId}
           materialId={materialId}
+          materials={materials}
           validationCells={validationCells}
           onValidationCellsChange={onValidationCellsChange ?? (() => {})}
           palette={palette}
+          crossSourceEntries={crossSourceEntries}
+          sourceMaterialId={spec.source_material_id ?? null}
+          onSourceMaterialChange={(next) =>
+            updateSpec({ source_material_id: next ?? undefined })
+          }
         />
       )}
 

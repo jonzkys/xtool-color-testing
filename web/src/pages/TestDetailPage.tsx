@@ -110,6 +110,13 @@ export function TestDetailPage({ testId }: Props) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [activeTab, setActiveTab] = useState<ParamTestEditorTab>("test");
   const [palette, setPalette] = useState<PaletteEntry[]>([]);
+  // Per-cell entries from materials *other* than the active source —
+  // populated when validation_cells reference picks made against a
+  // different material than the one currently shown in the picker.
+  // Lets the ValidationPaletteTab render a "Picks from {material}"
+  // group above the picker without having to look up each entry's
+  // origin one by one.
+  const [crossSourceEntries, setCrossSourceEntries] = useState<PaletteEntry[]>([]);
   // True once the user has changed name / spec / material at least
   // once via the editor. Autosave is gated on this so the load
   // effect's re-renders never trigger a PATCH-back of the loaded
@@ -150,23 +157,68 @@ export function TestDetailPage({ testId }: Props) {
     })().catch((e) => setError((e as Error).message));
   }, [testId]);
 
-  // Fetch the per-material palette for validation tests so the
-  // MaterialPalettePicker has something to render. Sweep tests don't
-  // need this, so we early-out on `kind`.
+  // Fetch the palette for validation tests. The picker's *active*
+  // source is ``spec.source_material_id`` (cross-material validation
+  // mode) or ``test.material_id`` when unset. We also cross-reference
+  // the test's existing picks with the rest of the user's palette so
+  // any picks pulled from a different material before the source got
+  // toggled show up as a "Picks from {material}" group above the
+  // picker — visible even when the user flips back and forth between
+  // sources.
+  const sourceMaterialId =
+    spec.source_material_id ?? test?.material_id ?? null;
   useEffect(() => {
-    if (!test || test.kind !== "validation" || !test.material_id) {
+    if (!test || test.kind !== "validation" || sourceMaterialId == null) {
       setPalette([]);
+      setCrossSourceEntries([]);
       return;
     }
     let cancelled = false;
     (async () => {
       try {
         const { listPaletteEntries } = await import("../api/palette");
-        const entries = await listPaletteEntries({
-          material_id: test.material_id,
+        // Active source — the only set the picker grid renders.
+        const activeEntries = await listPaletteEntries({
+          material_id: sourceMaterialId,
           machine_id: test.machine_id,
         });
-        if (!cancelled) setPalette(entries);
+        if (cancelled) return;
+        setPalette(activeEntries);
+        // Resolve cross-source picks: for each picked
+        // ``palette_entry_id`` that *isn't* in the active source's
+        // list, pull the originating entry so the UI can render a
+        // group with its swatch + material label. Lazy fetch by
+        // material_id so we never fetch the user's whole library —
+        // we only ever pull materials the test already references.
+        const referencedIds = new Set(
+          (test.validation_cells ?? [])
+            .map((c) => c.palette_entry_id)
+            .filter((x): x is number => x != null),
+        );
+        const activeIdSet = new Set(activeEntries.map((e) => e.id));
+        const missingIds = [...referencedIds].filter(
+          (id) => !activeIdSet.has(id),
+        );
+        if (missingIds.length === 0) {
+          setCrossSourceEntries([]);
+          return;
+        }
+        // We don't know each missing id's material up-front, so pull
+        // the user's full palette for this machine and pick the
+        // entries by id. Bounded payload (a hobbyist user's full
+        // palette is ~hundreds of rows) and runs at most once per
+        // source change with cross-material picks present.
+        const allForMachine = await listPaletteEntries({
+          machine_id: test.machine_id,
+        });
+        if (cancelled) return;
+        const byId = new Map(allForMachine.map((e) => [e.id, e]));
+        const cross: PaletteEntry[] = [];
+        for (const id of missingIds) {
+          const e = byId.get(id);
+          if (e) cross.push(e);
+        }
+        setCrossSourceEntries(cross);
       } catch (err) {
         console.error("Failed to fetch palette:", err);
       }
@@ -174,7 +226,7 @@ export function TestDetailPage({ testId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [test?.id, test?.material_id, test?.kind, test?.machine_id]);
+  }, [test?.id, test?.kind, test?.machine_id, sourceMaterialId, test?.validation_cells]);
 
   // Mirror the palette-tab's optimistic cell updates into the test
   // record so downstream consumers (preview, generate) see the new
@@ -557,6 +609,7 @@ export function TestDetailPage({ testId }: Props) {
               validationCells={test?.validation_cells ?? []}
               onValidationCellsChange={handleValidationCellsChange}
               palette={palette}
+              crossSourceEntries={crossSourceEntries}
             />
           </div>
         </div>
