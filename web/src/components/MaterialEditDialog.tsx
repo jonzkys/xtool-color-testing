@@ -30,6 +30,7 @@ import type {
 } from "../types";
 import { defaultBaseParams } from "../defaults";
 import { BaseParamsEditor } from "./BaseParamsEditor";
+import { CalibrationWizard } from "./CalibrationWizard";
 
 /**
  * Modal for creating or editing a material. Replaces the bare
@@ -363,16 +364,27 @@ export function MaterialEditDialog({
     setPatches(next.length === 0 ? null : next);
   }
 
-  // Stub for Task 22 — the wizard that opens from this CTA lives in
-  // a follow-up commit. Keeping the button visible (and the readiness
-  // check live) lets the layout settle before the wizard lands.
   function openWizard() {
     setWizardOpen(true);
   }
-  // Suppress "declared but unused" until the wizard is wired in.
-  void wizardOpen;
+
+  // Refresh the calibration record after the wizard records new
+  // measurements so the canonical-RGB swatches in the panel update
+  // without forcing the user to close + re-open the dialog.
+  async function refreshCalibration() {
+    if (!isEdit || !initial) return;
+    try {
+      const cfg = await getMaterialCalibration(initial.id);
+      setCalibration(cfg);
+      setCalibrationDirty(false);
+    } catch {
+      // Non-fatal — leave the local copy alone; the user can re-open
+      // the dialog to retry the fetch.
+    }
+  }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         width="sm"
@@ -475,6 +487,7 @@ export function MaterialEditDialog({
             <CalibrationSection
               calibration={calibration}
               isDemo={isDemo}
+              dirty={calibrationDirty}
               wbSupported={calibration?.wb_supported ?? true}
               cleanPass={calibration?.clean_pass_params ?? null}
               patches={calibration?.calibration_patches ?? null}
@@ -597,6 +610,17 @@ export function MaterialEditDialog({
         </form>
       </DialogContent>
     </Dialog>
+    {isEdit && initial && calibration && (
+      <CalibrationWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        materialId={initial.id}
+        materialName={initial.name}
+        patches={calibration.calibration_patches ?? []}
+        onComplete={() => void refreshCalibration()}
+      />
+    )}
+    </>
   );
 }
 
@@ -607,6 +631,7 @@ export function MaterialEditDialog({
 interface CalibrationSectionProps {
   calibration: MaterialCalibrationConfig | null;
   isDemo: boolean;
+  dirty: boolean;
   wbSupported: boolean;
   cleanPass: BaseParams | null;
   patches: CalibrationPatchSpec[] | null;
@@ -624,6 +649,7 @@ interface CalibrationSectionProps {
 function CalibrationSection({
   calibration,
   isDemo,
+  dirty,
   wbSupported,
   cleanPass,
   patches,
@@ -639,7 +665,7 @@ function CalibrationSection({
 }: CalibrationSectionProps) {
   const dimmed = !wbSupported;
   const patchList = patches ?? [];
-  const canCalibrate = wbSupported && patchList.length >= 2;
+  const canCalibrate = wbSupported && patchList.length >= 2 && !dirty;
 
   return (
     <Section
@@ -803,7 +829,9 @@ function CalibrationSection({
                 <p className="text-[11.5px] text-[color:var(--color-ink-subtle)] leading-snug max-w-[28ch]">
                   {patchList.length < 2
                     ? "Configure at least two patches to run the wizard."
-                    : "Burn a calibration plate, photograph it, and record measured colours."}
+                    : dirty
+                      ? "Save your changes before running the wizard."
+                      : "Burn a calibration plate, photograph it, and record measured colours."}
                 </p>
                 <DemoLock label="Calibration is disabled in the demo.">
                   <Button
