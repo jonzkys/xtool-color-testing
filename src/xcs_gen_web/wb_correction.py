@@ -104,6 +104,20 @@ def anchored_correct_linear(
     measured = np.asarray(measured_rgbs, dtype=np.float64)
     canonical = np.asarray(canonical_rgbs, dtype=np.float64)
 
+    # Degenerate-fit guard: when the photographed patches landed on
+    # near-identical pixel values (e.g. the strip wasn't where the
+    # layout expected and we sampled flat unburned substrate at all 3
+    # positions), the per-channel slope explodes and the whole frame
+    # clips to 0 or 255. Refuse the fit so the orchestrator falls back
+    # to chromaticity-only or skip rather than emit a wrecked frame.
+    spread_per_channel = np.ptp(measured, axis=0)   # max - min per channel
+    if float(spread_per_channel.max()) < 8.0:
+        raise AnchoredFitError(
+            f"measured anchors too tightly clustered "
+            f"(per-channel spread {spread_per_channel.tolist()}, "
+            f"need >=8). Strip likely missed; falling back."
+        )
+
     fit: list[tuple[float, ...]] = []
     for c in range(3):
         x = measured[:, c]
@@ -114,6 +128,16 @@ def anchored_correct_linear(
         except np.linalg.LinAlgError as e:
             raise AnchoredFitError(f"channel {c} fit failed: {e}") from e
         a, b = float(coeffs[0]), float(coeffs[1])
+        # Slope sanity: a per-channel correction shouldn't stretch by
+        # more than 4× under normal conditions. Larger slopes mean the
+        # measured-vs-canonical spread is mismatched (likely a bad
+        # sample) and the resulting transform will clip the frame to
+        # garbage. Refuse so the orchestrator can fall back.
+        if not (0.1 <= abs(a) <= 4.0):
+            raise AnchoredFitError(
+                f"channel {c} slope a={a:.2f} outside [0.1, 4.0]; "
+                f"falling back"
+            )
         fit.append((a, b))
 
     f = frame_bgr.astype(np.float32)

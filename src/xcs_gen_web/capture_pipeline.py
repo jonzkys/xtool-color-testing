@@ -110,12 +110,16 @@ def _preprocessing_variants(gray: np.ndarray) -> list[np.ndarray]:
 
     Phone photos of laser burns on stainless usually aren't pure B&W —
     burns are mid-tone gray on a bright substrate. Raw gray confuses
-    zbar/ArUco's built-in thresholding. Variants 2–4 are increasingly
+    zbar/ArUco's built-in thresholding. Variants 2–5 are increasingly
     aggressive recovery techniques: Otsu rescues most mid-tone shots;
     CLAHE normalises uneven lighting (the most common failure mode on
     round-disc photos where one edge gets less flash); adaptive
     threshold catches photos where Otsu picks a bad global split
-    because of a bright background highlight.
+    because of a bright background highlight; the
+    contrast-stretched-inverted variant rescues low-contrast stainless
+    photos where the engraved markers are barely darker than the
+    substrate (zbar's QR finder pattern detector wants high contrast
+    light-on-dark, which inversion provides).
     """
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     _, otsu = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -127,7 +131,16 @@ def _preprocessing_variants(gray: np.ndarray) -> list[np.ndarray]:
         gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY,
         blockSize=51, C=10,
     )
-    return [gray, otsu, clahe, adaptive]
+    # Stretch the 2nd–98th percentile to full range, then invert.
+    # Stainless engravings flip contrast vs typical printed QRs, and
+    # the percentile clip rescues photos with specular hot-spots.
+    mn, mx = np.percentile(gray, [2, 98])
+    rng = max(1.0, float(mx - mn))
+    stretched = np.clip(
+        (gray.astype(np.float32) - float(mn)) * 255.0 / rng, 0, 255,
+    ).astype(np.uint8)
+    stretched_inverted = cv2.bitwise_not(stretched)
+    return [gray, otsu, clahe, adaptive, stretched_inverted]
 
 
 def _qr_polygon_raw(
@@ -355,6 +368,111 @@ def warp_to_burn_space(
 
 
 from .wb_correction import correct_warped_frame, CorrectionOutcome  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# Calibration-plate geometry — shared between the test-xcs emit route
+# (renders the burn) and the measure-photo route (samples the photographed
+# burn back). Keeping it in one place stops the two routes from drifting
+# apart.
+# ---------------------------------------------------------------------------
+
+
+def calibration_plate_layout(patches: list[dict]):
+    """Compute the layout for a calibration plate with N patches.
+
+    Returns the ``RegistrationLayout`` (including ``.calibration_strip``)
+    plus the burn-space anchor dict and (plate_w, plate_h) tuple needed
+    to warp a photographed plate back to burn space.
+    """
+    from xcs_gen.capture.layout import (
+        ARUCO_SIZE_DEFAULT_MM,
+        MARKER_MARGIN_MM,
+        PATCH_BORDER_DEFAULT_MM,
+        PATCH_GAP_DEFAULT_MM,
+        PATCH_SIZE_DEFAULT_MM,
+        QR_SIZE_DEFAULT_MM,
+        compute_layout,
+    )
+
+    n = len(patches)
+    strip_w = (
+        n * PATCH_SIZE_DEFAULT_MM
+        + (n - 1) * PATCH_GAP_DEFAULT_MM
+    )
+    clean_w = strip_w + 2 * PATCH_BORDER_DEFAULT_MM
+    clean_h = PATCH_SIZE_DEFAULT_MM + 2 * PATCH_BORDER_DEFAULT_MM
+    grid_w = clean_w + 0.5
+    grid_h = 4.0
+    grid_x = QR_SIZE_DEFAULT_MM + MARKER_MARGIN_MM + 0.5
+    grid_y = clean_h + MARKER_MARGIN_MM + 0.5
+
+    layout = compute_layout(
+        grid_x=grid_x, grid_y=grid_y, grid_w=grid_w, grid_h=grid_h,
+        with_calibration_strip=True,
+        patch_count=n,
+        patch_labels=tuple(p["label"] for p in patches),
+    )
+    if layout.calibration_strip is None:
+        raise ValueError("calibration strip didn't fit in the plate layout")
+
+    qr = layout.qr
+    burn_anchors: dict[int, tuple[float, float]] = {
+        QR_TL: (qr.x, qr.y),
+        QR_BL: (qr.x, qr.y + qr.size),
+        QR_BR: (qr.x + qr.size, qr.y + qr.size),
+        QR_TR: (qr.x + qr.size, qr.y),
+    }
+    for ar in layout.arucos:
+        burn_anchors[ar.marker_id] = (ar.x + ar.size / 2, ar.y + ar.size / 2)
+
+    plate_w = grid_x + grid_w + MARKER_MARGIN_MM + ARUCO_SIZE_DEFAULT_MM
+    plate_h = grid_y + grid_h + MARKER_MARGIN_MM + ARUCO_SIZE_DEFAULT_MM
+
+    return layout, burn_anchors, (plate_w, plate_h)
+
+
+def measure_calibration_patches_from_photo(
+    image_bgr: np.ndarray,
+    *,
+    patches: list[dict],
+    px_per_mm: float = 10.0,
+    sample_inner_mm: float = 1.5,
+) -> list[dict]:
+    """Detect fiducials, warp to burn-space, sample each calibration
+    patch's centre, return ``[{label, measured_rgb}, …]``.
+
+    Raises ``DetectionError`` when fiducials can't be located, ``ValueError``
+    when the strip layout couldn't be built.
+    """
+    from .wb_correction import sample_strip_anchors
+
+    layout, burn_anchors, (plate_w, plate_h) = calibration_plate_layout(patches)
+    _qr_id, _retest, corners_px = detect_fiducials(image_bgr)
+    warped = warp_to_burn_space(
+        image_bgr,
+        burn_anchors_mm=burn_anchors,
+        corners_px=corners_px,
+        burn_size_mm=(plate_w, plate_h),
+        px_per_mm=px_per_mm,
+    )
+    strip_with_geometry = [
+        {"label": p.label, "x": p.x, "y": p.y, "size_mm": p.width_mm}
+        for p in layout.calibration_strip.patches
+    ]
+    measured = sample_strip_anchors(
+        warped,
+        strip_with_geometry,
+        px_per_mm=px_per_mm,
+        sample_inner_mm=sample_inner_mm,
+    )
+    return [
+        {
+            "label": layout.calibration_strip.patches[i].label,
+            "measured_rgb": [round(v, 1) for v in measured[i]],
+        }
+        for i in range(len(layout.calibration_strip.patches))
+    ]
 
 
 def apply_wb_correction_to_warped(
