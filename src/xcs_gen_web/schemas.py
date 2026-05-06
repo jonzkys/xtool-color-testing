@@ -705,6 +705,7 @@ class MaterialResponse(BaseModel):
     width_mm: float | None = None
     height_mm: float | None = None
     is_default: bool = False
+    calibration: MaterialCalibrationConfig | None = None
 
 
 class UserRegisterRequest(BaseModel):
@@ -894,6 +895,7 @@ class ResultResponse(BaseModel):
     # ArUco IDs (subset of {1, 2, 3}) that detection did not find.
     # Empty when the homography was fully constrained.
     missing_markers: list[int] = []
+    wb: ResultWBState | None = None
 
 
 class ResultPatch(BaseModel):
@@ -1198,3 +1200,56 @@ class PixelArtRequest(BaseModel):
     # well past anything practical for engraving.
     rects: list[PixelArtRectSpec] = Field(min_length=1, max_length=50_000)
     layers: list[PixelArtLayerSpec] = Field(min_length=1, max_length=64)
+
+
+# ---------------------------------------------------------------------------
+# WB calibration (anchored colour correction).
+# Spec: docs/superpowers/specs/2026-05-06-marker-chromaticity-correction-design.md
+# ---------------------------------------------------------------------------
+
+
+class CalibrationPatchSpec(BaseModel):
+    """One calibration patch on a material."""
+
+    label: str = Field(min_length=1, max_length=16)
+    params: BaseParams
+    canonical_rgb: list[float] | None = Field(default=None)
+
+
+class MaterialCalibrationConfig(BaseModel):
+    """The calibration-related fields of a material, exposed as a
+    nested object for clarity."""
+
+    wb_supported: bool = True
+    clean_pass_params: BaseParams | None = None
+    calibration_patches: list[CalibrationPatchSpec] | None = None
+
+
+class MaterialCalibrationPatch(BaseModel):
+    """Wire-format for PATCH /api/materials/{id}/calibration."""
+
+    wb_supported: bool | None = None
+    clean_pass_params: BaseParams | None = None
+    calibration_patches: list[CalibrationPatchSpec] | None = None
+
+
+class CalibrationMeasurePatch(BaseModel):
+    """One measured patch — sent to the measurement endpoint."""
+
+    label: str
+    measured_rgb: list[float] = Field(min_length=3, max_length=3)
+
+
+class CalibrationMeasureRequest(BaseModel):
+    """Wire-format for POST /api/materials/{id}/calibration/measure."""
+
+    measurements: list[CalibrationMeasurePatch] = Field(min_length=2, max_length=8)
+
+
+class ResultWBState(BaseModel):
+    """Embedded into ResultResponse so the UI can render the badge."""
+
+    mode: str | None = None
+    anchor_rgb: list[float] | list[list[float]] | None = None
+    correction: dict[str, list[float]] | None = None
+    canonical_id: str | None = None
