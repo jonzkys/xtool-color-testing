@@ -126,34 +126,28 @@ do not overlap: summary text sits ABOVE the strip in burn-space (at
 
 ## Data model
 
-### `materials` (changes)
+### `materials` (additions — branch starts off main, no WB columns yet)
 
 | Column | Action | Notes |
 |---|---|---|
-| `wb_supported` | **keep** | Default `True`; opt-out for substrates that can't tolerate clean-pass (rare). |
-| `clean_pass_params_json` | **keep** | Single source of truth for the strip burn parameters. |
-| `calibration_patches_json` | **DROP** | No more 3-patch model. Migration removes the column. |
+| `wb_supported` | **add** (Boolean, default `1`) | Opt-out for substrates that can't tolerate clean-pass (rare). |
+| `clean_pass_params_json` | **add** (Text, nullable) | Single source of truth for the perimeter-strip burn parameters. NULL means "use the per-substrate default from `calibration_defaults.py`". |
 
-### `results` (changes — semantics only, no schema change)
+### `results` (additions)
 
 | Column | Status | New semantics |
 |---|---|---|
-| `wb_mode` | keep | One of: `"flatfield"`, `"chromaticity"`, `"skipped"`, `"disabled"`. (`"anchored"` retired.) |
-| `wb_anchor_rgb_json` | keep | flat-field: list of 4 `[R, G, B]` (top, right, bottom, left in that order). chromaticity: single `[R, G, B]`. |
-| `wb_correction_json` | keep | flat-field: list of 4 `{x_mm, y_mm, R, G, B}` (anchor positions + measured RGBs, so the field can be re-derived offline). chromaticity: per-channel `[sR, sG, sB]`. |
-| `wb_canonical_id` | keep | Versioning hook — bump when the canonical neutral constant changes. |
-
-Legacy results with `wb_mode="anchored"` keep their columns intact;
-the stability page's reverse-apply branch keeps the anchored
-arithmetic so existing data renders correctly. New ingests never
-emit `"anchored"`.
+| `wb_mode` | add (`String(16)`, nullable) | One of: `"flatfield"`, `"chromaticity"`, `"skipped"`, `"disabled"`. NULL on legacy rows. |
+| `wb_anchor_rgb_json` | add (`Text`, nullable) | flat-field: list of 4 `[R, G, B]` (top, right, bottom, left in that order). chromaticity: single `[R, G, B]`. |
+| `wb_correction_json` | add (`Text`, nullable) | flat-field: list of 4 `{x_mm, y_mm, R, G, B}` (anchor positions + measured RGBs, so the field can be re-derived offline). chromaticity: per-channel `[sR, sG, sB]`. |
+| `wb_canonical_id` | add (`String(64)`, nullable) | Versioning hook — bump when the canonical neutral constant changes (e.g., `"v1.steel-default.2026-05-07"`). |
 
 ### Migration
 
-`alembic/versions/0022_drop_calibration_patches.py` drops the
-`materials.calibration_patches_json` column. No data preservation —
-the column was experimental dev data only. Bumps CI head check
-from `0021` → `0022`.
+`alembic/versions/0021_wb_flatfield.py` adds the 2 new material
+columns + 4 new result columns. All nullable (or with sensible
+server defaults), so legacy rows are valid without backfill. Bumps
+CI head check from `0020` → `0021`.
 
 ---
 
@@ -331,64 +325,76 @@ other across the 5 photos (current spread is much wider).
 
 ## File / module map
 
+> Branch starts off `main`, where none of the prior WB-calibration
+> code exists. Everything below is either NEW or EDITs on existing
+> mainline files. There is nothing to delete from the mainline.
+
 ```
 src/xcs_gen_web/
-  wb_correction.py            REWRITE  drop anchored, add flatfield_correct
-  calibration_defaults.py     TRIM     keep default_clean_pass only
-  capture_pipeline.py         EDIT     drop calibration_plate_layout +
-                                       measure_calibration_patches_from_photo;
-                                       add correct_with_flatfield_or_fallback
-  services/capture.py         EDIT     sample 4 edges, persist 4 anchors
-  services/xcs.py             EDIT     pass clean_pass_params (not patches)
-  converter.py                EDIT     plumb perimeter_strip_params
-  schemas.py                  EDIT     drop CalibrationPatchSpec, MaterialCalibration*Patch,
-                                       CalibrationMeasurePatch, CalibrationMeasureRequest;
-                                       MaterialCalibrationConfig keeps wb_supported +
-                                       clean_pass_params only
-  app.py                      EDIT     delete 3 calibration ceremony routes;
-                                       slim GET/PATCH /api/materials/{id}/calibration
-  repositories/materials.py   EDIT     drop write_calibration_measurements;
-                                       update_material_calibration drops patches param
+  wb_correction.py            NEW   flatfield_correct, chromaticity_correct,
+                                    sampling helpers, orchestrator
+  calibration_defaults.py     NEW   default_clean_pass(substrate)
+  capture_pipeline.py         EDIT  add correct_with_flatfield_or_fallback +
+                                    low-contrast preprocessing variant for stainless
+  services/capture.py         EDIT  sample 4 edges from layout.perimeter_strip,
+                                    persist edge means + positions, run flat-field
+  services/xcs.py             EDIT  look up material's clean_pass_params + wb_supported,
+                                    plumb to project_to_xcs_bytes
+  converter.py                EDIT  add calibration_by_material_id kwarg, plumb
+                                    perimeter_strip_params into generate_gradient
+  schemas.py                  EDIT  add MaterialCalibrationConfig (wb_supported +
+                                    clean_pass_params), ResultWBState; extend
+                                    MaterialResponse + ResultResponse
+  app.py                      EDIT  add GET/PATCH /api/materials/{id}/calibration
+                                    (slim shape: wb_supported + clean_pass_params),
+                                    pass through wb in _result_to_response
+  repositories/materials.py   EDIT  read/write 2 new columns + update_material_calibration
+                                    helper
+  repositories/results.py     EDIT  read/write 4 new columns + nested wb dict in _row +
+                                    update_wb_state helper
 
 src/xcs_gen/capture/
-  layout.py                   EDIT     replace with_calibration_strip kwargs
-                                       with with_perimeter_strip; new
-                                       PerimeterStrip dataclass
-  marker_render.py            EDIT     replace render_calibration_strip
-                                       with render_perimeter_strip
+  layout.py                   EDIT  add PerimeterStrip dataclass, with_perimeter_strip
+                                    kwarg + position math
+  marker_render.py            EDIT  add render_perimeter_strip (4 Rect emit)
 
 src/xcs_gen/
-  generators.py               EDIT     swap kwargs to perimeter_strip_params
+  generators.py               EDIT  add perimeter_strip_params kwarg, emit strip when
+                                    set, push gradient_start_y so summary text clears
+                                    the strip band
 
 alembic/versions/
-  0022_drop_calibration_patches.py    NEW    drop materials.calibration_patches_json
+  0021_wb_flatfield.py        NEW   add 2 cols on materials + 4 cols on results
 
-.github/workflows/ci.yml      EDIT     bump alembic head check 0021 → 0022
+.github/workflows/ci.yml      EDIT  bump alembic head check 0020 → 0021
 
 web/src/
-  components/CalibrationWizard.tsx                DELETE
-  components/MaterialEditDialog.tsx               EDIT  trim cal panel
-  components/ResultDebugDialog.tsx                EDIT  add FLATFIELD pill
-  components/WBBadge.tsx                          EDIT  add flatfield case
-  pages/StabilityPage.tsx                         EDIT  reverse-apply flatfield
-  api/wbCalibration.ts                            EDIT  drop measure / measure-photo /
-                                                        download-xcs / submit-measurement
-  types.ts                                        EDIT  trim CalibrationPatchSpec,
-                                                        Measure types; widen
-                                                        ResultWBState.correction
+  components/MaterialEditDialog.tsx   EDIT   add Calibration section
+                                              (wb_supported toggle + BaseParamsEditor)
+  components/BaseParamsEditor.tsx     NEW    extracted from existing inline editors
+  components/WBBadge.tsx              NEW    pill: FLATFIELD / CHROMA / RAW / DISABLED
+  components/ResultDebugDialog.tsx    EDIT   render WBBadge + diagnostic panel
+  components/ResultDetailDialog.tsx   EDIT   "Re-ingest with WB" button
+  pages/StabilityPage.tsx             EDIT   A/B toggle + reverse-apply (flatfield branch)
+  api/wbCalibration.ts                NEW    getMaterialCalibration,
+                                              patchMaterialCalibration, reingestResult
+  types.ts                            EDIT   add MaterialCalibrationConfig,
+                                              ResultWBState, extend Material + Result
 
 tests/
-  test_wb_correction.py             REWRITE
-  test_capture_perimeter_strip.py   NEW (replaces test_capture_layout_strip.py)
-  test_capture_pipeline_wb.py       EDIT for flatfield shape
-  test_capture_layout_strip.py      DELETE
-  test_materials_calibration_api.py DELETE  (routes gone)
-  test_calibration_defaults.py      TRIM   default_clean_pass only
-  test_results_reingest_api.py      KEEP   (re-ingest still applicable)
-  test_generator_wb.py              NEW    perimeter_strip_params plumbs through
+  test_wb_correction.py            NEW   chromaticity, flat-field, fallback cascade,
+                                          edge-anchor interpolation
+  test_capture_perimeter_strip.py  NEW   layout positions, render_perimeter_strip
+  test_capture_pipeline_wb.py      NEW   pipeline wrapper + flat-field on synthetic frame
+  test_calibration_defaults.py     NEW   default_clean_pass(substrate)
+  test_materials_calibration_api.py NEW  GET/PATCH calibration round-trip
+  test_results_reingest_api.py     NEW   reingest route 404 + happy path
+  test_generator_wb.py             NEW   perimeter_strip_params plumbs through to project
+  test_capture_pipeline.py         EDIT  bump _preprocessing_variants count test
 
 changelog/
   2026-05-07-wb-flatfield.md      NEW   minor-level entry
+  changelog/images/wb-flatfield-hero.png  NEW
 ```
 
 ---
