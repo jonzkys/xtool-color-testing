@@ -308,3 +308,83 @@ def correct_warped_frame(
         fit_kind=None,
         canonical_id=canonical_id,
     )
+
+
+def sample_strip_anchors(
+    frame_bgr: np.ndarray,
+    strip_patches: list[dict[str, float]],
+    *,
+    px_per_mm: float,
+    sample_inner_mm: float = 1.5,
+) -> list[tuple[float, float, float]]:
+    """Sample the centre of each calibration patch.
+
+    Each patch dict has ``x``, ``y`` (top-left, mm) and ``size_mm``.
+    Sampled region: a centred ``sample_inner_mm × sample_inner_mm``
+    box, with the brightest 25% rejected (specular guard).
+    Returns a list of (R, G, B) per patch.
+    """
+    out: list[tuple[float, float, float]] = []
+    for patch in strip_patches:
+        x_mm, y_mm, s_mm = patch["x"], patch["y"], patch["size_mm"]
+        cx_mm = x_mm + s_mm / 2.0
+        cy_mm = y_mm + s_mm / 2.0
+        half_mm = sample_inner_mm / 2.0
+        x0 = int((cx_mm - half_mm) * px_per_mm)
+        y0 = int((cy_mm - half_mm) * px_per_mm)
+        x1 = int((cx_mm + half_mm) * px_per_mm)
+        y1 = int((cy_mm + half_mm) * px_per_mm)
+        x0 = max(0, x0); y0 = max(0, y0)
+        x1 = min(frame_bgr.shape[1], x1); y1 = min(frame_bgr.shape[0], y1)
+        sub = frame_bgr[y0:y1, x0:x1]
+        if sub.size == 0:
+            out.append((0.0, 0.0, 0.0))
+            continue
+        rgb = sub[:, :, ::-1].reshape(-1, 3).astype(np.float32)
+        kept = reject_specular(rgb).kept
+        if kept.size == 0:
+            kept = rgb
+        mean = kept.mean(axis=0)
+        out.append((float(mean[0]), float(mean[1]), float(mean[2])))
+    return out
+
+
+def sample_unburned_around_markers(
+    frame_bgr: np.ndarray,
+    markers: list[dict[str, float]],
+    *,
+    px_per_mm: float,
+    sample_outer_offset_mm: float = 2.0,
+    sample_size_mm: float = 3.0,
+) -> tuple[float, float, float] | None:
+    """Sample unburned material in a small box just above each marker,
+    pool across markers, return the per-channel mean RGB.
+
+    Returns None if no usable samples were found.
+    """
+    pooled: list[np.ndarray] = []
+    half_size_px = (sample_size_mm * px_per_mm) / 2.0
+    for m in markers:
+        cx_mm = m["x"] + m["size_mm"] / 2.0
+        cy_mm = m["y"] + m["size_mm"] / 2.0
+        sample_cy_mm = cy_mm - m["size_mm"] / 2.0 - sample_outer_offset_mm
+        sample_cx_mm = cx_mm
+        cx_px = int(sample_cx_mm * px_per_mm)
+        cy_px = int(sample_cy_mm * px_per_mm)
+        x0 = max(0, int(cx_px - half_size_px))
+        y0 = max(0, int(cy_px - half_size_px))
+        x1 = min(frame_bgr.shape[1], int(cx_px + half_size_px))
+        y1 = min(frame_bgr.shape[0], int(cy_px + half_size_px))
+        if x1 <= x0 or y1 <= y0:
+            continue
+        sub = frame_bgr[y0:y1, x0:x1]
+        rgb = sub[:, :, ::-1].reshape(-1, 3).astype(np.float32)
+        kept = reject_specular(rgb).kept
+        if kept.size == 0:
+            continue
+        pooled.append(kept)
+    if not pooled:
+        return None
+    all_kept = np.concatenate(pooled, axis=0)
+    mean = all_kept.mean(axis=0)
+    return float(mean[0]), float(mean[1]), float(mean[2])

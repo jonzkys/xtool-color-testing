@@ -183,3 +183,55 @@ def test_orchestrator_falls_back_to_linear_when_gamma_pathological():
     out = correct_warped_frame(img, strip_anchors=strip, unburned_rgb=None)
     assert out.mode == "anchored"
     assert out.applied is True
+
+
+from xcs_gen_web.wb_correction import (
+    sample_strip_anchors,
+    sample_unburned_around_markers,
+)
+
+
+def test_sample_strip_anchors_returns_one_per_patch():
+    px_per_mm = 4.0
+    img = np.zeros((400, 400, 3), dtype=np.uint8)
+    patches_xy_mm_size = [
+        (10.0, 10.0, 5.0, (50, 50, 50)),
+        (16.0, 10.0, 5.0, (128, 128, 128)),
+        (22.0, 10.0, 5.0, (200, 200, 200)),
+    ]
+    for x, y, s, (R, G, B) in patches_xy_mm_size:
+        x0, y0 = int(x * px_per_mm), int(y * px_per_mm)
+        x1, y1 = int((x + s) * px_per_mm), int((y + s) * px_per_mm)
+        img[y0:y1, x0:x1, 0] = B
+        img[y0:y1, x0:x1, 1] = G
+        img[y0:y1, x0:x1, 2] = R
+
+    strip_patches = [
+        {"x": x, "y": y, "size_mm": s} for x, y, s, _ in patches_xy_mm_size
+    ]
+    measured = sample_strip_anchors(
+        img, strip_patches, px_per_mm=px_per_mm, sample_inner_mm=1.5,
+    )
+    assert len(measured) == 3
+    for got, expected in zip(
+        measured,
+        [(50, 50, 50), (128, 128, 128), (200, 200, 200)],
+    ):
+        assert all(abs(g - e) < 2 for g, e in zip(got, expected))
+
+
+def test_sample_unburned_around_markers_returns_single_rgb():
+    px_per_mm = 4.0
+    img = np.full((200, 200, 3), (140, 160, 160), dtype=np.uint8)   # BGR
+    markers_xy_mm_size = [
+        {"x": 5.0, "y": 5.0, "size_mm": 2.0},
+        {"x": 40.0, "y": 5.0, "size_mm": 2.0},
+    ]
+    out = sample_unburned_around_markers(
+        img, markers_xy_mm_size, px_per_mm=px_per_mm,
+        sample_outer_offset_mm=2.0, sample_size_mm=3.0,
+    )
+    R, G, B = out
+    assert abs(R - 160) <= 2
+    assert abs(G - 160) <= 2
+    assert abs(B - 140) <= 2
