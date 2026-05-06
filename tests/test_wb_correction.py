@@ -98,3 +98,40 @@ def test_anchored_linear_raises_when_too_few_patches():
             measured_rgbs=[(100.0, 100.0, 100.0)],
             canonical_rgbs=[(100.0, 100.0, 100.0)],
         )
+
+
+from xcs_gen_web.wb_correction import (
+    reject_specular,
+    SpecularRejectionResult,
+    anchored_correct_gamma,
+)
+
+
+def test_reject_specular_drops_top_quartile_by_luminance():
+    pixels_rgb = np.array(
+        [[100, 100, 100]] * 75 + [[250, 250, 250]] * 25,
+        dtype=np.float32,
+    )
+    out = reject_specular(pixels_rgb, top_pct=0.25)
+    assert isinstance(out, SpecularRejectionResult)
+    assert out.kept.shape[0] == 75
+    assert np.allclose(out.kept.mean(axis=0), [100, 100, 100], atol=1)
+
+
+def test_anchored_gamma_better_fit_with_three_anchors():
+    base = _frame((100, 100, 100))
+    raw = base.astype(np.float32) / 255.0
+    bumped = np.power(raw, 1.5) * 255.0
+    bumped_u8 = np.clip(bumped, 0, 255).astype(np.uint8)
+    levels_canon = [50.0, 128.0, 200.0]
+    levels_meas = [(np.power(L / 255.0, 1.5) * 255.0) for L in levels_canon]
+    measured = [(m, m, m) for m in levels_meas]
+    canonical = [(L, L, L) for L in levels_canon]
+
+    out = anchored_correct_gamma(
+        bumped_u8, measured_rgbs=measured, canonical_rgbs=canonical
+    )
+    assert out.fit_kind == "gamma"
+    assert len(out.fit) == 3
+    px = out.frame[50, 50]
+    assert abs(int(px[2]) - 100) <= 5

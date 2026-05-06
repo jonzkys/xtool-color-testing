@@ -131,3 +131,84 @@ def anchored_correct_linear(
         fit_kind="linear",
         fit=fit,
     )
+
+
+@dataclass
+class SpecularRejectionResult:
+    kept: np.ndarray
+    rejected: np.ndarray
+    rejected_count: int
+
+
+def reject_specular(
+    pixels_rgb: np.ndarray,
+    *,
+    top_pct: float = 0.25,
+) -> SpecularRejectionResult:
+    """Drop the brightest ``top_pct`` of pixels by luminance."""
+    if pixels_rgb.size == 0:
+        return SpecularRejectionResult(
+            kept=pixels_rgb, rejected=pixels_rgb, rejected_count=0
+        )
+    lum = 0.299 * pixels_rgb[:, 0] + 0.587 * pixels_rgb[:, 1] + 0.114 * pixels_rgb[:, 2]
+    cutoff = np.quantile(lum, 1.0 - top_pct)
+    keep_mask = lum <= cutoff
+    return SpecularRejectionResult(
+        kept=pixels_rgb[keep_mask],
+        rejected=pixels_rgb[~keep_mask],
+        rejected_count=int((~keep_mask).sum()),
+    )
+
+
+def anchored_correct_gamma(
+    frame_bgr: np.ndarray,
+    *,
+    measured_rgbs: list[tuple[float, float, float]],
+    canonical_rgbs: list[tuple[float, float, float]],
+) -> AnchoredResult:
+    """Fit a per-channel ``corrected = a * raw**gamma + b`` from 3+
+    anchors and apply.
+    """
+    if len(measured_rgbs) < 3 or len(canonical_rgbs) < 3:
+        raise AnchoredFitError(
+            f"gamma fit needs >=3 anchors, got {len(measured_rgbs)}"
+        )
+    measured = np.asarray(measured_rgbs, dtype=np.float64)
+    canonical = np.asarray(canonical_rgbs, dtype=np.float64)
+
+    fit: list[tuple[float, ...]] = []
+    for c in range(3):
+        x = measured[:, c]
+        y = canonical[:, c]
+        eps = 1e-3
+        x_safe = np.maximum(x, eps)
+        y_safe = np.maximum(y, eps)
+        log_x = np.log(x_safe)
+        log_y = np.log(y_safe)
+        A = np.column_stack([log_x, np.ones(len(x))])
+        coeffs, *_ = np.linalg.lstsq(A, log_y, rcond=None)
+        gamma = float(coeffs[0])
+        log_a = float(coeffs[1])
+        a = float(np.exp(log_a))
+        if not (0.3 <= gamma <= 3.0):
+            raise AnchoredFitError(
+                f"channel {c} gamma {gamma:.3f} outside [0.3, 3.0]"
+            )
+        fit.append((a, 0.0, gamma))
+
+    f = frame_bgr.astype(np.float32)
+    eps = 1e-3
+    aR, _, gR = fit[0]
+    aG, _, gG = fit[1]
+    aB, _, gB = fit[2]
+    f[:, :, 0] = aB * np.power(np.maximum(f[:, :, 0], eps), gB)
+    f[:, :, 1] = aG * np.power(np.maximum(f[:, :, 1], eps), gG)
+    f[:, :, 2] = aR * np.power(np.maximum(f[:, :, 2], eps), gR)
+    out = np.clip(f, 0, 255).astype(np.uint8)
+
+    return AnchoredResult(
+        frame=out,
+        measured_rgbs=list(measured_rgbs),
+        fit_kind="gamma",
+        fit=fit,
+    )
