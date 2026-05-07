@@ -131,6 +131,55 @@ export function PixelArtLayerPanel({
 
   return (
     <div className="flex flex-col gap-3 min-h-0">
+      {/* Action row sits above the colour grid so the primary verbs
+          (download, match, merge) stay anchored at the top of the
+          right card while the tile grid grows downward and scrolls
+          internally for long palettes. */}
+      <div className="flex flex-col gap-2 shrink-0">
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={downloadsDisabled}
+            onClick={onDownloadXcs}
+          >
+            <Download className="h-3.5 w-3.5" />
+            <FileCode2 className="h-3.5 w-3.5" />
+            .xcs
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={downloadsDisabled}
+            onClick={onDownloadSvg}
+          >
+            <Download className="h-3.5 w-3.5" />
+            <FileImage className="h-3.5 w-3.5" />
+            .svg
+          </Button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!hasRows}
+            onClick={() => setMergeOpen(true)}
+          >
+            <Combine className="h-3.5 w-3.5" />
+            Merge…
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!hasRows || paletteEntries.length === 0}
+            onClick={onRematchAll}
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+            Match all
+          </Button>
+        </div>
+      </div>
+
       <Section
         title={`Colours · ${enabledCount}/${rows.length}`}
         dense
@@ -156,11 +205,9 @@ export function PixelArtLayerPanel({
               className={cn(
                 "grid grid-cols-3 gap-1.5",
                 "overflow-y-auto pr-0.5",
-                // The grid sizes to its tile content, capped so a
-                // long palette doesn't push the action buttons off
-                // the page. The expanded picker (when open) shows
-                // below as a sibling so the user always sees both
-                // the grid + the picker on screen.
+                // Grid sizes to its tile content; long palettes
+                // scroll inside this list while the action row + the
+                // expanded picker stay in place above / below.
                 "min-h-0",
               )}
             >
@@ -190,51 +237,6 @@ export function PixelArtLayerPanel({
           </div>
         )}
       </Section>
-
-      <div className="flex flex-col gap-2 shrink-0">
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={!hasRows}
-            onClick={() => setMergeOpen(true)}
-          >
-            <Combine className="h-3.5 w-3.5" />
-            Merge…
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={!hasRows || paletteEntries.length === 0}
-            onClick={onRematchAll}
-          >
-            <Wand2 className="h-3.5 w-3.5" />
-            Match all
-          </Button>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={downloadsDisabled}
-            onClick={onDownloadXcs}
-          >
-            <Download className="h-3.5 w-3.5" />
-            <FileCode2 className="h-3.5 w-3.5" />
-            .xcs
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={downloadsDisabled}
-            onClick={onDownloadSvg}
-          >
-            <Download className="h-3.5 w-3.5" />
-            <FileImage className="h-3.5 w-3.5" />
-            .svg
-          </Button>
-        </div>
-      </div>
 
       <MergeColorsDialog
         open={mergeOpen}
