@@ -73,6 +73,12 @@ export interface PixelArtCanvasProps {
    *  and the burn ends up rendering at whatever aspect the user
    *  picked — the new default. */
   lockAspect: boolean;
+  /** When true, the crop frame is shown and draggable. When false
+   *  the burn uses the whole image and the frame + corner handles
+   *  are hidden — the simpler default for users who just want to
+   *  burn the picture as-is. */
+  cropEnabled: boolean;
+  onCropEnabledChange: (enabled: boolean) => void;
 }
 
 type DragKind =
@@ -147,6 +153,8 @@ export function PixelArtCanvas({
   previewMode,
   onPreviewModeChange,
   lockAspect,
+  cropEnabled,
+  onCropEnabledChange,
 }: PixelArtCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -422,7 +430,7 @@ export function PixelArtCanvas({
           className={cn(
             "px-3 py-2 rounded-t-[8px] border border-[color:var(--color-border)] border-b-0",
             "bg-[color:var(--color-surface-elevated)]",
-            "flex items-center justify-between",
+            "flex items-center justify-between gap-2",
             "font-mono text-[10.5px] tracking-[0.12em] uppercase text-[color:var(--color-ink-subtle)]",
           )}
         >
@@ -430,22 +438,53 @@ export function PixelArtCanvas({
             <span className="text-[color:var(--color-ink-muted)] font-semibold">
               Original
             </span>
-            <span className="opacity-60"> · drag to crop</span>
             {image && (
               <span className="ml-2 text-[color:var(--color-ink)]">
                 {cropMmW}×{cropMmH} mm
               </span>
             )}
           </span>
-          <span>
-            {image ? (
-              <>
-                {imgW}×{imgH} px
-              </>
-            ) : (
-              "no image"
+          <div className="flex items-center gap-2 normal-case tracking-normal">
+            {image && (
+              <div
+                role="tablist"
+                aria-label="Crop mode"
+                className="inline-flex rounded-[4px] border border-[color:var(--color-border)] overflow-hidden"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={!cropEnabled}
+                  onClick={() => onCropEnabledChange(false)}
+                  className={cn(
+                    "px-2 py-0.5 text-[10px] tracking-[0.12em] uppercase font-mono",
+                    !cropEnabled
+                      ? "bg-[color:var(--color-primary)] text-white"
+                      : "text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface)]",
+                  )}
+                >
+                  Full image
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={cropEnabled}
+                  onClick={() => onCropEnabledChange(true)}
+                  className={cn(
+                    "px-2 py-0.5 text-[10px] tracking-[0.12em] uppercase font-mono border-l border-[color:var(--color-border)]",
+                    cropEnabled
+                      ? "bg-[color:var(--color-primary)] text-white"
+                      : "text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface)]",
+                  )}
+                >
+                  Crop
+                </button>
+              </div>
             )}
-          </span>
+            <span className="text-[10px] tracking-[0.12em]">
+              {image ? `${imgW}×${imgH} px` : "no image"}
+            </span>
+          </div>
         </div>
         <div
           className={cn(
@@ -466,7 +505,12 @@ export function PixelArtCanvas({
                   display: "block",
                 }}
               />
-              {/* Crop frame overlay — absolutely positioned over the canvas. */}
+              {/* Crop frame overlay — absolutely positioned over the
+                  canvas. Hidden entirely when the user is in
+                  full-image mode. The dim mask + frame body + corner
+                  handles all stay together so a single conditional
+                  flips them in / out. */}
+              {cropEnabled && (
               <div
                 className="absolute"
                 style={{
@@ -576,6 +620,7 @@ export function PixelArtCanvas({
                   />
                 ))}
               </div>
+              )}
             </>
           ) : (
             <div className="text-[12.5px] text-[color:var(--color-ink-subtle)] font-mono tracking-[0.04em]">

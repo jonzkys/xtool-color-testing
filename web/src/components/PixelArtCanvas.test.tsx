@@ -15,6 +15,8 @@ describe("PixelArtCanvas", () => {
         previewMode="representative"
         onPreviewModeChange={() => {}}
         lockAspect={false}
+        cropEnabled={false}
+        onCropEnabledChange={() => {}}
       />,
     );
     expect(screen.getByText(/upload an image/i)).toBeInTheDocument();
@@ -45,6 +47,8 @@ describe("PixelArtCanvas", () => {
         previewMode="representative"
         onPreviewModeChange={() => {}}
         lockAspect={false}
+        cropEnabled={false}
+        onCropEnabledChange={() => {}}
       />,
     );
     // The bottom preview canvas is present once the preview state

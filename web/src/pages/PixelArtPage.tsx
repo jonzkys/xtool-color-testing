@@ -122,6 +122,11 @@ export function PixelArtPage() {
   const [cellsAcross, setCellsAcross] = useState(DEFAULT_CELLS_ACROSS);
   const [maxK, setMaxK] = useState(DEFAULT_MAX_K);
   const [crop, setCrop] = useState<CroppedRegion>({ x: 0, y: 0, w: 1, h: 1 });
+  // When off, the crop frame is hidden and ``crop`` is pinned to the
+  // image bounds — the burn renders the entire uploaded picture.
+  // The user opts into a sub-region by toggling this on; the frame
+  // then becomes draggable.
+  const [cropEnabled, setCropEnabled] = useState(false);
   const [pipelineResult, setPipelineResult] = useState<PipelineResult | null>(null);
   const [enabledByColor, setEnabledByColor] = useState<Record<string, boolean>>({});
   const [matchByColor, setMatchByColor] = useState<Record<string, PaletteEntry | null>>({});
@@ -204,6 +209,24 @@ export function PixelArtPage() {
     () => Math.max(8, Math.floor(widthMm / (2 * laserSpotMm))),
     [widthMm, laserSpotMm],
   );
+
+  // ── Crop frame off → pin crop to whole image ──────────────────────
+  // Without this the crop state lingers from a previous user edit and
+  // the canvas/pipeline see a stale subregion. When the toggle goes
+  // back on, ``crop`` keeps whatever the user had previously.
+  useEffect(() => {
+    if (cropEnabled) return;
+    if (!image) return;
+    if (
+      crop.x === 0 &&
+      crop.y === 0 &&
+      Math.abs(crop.w - image.width) < 0.5 &&
+      Math.abs(crop.h - image.height) < 0.5
+    ) {
+      return;
+    }
+    setCrop({ x: 0, y: 0, w: image.width, h: image.height });
+  }, [cropEnabled, image, crop.x, crop.y, crop.w, crop.h]);
 
   // ── Burn-height auto-sync ──────────────────────────────────────────
   // When the aspect lock is off, the burn fits the crop's own aspect:
@@ -713,6 +736,8 @@ export function PixelArtPage() {
                 previewMode={previewMode}
                 onPreviewModeChange={setPreviewMode}
                 lockAspect={lockAspect}
+                cropEnabled={cropEnabled}
+                onCropEnabledChange={setCropEnabled}
               />
             </Card>
           </div>
