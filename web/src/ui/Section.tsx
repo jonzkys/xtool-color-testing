@@ -14,6 +14,11 @@ export interface SectionProps {
   /** Drop the metallic underline (use in dense adjacent sections). */
   dense?: boolean;
   className?: string;
+  /** Override classes on the inner body wrapper (the ``<div>`` that
+   *  hosts ``children``). The default is ``flex flex-col gap-3``;
+   *  pass e.g. ``flex-1 min-h-0`` when the body needs to grow into
+   *  whatever vertical room the section owns. */
+  bodyClassName?: string;
   children: ReactNode;
 }
 
@@ -29,6 +34,7 @@ export function Section({
   titleHint,
   dense,
   className,
+  bodyClassName,
   children,
 }: SectionProps) {
   return (
@@ -70,7 +76,7 @@ export function Section({
           style={{ background: "var(--metal-bar-soft)" }}
         />
       )}
-      <div className="flex flex-col gap-3">{children}</div>
+      <div className={cn("flex flex-col gap-3", bodyClassName)}>{children}</div>
     </section>
   );
 }
