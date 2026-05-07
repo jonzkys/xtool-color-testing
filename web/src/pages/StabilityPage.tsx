@@ -21,8 +21,96 @@ import { StabilityStats } from "../components/StabilityStats";
 import type { Material } from "../library";
 import { useRoute } from "../router";
 import { getCurrentMachineId } from "../state/machine";
-import type { Lab } from "../color/math";
+import { hexToLab, hexToRgb, rgbToHex, type Lab } from "../color/math";
 import type { ResultRecord, TestRecord } from "../types";
+
+interface FlatFieldEdge {
+  side: string;
+  x_mm: number;
+  y_mm: number;
+  R: number;
+  G: number;
+  B: number;
+}
+
+/**
+ * Reverse-apply the flat-field gain that was multiplied into the
+ * frame at ingest. Mirrors the bilinear blend in
+ * ``src/xcs_gen_web/wb_correction.py::flatfield_correct``: at burn-
+ * space position (u, v) the interpolated edge RGB is
+ * ``(h_lerp + v_lerp) / 2``, the per-channel gain is
+ * ``canonical / max(interpolated, 1)``, and the corrected pixel was
+ * ``raw * gain``. Dividing by the same gain recovers the raw value
+ * the camera saw — the A/B toggle on the Stability page uses this
+ * to show "what would these cells look like without WB correction?".
+ */
+function reverseApplyFlatField(
+  hex: string,
+  cellX_mm: number,
+  cellY_mm: number,
+  gridBbox: { x_min: number; y_min: number; x_max: number; y_max: number },
+  edges: FlatFieldEdge[],
+  canonical: [number, number, number] = [160, 160, 145],
+): string {
+  const byside = new Map(edges.map((e) => [e.side, e]));
+  const top = byside.get("top");
+  const right = byside.get("right");
+  const bottom = byside.get("bottom");
+  const left = byside.get("left");
+  if (!top || !right || !bottom || !left) return hex;
+  const u = Math.min(
+    1,
+    Math.max(
+      0,
+      (cellX_mm - gridBbox.x_min) /
+        Math.max(1e-3, gridBbox.x_max - gridBbox.x_min),
+    ),
+  );
+  const v = Math.min(
+    1,
+    Math.max(
+      0,
+      (cellY_mm - gridBbox.y_min) /
+        Math.max(1e-3, gridBbox.y_max - gridBbox.y_min),
+    ),
+  );
+  const blendChannel = (key: "R" | "G" | "B") => {
+    const h = (1 - u) * left[key] + u * right[key];
+    const w = (1 - v) * top[key] + v * bottom[key];
+    return (h + w) / 2;
+  };
+  const rgb = hexToRgb(hex);
+  const interpolated: [number, number, number] = [
+    blendChannel("R"),
+    blendChannel("G"),
+    blendChannel("B"),
+  ];
+  const gain = canonical.map((c, i) => c / Math.max(1, interpolated[i]));
+  const raw: [number, number, number] = [
+    Math.max(0, Math.min(255, rgb[0] / Math.max(1e-3, gain[0]))),
+    Math.max(0, Math.min(255, rgb[1] / Math.max(1e-3, gain[1]))),
+    Math.max(0, Math.min(255, rgb[2] / Math.max(1e-3, gain[2]))),
+  ];
+  return rgbToHex(raw[0], raw[1], raw[2]);
+}
+
+/** Type-narrowing predicate for the flat-field correction shape. The
+ *  schema declares it as ``number[] | Array<Record<...>> | null`` to
+ *  accommodate both flat-field (4 edge dicts) and chromaticity (per-
+ *  channel scales). The reverse-apply only knows what to do with the
+ *  former. */
+function isFlatFieldEdges(value: unknown): value is FlatFieldEdge[] {
+  if (!Array.isArray(value) || value.length !== 4) return false;
+  for (const e of value) {
+    if (e == null || typeof e !== "object") return false;
+    const rec = e as Record<string, unknown>;
+    if (typeof rec.side !== "string") return false;
+    if (typeof rec.R !== "number") return false;
+    if (typeof rec.G !== "number") return false;
+    if (typeof rec.B !== "number") return false;
+  }
+  return true;
+}
 
 /**
  * Top-level Stability page. The base test carries the expected
@@ -97,6 +185,13 @@ export function StabilityPage() {
     null,
   );
   const [applyToChart, setApplyToChart] = useState(false);
+
+  // A/B toggle for the flat-field WB correction. When OFF, the chart
+  // series reverse-applies the per-cell inverse gain so users can see
+  // the raw camera value the burn would have produced without WB. Only
+  // surfaced when at least one selected result has ``wb.mode ===
+  // "flatfield"``; chromaticity-mode results always render corrected.
+  const [wbApplied, setWbApplied] = useState(true);
 
   // Unified focused-cell state. Conceptually one slot read by every
   // view, but stored as two independent buckets so a transient hover
@@ -343,17 +438,60 @@ export function StabilityPage() {
     }[] = [];
     const cellsPerRow = inferCellsPerRow(testDetail);
     if (cellsPerRow == null) return out;
+    // Cell footprint in burn-space mm — the same derivation the
+    // generator and BE use. Cells flow left→right, top→bottom across
+    // the [0..width_mm] × [0..height_mm] grid bbox the flat-field
+    // correction was anchored to at ingest.
+    const gridW = testDetail.spec.width_mm;
+    const gridH = testDetail.spec.height_mm;
+    const gap = testDetail.spec.gap_mm;
+    const cellWidthMm =
+      (gridW - Math.max(0, cellsPerRow - 1) * gap) / Math.max(1, cellsPerRow);
+    const physicalRows = Math.max(
+      1,
+      Math.ceil(testDetail.spec.x_steps / Math.max(1, cellsPerRow)),
+    );
+    const cellHeightMm =
+      (gridH - Math.max(0, physicalRows - 1) * gap) /
+      Math.max(1, physicalRows);
     for (const id of selectedResultIds) {
       const r = resultCache[id];
       if (!r) continue;
       const cells = new Map<number, { hex: string; lab: Lab }>();
+      const wb = r.wb;
+      const reverse =
+        !wbApplied &&
+        wb?.mode === "flatfield" &&
+        isFlatFieldEdges(wb.correction);
+      const edges =
+        reverse && wb && isFlatFieldEdges(wb.correction)
+          ? wb.correction
+          : null;
       for (const sw of r.swatches) {
         const idx = sw.row * cellsPerRow + sw.col;
         if (!Array.isArray(sw.lab) || sw.lab.length !== 3) continue;
-        cells.set(idx, {
-          hex: sw.hex,
-          lab: [sw.lab[0], sw.lab[1], sw.lab[2]],
-        });
+        if (reverse && edges) {
+          // Centre of the cell in burn-space mm. Edge readings live
+          // outside the grid bbox so cells at the corners still get a
+          // well-defined u, v ∈ [0, 1].
+          const cellX_mm =
+            sw.col * (cellWidthMm + gap) + cellWidthMm / 2;
+          const cellY_mm =
+            sw.row * (cellHeightMm + gap) + cellHeightMm / 2;
+          const rawHex = reverseApplyFlatField(
+            sw.hex,
+            cellX_mm,
+            cellY_mm,
+            { x_min: 0, y_min: 0, x_max: gridW, y_max: gridH },
+            edges,
+          );
+          cells.set(idx, { hex: rawHex, lab: hexToLab(rawHex) });
+        } else {
+          cells.set(idx, {
+            hex: sw.hex,
+            lab: [sw.lab[0], sw.lab[1], sw.lab[2]],
+          });
+        }
       }
       out.push({
         resultId: id,
@@ -362,7 +500,7 @@ export function StabilityPage() {
       });
     }
     return out;
-  }, [testDetail, selectedResultIds, resultCache]);
+  }, [testDetail, selectedResultIds, resultCache, wbApplied]);
 
   const statsSeries = useMemo(() => {
     return chartSeries
@@ -583,6 +721,21 @@ export function StabilityPage() {
           onToggleCollapsed={() => setLeftCollapsed((v) => !v)}
         />
         <main className="flex-1 min-w-0 min-h-0 flex flex-col">
+          {selectedResultIds.some(
+            (id) => resultCache[id]?.wb?.mode === "flatfield",
+          ) && (
+            <div className="flex items-center justify-end gap-2 px-3 py-1.5 border-b border-[color:var(--color-border)] text-[11px] font-mono uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)]">
+              <label className="inline-flex items-center gap-1.5 cursor-pointer normal-case font-mono tracking-[0.14em]">
+                <input
+                  type="checkbox"
+                  checked={wbApplied}
+                  onChange={(e) => setWbApplied(e.target.checked)}
+                  className="h-3.5 w-3.5 cursor-pointer accent-[color:var(--color-primary)]"
+                />
+                <span>WB CORRECTION</span>
+              </label>
+            </div>
+          )}
           <StabilityChart
             cells={cells}
             series={chartSeries}
