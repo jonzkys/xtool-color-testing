@@ -214,6 +214,7 @@ function expectedFor(metric: YAxis, expected: Lab): number | null {
     case "delta_a":
     case "delta_b":
     case "delta_hue":
+    case "delta_from_mean":
     case "burn_delta_e":
     case "burn_delta_hue":
       // Every Δ-axis has expected = 0 by definition.
