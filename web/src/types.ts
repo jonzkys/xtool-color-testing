@@ -260,6 +260,10 @@ export interface ResultRecord {
    *  constrained. UI surfaces this as a warning so users know which
    *  corner's colours may be unreliable. */
   missing_markers?: number[];
+  /** WB flat-field calibration state — populated by the capture
+   *  pipeline. ``null`` for older results captured before the WB
+   *  flat-field feature shipped. */
+  wb?: ResultWBState | null;
 }
 
 export interface AveragedSwatch extends ResultSwatch {
@@ -518,4 +522,24 @@ export interface PixelArtRequest {
   cell_mm: number;
   rects: PixelArtRectSpec[];
   layers: PixelArtLayerSpec[];
+}
+
+// ---------------------------------------------------------------------------
+// WB flat-field calibration (mirrors src/xcs_gen_web/schemas.py).
+// ---------------------------------------------------------------------------
+
+export interface MaterialCalibrationConfig {
+  wb_supported: boolean;
+  clean_pass_params: BaseParams | null;
+}
+
+export interface ResultWBState {
+  mode: "flatfield" | "chromaticity" | "skipped" | "disabled" | null;
+  /** flat-field: list of 4 [R, G, B] (top, right, bottom, left).
+   *  chromaticity: single [R, G, B]. */
+  anchor_rgb: [number, number, number] | [number, number, number][] | null;
+  /** flat-field: list of 4 {side, x_mm, y_mm, R, G, B}.
+   *  chromaticity: per-channel [sR, sG, sB]. */
+  correction: number[] | Array<Record<string, number | string>> | null;
+  canonical_id: string | null;
 }
