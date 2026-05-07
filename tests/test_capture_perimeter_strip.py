@@ -7,6 +7,7 @@ from xcs_gen.capture.layout import (
     PerimeterStripSegment,
     compute_layout,
 )
+from xcs_gen.capture.marker_render import render_perimeter_strip
 
 
 def test_strip_disabled_by_default():
@@ -53,3 +54,24 @@ def test_strip_falls_back_when_grid_too_narrow():
         with_perimeter_strip=True,
     )
     assert layout.perimeter_strip is None
+
+
+def test_render_emits_4_rect_elements():
+    layout = compute_layout(
+        grid_x=20, grid_y=20, grid_w=80, grid_h=60,
+        with_perimeter_strip=True,
+    )
+    strip = layout.perimeter_strip
+    assert strip is not None
+    clean_params = {
+        "power": 30.0, "speed": 800, "frequency": 60, "density": 1000,
+        "passes": 2, "pulse_width": 200, "laser": "red",
+    }
+    elements = render_perimeter_strip(strip, clean_params=clean_params)
+    assert len(elements) == 4
+    # Each element is a Rect of the right width.
+    for el in elements:
+        # Long axis (orientation-dependent) is at least 5 mm.
+        assert max(el.width, el.height) >= 5.0
+        # Short axis is the strip width (3 mm).
+        assert el.height == 3.0 or el.width == 3.0   # one axis is the strip width

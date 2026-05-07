@@ -12,6 +12,7 @@ appears to cap around 750 rects before processing fails).
 from __future__ import annotations
 
 import io
+from typing import Any
 
 import cv2
 import numpy as np
@@ -22,9 +23,10 @@ from ..model import (
     ANNOTATION_LAYER_COLOR,
     Bitmap,
     ProcessingParams,
+    Rect,
     XCSProject,
 )
-from .layout import MarkerPosition, RegistrationLayout
+from .layout import MarkerPosition, PerimeterStrip, RegistrationLayout
 from .qr_payload import encode_id
 
 # Oversample factor: each logical marker module (QR/ArUco bit) is rendered
@@ -143,3 +145,55 @@ def emit_registration_markers(
     )
     for ar in layout.arucos:
         emit_aruco(project, position=ar, annotation_params=annotation_params)
+
+
+def _clean_params_to_processing(d: dict[str, Any]) -> ProcessingParams:
+    """Translate the WB clean-pass dict (used at the API boundary) to the
+    ``ProcessingParams`` field names the model expects."""
+    return ProcessingParams(
+        power=d["power"],
+        speed=d["speed"],
+        mopa_frequency=d["frequency"],
+        density=d["density"],
+        repeat=d["passes"],
+        pulse_width=d["pulse_width"],
+        processing_light_source=d["laser"],
+    )
+
+
+def render_perimeter_strip(
+    strip: PerimeterStrip,
+    *,
+    clean_params: dict[str, Any],
+) -> list[Rect]:
+    """Emit the perimeter strip as 4 ``Rect`` elements (one per side).
+
+    Each segment's centre-line + ``width_mm`` define a rectangle.
+    Horizontal segments (top, bottom) extend in x; vertical segments
+    (left, right) extend in y.
+    """
+    pp = _clean_params_to_processing(clean_params)
+    out: list[Rect] = []
+    for seg in strip.segments:
+        if seg.side in ("top", "bottom"):
+            x0 = min(seg.x0, seg.x1)
+            x1 = max(seg.x0, seg.x1)
+            cy = (seg.y0 + seg.y1) / 2.0
+            y0 = cy - seg.width_mm / 2.0
+            rect_w = x1 - x0
+            rect_h = seg.width_mm
+        else:  # "left", "right"
+            y0 = min(seg.y0, seg.y1)
+            y1 = max(seg.y0, seg.y1)
+            cx = (seg.x0 + seg.x1) / 2.0
+            x0 = cx - seg.width_mm / 2.0
+            rect_w = seg.width_mm
+            rect_h = y1 - y0
+        out.append(Rect(
+            x=x0, y=y0,
+            width=rect_w, height=rect_h,
+            params=pp,
+            processing_type="COLOR_FILL_ENGRAVE",
+            layer_color=f"#wb_{seg.side}",
+        ))
+    return out
