@@ -26,6 +26,8 @@ from .schemas import (
     IngestBatchResponse,
     IngestBatchSkipped,
     IngestToPaletteRequest,
+    MaterialCalibrationConfig,
+    MaterialCalibrationPatch,
     MaterialCreate,
     MaterialResponse,
     MaterialUpdate,
@@ -987,6 +989,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="material not found")
         return Response(status_code=204)
 
+    @app.get("/api/materials/{material_id}/calibration")
+    def get_material_calibration(
+        material_id: int,
+        user_id: int = Depends(get_current_user),
+    ) -> MaterialCalibrationConfig:
+        material = m_repo.get(material_id, owner_id=user_id)
+        if material is None:
+            raise HTTPException(status_code=404, detail="material not found")
+        return MaterialCalibrationConfig(
+            wb_supported=material.get("wb_supported", True),
+            clean_pass_params=material.get("clean_pass_params"),
+        )
+
+    @app.patch("/api/materials/{material_id}/calibration")
+    def patch_material_calibration(
+        material_id: int,
+        body: MaterialCalibrationPatch,
+        user_id: int = Depends(get_current_user),
+    ) -> MaterialCalibrationConfig:
+        try:
+            m_repo.update_material_calibration(
+                material_id,
+                owner_id=user_id,
+                wb_supported=body.wb_supported,
+                clean_pass_params=(
+                    body.clean_pass_params.model_dump()
+                    if body.clean_pass_params else None
+                ),
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail="material not found")
+        return get_material_calibration(material_id, user_id=user_id)
+
     # Presets ------------------------------------------------------------
     @app.post("/api/presets", response_model=PresetResponse, status_code=201)
     def presets_create(
@@ -1322,6 +1357,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             visibility=r["visibility"],
             retest_index=r.get("retest_index", 0),
             missing_markers=r.get("missing_markers", []),
+            wb=r.get("wb"),
         )
 
     def _persist_upload(
