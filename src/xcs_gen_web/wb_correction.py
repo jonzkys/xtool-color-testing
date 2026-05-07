@@ -218,3 +218,98 @@ def flatfield_correct(
         edge_positions=edge_positions,
         canonical_neutral=canonical_neutral,
     )
+
+
+@dataclass
+class CorrectionOutcome:
+    """High-level result returned to the capture pipeline."""
+    frame: np.ndarray
+    mode: str             # "flatfield" | "chromaticity" | "skipped"
+    applied: bool
+    edge_means: dict[str, tuple[float, float, float]] | None
+    edge_positions: dict[str, tuple[float, float]] | None
+    chromaticity_anchor_rgb: tuple[float, float, float] | None
+    chromaticity_scales: tuple[float, float, float] | None
+    canonical_id: str | None
+
+
+def correct_warped_frame(
+    frame_bgr: np.ndarray,
+    *,
+    edge_means: dict[str, tuple[float, float, float] | None],
+    edge_positions: dict[str, tuple[float, float]],
+    grid_bbox: tuple[float, float, float, float],
+    canonical_neutral: tuple[float, float, float] = (160.0, 160.0, 145.0),
+    px_per_mm: float = 10.0,
+    unburned_rgb: tuple[float, float, float] | None = None,
+    canonical_id: str | None = None,
+) -> CorrectionOutcome:
+    """Top-level correction entry point.
+
+    Counts how many of the 4 edges produced a non-None measurement.
+    >=3 -> flat-field path (synthesising any single missing edge as
+    the mean of the other three so the bilinear blend has 4 corners
+    to read from). 2 or fewer -> chromaticity-only fallback when
+    ``unburned_rgb`` is set; otherwise skip.
+    """
+    usable = {k: v for k, v in edge_means.items() if v is not None}
+    if len(usable) >= 3:
+        if len(usable) == 3:
+            mean_rgb = tuple(
+                float(np.mean([v[i] for v in usable.values()]))
+                for i in range(3)
+            )
+            for key in ("top", "right", "bottom", "left"):
+                if key not in usable:
+                    usable[key] = mean_rgb     # type: ignore[assignment]
+        ff = flatfield_correct(
+            frame_bgr,
+            edge_means=usable,
+            edge_positions=edge_positions,
+            grid_bbox=grid_bbox,
+            canonical_neutral=canonical_neutral,
+            px_per_mm=px_per_mm,
+        )
+        return CorrectionOutcome(
+            frame=ff.frame,
+            mode="flatfield",
+            applied=True,
+            edge_means=ff.edge_means,
+            edge_positions=ff.edge_positions,
+            chromaticity_anchor_rgb=None,
+            chromaticity_scales=None,
+            canonical_id=canonical_id,
+        )
+
+    if unburned_rgb is not None:
+        canon_normalised = (
+            canonical_neutral[0] / max(canonical_neutral[1], 1e-3),
+            1.0,
+            canonical_neutral[2] / max(canonical_neutral[1], 1e-3),
+        )
+        chrom = chromaticity_correct(
+            frame_bgr,
+            unburned_rgb=unburned_rgb,
+            canonical_rgb=canon_normalised,
+        )
+        return CorrectionOutcome(
+            frame=chrom.frame,
+            mode="chromaticity",
+            applied=True,
+            edge_means=None,
+            edge_positions=None,
+            chromaticity_anchor_rgb=chrom.measured_rgb,
+            chromaticity_scales=chrom.scales,
+            canonical_id=canonical_id,
+        )
+
+    return CorrectionOutcome(
+        frame=frame_bgr.copy(),
+        mode="skipped",
+        applied=False,
+        edge_means=None,
+        edge_positions=None,
+        chromaticity_anchor_rgb=None,
+        chromaticity_scales=None,
+        canonical_id=canonical_id,
+    )

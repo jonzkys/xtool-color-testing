@@ -160,3 +160,101 @@ def test_flatfield_correct_gradient_pulls_dim_side_brighter():
     right_px = out.frame[50, 95]
     # Left side should now be brighter than the right side.
     assert int(left_px[1]) > int(right_px[1])
+
+
+from xcs_gen_web.wb_correction import (
+    correct_warped_frame,
+    CorrectionOutcome,
+)
+
+
+def test_orchestrator_picks_flatfield_when_4_edges_present():
+    img = np.full((100, 100, 3), 128, dtype=np.uint8)
+    edges = {
+        "top": (160.0, 160.0, 145.0),
+        "right": (160.0, 160.0, 145.0),
+        "bottom": (160.0, 160.0, 145.0),
+        "left": (160.0, 160.0, 145.0),
+    }
+    out = correct_warped_frame(
+        img,
+        edge_means=edges,
+        edge_positions={
+            "top": (50.0, 0.0), "right": (100.0, 50.0),
+            "bottom": (50.0, 100.0), "left": (0.0, 50.0),
+        },
+        grid_bbox=(0.0, 0.0, 100.0, 100.0),
+        canonical_neutral=(160.0, 160.0, 145.0),
+        px_per_mm=1.0,
+        unburned_rgb=None,
+    )
+    assert isinstance(out, CorrectionOutcome)
+    assert out.mode == "flatfield"
+    assert out.applied is True
+
+
+def test_orchestrator_synthesises_missing_edge_when_3_present():
+    img = np.full((100, 100, 3), 128, dtype=np.uint8)
+    edges = {
+        "top": (160.0, 160.0, 145.0),
+        "right": (160.0, 160.0, 145.0),
+        "bottom": (160.0, 160.0, 145.0),
+        "left": None,   # missing
+    }
+    out = correct_warped_frame(
+        img,
+        edge_means=edges,
+        edge_positions={
+            "top": (50.0, 0.0), "right": (100.0, 50.0),
+            "bottom": (50.0, 100.0), "left": (0.0, 50.0),
+        },
+        grid_bbox=(0.0, 0.0, 100.0, 100.0),
+        canonical_neutral=(160.0, 160.0, 145.0),
+        px_per_mm=1.0,
+        unburned_rgb=(150.0, 140.0, 110.0),
+    )
+    assert out.mode == "flatfield"
+    assert out.applied is True
+
+
+def test_orchestrator_falls_back_to_chromaticity_when_2_edges():
+    img = np.full((100, 100, 3), 128, dtype=np.uint8)
+    edges = {
+        "top": (160.0, 160.0, 145.0),
+        "right": None,
+        "bottom": (160.0, 160.0, 145.0),
+        "left": None,
+    }
+    out = correct_warped_frame(
+        img,
+        edge_means=edges,
+        edge_positions={
+            "top": (50.0, 0.0), "right": (100.0, 50.0),
+            "bottom": (50.0, 100.0), "left": (0.0, 50.0),
+        },
+        grid_bbox=(0.0, 0.0, 100.0, 100.0),
+        canonical_neutral=(160.0, 160.0, 145.0),
+        px_per_mm=1.0,
+        unburned_rgb=(150.0, 140.0, 110.0),
+    )
+    assert out.mode == "chromaticity"
+    assert out.applied is True
+
+
+def test_orchestrator_skips_when_no_inputs():
+    img = np.full((100, 100, 3), 128, dtype=np.uint8)
+    out = correct_warped_frame(
+        img,
+        edge_means={"top": None, "right": None, "bottom": None, "left": None},
+        edge_positions={
+            "top": (50.0, 0.0), "right": (100.0, 50.0),
+            "bottom": (50.0, 100.0), "left": (0.0, 50.0),
+        },
+        grid_bbox=(0.0, 0.0, 100.0, 100.0),
+        canonical_neutral=(160.0, 160.0, 145.0),
+        px_per_mm=1.0,
+        unburned_rgb=None,
+    )
+    assert out.mode == "skipped"
+    assert out.applied is False
+    assert np.array_equal(out.frame, img)
