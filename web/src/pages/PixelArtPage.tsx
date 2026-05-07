@@ -528,7 +528,11 @@ export function PixelArtPage() {
   return (
     <div
       className="relative flex flex-col"
-      style={{ height: "calc(100dvh - var(--app-chrome-h, 0px))" }}
+      // The TopBar is 56 px (h-14). Subtract it so the page sizes
+      // exactly to the available viewport — no scrollbar, no wasted
+      // strip below. The matching pb-3 / pt-3 inside the container
+      // gives the same breathing room top + bottom.
+      style={{ height: "calc(100dvh - 56px)" }}
     >
       {/* Diagonal warp backdrop — quiet, always-on brand motif. */}
       <div
@@ -541,7 +545,7 @@ export function PixelArtPage() {
       />
       <PageContainer
         maxWidth="wide"
-        className="relative pt-3 pb-3 flex-1 min-h-0 flex flex-col"
+        className="relative pt-3 pb-3 flex-1 min-h-0 flex flex-col overflow-hidden"
       >
         <input
           ref={fileInputRef}
