@@ -17,8 +17,28 @@ import {
 } from "../ui";
 import { useIsDemo } from "../hooks/useIsDemo";
 import { listPaletteEntries, deletePaletteByMaterial } from "../api/palette";
+import {
+  getMaterialCalibration,
+  patchMaterialCalibration,
+} from "../api/wbCalibration";
 import { notify } from "../ui";
 import type { Material, MaterialShape } from "../library";
+import type { BaseParams, MaterialCalibrationConfig } from "../types";
+import { BaseParamsEditor } from "./BaseParamsEditor";
+
+/** Canonical clean-pass values for stainless steel. Mirrors
+ *  ``src/xcs_gen_web/calibration_defaults.py::_STAINLESS_CLEAN`` —
+ *  keep these two in sync if either side changes. */
+const STAINLESS_DEFAULTS: BaseParams = {
+  power: 30,
+  speed: 800,
+  frequency: 60,
+  density: 1000,
+  passes: 2,
+  pulse_width: 200,
+  laser: "red",
+  scan_angle: 90,
+};
 
 /**
  * Modal for creating or editing a material. Replaces the bare
@@ -74,6 +94,13 @@ export function MaterialEditDialog({
   const [paletteCount, setPaletteCount] = useState<number | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [clearing, setClearing] = useState(false);
+  // WB flat-field calibration state. Loaded once per dialog open in
+  // edit-mode; ``null`` while in flight or on the create form. We track
+  // a separate ``dirty`` flag so we only PATCH when the user actually
+  // changed something (avoids gratuitous round-trips when the dialog
+  // is opened just to rename a material).
+  const [calibration, setCalibration] = useState<MaterialCalibrationConfig | null>(null);
+  const [calibrationDirty, setCalibrationDirty] = useState(false);
 
   // Reset draft state when the dialog opens with a different record.
   // Using ``open`` in the deps means a closed-then-reopened dialog
@@ -91,6 +118,8 @@ export function MaterialEditDialog({
     setHeight(initial?.height_mm ?? 0);
     setConfirmingClear(false);
     setPaletteCount(null);
+    setCalibration(null);
+    setCalibrationDirty(false);
   }, [open, initial]);
 
   // Fetch the live palette-entry count for the material being edited
@@ -112,6 +141,36 @@ export function MaterialEditDialog({
     })();
     return () => { cancelled = true; };
   }, [open, isEdit, initial]);
+
+  // Fetch the live calibration config so the section reflects whatever
+  // the server has on file — including the ``clean_pass_params`` blob
+  // which isn't part of the Material object passed in via ``initial``.
+  // On error, fall back to a sensible "WB on, no params yet" default
+  // so the form is still actionable.
+  useEffect(() => {
+    if (!open || !isEdit || !initial) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cfg = await getMaterialCalibration(initial.id);
+        if (!cancelled) setCalibration(cfg);
+      } catch {
+        if (!cancelled) {
+          setCalibration({ wb_supported: true, clean_pass_params: null });
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, isEdit, initial]);
+
+  function updateCalibration(patch: Partial<MaterialCalibrationConfig>) {
+    setCalibration((prev) => ({
+      wb_supported: prev?.wb_supported ?? true,
+      clean_pass_params: prev?.clean_pass_params ?? null,
+      ...patch,
+    }));
+    setCalibrationDirty(true);
+  }
 
   async function handleClearPalette() {
     if (!isEdit || !initial) return;
@@ -190,6 +249,13 @@ export function MaterialEditDialog({
     setError(null);
     try {
       await onSubmit(result);
+      // Persist calibration after the material PATCH succeeds so a
+      // failure on the calibration endpoint surfaces as an error
+      // without rolling back the rename. Only fires when the user
+      // actually edited the calibration block.
+      if (isEdit && initial && calibrationDirty && calibration) {
+        await patchMaterialCalibration(initial.id, calibration);
+      }
       onOpenChange(false);
     } catch (e) {
       setError((e as Error).message);
@@ -202,7 +268,7 @@ export function MaterialEditDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         width="sm"
-        className="p-0 max-w-[480px] flex flex-col"
+        className="p-0 max-w-[480px] max-h-[calc(100vh-4rem)] overflow-hidden flex flex-col"
         aria-describedby={undefined}
       >
         <header className="flex items-center justify-between px-5 py-3 border-b border-[color:var(--color-border)] shrink-0">
@@ -227,8 +293,9 @@ export function MaterialEditDialog({
             e.preventDefault();
             void handleSubmit();
           }}
-          className="flex flex-col gap-5 p-5"
+          className="flex flex-col flex-1 min-h-0"
         >
+          <div className="flex flex-col gap-5 p-5 flex-1 overflow-y-auto">
           <Section title="Identity" dense>
             <Field label="Name">
               <Input
@@ -296,6 +363,65 @@ export function MaterialEditDialog({
               </div>
             )}
           </Section>
+
+          {isEdit && initial && (
+            <Section
+              title="Calibration"
+              description="Optional WB flat-field. The capture pipeline burns a thin perimeter strip with the clean-pass params below before each test, then samples it to correct illumination drift across the workpiece."
+              dense
+            >
+              <label className="flex items-start gap-2 text-[12.5px] text-[color:var(--color-ink-muted)]">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={calibration?.wb_supported ?? true}
+                  disabled={calibration === null}
+                  onChange={(e) =>
+                    updateCalibration({ wb_supported: e.target.checked })
+                  }
+                />
+                <span>
+                  WB flat-field supported
+                  <span className="block text-[11px] text-[color:var(--color-ink-subtle)]">
+                    Disable for substrates that don't tolerate the clean
+                    pass — calibration is skipped at ingest.
+                  </span>
+                </span>
+              </label>
+
+              {calibration?.wb_supported && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
+                      Clean-pass params
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        updateCalibration({ clean_pass_params: { ...STAINLESS_DEFAULTS } })
+                      }
+                    >
+                      Use stainless-steel defaults
+                    </Button>
+                  </div>
+                  <BaseParamsEditor
+                    value={calibration.clean_pass_params ?? STAINLESS_DEFAULTS}
+                    onChange={(v) =>
+                      updateCalibration({ clean_pass_params: v })
+                    }
+                  />
+                  {calibration.clean_pass_params === null && (
+                    <p className="text-[11px] text-[color:var(--color-ink-subtle)]">
+                      No clean-pass params saved yet. Editing any field below
+                      starts from these stainless-steel defaults.
+                    </p>
+                  )}
+                </div>
+              )}
+            </Section>
+          )}
 
           {error && (
             <div className={cn(
@@ -386,7 +512,9 @@ export function MaterialEditDialog({
             </Section>
           )}
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[color:var(--color-border)] -mx-5 px-5 -mb-5 pb-4">
+          </div>
+
+          <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-[color:var(--color-border)] shrink-0">
             <DialogClose asChild>
               <Button type="button" variant="ghost" size="sm">
                 Cancel

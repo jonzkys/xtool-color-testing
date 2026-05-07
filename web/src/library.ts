@@ -1,5 +1,7 @@
 export type MaterialShape = "circle" | "rect";
 
+import type { BaseParams, MaterialCalibrationConfig } from "./types";
+
 export interface Material {
   id: number;
   name: string;
@@ -19,9 +21,11 @@ export interface Material {
    *  page. At most one material per owner has this set; promoting a
    *  different material clears it on the previous holder server-side. */
   is_default: boolean;
+  /** WB flat-field calibration config — opt-in toggle plus optional
+   *  clean-pass burn params. Optional on the wire so older API
+   *  responses still validate; null when unset. */
+  calibration?: MaterialCalibrationConfig | null;
 }
-
-import type { BaseParams } from "./types";
 
 export interface Preset {
   id: number;

@@ -7,12 +7,15 @@ import {
   DialogTitle,
   MetalBar,
 } from "../ui";
+import type { ResultWBState } from "../types";
 import { useAuthedImage } from "../hooks/useAuthedImage";
+import { WBBadge } from "./WBBadge";
 
 export interface ResultDebugDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   resultId: number | null;
+  wb?: ResultWBState | null;
 }
 
 /**
@@ -27,15 +30,16 @@ export function ResultDebugDialog({
   open,
   onOpenChange,
   resultId,
+  wb,
 }: ResultDebugDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {resultId !== null && <ResultDebugBody resultId={resultId} />}
+      {resultId !== null && <ResultDebugBody resultId={resultId} wb={wb ?? null} />}
     </Dialog>
   );
 }
 
-function ResultDebugBody({ resultId }: { resultId: number }) {
+function ResultDebugBody({ resultId, wb }: { resultId: number; wb: ResultWBState | null }) {
   const wwgUrl = `/api/results/${resultId}/debug/warped-with-grid`;
   const wwgBlob = useAuthedImage(wwgUrl);
 
@@ -70,13 +74,16 @@ function ResultDebugBody({ resultId }: { resultId: number }) {
       </DialogTitle>
 
       <header className="flex items-center justify-between px-5 py-3 border-b border-[color:var(--color-border)] shrink-0">
-        <div>
-          <div className="font-mono text-[10px] tracking-[0.22em] uppercase font-semibold text-[color:var(--color-ink-subtle)]">
-            Debug
+        <div className="flex items-center gap-3">
+          <div>
+            <div className="font-mono text-[10px] tracking-[0.22em] uppercase font-semibold text-[color:var(--color-ink-subtle)]">
+              Debug
+            </div>
+            <div className="font-mono text-[14px] text-[color:var(--color-ink)] mt-0.5">
+              Result #{resultId}
+            </div>
           </div>
-          <div className="font-mono text-[14px] text-[color:var(--color-ink)] mt-0.5">
-            Result #{resultId}
-          </div>
+          {wb && <WBBadge wb={wb} />}
         </div>
         <DialogClose
           aria-label="Close"
@@ -108,6 +115,28 @@ function ResultDebugBody({ resultId }: { resultId: number }) {
               <div className="h-[180px] w-full animate-pulse" />
             )}
           </div>
+          {wb && wb.mode != null && wb.mode !== "disabled" && (
+            <div className="mt-4 rounded-[4px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] p-3 font-mono text-[11px] text-[color:var(--color-ink)]">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] mb-2 flex items-center gap-2">
+                <span>WB · {wb.mode.toUpperCase()}</span>
+                {wb.canonical_id && (
+                  <span className="text-[color:var(--color-ink-muted)] normal-case tracking-normal">
+                    {wb.canonical_id}
+                  </span>
+                )}
+              </div>
+              {wb.anchor_rgb && (
+                <pre className="text-[11px] whitespace-pre-wrap break-words text-[color:var(--color-ink-muted)]">
+                  anchor_rgb: {JSON.stringify(wb.anchor_rgb)}
+                </pre>
+              )}
+              {wb.correction && (
+                <pre className="mt-2 text-[11px] whitespace-pre-wrap break-words text-[color:var(--color-ink-muted)]">
+                  correction: {JSON.stringify(wb.correction)}
+                </pre>
+              )}
+            </div>
+          )}
         </section>
 
         <MetalBar variant="soft" />

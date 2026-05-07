@@ -106,6 +106,12 @@ materials = Table(
     # test page. At most one material per owner has ``is_default=1``;
     # promoting a material clears the flag on the previous one.
     Column("is_default", Integer, nullable=False, server_default="0"),
+    # WB flat-field calibration — see docs/superpowers/specs/2026-05-07-wb-flatfield-design.md
+    Column("wb_supported", Boolean, nullable=False, server_default="1"),
+    # Burn parameters for the perimeter clean-pass strip. Stored as a
+    # JSON-encoded BaseParams dict. NULL means "use the per-substrate
+    # default from calibration_defaults.py".
+    Column("clean_pass_params_json", Text, nullable=True),
     CheckConstraint(_VISIBILITY_CHECK, name="materials_visibility_chk"),
     Index("ix_materials_owner", "owner_id"),
 )
@@ -186,6 +192,19 @@ results = Table(
     # Cleared by reingest + delete. Pure cache — losing it just means
     # the next read re-computes once.
     Column("warped_image_path", Text, nullable=True),
+    # WB correction state — populated at ingest. NULL on legacy rows.
+    # ``wb_mode`` is one of "flatfield", "chromaticity", "skipped",
+    # "disabled" (or NULL for pre-feature legacy rows).
+    Column("wb_mode", String(16), nullable=True),
+    # flatfield: list of 4 [R, G, B] (top, right, bottom, left).
+    # chromaticity: single [R, G, B].
+    Column("wb_anchor_rgb_json", Text, nullable=True),
+    # flatfield: list of 4 {x_mm, y_mm, R, G, B}.
+    # chromaticity: per-channel [sR, sG, sB].
+    Column("wb_correction_json", Text, nullable=True),
+    # Versioning hook for canonical neutral recalibration; e.g.
+    # "v1.steel-default.2026-05-07".
+    Column("wb_canonical_id", String(64), nullable=True),
     CheckConstraint(_VISIBILITY_CHECK, name="results_visibility_chk"),
     CheckConstraint(_VIA_CHECK, name="results_via_chk"),
     Index("ix_results_test_id", "test_id"),

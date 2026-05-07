@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ChevronDown, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, RotateCcw, X } from "lucide-react";
 import { DialogClose } from "@radix-ui/react-dialog";
 import {
   Dialog,
@@ -17,6 +17,7 @@ import { useIsDemo } from "../hooks/useIsDemo";
 import { formatMissingCorners } from "./captureWarnings";
 import { InspectMatchDialog } from "./InspectMatchDialog";
 import { TestCellInspector } from "./TestCellInspector";
+import { WBBadge } from "./WBBadge";
 import { PairedSwatchTile, ValidationSummaryStrip } from "./MaterialPalettePicker";
 import { deltaE76 } from "../svg/colorSelection";
 
@@ -61,6 +62,7 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
   const [previewAggregator, setPreviewAggregator] = useState<SampleAggregator | null>(null);
   const [previewSwatchesData, setPreviewSwatchesData] = useState<ResultSwatch[] | null>(null);
   const [savingDefault, setSavingDefault] = useState(false);
+  const [reingesting, setReingesting] = useState(false);
   const [inspectingCell, setInspectingCell] = useState<{ row: number; col: number } | null>(null);
   const [testSpec, setTestSpec] = useState<TestSpec | null>(null);
   const [testRecord, setTestRecord] = useState<TestRecord | null>(null);
@@ -150,6 +152,20 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
       console.error("Preview failed:", err);
       setPreviewAggregator(null);
       setPreviewSwatchesData(null);
+    }
+  }
+
+  async function onReingest() {
+    if (reingesting) return;
+    setReingesting(true);
+    try {
+      const { reingestResult } = await import("../api/wbCalibration");
+      await reingestResult(result.id);
+      window.dispatchEvent(new CustomEvent("result:refetch"));
+    } catch (err) {
+      console.error("Re-ingest failed:", err);
+    } finally {
+      setReingesting(false);
     }
   }
 
@@ -260,6 +276,15 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
           )}
         </div>
 
+        {/* WB badge — surfaces flat-field/chroma/skipped status from the
+            most recent capture run. Sits below the slug so the corner
+            colour-marks stay clear. */}
+        {result.wb && (
+          <div className="absolute top-14 right-5">
+            <WBBadge wb={result.wb} />
+          </div>
+        )}
+
         {/* Bottom-left: upload ID in display mono. */}
         <div
           className="absolute bottom-4 left-5 font-mono text-[22px] tracking-[0.06em] font-semibold leading-none"
@@ -345,8 +370,10 @@ function ResultDetailBody({ result }: { result: ResultRecord }) {
           isPreviewing={isPreviewing}
           onAggregatorChange={onAggregatorChange}
           onSaveAsDefault={onSaveAsDefault}
+          onReingest={onReingest}
           isDemo={isDemo}
           isSaving={savingDefault}
+          isReingesting={reingesting}
         />
         {isValidation && (
           <div className="mb-3">
@@ -524,16 +551,20 @@ function AggregatorControlBar({
   isPreviewing,
   onAggregatorChange,
   onSaveAsDefault,
+  onReingest,
   isDemo,
   isSaving,
+  isReingesting,
 }: {
   currentAggregator: SampleAggregator;
   cellShape: "rect" | "circle";
   isPreviewing: boolean;
   onAggregatorChange: (agg: SampleAggregator) => void;
   onSaveAsDefault: () => void;
+  onReingest: () => void;
   isDemo: boolean;
   isSaving: boolean;
+  isReingesting: boolean;
 }) {
   const saveDisabled = !isPreviewing || isDemo || isSaving;
   const samplingCaption = `Sampling · ${CELL_SHAPE_LABELS[cellShape]}, ${AGGREGATOR_LABELS[currentAggregator].toLowerCase()}`;
@@ -620,6 +651,33 @@ function AggregatorControlBar({
             )}
           >
             {isSaving ? "Saving…" : "Save as default"}
+          </button>
+          {/* Re-ingest button — re-runs capture on the saved photo so a
+              just-tweaked material calibration takes effect without
+              having to re-upload the image. */}
+          <button
+            type="button"
+            disabled={isDemo || isReingesting || isSaving}
+            onClick={onReingest}
+            title={
+              isDemo
+                ? "Not available in demo mode"
+                : isReingesting
+                  ? "Re-ingesting…"
+                  : "Re-run capture pipeline (applies current material WB calibration)"
+            }
+            className={cn(
+              "inline-flex items-center gap-1.5",
+              "font-mono text-[9.5px] tracking-[0.18em] uppercase font-semibold",
+              "px-2.5 py-1 rounded-[3px]",
+              "border transition-colors duration-150",
+              (isDemo || isReingesting || isSaving)
+                ? "border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)] opacity-40 cursor-not-allowed"
+                : "border-[color:var(--color-border-strong)] text-[color:var(--color-ink)] hover:bg-[color:var(--color-surface)] cursor-pointer",
+            )}
+          >
+            <RotateCcw className={cn("h-3 w-3", isReingesting && "animate-spin")} strokeWidth={2} />
+            {isReingesting ? "Re-ingesting…" : "Re-ingest with WB"}
           </button>
         </div>
       </div>

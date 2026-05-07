@@ -20,7 +20,7 @@ SPEC = {
 }
 
 
-def _fake_cap(*, image_bytes, test_id, spec):
+def _fake_cap(*, image_bytes, test_id, spec, **_kwargs):
     return cap.CaptureResult(
         swatches=[
             {"row": 0, "col": 0, "x_value": 500, "y_value": None,
@@ -183,7 +183,7 @@ def test_ingest_validation_uses_per_cell_params_not_swept_index(
     # layout (cells_per_row=2). x_value is the cell index because
     # bytes_for_test pins x_min=0/x_max=cell_count-1 — but we want the
     # ingest to ignore that and use validation_cells.params instead.
-    def _validation_cap(*, image_bytes, test_id, spec):
+    def _validation_cap(*, image_bytes, test_id, spec, **_kwargs):
         return cap.CaptureResult(
             swatches=[
                 {"row": 0, "col": 0, "x_value": 0, "y_value": None,

@@ -149,7 +149,7 @@ SPEC = {
 }
 
 
-def _fake_capture(*, image_bytes, test_id, spec):
+def _fake_capture(*, image_bytes, test_id, spec, **_kwargs):
     return cap.CaptureResult(
         swatches=[
             {"row": 0, "col": 0, "x_value": 500, "y_value": None,

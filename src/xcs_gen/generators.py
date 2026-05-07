@@ -7,7 +7,10 @@ from dataclasses import replace
 
 from .builder import build_device_entry, build_line_display
 from .capture.layout import compute_layout, registration_reservation_mm
-from .capture.marker_render import emit_registration_markers
+from .capture.marker_render import (
+    emit_registration_markers,
+    render_perimeter_strip,
+)
 from .pulse_width import allowed_pulse_widths_in_range, snap_pulse_width
 from .model import (
     ANNOTATION_LAYER_COLOR,
@@ -108,12 +111,14 @@ def generate_gradient(
     registration_mode: str = "off",  # "on" | "off"
     registration_qr_size_mm: float | None = None,
     registration_aruco_size_mm: float | None = None,
+    perimeter_strip_params: dict | None = None,
     unidirectional: bool = False,
     cell_shape: str = "rect",  # "rect" | "circle"
     test_id: int | None = None,
     retest_index: int = 0,
     material_id: str | None = None,
     hide_axis_labels: bool = False,
+    cells_per_row: int | None = None,
     per_cell_params: list[ProcessingParams] | None = None,
 ) -> XCSProject:
     """Generate a gradient test pattern with axis annotations.
@@ -222,6 +227,10 @@ def generate_gradient(
     )
     summary_h = len(summary_lines) * summary_line_h + 0.05
     gradient_start_y = start_y + summary_h
+    if perimeter_strip_params is not None:
+        # Reserve room above the grid for the top perimeter strip's
+        # 3 mm width + the 1.5 mm margin between strip and grid edge.
+        gradient_start_y += 3.0 + 1.5
 
     # Registration markers (when enabled) sit at the corners of the grid.
     # QR is at top-left, ArUcos at the other 3 corners. Shift the grid
@@ -270,6 +279,7 @@ def generate_gradient(
             annotation_params=annotation_params,
             cell_shape=cell_shape,
             hide_axis_labels=hide_axis_labels,
+            cells_per_row=cells_per_row,
             per_cell_params=per_cell_params,
         )
 
@@ -288,6 +298,7 @@ def generate_gradient(
         else:
             grid_h = total_height
 
+        strip_enabled = perimeter_strip_params is not None
         layout = compute_layout(
             grid_x=start_x,
             grid_y=gradient_start_y,
@@ -296,6 +307,7 @@ def generate_gradient(
             mode=registration_mode,  # type: ignore[arg-type]
             qr_size_mm=registration_qr_size_mm,
             aruco_size_mm=registration_aruco_size_mm,
+            with_perimeter_strip=strip_enabled,
         )
         emit_registration_markers(
             project,
@@ -304,6 +316,13 @@ def generate_gradient(
             retest_index=retest_index,
             annotation_params=annotation_params,
         )
+        if strip_enabled and layout.perimeter_strip is not None:
+            project.elements.extend(
+                render_perimeter_strip(
+                    layout.perimeter_strip,
+                    clean_params=perimeter_strip_params,
+                )
+            )
 
     return project
 
@@ -445,6 +464,7 @@ def _generate_wrapped(
     annotation_params: ProcessingParams,
     cell_shape: str = "rect",
     hide_axis_labels: bool = False,
+    cells_per_row: int | None = None,
     per_cell_params: list[ProcessingParams] | None = None,
 ) -> None:
     """Generate a single-axis gradient, optionally wrapped across rows.
@@ -453,8 +473,18 @@ def _generate_wrapped(
     verbatim instead of copying ``base_params`` and overlaying ``x_values[i]``
     onto ``x_param``. The axis-label block is also skipped — the swept x
     axis carries no meaning in this mode.
+
+    ``cells_per_row``, when set, is the source of truth for the wrapped
+    layout's column count — used by validation tests where a partially-
+    filled last row would otherwise mis-size cells via ``ceil(x_steps /
+    rows)``. Falls back to the ceil math for sweep tests that don't pin
+    a column count.
     """
-    per_row = math.ceil(x_steps / rows)
+    per_row = (
+        cells_per_row
+        if cells_per_row and cells_per_row > 0
+        else math.ceil(x_steps / rows)
+    )
     elem_w = (total_width - max(0, per_row - 1) * gap) / per_row
 
     ann_layer = ANNOTATION_LAYER_COLOR

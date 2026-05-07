@@ -9,6 +9,7 @@ standalone and multi-user paths share identical not-found semantics.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -24,6 +25,8 @@ class InUseError(Exception):
 
 
 def _row_to_dict(r) -> dict[str, Any]:
+    wb_supported_raw = getattr(r, "wb_supported", None)
+    cp_raw = getattr(r, "clean_pass_params_json", None)
     return {
         "id": r.id, "name": r.name, "notes": r.notes or "",
         "created_at": r.created_at,
@@ -34,6 +37,8 @@ def _row_to_dict(r) -> dict[str, Any]:
         "width_mm": r.width_mm,
         "height_mm": r.height_mm,
         "is_default": bool(r.is_default),
+        "wb_supported": True if wb_supported_raw is None else bool(wb_supported_raw),
+        "clean_pass_params": json.loads(cp_raw) if cp_raw else None,
     }
 
 
@@ -147,6 +152,34 @@ def set_default(mid: int, *, owner_id: int = STANDALONE_USER_ID) -> bool:
             .values(is_default=1)
         )
         return True
+
+
+def update_material_calibration(
+    mid: int,
+    *,
+    owner_id: int = STANDALONE_USER_ID,
+    wb_supported: bool | None = None,
+    clean_pass_params: dict | None = None,
+) -> None:
+    """Patch the WB-flat-field columns on a material. Pass only the
+    fields you want to overwrite."""
+    fields: dict[str, Any] = {}
+    if wb_supported is not None:
+        fields["wb_supported"] = wb_supported
+    if clean_pass_params is not None:
+        fields["clean_pass_params_json"] = json.dumps(clean_pass_params)
+    if not fields:
+        return
+    with session_scope() as s:
+        result = s.execute(
+            materials.update()
+            .where(
+                and_(materials.c.id == mid, materials.c.owner_id == owner_id),
+            )
+            .values(**fields)
+        )
+        if result.rowcount == 0:
+            raise KeyError(mid)
 
 
 def delete(mid: int, *, owner_id: int = STANDALONE_USER_ID) -> None:

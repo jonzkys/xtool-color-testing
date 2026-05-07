@@ -4,6 +4,14 @@ const MARGIN = 1.5;
 const QR_DEFAULT = 5;
 const ARUCO_DEFAULT = 2;
 
+// WB perimeter clean-pass strip — dimensions mirror
+// xcs_gen.capture.layout.{PERIMETER_STRIP_WIDTH_MM, PERIMETER_STRIP_INSET_MM}.
+const STRIP_WIDTH_MM = 3.0;
+const STRIP_INSET_MM = 1.0;
+// Vertical room reserved above the grid when the strip is on, mirroring
+// the push-down generators.py applies to gradient_start_y.
+const STRIP_RESERVATION_MM = STRIP_WIDTH_MM + MARGIN;
+
 // Axis label font (in mm) and the vertical space the generator reserves between
 // wrapped rows for tick + label. Mirrors the backend's _annotation_space_below
 // so the preview reflects what actually gets burned when gap_mm is tight.
@@ -20,6 +28,8 @@ interface Cell {
 }
 interface Row { yMm: number; heightMm: number; cells: Cell[]; labelMin: string; labelMax: string; }
 
+interface StripSegment { x: number; y: number; w: number; h: number }
+
 export interface PreviewGeometry {
   viewW: number; viewH: number;
   gridX: number; gridY: number;
@@ -27,10 +37,19 @@ export interface PreviewGeometry {
   rows: Row[];
   qr: { x: number; y: number; size: number } | null;
   arucos: { x: number; y: number; size: number; id: number }[];
+  perimeterStrip: StripSegment[] | null;
   shape: "rect" | "circle";
 }
 
+/** Toggle the WB perimeter clean-pass strip overlay. Set to true when
+ *  the test's material has a clean-pass recipe configured (and WB is
+ *  not disabled) so the preview reflects what the burn will emit. */
 export interface PreviewOverride {
+  /** Render the 4 perimeter clean-pass strips around the grid edges
+   *  and reserve the matching vertical room above the grid (4.5 mm)
+   *  exactly like the generator does. Ignored when registration is
+   *  off — the strip needs the corner markers as anchors. */
+  wbStrip?: boolean;
   /** Override the cell count from `spec.x_steps`. Used for
    *  ``kind=validation`` tests where the cell list is the
    *  ``validation_cells`` length, not a swept axis. */
@@ -54,11 +73,18 @@ export function computePreviewGeometry(
   const regOn = spec.registration.mode === "on";
   const qrSize = spec.registration.qr_size_mm ?? QR_DEFAULT;
   const arucoSize = spec.registration.aruco_size_mm ?? ARUCO_DEFAULT;
+  // The perimeter strip needs registration markers to anchor against;
+  // ignored when registration is off.
+  const stripOn = regOn && Boolean(override?.wbStrip);
 
   const xShift = regOn ? Math.max(qrSize, arucoSize) + MARGIN : 0;
   const yShift = regOn ? Math.max(qrSize, arucoSize) + MARGIN : 0;
   const gridX = xShift;
-  const gridY = yShift;
+  // Push the grid down by the strip's reservation when it's enabled
+  // so the top strip can sit between QR and the top-right ArUco
+  // without overlapping the grid. Mirrors the push-down in
+  // src/xcs_gen/generators.py::generate_gradient.
+  const gridY = yShift + (stripOn ? STRIP_RESERVATION_MM : 0);
   const gridW = spec.width_mm;
   // height_mm follows the backend convention:
   //   2D (y_param + y_steps > 1): height_mm = total grid height across y_steps rows
@@ -145,7 +171,52 @@ export function computePreviewGeometry(
     { x: gridX + gridW + MARGIN, y: gridY + gridH + MARGIN, size: arucoSize, id: 3 },
   ] : [];
 
-  return { viewW, viewH, gridX, gridY, gridW, gridH, rows, qr, arucos, shape: spec.cell_shape };
+  // 4 strip rects matching xcs_gen.capture.layout.compute_layout's
+  // perimeter geometry: each centre-line sits ``width/2 + MARGIN``
+  // outside the grid, with both endpoints inset from the adjacent
+  // marker by ``STRIP_INSET_MM``.
+  let perimeterStrip: StripSegment[] | null = null;
+  if (stripOn && qr && arucos.length === 3) {
+    const tr = arucos.find((a) => a.id === 1)!;
+    const bl = arucos.find((a) => a.id === 2)!;
+    const br = arucos.find((a) => a.id === 3)!;
+    const offset = STRIP_WIDTH_MM / 2 + MARGIN;
+    const top = {
+      x: qr.x + qr.size + STRIP_INSET_MM,
+      y: gridY - offset - STRIP_WIDTH_MM / 2,
+      w: (tr.x - STRIP_INSET_MM) - (qr.x + qr.size + STRIP_INSET_MM),
+      h: STRIP_WIDTH_MM,
+    };
+    const right = {
+      x: gridX + gridW + offset - STRIP_WIDTH_MM / 2,
+      y: tr.y + tr.size + STRIP_INSET_MM,
+      w: STRIP_WIDTH_MM,
+      h: (br.y - STRIP_INSET_MM) - (tr.y + tr.size + STRIP_INSET_MM),
+    };
+    const bottom = {
+      x: bl.x + bl.size + STRIP_INSET_MM,
+      y: gridY + gridH + offset - STRIP_WIDTH_MM / 2,
+      w: (br.x - STRIP_INSET_MM) - (bl.x + bl.size + STRIP_INSET_MM),
+      h: STRIP_WIDTH_MM,
+    };
+    const left = {
+      x: gridX - offset - STRIP_WIDTH_MM / 2,
+      y: qr.y + qr.size + STRIP_INSET_MM,
+      w: STRIP_WIDTH_MM,
+      h: (bl.y - STRIP_INSET_MM) - (qr.y + qr.size + STRIP_INSET_MM),
+    };
+    // Skip when any segment would render degenerate — matches the
+    // backend's "grid too small" fallback.
+    const segs = [top, right, bottom, left];
+    if (segs.every((s) => s.w >= 5 && s.h > 0 || s.h >= 5 && s.w > 0)) {
+      perimeterStrip = segs;
+    }
+  }
+
+  return {
+    viewW, viewH, gridX, gridY, gridW, gridH, rows, qr, arucos,
+    perimeterStrip, shape: spec.cell_shape,
+  };
 }
 
 export function TestPreview({
@@ -264,6 +335,18 @@ export function TestPreview({
               </g>
             );
           })}
+          {g.perimeterStrip && g.perimeterStrip.map((s, i) => (
+            <rect
+              key={`wb-${i}`}
+              x={s.x}
+              y={s.y}
+              width={s.w}
+              height={s.h}
+              fill="rgba(180,180,180,0.55)"
+              stroke="rgba(255,255,255,0.35)"
+              strokeWidth={0.05}
+            />
+          ))}
           {g.qr && (
             <g>
               <rect

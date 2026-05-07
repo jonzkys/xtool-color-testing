@@ -353,22 +353,27 @@ function formatParamValue(param: string, value: number): string {
   return value.toFixed(1);
 }
 
-// The seven keys we surface in the tooltip for validation cells, in
-// the order operators read them off the workbench. Anything else in
-// the cell's params dict (e.g. `mode`, `laser`, `crosshatch`) is
-// either redundant or already implied by the test, so showing it
-// would crowd the tooltip without adding signal.
+// The keys we surface in the tooltip for validation cells, in the
+// order operators read them off the workbench. The crosshatch flag
+// trails the numeric strip — it changes the burn pattern enough to
+// matter when a cell's colour drifts, even if it's a boolean.
+// Anything else in the cell's params dict (e.g. `mode`, `laser`) is
+// already implied by the test.
 const _VALIDATION_PARAM_ORDER: readonly string[] = [
   "power", "speed", "frequency", "density", "passes",
-  "pulse_width", "scan_angle",
+  "pulse_width", "scan_angle", "crosshatch",
 ] as const;
 const _PARAM_LABEL: Readonly<Record<string, string>> = {
   power: "P", speed: "S", frequency: "F", density: "L",
   passes: "x", pulse_width: "PW", scan_angle: "θ",
+  crosshatch: "XH",
 };
 
 function _formatValidationParam(key: string, value: unknown): string | null {
   if (value === null || value === undefined) return null;
+  if (key === "crosshatch") {
+    return `${_PARAM_LABEL[key]} ${value ? "on" : "off"}`;
+  }
   const num = typeof value === "number" ? value : Number(value);
   if (Number.isNaN(num)) return `${_PARAM_LABEL[key] ?? key}${value}`;
   if (key === "power") return `${_PARAM_LABEL[key]}${num.toFixed(1)}%`;
