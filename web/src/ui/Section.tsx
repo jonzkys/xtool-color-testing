@@ -7,9 +7,18 @@ export interface SectionProps {
   actions?: ReactNode;
   /** Small subhead rendered below the title. */
   description?: ReactNode;
+  /** Native ``title`` tooltip on the section header. Use for the
+   *  rare longform hint that doesn't justify a permanent
+   *  ``description`` row. */
+  titleHint?: string;
   /** Drop the metallic underline (use in dense adjacent sections). */
   dense?: boolean;
   className?: string;
+  /** Override classes on the inner body wrapper (the ``<div>`` that
+   *  hosts ``children``). The default is ``flex flex-col gap-3``;
+   *  pass e.g. ``flex-1 min-h-0`` when the body needs to grow into
+   *  whatever vertical room the section owns. */
+  bodyClassName?: string;
   children: ReactNode;
 }
 
@@ -22,8 +31,10 @@ export function Section({
   title,
   actions,
   description,
+  titleHint,
   dense,
   className,
+  bodyClassName,
   children,
 }: SectionProps) {
   return (
@@ -42,7 +53,10 @@ export function Section({
         >
           <div className="flex-1 min-w-0 basis-[180px]">
             {title && (
-              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
+              <div
+                className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]"
+                title={titleHint}
+              >
                 {title}
               </div>
             )}
@@ -62,7 +76,7 @@ export function Section({
           style={{ background: "var(--metal-bar-soft)" }}
         />
       )}
-      <div className="flex flex-col gap-3">{children}</div>
+      <div className={cn("flex flex-col gap-3", bodyClassName)}>{children}</div>
     </section>
   );
 }
