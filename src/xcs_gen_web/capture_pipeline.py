@@ -115,7 +115,11 @@ def _preprocessing_variants(gray: np.ndarray) -> list[np.ndarray]:
     CLAHE normalises uneven lighting (the most common failure mode on
     round-disc photos where one edge gets less flash); adaptive
     threshold catches photos where Otsu picks a bad global split
-    because of a bright background highlight.
+    because of a bright background highlight. The 5th variant is a
+    2–98 percentile contrast-stretch followed by bitwise inversion —
+    stainless-engraved fiducials are bright scribed lines on a dark
+    surface (inverted vs typical printed QRs), and the percentile
+    clip rescues photos with specular hot-spots.
     """
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     _, otsu = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -127,7 +131,16 @@ def _preprocessing_variants(gray: np.ndarray) -> list[np.ndarray]:
         gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY,
         blockSize=51, C=10,
     )
-    return [gray, otsu, clahe, adaptive]
+    # Stretch the 2nd–98th percentile to full range, then invert.
+    # Stainless engravings flip contrast vs typical printed QRs, and
+    # the percentile clip rescues photos with specular hot-spots.
+    mn, mx = np.percentile(gray, [2, 98])
+    rng = max(1.0, float(mx - mn))
+    stretched = np.clip(
+        (gray.astype(np.float32) - float(mn)) * 255.0 / rng, 0, 255,
+    ).astype(np.uint8)
+    stretched_inverted = cv2.bitwise_not(stretched)
+    return [gray, otsu, clahe, adaptive, stretched_inverted]
 
 
 def _qr_polygon_raw(
