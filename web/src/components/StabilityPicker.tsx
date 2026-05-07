@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ResultRecord, TestRecord } from "../types";
 import type { Material } from "../library";
 import { cn, EmptyState, Input, Select } from "../ui";
+import { seriesColour } from "./stabilityChartMath";
 
 export type StabilityKind = "validation" | "sweep";
 
@@ -261,15 +262,25 @@ export function StabilityPicker({
                     </div>
                   )}
                   <ul className="flex flex-col">
-                    {group.results.map((r) => (
-                      <ResultRow
-                        key={r.id}
-                        result={r}
-                        index={group.indexFor(r.id)}
-                        selected={selectedResultIds.includes(r.id)}
-                        onToggle={() => onToggleResult(r.id)}
-                      />
-                    ))}
+                    {group.results.map((r) => {
+                      // Series index = position in ``selectedResultIds``.
+                      // Mirrors how StabilityChart hands ``seriesColour``
+                      // to its dots, so the picker swatch + chart dot +
+                      // stats panel chip all share one colour. ``-1``
+                      // means "not in the chart" (unticked) — that row
+                      // gets the neutral substrate-toned swatch.
+                      const seriesIdx = selectedResultIds.indexOf(r.id);
+                      return (
+                        <ResultRow
+                          key={r.id}
+                          result={r}
+                          index={group.indexFor(r.id)}
+                          seriesIdx={seriesIdx}
+                          selected={seriesIdx >= 0}
+                          onToggle={() => onToggleResult(r.id)}
+                        />
+                      );
+                    })}
                   </ul>
                 </li>
               ))}
@@ -504,15 +515,22 @@ function summariseGrid(t: TestRecord): string {
 function ResultRow({
   result,
   index,
+  seriesIdx,
   selected,
   onToggle,
 }: {
   result: ResultRecord;
   index: number;
+  /** Position in ``selectedResultIds`` — drives the swatch + left-edge
+   *  stripe. ``-1`` when the row isn't in the chart. */
+  seriesIdx: number;
   selected: boolean;
   onToggle: () => void;
 }) {
   const stamp = formatStamp(result.uploaded_at);
+  // Series colour mirrors what the chart hands its dots; only set
+  // when the row is selected so unticked rows stay neutral.
+  const colour = seriesIdx >= 0 ? seriesColour(seriesIdx) : null;
   return (
     <li>
       <label
@@ -520,10 +538,20 @@ function ResultRow({
           "flex items-center gap-2 px-3 py-1.5",
           "border-b border-[color:var(--color-border)]/60",
           "cursor-pointer transition-colors",
+          // The thumbnail used to live at the front of the row; it
+          // was a 32×32 patch of the warped image which was too small
+          // to read and frequently empty when the warped file was
+          // missing on disk. Replaced with the series-colour swatch
+          // below so the row always carries a useful identifier.
           selected
-            ? "bg-[color:var(--color-primary-tint)]/40"
-            : "hover:bg-[color:var(--color-surface-elevated)]",
+            ? "bg-[color:var(--color-primary-tint)]/40 border-l-[3px] pl-[9px]"
+            : "hover:bg-[color:var(--color-surface-elevated)] border-l-[3px] border-l-transparent pl-[9px]",
         )}
+        style={
+          selected && colour
+            ? { borderLeftColor: colour }
+            : undefined
+        }
       >
         <input
           type="checkbox"
@@ -532,7 +560,19 @@ function ResultRow({
           className="accent-[color:var(--color-primary)]"
           aria-label={`Toggle result #${result.id} (${stamp})`}
         />
-        <ResultThumb result={result} />
+        <div
+          aria-hidden
+          className={cn(
+            "h-5 w-5 rounded-[3px] border border-[color:var(--color-border-strong)] shrink-0",
+            !colour && "bg-[color:var(--color-surface-elevated)]",
+          )}
+          style={colour ? { background: colour } : undefined}
+          title={
+            colour
+              ? "Series colour — matches the dots in the chart and the stats chip on the right"
+              : "Tick to add to the chart"
+          }
+        />
         <div className="flex-1 min-w-0">
           <div className="font-mono text-[10px] tabular-nums text-[color:var(--color-ink)] truncate">
             #{index} · {stamp}
@@ -543,29 +583,6 @@ function ResultRow({
         </div>
       </label>
     </li>
-  );
-}
-
-function ResultThumb({ result }: { result: ResultRecord }) {
-  const [errored, setErrored] = useState(false);
-  return (
-    <div
-      aria-hidden
-      className={cn(
-        "h-8 w-8 rounded-[3px] border border-[color:var(--color-border-strong)] overflow-hidden shrink-0",
-        "bg-[color:var(--color-surface-elevated)]",
-      )}
-    >
-      {!errored && (
-        <img
-          src={`/api/results/${result.id}/warped-image`}
-          alt=""
-          className="h-full w-full object-cover"
-          loading="lazy"
-          onError={() => setErrored(true)}
-        />
-      )}
-    </div>
   );
 }
 

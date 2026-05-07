@@ -46,7 +46,6 @@ import {
 } from "../components/pixelArtMath";
 import { sampleCellGrid } from "../components/pixelArtImage";
 import { isNearWhite } from "../color/math";
-import { defaultBaseParams } from "../defaults";
 import { sanitiseProjectName } from "../projectName";
 import type {
   PaletteEntry,
@@ -65,6 +64,7 @@ import {
   defaultCrop,
   materialDims,
   nearestPaletteEntry,
+  paletteEntryToBaseParams,
 } from "./pixelArtHelpers";
 
 interface PipelineResult extends KMeansResult {
@@ -317,6 +317,12 @@ export function PixelArtPage() {
       const enabled = enabledByColor[color] ?? !nearWhite;
       const matched =
         matchByColor[color] ?? nearestPaletteEntry(color, paletteEntries);
+      // Use the matched palette entry's params if we have one — that's
+      // what makes each layer carry the burn settings actually
+      // validated for that colour, instead of every layer collapsing
+      // to the same default and xTool Studio showing one shared
+      // settings row. Falls back to defaults when no match exists.
+      const baseParams = paletteEntryToBaseParams(matched);
       return {
         color,
         enabled,
@@ -324,7 +330,7 @@ export function PixelArtPage() {
         cellCount: counts[i],
         isNearWhite: nearWhite,
         matchedEntry: matched,
-        baseParams: defaultBaseParams(),
+        baseParams,
         materialId,
       };
     });
