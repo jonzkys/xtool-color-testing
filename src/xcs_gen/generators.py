@@ -118,6 +118,7 @@ def generate_gradient(
     retest_index: int = 0,
     material_id: str | None = None,
     hide_axis_labels: bool = False,
+    cells_per_row: int | None = None,
     per_cell_params: list[ProcessingParams] | None = None,
 ) -> XCSProject:
     """Generate a gradient test pattern with axis annotations.
@@ -278,6 +279,7 @@ def generate_gradient(
             annotation_params=annotation_params,
             cell_shape=cell_shape,
             hide_axis_labels=hide_axis_labels,
+            cells_per_row=cells_per_row,
             per_cell_params=per_cell_params,
         )
 
@@ -462,6 +464,7 @@ def _generate_wrapped(
     annotation_params: ProcessingParams,
     cell_shape: str = "rect",
     hide_axis_labels: bool = False,
+    cells_per_row: int | None = None,
     per_cell_params: list[ProcessingParams] | None = None,
 ) -> None:
     """Generate a single-axis gradient, optionally wrapped across rows.
@@ -470,8 +473,18 @@ def _generate_wrapped(
     verbatim instead of copying ``base_params`` and overlaying ``x_values[i]``
     onto ``x_param``. The axis-label block is also skipped — the swept x
     axis carries no meaning in this mode.
+
+    ``cells_per_row``, when set, is the source of truth for the wrapped
+    layout's column count — used by validation tests where a partially-
+    filled last row would otherwise mis-size cells via ``ceil(x_steps /
+    rows)``. Falls back to the ceil math for sweep tests that don't pin
+    a column count.
     """
-    per_row = math.ceil(x_steps / rows)
+    per_row = (
+        cells_per_row
+        if cells_per_row and cells_per_row > 0
+        else math.ceil(x_steps / rows)
+    )
     elem_w = (total_width - max(0, per_row - 1) * gap) / per_row
 
     ann_layer = ANNOTATION_LAYER_COLOR

@@ -387,6 +387,7 @@ def project_to_xcs(
             retest_index=t.retest_index,
             material_id=t.material_id,
             hide_axis_labels=t.hide_axis_labels,
+            cells_per_row=t.cells_per_row,
             per_cell_params=per_cell_params,
         )
 
