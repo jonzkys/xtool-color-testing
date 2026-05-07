@@ -12,6 +12,7 @@ from xcs_gen_web.wb_correction import (
     reject_specular,
     SpecularRejectionResult,
 )
+from xcs_gen_web.wb_correction import sample_strip_line
 
 # Canonical reference for stainless-ish silver: G normalised to 1.0,
 # B/G ~ 0.91 (derived from samples/color/* empirical work).
@@ -67,3 +68,32 @@ def test_reject_specular_drops_top_quartile_by_luminance():
 def test_reject_specular_handles_empty_input():
     out = reject_specular(np.zeros((0, 3), dtype=np.float32))
     assert out.kept.shape[0] == 0
+
+
+def test_sample_strip_line_walks_a_horizontal_strip():
+    # 200x200 px frame. Plant a known colour along a horizontal
+    # band from (10, 95) to (190, 105) — that's the strip's rect.
+    img = np.zeros((200, 200, 3), dtype=np.uint8)
+    img[95:106, 10:191, 0] = 80   # B
+    img[95:106, 10:191, 1] = 160  # G
+    img[95:106, 10:191, 2] = 200  # R
+    out = sample_strip_line(
+        img,
+        x0_mm=10.0, y0_mm=25.0, x1_mm=190.0, y1_mm=25.0,
+        px_per_mm=4.0, sample_step_mm=2.0, sample_size_mm=1.5,
+    )
+    # The strip's centre line at y=25 mm with px_per_mm=4 lands at
+    # row 100, exactly within the painted band.
+    assert out is not None
+    R, G, B = out
+    assert abs(R - 200) < 2 and abs(G - 160) < 2 and abs(B - 80) < 2
+
+
+def test_sample_strip_line_returns_none_when_box_off_frame():
+    img = np.zeros((200, 200, 3), dtype=np.uint8)
+    out = sample_strip_line(
+        img,
+        x0_mm=-50.0, y0_mm=-50.0, x1_mm=-40.0, y1_mm=-50.0,
+        px_per_mm=4.0, sample_step_mm=2.0, sample_size_mm=1.5,
+    )
+    assert out is None

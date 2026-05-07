@@ -97,3 +97,59 @@ def reject_specular(
         rejected=pixels_rgb[~keep_mask],
         rejected_count=int((~keep_mask).sum()),
     )
+
+
+def sample_strip_line(
+    frame_bgr: np.ndarray,
+    *,
+    x0_mm: float, y0_mm: float, x1_mm: float, y1_mm: float,
+    px_per_mm: float,
+    sample_step_mm: float = 2.0,
+    sample_size_mm: float = 1.5,
+) -> tuple[float, float, float] | None:
+    """Walk a strip's centre-line in burn-space mm, sample a small
+    box at every ``sample_step_mm``, specular-reject, then pool to
+    one (R, G, B). Returns ``None`` when no usable samples survive.
+    """
+    length_mm = float(np.hypot(x1_mm - x0_mm, y1_mm - y0_mm))
+    if length_mm <= 0:
+        return None
+    n = max(2, int(length_mm / sample_step_mm) + 1)
+    half_box_px = (sample_size_mm * px_per_mm) / 2.0
+    h, w = frame_bgr.shape[:2]
+    pooled: list[np.ndarray] = []
+    for i in range(n):
+        t = i / (n - 1)
+        cx_mm = x0_mm + t * (x1_mm - x0_mm)
+        cy_mm = y0_mm + t * (y1_mm - y0_mm)
+        cx_px = int(cx_mm * px_per_mm)
+        cy_px = int(cy_mm * px_per_mm)
+        x0 = max(0, int(cx_px - half_box_px))
+        y0 = max(0, int(cy_px - half_box_px))
+        x1 = min(w, int(cx_px + half_box_px))
+        y1 = min(h, int(cy_px + half_box_px))
+        if x1 <= x0 or y1 <= y0:
+            continue
+        sub = frame_bgr[y0:y1, x0:x1]
+        rgb = sub[:, :, ::-1].reshape(-1, 3).astype(np.float32)
+        kept = reject_specular(rgb).kept
+        if kept.size == 0:
+            continue
+        pooled.append(kept)
+    if not pooled:
+        return None
+    all_kept = np.concatenate(pooled, axis=0)
+    # Reject per-point outliers > 2σ from the strip's pooled mean
+    # before averaging — guards against a single sample box that
+    # happened to straddle a scratch.
+    mean = all_kept.mean(axis=0)
+    sigma = all_kept.std(axis=0)
+    if float(sigma.max()) > 0:
+        keep = np.all(
+            np.abs(all_kept - mean) <= 2.0 * np.maximum(sigma, 1.0),
+            axis=1,
+        )
+        if keep.any():
+            all_kept = all_kept[keep]
+    final = all_kept.mean(axis=0)
+    return float(final[0]), float(final[1]), float(final[2])
