@@ -155,6 +155,83 @@ def sample_strip_line(
     return float(final[0]), float(final[1]), float(final[2])
 
 
+def sample_unburned_around_markers(
+    frame_bgr: np.ndarray,
+    markers: list[dict],
+    *,
+    px_per_mm: float,
+    band_mm: float = 1.5,
+    margin_mm: float = 0.5,
+) -> tuple[float, float, float] | None:
+    """Sample a thin band of substrate just outside each registration
+    marker, pool, and return one (R, G, B) reading.
+
+    ``markers`` is a list of ``{"x", "y", "size_mm"}`` dicts in burn-
+    space mm, where ``(x, y)`` is the marker's top-left corner and
+    ``size_mm`` is its side length. We grab a small box ``band_mm`` wide
+    on the substrate side of the marker, ``margin_mm`` away from the
+    marker edge, on each of the four faces; pool the kept (non-specular)
+    pixels across all faces and all markers; reject 2σ outliers; mean.
+
+    Returns ``None`` if no usable pixels survive — the caller falls back
+    to "no correction" when this and the perimeter strips both fail.
+    """
+    h, w = frame_bgr.shape[:2]
+    band_px = max(1, int(band_mm * px_per_mm))
+    margin_px = max(0, int(margin_mm * px_per_mm))
+    pooled: list[np.ndarray] = []
+    for m in markers:
+        cx_mm = float(m["x"])
+        cy_mm = float(m["y"])
+        size_mm = float(m["size_mm"])
+        x0_px = int(cx_mm * px_per_mm)
+        y0_px = int(cy_mm * px_per_mm)
+        size_px = int(size_mm * px_per_mm)
+        # Four substrate faces: above (top edge), below (bottom edge),
+        # left of, right of the marker. Pull a band_px-thick strip on
+        # the outside of the marker, offset by margin_px.
+        boxes = [
+            # above
+            (x0_px, y0_px - margin_px - band_px,
+             x0_px + size_px, y0_px - margin_px),
+            # below
+            (x0_px, y0_px + size_px + margin_px,
+             x0_px + size_px, y0_px + size_px + margin_px + band_px),
+            # left
+            (x0_px - margin_px - band_px, y0_px,
+             x0_px - margin_px, y0_px + size_px),
+            # right
+            (x0_px + size_px + margin_px, y0_px,
+             x0_px + size_px + margin_px + band_px, y0_px + size_px),
+        ]
+        for bx0, by0, bx1, by1 in boxes:
+            bx0 = max(0, bx0)
+            by0 = max(0, by0)
+            bx1 = min(w, bx1)
+            by1 = min(h, by1)
+            if bx1 <= bx0 or by1 <= by0:
+                continue
+            sub = frame_bgr[by0:by1, bx0:bx1]
+            rgb = sub[:, :, ::-1].reshape(-1, 3).astype(np.float32)
+            kept = reject_specular(rgb).kept
+            if kept.size > 0:
+                pooled.append(kept)
+    if not pooled:
+        return None
+    all_kept = np.concatenate(pooled, axis=0)
+    mean = all_kept.mean(axis=0)
+    sigma = all_kept.std(axis=0)
+    if float(sigma.max()) > 0:
+        keep = np.all(
+            np.abs(all_kept - mean) <= 2.0 * np.maximum(sigma, 1.0),
+            axis=1,
+        )
+        if keep.any():
+            all_kept = all_kept[keep]
+    final = all_kept.mean(axis=0)
+    return float(final[0]), float(final[1]), float(final[2])
+
+
 @dataclass
 class FlatFieldResult:
     frame: np.ndarray

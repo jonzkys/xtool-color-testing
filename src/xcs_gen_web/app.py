@@ -1360,6 +1360,59 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             wb=r.get("wb"),
         )
 
+    def _persist_wb_outcome(
+        result_id: int, outcome, *, owner_id: int,
+    ) -> None:
+        """Map a :class:`CorrectionOutcome` onto the result row's
+        wb_* columns. Flat-field stores per-edge means + positions;
+        chromaticity stores the anchor RGB + per-channel scales;
+        skipped/disabled still record the mode so the UI can badge it.
+        """
+        if outcome.mode == "flatfield":
+            # Orchestrator (correct_warped_frame) synthesises any missing
+            # 4th edge before invoking flatfield_correct, so all four
+            # edge_means entries are guaranteed populated here. Assert
+            # rather than filter so the contract stays length-4 symmetric
+            # with anchor_rgb.
+            assert outcome.edge_means and outcome.edge_positions, (
+                "flatfield outcome missing edge means/positions"
+            )
+            assert all(v is not None for v in outcome.edge_means.values()), (
+                "flatfield outcome has unfilled edge mean"
+            )
+            anchor_rgb = list(outcome.edge_means.values())
+            correction = [
+                {
+                    "side": k,
+                    "x_mm": outcome.edge_positions[k][0],
+                    "y_mm": outcome.edge_positions[k][1],
+                    "R": v[0], "G": v[1], "B": v[2],
+                }
+                for k, v in outcome.edge_means.items()
+            ]
+        elif outcome.mode == "chromaticity":
+            anchor_rgb = (
+                list(outcome.chromaticity_anchor_rgb)
+                if outcome.chromaticity_anchor_rgb else None
+            )
+            correction = (
+                list(outcome.chromaticity_scales)
+                if outcome.chromaticity_scales else None
+            )
+        else:
+            # "skipped" or "disabled" — record the mode for the UI badge,
+            # leave anchor/correction null.
+            anchor_rgb = None
+            correction = None
+        r_repo.update_wb_state(
+            result_id,
+            mode=outcome.mode,
+            anchor_rgb=anchor_rgb,
+            correction=correction,
+            canonical_id=outcome.canonical_id,
+            owner_id=owner_id,
+        )
+
     def _persist_upload(
         *, tid: int, spec: dict, data: bytes, filename: str | None,
         user_id: int, via: str = "desktop",
@@ -1389,9 +1442,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 },
             )
 
+        # Look up the test's material so the WB-flat-field branch in
+        # run_capture can decide whether to sample perimeter strips +
+        # apply correction. None when the material is missing or not
+        # owned by this user — the capture service treats that as
+        # "skip WB" gracefully.
+        from .repositories import tests as t_repo
+        from .repositories import materials as m_repo
+        t_row = t_repo.get(tid, owner_id=user_id)
+        material = None
+        if t_row and t_row.get("material_id") is not None:
+            material = m_repo.get(int(t_row["material_id"]), owner_id=user_id)
+
         try:
             cap_result = capture_service.run_capture(
                 image_bytes=data, test_id=tid, spec=spec,
+                material=material,
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -1415,6 +1481,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 models.results.update()
                 .where(models.results.c.id == placeholder["id"])
                 .values(image_path=rec["path"])
+            )
+        if cap_result.wb is not None:
+            _persist_wb_outcome(
+                placeholder["id"], cap_result.wb, owner_id=user_id,
             )
         t_repo.mark_tested_and_lock(tid, owner_id=user_id)
         refreshed = r_repo.get(placeholder["id"], owner_id=user_id)
@@ -1448,10 +1518,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 status_code=410,
                 detail="source image no longer available — cannot reingest",
             )
+        from .repositories import materials as m_repo
+        material = None
+        if t.get("material_id") is not None:
+            material = m_repo.get(int(t["material_id"]), owner_id=user_id)
         try:
             cap_result = capture_service.run_capture(
                 image_bytes=data, test_id=r["test_id"],
                 spec=capture_service.effective_spec(t),
+                material=material,
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -1464,6 +1539,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if refreshed is None:
             # Owner check passed in r_repo.get; row should still exist.
             raise HTTPException(status_code=500, detail="reingest write failed")
+        if cap_result.wb is not None:
+            _persist_wb_outcome(rid, cap_result.wb, owner_id=user_id)
+            refreshed = r_repo.get(rid, owner_id=user_id)
         return _result_to_response(refreshed)
 
     @app.get(
@@ -1498,6 +1576,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 status_code=410,
                 detail="source image no longer available — cannot preview",
             )
+        from .repositories import materials as m_repo
+        material = None
+        if t.get("material_id") is not None:
+            material = m_repo.get(int(t["material_id"]), owner_id=user_id)
         # Re-run the full pipeline with the requested aggregator. We do
         # the full pipeline (decode + detect + warp + sample) rather than
         # just re-aggregating because the warped image isn't persisted.
@@ -1506,6 +1588,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             cap_result = capture_service.run_capture(
                 image_bytes=data, test_id=r["test_id"],
                 spec={**capture_service.effective_spec(t), "sample_aggregator": aggregator},
+                material=material,
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -1545,9 +1628,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 detail="source image no longer available — cannot inspect",
             )
         eff_spec = capture_service.effective_spec(t)
+        from .repositories import materials as m_repo
+        material = None
+        if t.get("material_id") is not None:
+            material = m_repo.get(int(t["material_id"]), owner_id=user_id)
         try:
             cap_result = capture_service.run_capture(
                 image_bytes=data, test_id=r["test_id"], spec=eff_spec,
+                material=material,
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))

@@ -32,7 +32,11 @@ import cv2
 import numpy as np
 
 from .. import images
-from ..repositories import results as r_repo, tests as t_repo
+from ..repositories import (
+    materials as m_repo,
+    results as r_repo,
+    tests as t_repo,
+)
 from . import capture as capture_service
 
 # Sidecar discriminator passed to ``images.save(kind=...)``. Kept short
@@ -99,10 +103,14 @@ def _compute_and_cache_warped(
     raw = _read_or_none(r["image_path"])
     if raw is None:
         raise CacheError("source image no longer available")
+    material = None
+    if t.get("material_id") is not None:
+        material = m_repo.get(int(t["material_id"]), owner_id=owner_id)
     try:
         cap = capture_service.run_capture(
             image_bytes=raw, test_id=r["test_id"],
             spec=capture_service.effective_spec(t),
+            material=material,
         )
     except capture_service.CaptureError as e:
         raise CaptureError(str(e)) from e

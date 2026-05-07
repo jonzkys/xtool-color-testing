@@ -214,7 +214,26 @@ def bytes_for_test(*, test_id: int, name: str, material_id: int,
             machine_id=machine_id,
             material_id=material_id,
         )
+
+    # Look up the material's WB-flatfield calibration so the converter
+    # can emit the perimeter clean-pass strips alongside the gradient
+    # cells. Empty dict (passed as ``None`` below) when the material
+    # opts out of WB or has no clean-pass recipe — the renderer skips
+    # the strip rect emission in that case.
+    calibration_by_material_id: dict[str, dict] = {}
+    if material_id and owner_id is not None:
+        from ..repositories import materials as m_repo
+        try:
+            mat = m_repo.get(int(material_id), owner_id=owner_id)
+        except (TypeError, ValueError):
+            mat = None
+        if mat and mat.get("wb_supported", True) and mat.get("clean_pass_params"):
+            calibration_by_material_id[str(material_id)] = {
+                "clean_pass_params": mat["clean_pass_params"],
+            }
+
     return converter.project_to_xcs_bytes(
         Project.model_validate(project), machine_id=machine_id,
         annotation_params=annotation_params,
+        calibration_by_material_id=calibration_by_material_id or None,
     )

@@ -21,12 +21,22 @@ from xcs_gen.text import text_height
 from ..capture_pipeline import (
     QR_BL, QR_BR, QR_TL, QR_TR,
     DetectionError,
+    apply_wb_correction_to_warped,
     decode_image_bytes,
     detect_fiducials,
+    sample_perimeter_strips,
+    sample_unburned_around_markers,
     warp_to_burn_space,
 )
 from ..capture_sampling import sample_grid
 from ..palette import hex_to_lab
+from ..wb_correction import CorrectionOutcome
+
+# Versioning hook for the canonical-neutral RGB anchor that flat-field
+# correction is normalising every photo onto. Changing the canonical
+# values implies bumping this string so old vs new corrections are
+# distinguishable in stored result rows.
+_DEFAULT_CANONICAL_ID = "v1.steel-default.2026-05-07"
 
 # IDs of the three ArUco fiducials the layout places around the burn area.
 # Kept as a frozenset so missing-marker computation can be a pure set op.
@@ -102,10 +112,16 @@ class CaptureResult:
     # extrapolated rather than constrained — sample colours near the
     # corresponding corner are unreliable.
     missing_markers: list[int] = field(default_factory=list)
+    # WB-flat-field correction outcome. ``None`` when the material the
+    # test references is unknown to this caller (e.g. non-DB stub paths).
+    # When set, ``mode`` is one of ``"flatfield" | "chromaticity" |
+    # "skipped" | "disabled"``.
+    wb: CorrectionOutcome | None = None
 
 
 def run_capture(*, image_bytes: bytes, test_id: int,
-                spec: dict[str, Any]) -> CaptureResult:
+                spec: dict[str, Any],
+                material: dict[str, Any] | None = None) -> CaptureResult:
     try:
         img = decode_image_bytes(image_bytes)
     except Exception as e:
@@ -155,10 +171,20 @@ def run_capture(*, image_bytes: bytes, test_id: int,
     burn_w = grid_origin_mm[0] + grid_w + aruco_size + margin
     burn_h = grid_origin_mm[1] + grid_h + aruco_size + margin
 
+    # When the material both supports WB and has a clean-pass recipe,
+    # ask the layout for the perimeter-strip segment geometry so the WB
+    # sampler can walk those strips on the warped frame. For all other
+    # cases we skip the extra computation entirely.
+    wb_supports_flatfield = bool(
+        material is not None
+        and material.get("wb_supported", True)
+        and material.get("clean_pass_params"),
+    )
     layout = compute_layout(
         grid_x=grid_origin_mm[0], grid_y=grid_origin_mm[1],
         grid_w=grid_w, grid_h=grid_h,
         mode="on", qr_size_mm=qr_size, aruco_size_mm=aruco_size,
+        with_perimeter_strip=wb_supports_flatfield,
     )
     # QR anchors (4 corners of the QR square, burn-space mm) plus ArUco
     # centres (converted from layout's top-left + half-size offsets).
@@ -181,6 +207,57 @@ def run_capture(*, image_bytes: bytes, test_id: int,
         )
     except DetectionError as e:
         raise CaptureError(str(e)) from e
+
+    # ---- WB flat-field correction ----------------------------------
+    # When the material has clean-pass perimeter strips burned, sample
+    # them and apply per-pixel bilinear gain (or fall back to
+    # chromaticity-only if too few strips read cleanly). When the
+    # material doesn't qualify, ``wb_outcome`` is None and ``warped``
+    # passes straight through to sample_grid below.
+    wb_outcome: CorrectionOutcome | None = None
+    if material is not None:
+        edge_means: dict[str, tuple[float, float, float] | None] = {
+            "top": None, "right": None, "bottom": None, "left": None,
+        }
+        edge_positions: dict[str, tuple[float, float]] = {
+            "top": (0.0, 0.0), "right": (0.0, 0.0),
+            "bottom": (0.0, 0.0), "left": (0.0, 0.0),
+        }
+        if wb_supports_flatfield and layout.perimeter_strip is not None:
+            seg_dicts = [
+                {"side": s.side, "x0": s.x0, "y0": s.y0,
+                 "x1": s.x1, "y1": s.y1}
+                for s in layout.perimeter_strip.segments
+            ]
+            edge_means = sample_perimeter_strips(
+                warped, seg_dicts, px_per_mm=10.0,
+            )
+            for s in layout.perimeter_strip.segments:
+                edge_positions[s.side] = (
+                    (s.x0 + s.x1) / 2.0,
+                    (s.y0 + s.y1) / 2.0,
+                )
+        unburned_rgb = sample_unburned_around_markers(
+            warped,
+            [{"x": ar.x, "y": ar.y, "size_mm": ar.size}
+             for ar in layout.arucos],
+            px_per_mm=10.0,
+        )
+        wb_outcome = apply_wb_correction_to_warped(
+            warped,
+            edge_means=edge_means,
+            edge_positions=edge_positions,
+            grid_bbox=(
+                grid_origin_mm[0], grid_origin_mm[1],
+                grid_origin_mm[0] + grid_w, grid_origin_mm[1] + grid_h,
+            ),
+            canonical_neutral=(160.0, 160.0, 145.0),
+            px_per_mm=10.0,
+            unburned_rgb=unburned_rgb,
+            canonical_id=_DEFAULT_CANONICAL_ID,
+            enabled=True,
+        )
+        warped = wb_outcome.frame
 
     # sample_grid's wrapped branch derives cell height from grid_size_mm[1] /
     # rows, which assumes no inter-row gap. Pass the cells-only height and
@@ -219,6 +296,7 @@ def run_capture(*, image_bytes: bytes, test_id: int,
         warped_image_bgr=warped,
         retest_index=retest_index,
         missing_markers=missing_markers,
+        wb=wb_outcome,
     )
 
 

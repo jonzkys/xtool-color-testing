@@ -352,3 +352,86 @@ def warp_to_burn_space(
     w_px = int(burn_size_mm[0] * px_per_mm)
     h_px = int(burn_size_mm[1] * px_per_mm)
     return cv2.warpPerspective(image, H, (w_px, h_px))
+
+
+from .wb_correction import (  # noqa: E402
+    CorrectionOutcome,
+    correct_warped_frame,
+    sample_strip_line,
+    sample_unburned_around_markers,
+)
+
+
+def sample_perimeter_strips(
+    frame_bgr: np.ndarray,
+    segments: list[dict],
+    *,
+    px_per_mm: float,
+    sample_step_mm: float = 2.0,
+    sample_size_mm: float = 1.5,
+) -> dict[str, tuple[float, float, float] | None]:
+    """Run ``sample_strip_line`` over each segment of the perimeter
+    strip; return a dict keyed by side. ``None`` for any segment
+    that produced no usable samples."""
+    out: dict[str, tuple[float, float, float] | None] = {
+        "top": None, "right": None, "bottom": None, "left": None,
+    }
+    for seg in segments:
+        out[seg["side"]] = sample_strip_line(
+            frame_bgr,
+            x0_mm=seg["x0"], y0_mm=seg["y0"],
+            x1_mm=seg["x1"], y1_mm=seg["y1"],
+            px_per_mm=px_per_mm,
+            sample_step_mm=sample_step_mm,
+            sample_size_mm=sample_size_mm,
+        )
+    return out
+
+
+def apply_wb_correction_to_warped(
+    frame_bgr: np.ndarray,
+    *,
+    edge_means: dict[str, tuple[float, float, float] | None],
+    edge_positions: dict[str, tuple[float, float]],
+    grid_bbox: tuple[float, float, float, float],
+    canonical_neutral: tuple[float, float, float] = (160.0, 160.0, 145.0),
+    px_per_mm: float = 10.0,
+    unburned_rgb: tuple[float, float, float] | None = None,
+    canonical_id: str | None = None,
+    enabled: bool = True,
+) -> CorrectionOutcome:
+    """Pipeline-facing wrapper that adds the ``enabled=False`` short-
+    circuit on top of the orchestrator."""
+    if not enabled:
+        return CorrectionOutcome(
+            frame=frame_bgr.copy(),
+            mode="disabled",
+            applied=False,
+            edge_means=None,
+            edge_positions=None,
+            chromaticity_anchor_rgb=None,
+            chromaticity_scales=None,
+            canonical_id=canonical_id,
+        )
+    return correct_warped_frame(
+        frame_bgr,
+        edge_means=edge_means,
+        edge_positions=edge_positions,
+        grid_bbox=grid_bbox,
+        canonical_neutral=canonical_neutral,
+        px_per_mm=px_per_mm,
+        unburned_rgb=unburned_rgb,
+        canonical_id=canonical_id,
+    )
+
+
+__all__ = [
+    "DetectionError",
+    "QR_TL", "QR_BL", "QR_BR", "QR_TR",
+    "decode_image_bytes",
+    "detect_fiducials",
+    "warp_to_burn_space",
+    "apply_wb_correction_to_warped",
+    "sample_perimeter_strips",
+    "sample_unburned_around_markers",
+]

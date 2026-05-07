@@ -239,6 +239,7 @@ def project_to_xcs(
     *,
     machine_id: str = "F2Ultra",
     annotation_params: ProcessingParams | None = None,
+    calibration_by_material_id: dict[str, dict] | None = None,
 ) -> XCSProject:
     """Convert a Project into a single merged XCSProject.
 
@@ -248,6 +249,14 @@ def project_to_xcs(
     per machine fallback) so each burn carries the right calibration
     for the substrate. ``None`` means "use the built-in constants" —
     sensible for fresh installs and tests.
+
+    ``calibration_by_material_id`` maps a test's ``material_id`` to a
+    dict of WB-flatfield calibration values. When the dict for a given
+    material contains ``clean_pass_params``, those params are forwarded
+    to ``generate_gradient`` as ``perimeter_strip_params`` so the burn
+    includes a 4-strip clean-pass border for runtime WB correction.
+    Tests whose material is absent from the dict (or whose entry has no
+    ``clean_pass_params``) emit a plain gradient with no strips.
 
     Raises:
         ValueError: If any grid placements overlap or any element width
@@ -334,6 +343,16 @@ def project_to_xcs(
             x_steps = len(per_cell_params)
             y_param = None
 
+        # Look up the WB-flatfield calibration recipe for this test's
+        # material, if the caller supplied one. ``None`` means "no
+        # clean-pass strip" — the generator skips the strip emission
+        # branch entirely.
+        perimeter_strip_params: dict | None = None
+        if calibration_by_material_id and t.material_id:
+            cal = calibration_by_material_id.get(str(t.material_id))
+            if cal and cal.get("clean_pass_params"):
+                perimeter_strip_params = cal["clean_pass_params"]
+
         generated = generate_gradient(
             x_param=t.x_param,
             x_min=t.x_min,
@@ -361,6 +380,7 @@ def project_to_xcs(
             registration_mode=t.registration.mode,
             registration_qr_size_mm=t.registration.qr_size_mm,
             registration_aruco_size_mm=t.registration.aruco_size_mm,
+            perimeter_strip_params=perimeter_strip_params,
             unidirectional=t.unidirectional,
             cell_shape=t.cell_shape,
             test_id=int(t.id) if t.id.isdigit() else None,
@@ -387,10 +407,12 @@ def project_to_xcs_bytes(
     *,
     machine_id: str = "F2Ultra",
     annotation_params: ProcessingParams | None = None,
+    calibration_by_material_id: dict[str, dict] | None = None,
 ) -> bytes:
     """Convert a Project to .xcs file bytes."""
     xcs = project_to_xcs(
         project, machine_id=machine_id, annotation_params=annotation_params,
+        calibration_by_material_id=calibration_by_material_id,
     )
     data = build_xcs(xcs)
     return json.dumps(data, separators=(",", ":")).encode("utf-8")
