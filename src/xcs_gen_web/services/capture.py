@@ -24,6 +24,7 @@ from ..capture_pipeline import (
     apply_wb_correction_to_warped,
     decode_image_bytes,
     detect_fiducials,
+    detect_fiducials_with_recropping,
     sample_perimeter_strips,
     sample_unburned_around_markers,
     warp_to_burn_space,
@@ -128,7 +129,7 @@ def run_capture(*, image_bytes: bytes, test_id: int,
         raise CaptureError(f"could not decode image: {e}") from e
 
     try:
-        qr_id, retest_index, corners_px = detect_fiducials(img)
+        qr_id, retest_index, corners_px = detect_fiducials_with_recropping(img)
     except DetectionError as e:
         raise CaptureError(str(e)) from e
 

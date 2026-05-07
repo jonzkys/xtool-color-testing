@@ -312,6 +312,21 @@ def _aruco_centres_px(img: np.ndarray) -> dict[int, tuple[float, float]]:
     return out
 
 
+# Mapping marker keys for the bbox-based recrop logic. Includes the 4
+# QR corners (0/4/5/6) and the 3 ArUco IDs (1/2/3). Used by
+# ``detect_fiducials_with_recropping`` to decide whether the
+# first-pass result is "full house" or worth retrying.
+_EXPECTED_FIDUCIAL_KEYS: frozenset[int] = frozenset({QR_TL, QR_BL, QR_BR, QR_TR, 1, 2, 3})
+
+# Reprojection-RMS budget on the homography solve, in burn-space pixels
+# at 10 px/mm — i.e. 30 px = 3 mm of average alignment error after
+# fitting. Past this the warp produces garbage (markers in wrong
+# positions, perspective inversion, mirror flips) even though
+# cv2.findHomography reports success. Raises a clear DetectionError so
+# the user re-photographs instead of getting wrong swatches.
+WARP_RMS_PX_THRESHOLD = 30.0
+
+
 def detect_fiducials(
     img: np.ndarray,
 ) -> tuple[int, int, dict[int, tuple[float, float]]]:
@@ -340,6 +355,79 @@ def detect_fiducials(
     return qr_id, retest_index, corners
 
 
+def detect_fiducials_with_recropping(
+    img: np.ndarray,
+    *,
+    buffer_pct: float = 0.10,
+    min_margin_px: int = 32,
+    max_useful_crop_area: float = 0.7,
+) -> tuple[int, int, dict[int, tuple[float, float]]]:
+    """``detect_fiducials`` with a one-shot retry on a cropped image.
+
+    On photos where the plate fills a small fraction of the frame,
+    individual markers come out tiny in image space — the ArUco
+    detector either misses them or returns noisy corners that produce
+    a bad homography. Cropping to the bbox of the first-pass
+    detections (plus ``buffer_pct`` margin, with a ``min_margin_px``
+    floor for tight bboxes) blows the markers up and lets the
+    detector try again with sharper input.
+
+    Picks the better of the two passes, breaking ties on "all 7
+    fiducials present". Caps at one re-crop cycle so we never loop.
+    """
+    first = detect_fiducials(img)
+    qr_id, _retest_index, corners = first
+    missing = _EXPECTED_FIDUCIAL_KEYS - set(corners.keys())
+    if not missing:
+        return first
+    # Need at least 2 keys to form a meaningful bounding box.
+    if len(corners) < 2:
+        return first
+
+    h, w = img.shape[:2]
+    xs = [p[0] for p in corners.values()]
+    ys = [p[1] for p in corners.values()]
+    bbox_w = max(xs) - min(xs)
+    bbox_h = max(ys) - min(ys)
+    pad_x = max(min_margin_px, int(bbox_w * buffer_pct))
+    pad_y = max(min_margin_px, int(bbox_h * buffer_pct))
+    x0 = max(0, int(min(xs)) - pad_x)
+    y0 = max(0, int(min(ys)) - pad_y)
+    x1 = min(w, int(max(xs)) + pad_x)
+    y1 = min(h, int(max(ys)) + pad_y)
+    if x1 - x0 < 32 or y1 - y0 < 32:
+        return first
+    crop_area = (x1 - x0) * (y1 - y0)
+    full_area = max(1, w * h)
+    if crop_area / full_area >= max_useful_crop_area:
+        # Crop barely shrinks the image; second pass adds nothing.
+        return first
+
+    crop = img[y0:y1, x0:x1]
+    try:
+        second_qr_id, second_retest, second_corners = detect_fiducials(crop)
+    except DetectionError:
+        return first
+
+    # Mismatched QR IDs would mean the crop unexpectedly framed a
+    # different code; trust the first pass over the second in that case.
+    if second_qr_id != qr_id:
+        return first
+
+    # Translate cropped coordinates back to the original frame.
+    rebased = {
+        k: (px + x0, py + y0) for k, (px, py) in second_corners.items()
+    }
+
+    def _score(c: dict[int, tuple[float, float]]) -> tuple[int, int]:
+        # (key count, all-expected bonus) — strictly larger = better.
+        return (len(c), 1 if _EXPECTED_FIDUCIAL_KEYS.issubset(c) else 0)
+
+    if _score(rebased) > _score(corners):
+        return qr_id, second_retest, rebased
+    return first
+
+
 def warp_to_burn_space(
     image: np.ndarray,
     *,
@@ -362,6 +450,26 @@ def warp_to_burn_space(
     H, _ = cv2.findHomography(src, dst, method=cv2.RANSAC)
     if H is None:
         raise DetectionError("homography solve failed")
+
+    # Reprojection RMS — projects src through H and compares to dst.
+    # Past the threshold the warp will produce a visually-broken
+    # output (mirror flips, extreme stretch) even though the solver
+    # succeeded. Loud failure is far better than silently ingesting
+    # garbage swatches.
+    src_h = np.hstack([src, np.ones((len(src), 1), dtype=np.float32)])
+    projected = (H @ src_h.T).T
+    w_proj = np.where(np.abs(projected[:, 2]) > 1e-9, projected[:, 2], 1e-9)
+    projected[:, 0] /= w_proj
+    projected[:, 1] /= w_proj
+    residuals = projected[:, :2] - dst
+    rms_px = float(np.sqrt(np.mean(np.sum(residuals ** 2, axis=1))))
+    if rms_px > WARP_RMS_PX_THRESHOLD:
+        raise DetectionError(
+            f"warp alignment poor (RMS {rms_px:.1f}px > "
+            f"{WARP_RMS_PX_THRESHOLD:.0f}px) — re-shoot with the plate "
+            "filling more of the frame, square-on to the camera",
+        )
+
     w_px = int(burn_size_mm[0] * px_per_mm)
     h_px = int(burn_size_mm[1] * px_per_mm)
     return cv2.warpPerspective(image, H, (w_px, h_px))
@@ -441,8 +549,10 @@ def apply_wb_correction_to_warped(
 __all__ = [
     "DetectionError",
     "QR_TL", "QR_BL", "QR_BR", "QR_TR",
+    "WARP_RMS_PX_THRESHOLD",
     "decode_image_bytes",
     "detect_fiducials",
+    "detect_fiducials_with_recropping",
     "warp_to_burn_space",
     "apply_wb_correction_to_warped",
     "sample_perimeter_strips",
