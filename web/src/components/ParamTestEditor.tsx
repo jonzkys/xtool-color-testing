@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Material } from "../library";
 import type { Machine, ModeId, ParamName, PaletteEntry, RegistrationMode, SampleAggregator, TestSpec, ValidationCell, ValidationProfile } from "../types";
 import { PARAM_NAMES } from "../types";
@@ -173,10 +173,14 @@ export function ParamTestEditor({
   // Per-test toggle that derives grid width/height from a material
   // shape + size. State is transient (not persisted on the spec) — the
   // visible side-effect is whatever auto-fit writes into spec.width_mm
-  // / spec.height_mm, which IS persisted. Re-opening a saved test
-  // starts with auto-fit off, but the saved width/height still reflect
-  // the previous fit.
+  // / spec.height_mm, which IS persisted.
+  //
+  // Default: ON for materials that have a shape with dimensions
+  // configured; OFF when the material has no outline to fit against
+  // (so the user can hand-pick width/height). Once the user toggles
+  // manually, we don't override their choice within the session.
   const [autoFit, setAutoFit] = useState(false);
+  const autoFitInitRef = useRef(false);
   type ShapeChoice = "circle" | "rect" | null;
   const [afShape, setAfShape] = useState<ShapeChoice>(null);
   const [afDiameter, setAfDiameter] = useState<number | null>(null);
@@ -204,6 +208,17 @@ export function ParamTestEditor({
     activeMaterial?.width_mm,
     activeMaterial?.height_mm,
   ]);
+
+  // One-shot default: turn auto-fit ON the first time the active
+  // material resolves to one with a shape. Subsequent material
+  // changes within the session don't override the user's manual
+  // toggle.
+  useEffect(() => {
+    if (autoFitInitRef.current) return;
+    if (!activeMaterial) return;
+    autoFitInitRef.current = true;
+    if (activeMaterial.shape) setAutoFit(true);
+  }, [activeMaterial]);
 
   // Square-cells auto-height. When auto-fit is also on, the auto-fit
   // recompute below honours square_cells directly (picks a cell side
