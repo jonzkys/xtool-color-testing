@@ -79,6 +79,14 @@ export const Y_AXIS_HELP: Record<YAxis, AxisHelp> = {
       "Char and scorching usually push Δb positive across the board. A diagonal trend against EXP b* says blues drift differently than yellows — typical when the laser fades the warm end first.",
     schematic: "residual",
   },
+  delta_from_mean: {
+    heading: "ΔE from cross-run mean",
+    definition:
+      "Each (run, cell) dot's perceptual distance from the per-cell mean Lab averaged across all selected runs.",
+    guide:
+      "Spots which RUN is the outlier across multiple captures of the same plate — every well-aligned run sits near zero, a misframed or mis-WB'd run lifts off the floor across many cells. Different from burn ΔE: that one collapses to one dot per cell against expected; this one keeps every run as its own series so you can see which photo to retry. Needs ≥ 2 runs.",
+    schematic: "magnitude",
+  },
   burn_delta_e: {
     heading: "Burn ΔE (run-mean)",
     definition:

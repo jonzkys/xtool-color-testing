@@ -257,7 +257,16 @@ export function MobileUploadPage({ mid }: Props) {
           ref={fileInputRef}
           data-testid="file-input"
           type="file"
-          accept="image/*"
+          /* iOS Safari with ``accept="image/*"`` transcodes HEIC to
+           * JPEG before delivering the File — this transcode runs
+           * inside the picker, so with ``multiple`` selected the
+           * picker can sit open 5-30s converting every photo before
+           * the change event fires. Listing HEIC/HEIF explicitly
+           * tells iOS we accept the native bytes; the backend
+           * already decodes HEIC via pillow_heif so the wire format
+           * is fine. The trailing ``image/*`` keeps the desktop /
+           * non-iOS experience unchanged. */
+          accept="image/heic,image/heif,image/jpeg,image/png,image/webp,image/*"
           multiple
           className="hidden"
           disabled={isDemo}

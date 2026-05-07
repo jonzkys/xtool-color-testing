@@ -176,6 +176,25 @@ export function StabilityPage() {
   );
   const [yAxis, setYAxis] = useState<YAxis>("delta_hue");
   const [xAxis, setXAxis] = useState<XAxis>("expected_hue");
+  // Re-seed the chart axes whenever the user navigates to a fresh
+  // test. Validation tests start on (cell_index, delta_from_mean) so
+  // an outlier run jumps off the page; sweep tests keep the legacy
+  // (expected_hue, delta_hue) which matches the swept-axis register.
+  // Manual axis changes within a single test are preserved (the ref
+  // gates re-runs on the same test_id).
+  const lastInitialisedTestIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!testDetail) return;
+    if (lastInitialisedTestIdRef.current === testDetail.id) return;
+    lastInitialisedTestIdRef.current = testDetail.id;
+    if (testDetail.kind === "validation") {
+      setXAxis("cell_index");
+      setYAxis("delta_from_mean");
+    } else {
+      setXAxis("expected_hue");
+      setYAxis("delta_hue");
+    }
+  }, [testDetail]);
   const [chartMode, setChartMode] = useState<ChartMode>("scatter");
   // Calibrate state. ``referenceResultId === null`` means "fall back
   // to the first selected result"; the chart resolves the default

@@ -19,6 +19,7 @@ import {
   isComputedXAxis,
   isComputedYAxis,
   perCellSigmaFor,
+  requiresPerCellMean,
   seriesColour,
   SeriesInput,
   X_AXES,
@@ -219,8 +220,9 @@ export function StabilityChart({
   // selected, the chart can't produce meaningful values. ``xUsable`` /
   // ``yUsable`` mark each axis as below-threshold so the chart can
   // route to the empty state.
+  const needsMeanY = requiresPerCellMean(yAxis);
   const xUsable = !computedX || series.length >= 2;
-  const yUsable = !burnMode || series.length >= 2;
+  const yUsable = (!burnMode && !needsMeanY) || series.length >= 2;
   // Collapse the per-run cloud into a single synthetic "BURN MEAN"
   // series whenever a burn-Y axis is active OR both axes are
   // computed-per-cell (the quadrant view). In either case each cell
@@ -284,6 +286,19 @@ export function StabilityChart({
         x = computeXValue(xAxis, c.cell_index, exp);
         if (!Number.isFinite(x)) continue;
       }
+      // Per-cell mean Lab across all selected runs is only computed
+      // when the active Y axis needs it (delta_from_mean). Skipping
+      // the work for the common axes keeps row construction cheap on
+      // tall validation tests with many runs.
+      let cellMean: Lab | null = null;
+      if (needsMeanY) {
+        const labs: Lab[] = [];
+        for (const s of effectiveSeries) {
+          const m = s.cells.get(c.cell_index);
+          if (m) labs.push(m.lab);
+        }
+        cellMean = labs.length >= 2 ? meanLab(labs) : null;
+      }
       const perSeries: { measured: Lab | null; y: number }[] = renderSeries.map(
         (s) => {
           const m = s.cells.get(c.cell_index);
@@ -293,6 +308,7 @@ export function StabilityChart({
             exp,
             m.lab,
             perCellSigmaFor(c.cell_index, effectiveSeries),
+            cellMean,
           );
           return { measured: m.lab, y };
         },
@@ -300,7 +316,7 @@ export function StabilityChart({
       out.push({ cell: c, expected: exp, x, perSeries });
     }
     return out;
-  }, [cells, effectiveSeries, renderSeries, xAxis, yAxis, computedX]);
+  }, [cells, effectiveSeries, renderSeries, xAxis, yAxis, computedX, needsMeanY]);
 
   const hasAnySeries = series.length > 0;
   const hasAnyData = hasAnySeries && rows.some((r) =>

@@ -57,6 +57,7 @@ export type YAxis =
   | "delta_a"
   | "delta_b"
   | "delta_hue"
+  | "delta_from_mean"
   | "per_cell_sigma"
   | "burn_delta_e"
   | "burn_delta_hue";
@@ -98,6 +99,16 @@ export function isComputedYAxis(y: YAxis): boolean {
   );
 }
 
+/** Y axes that need the per-cell mean Lab computed across all
+ *  selected runs but DO NOT collapse the per-run series — every
+ *  (run, cell) gets its own dot, the y-value just measures distance
+ *  from the cross-run consensus. Used by validation flows where the
+ *  user wants to spot which run is the outlier across multiple
+ *  captures of the same plate. Needs ≥2 runs to be meaningful. */
+export function requiresPerCellMean(y: YAxis): boolean {
+  return y === "delta_from_mean";
+}
+
 export interface AxisMeta {
   id: XAxis | YAxis;
   label: string;
@@ -118,6 +129,7 @@ export const X_AXES: readonly AxisMeta[] = [
 ] as const;
 
 export const Y_AXES: readonly AxisMeta[] = [
+  { id: "delta_from_mean", label: "ΔE from cross-run mean", short: "Δ FROM MEAN", unit: "ΔE" },
   { id: "delta_hue", label: "Δ hue", short: "Δh°", unit: "deg" },
   { id: "delta_e", label: "ΔE76", short: "ΔE", unit: "ΔE" },
   { id: "delta_l", label: "ΔL", short: "ΔL", unit: "ΔL" },
@@ -177,6 +189,12 @@ export function computeYValue(
   exp: Lab,
   measured: Lab,
   perCellSigma: number,
+  /** Per-cell mean Lab across all selected runs. Required by the
+   *  "delta_from_mean" axis; ignored otherwise. ``null`` when the
+   *  cell only has one run's measurement (the mean is undefined for a
+   *  single observation), in which case the axis returns NaN and the
+   *  dot drops out of the scatter. */
+  meanLab: Lab | null = null,
 ): number {
   switch (axis) {
     case "measured_l":      return measured[0];
@@ -192,6 +210,11 @@ export function computeYValue(
       return wrapHueDelta(
         hueDeg(measured[1], measured[2]) - hueDeg(exp[1], exp[2]),
       );
+    case "delta_from_mean":
+      // Each (run, cell) measures distance from the per-cell consensus.
+      // High y = this run is an outlier vs. its peers at this cell.
+      if (meanLab == null) return Number.NaN;
+      return deltaE76(measured, meanLab);
     case "per_cell_sigma":  return perCellSigma;
     case "burn_delta_e":
       // The chart collapses ``series`` to a synthetic single "burn
