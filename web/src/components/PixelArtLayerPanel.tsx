@@ -130,7 +130,7 @@ export function PixelArtLayerPanel({
     : null;
 
   return (
-    <div className="flex flex-col gap-3 flex-1 min-h-0">
+    <div className="flex flex-col gap-3 min-h-0">
       <Section
         title={`Colours · ${enabledCount}/${rows.length}`}
         dense
@@ -141,8 +141,8 @@ export function PixelArtLayerPanel({
             </Badge>
           )
         }
-        className="flex-1 min-h-0 flex flex-col"
-        bodyClassName="flex-1 min-h-0"
+        className="min-h-0 flex flex-col"
+        bodyClassName="min-h-0"
       >
         {!hasRows && (
           <div className="rounded-[8px] border border-dashed border-[color:var(--color-border-strong)] px-3 py-6 text-center text-[12.5px] text-[color:var(--color-ink-subtle)] font-mono tracking-[0.04em]">
@@ -151,18 +151,17 @@ export function PixelArtLayerPanel({
         )}
 
         {hasRows && (
-          <div className="flex flex-col gap-2 min-h-0 h-full">
+          <div className="flex flex-col gap-2 min-h-0">
             <ul
               className={cn(
                 "grid grid-cols-3 gap-1.5",
                 "overflow-y-auto pr-0.5",
-                // The grid grows into whatever vertical space the
-                // Section gives it (the right column flexes to the
-                // bottom of the page). The expanded picker shows
-                // below as a sibling and steals a fixed slice; the
-                // grid's flex-1 + min-h-0 lets the cap shrink with
-                // it cleanly.
-                "flex-1 min-h-0",
+                // The grid sizes to its tile content, capped so a
+                // long palette doesn't push the action buttons off
+                // the page. The expanded picker (when open) shows
+                // below as a sibling so the user always sees both
+                // the grid + the picker on screen.
+                "min-h-0",
               )}
             >
               {sorted.map((row) => (

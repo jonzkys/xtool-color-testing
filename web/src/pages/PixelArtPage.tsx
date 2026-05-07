@@ -721,8 +721,16 @@ export function PixelArtPage() {
           </div>
 
           {/* ── Layer panel (right) ────────────────────────────────── */}
-          <div className="flex flex-col min-h-0">
-            <Card padded={false} className="p-3 flex-1 min-h-0 flex flex-col">
+          {/* ``self-start`` opts the column out of the grid's
+              ``items-stretch`` so the card sizes to its content
+              (tiles + buttons), with ``max-h-full`` capping at the
+              row height so a long palette still scrolls inside its
+              own grid rather than spilling past the page footer. */}
+          <div className="flex flex-col min-h-0 self-start max-h-full">
+            <Card
+              padded={false}
+              className="p-3 max-h-full flex flex-col min-h-0"
+            >
               <PixelArtLayerPanel
                 rows={rows}
                 paletteEntries={paletteEntries}
