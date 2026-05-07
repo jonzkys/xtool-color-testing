@@ -621,22 +621,29 @@ export function TestDetailPage({ testId }: Props) {
               spec={spec}
               testId={test?.id ?? null}
               compact
-              override={
-                test?.kind === "validation"
-                  ? {
-                      cellCount: (test?.validation_cells ?? []).length || 1,
-                      cellsPerRow: spec.cells_per_row,
-                      // Per-cell colours from the picked palette
-                      // entries — cell_index is already L*-sorted on
-                      // save, matching the renderer's burn order, so
-                      // we can index the array directly.
-                      cellColors: (test?.validation_cells ?? [])
-                        .slice()
-                        .sort((a, b) => a.cell_index - b.cell_index)
-                        .map((c) => c.expected_hex),
-                    }
-                  : undefined
-              }
+              override={(() => {
+                const mat = materials.find((m) => m.id === materialId);
+                const wbStrip = Boolean(
+                  mat?.calibration?.wb_supported &&
+                    mat?.calibration?.clean_pass_params,
+                );
+                if (test?.kind === "validation") {
+                  return {
+                    wbStrip,
+                    cellCount: (test?.validation_cells ?? []).length || 1,
+                    cellsPerRow: spec.cells_per_row,
+                    // Per-cell colours from the picked palette
+                    // entries — cell_index is already L*-sorted on
+                    // save, matching the renderer's burn order, so
+                    // we can index the array directly.
+                    cellColors: (test?.validation_cells ?? [])
+                      .slice()
+                      .sort((a, b) => a.cell_index - b.cell_index)
+                      .map((c) => c.expected_hex),
+                  };
+                }
+                return wbStrip ? { wbStrip } : undefined;
+              })()}
             />
           </div>
           <div className="flex-1 min-h-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-hidden">

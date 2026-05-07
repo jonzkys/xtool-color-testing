@@ -707,6 +707,29 @@ class MaterialResponse(BaseModel):
     is_default: bool = False
     calibration: MaterialCalibrationConfig | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _pack_calibration_from_flat_fields(cls, data: Any) -> Any:
+        # Repository row dicts surface the WB calibration as flat
+        # ``wb_supported`` / ``clean_pass_params`` keys; the response
+        # exposes them under a nested ``calibration`` block. Pack them
+        # here so callers don't have to remember.
+        if not isinstance(data, dict):
+            return data
+        if data.get("calibration") is not None:
+            return data
+        wb = data.get("wb_supported")
+        cp = data.get("clean_pass_params")
+        if wb is None and cp is None:
+            return data
+        return {
+            **data,
+            "calibration": {
+                "wb_supported": True if wb is None else bool(wb),
+                "clean_pass_params": cp,
+            },
+        }
+
 
 class UserRegisterRequest(BaseModel):
     # Enforced more strictly on the backend via the regex in repositories.users.

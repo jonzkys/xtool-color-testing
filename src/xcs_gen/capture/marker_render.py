@@ -161,6 +161,15 @@ def _clean_params_to_processing(d: dict[str, Any]) -> ProcessingParams:
     )
 
 
+# Single layer colour for all 4 perimeter strips. xTool Studio parses
+# ``layer_color`` as a real hex code for visual rendering — the
+# previous ``#wb_<side>`` tags weren't valid hex and silently failed
+# to display, leaving the strips invisible in Studio (they were still
+# burned correctly, just hidden in the layer panel). All 4 sides
+# share the clean-pass params, so a single layer is the right shape.
+PERIMETER_STRIP_LAYER_COLOR = "#888888"
+
+
 def render_perimeter_strip(
     strip: PerimeterStrip,
     *,
@@ -194,6 +203,6 @@ def render_perimeter_strip(
             width=rect_w, height=rect_h,
             params=pp,
             processing_type="COLOR_FILL_ENGRAVE",
-            layer_color=f"#wb_{seg.side}",
+            layer_color=PERIMETER_STRIP_LAYER_COLOR,
         ))
     return out
