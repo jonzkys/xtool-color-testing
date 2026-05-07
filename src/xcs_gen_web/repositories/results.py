@@ -24,6 +24,9 @@ def _now() -> str:
 
 
 def _row(r) -> dict[str, Any]:
+    wb_anchor_raw = getattr(r, "wb_anchor_rgb_json", None)
+    wb_correction_raw = getattr(r, "wb_correction_json", None)
+    wb_mode = getattr(r, "wb_mode", None)
     return {
         "id": r.id,
         "test_id": r.test_id,
@@ -40,6 +43,20 @@ def _row(r) -> dict[str, Any]:
         "retest_index": int(getattr(r, "retest_index", 0) or 0),
         "missing_markers": json.loads(getattr(r, "missing_markers_json", None) or "[]"),
         "warped_image_path": getattr(r, "warped_image_path", None),
+        "wb": (
+            {
+                "mode": wb_mode,
+                "anchor_rgb": (
+                    json.loads(wb_anchor_raw) if wb_anchor_raw else None
+                ),
+                "correction": (
+                    json.loads(wb_correction_raw) if wb_correction_raw else None
+                ),
+                "canonical_id": getattr(r, "wb_canonical_id", None),
+            }
+            if wb_mode is not None
+            else None
+        ),
     }
 
 
@@ -272,3 +289,35 @@ def set_warped_image_path(
             .where(and_(results.c.id == rid, results.c.owner_id == owner_id))
             .values(warped_image_path=path)
         )
+
+
+def update_wb_state(
+    result_id: int,
+    *,
+    mode: str | None,
+    anchor_rgb: list | None,
+    correction: list | dict | None,
+    canonical_id: str | None,
+    owner_id: int = STANDALONE_USER_ID,
+) -> None:
+    """Patch the WB-correction columns on a result row."""
+    fields = {
+        "wb_mode": mode,
+        "wb_anchor_rgb_json": (
+            json.dumps(anchor_rgb) if anchor_rgb is not None else None
+        ),
+        "wb_correction_json": (
+            json.dumps(correction) if correction is not None else None
+        ),
+        "wb_canonical_id": canonical_id,
+    }
+    with session_scope() as s:
+        result = s.execute(
+            results.update()
+            .where(
+                and_(results.c.id == result_id, results.c.owner_id == owner_id),
+            )
+            .values(**fields)
+        )
+        if result.rowcount == 0:
+            raise KeyError(result_id)
