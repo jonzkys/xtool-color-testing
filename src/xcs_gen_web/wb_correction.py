@@ -153,3 +153,68 @@ def sample_strip_line(
             all_kept = all_kept[keep]
     final = all_kept.mean(axis=0)
     return float(final[0]), float(final[1]), float(final[2])
+
+
+@dataclass
+class FlatFieldResult:
+    frame: np.ndarray
+    edge_means: dict[str, tuple[float, float, float]]
+    edge_positions: dict[str, tuple[float, float]]
+    canonical_neutral: tuple[float, float, float]
+
+
+def flatfield_correct(
+    frame_bgr: np.ndarray,
+    *,
+    edge_means: dict[str, tuple[float, float, float]],
+    edge_positions: dict[str, tuple[float, float]],
+    grid_bbox: tuple[float, float, float, float],   # x_min, y_min, x_max, y_max in mm
+    canonical_neutral: tuple[float, float, float],
+    px_per_mm: float,
+) -> FlatFieldResult:
+    """Apply per-pixel bilinear-blend gain across the frame.
+
+    For each pixel at burn-space (mm) position p, the interpolated
+    measured RGB is (h_lerp + v_lerp) / 2 where h_lerp blends left and
+    right edges, v_lerp blends top and bottom. Per-channel gain at p
+    is canonical / interpolated; pixel value scales accordingly.
+    """
+    h, w = frame_bgr.shape[:2]
+    canonical = np.asarray(canonical_neutral, dtype=np.float32)
+    top = np.asarray(edge_means["top"], dtype=np.float32)
+    right = np.asarray(edge_means["right"], dtype=np.float32)
+    bottom = np.asarray(edge_means["bottom"], dtype=np.float32)
+    left = np.asarray(edge_means["left"], dtype=np.float32)
+
+    # Build (u, v) grids in [0, 1] across the frame, then convert to
+    # burn-space mm and finally to grid_bbox-relative coordinates so
+    # the blend sees u=0 at grid_x_min and u=1 at grid_x_max.
+    x_min, y_min, x_max, y_max = grid_bbox
+    grid_w_mm = max(x_max - x_min, 1e-3)
+    grid_h_mm = max(y_max - y_min, 1e-3)
+    px_x = np.arange(w, dtype=np.float32) / px_per_mm
+    px_y = np.arange(h, dtype=np.float32) / px_per_mm
+    u_row = np.clip((px_x - x_min) / grid_w_mm, 0.0, 1.0)
+    v_col = np.clip((px_y - y_min) / grid_h_mm, 0.0, 1.0)
+    U, V = np.meshgrid(u_row, v_col)              # both (h, w)
+
+    # Per-channel interpolated RGB at every pixel — broadcast over channels.
+    # h_lerp = (1-u)*left + u*right, v_lerp = (1-v)*top + v*bottom
+    h_lerp = (1 - U)[..., None] * left + U[..., None] * right     # (h, w, 3)
+    v_lerp = (1 - V)[..., None] * top + V[..., None] * bottom     # (h, w, 3)
+    interpolated = (h_lerp + v_lerp) / 2.0                         # (h, w, 3) RGB
+
+    # Per-pixel per-channel gain. Guard against zero divides.
+    gain = canonical / np.maximum(interpolated, 1.0)               # (h, w, 3) RGB
+
+    f = frame_bgr.astype(np.float32)
+    # OpenCV BGR ↔ our gain is RGB. Reverse the last axis to align.
+    gain_bgr = gain[:, :, ::-1]
+    out = np.clip(f * gain_bgr, 0, 255).astype(np.uint8)
+
+    return FlatFieldResult(
+        frame=out,
+        edge_means=edge_means,
+        edge_positions=edge_positions,
+        canonical_neutral=canonical_neutral,
+    )

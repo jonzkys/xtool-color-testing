@@ -13,6 +13,10 @@ from xcs_gen_web.wb_correction import (
     SpecularRejectionResult,
 )
 from xcs_gen_web.wb_correction import sample_strip_line
+from xcs_gen_web.wb_correction import (
+    flatfield_correct,
+    FlatFieldResult,
+)
 
 # Canonical reference for stainless-ish silver: G normalised to 1.0,
 # B/G ~ 0.91 (derived from samples/color/* empirical work).
@@ -97,3 +101,62 @@ def test_sample_strip_line_returns_none_when_box_off_frame():
         px_per_mm=4.0, sample_step_mm=2.0, sample_size_mm=1.5,
     )
     assert out is None
+
+
+def test_flatfield_correct_uniform_lighting_recovers_canonical():
+    # When all 4 edges measure exactly the canonical neutral, the
+    # gain is 1.0 everywhere → frame returns unchanged.
+    img = np.full((100, 100, 3), 128, dtype=np.uint8)
+    canonical = (160.0, 160.0, 145.0)
+    edges = {
+        "top": (160.0, 160.0, 145.0),
+        "right": (160.0, 160.0, 145.0),
+        "bottom": (160.0, 160.0, 145.0),
+        "left": (160.0, 160.0, 145.0),
+    }
+    out = flatfield_correct(
+        img,
+        edge_means=edges,
+        edge_positions={
+            "top": (50.0, 0.0),
+            "right": (100.0, 50.0),
+            "bottom": (50.0, 100.0),
+            "left": (0.0, 50.0),
+        },
+        grid_bbox=(0.0, 0.0, 100.0, 100.0),
+        canonical_neutral=canonical,
+        px_per_mm=1.0,
+    )
+    assert isinstance(out, FlatFieldResult)
+    assert np.allclose(out.frame, img, atol=1)
+
+
+def test_flatfield_correct_gradient_pulls_dim_side_brighter():
+    # Plant a measured-vs-canonical mismatch only on the left edge
+    # (left is darker than canonical) and confirm the corrected
+    # frame is brighter on the left than on the right at row centre.
+    img = np.full((100, 100, 3), 100, dtype=np.uint8)
+    canonical = (160.0, 160.0, 145.0)
+    edges = {
+        "top": (160.0, 160.0, 145.0),
+        "right": (160.0, 160.0, 145.0),
+        "bottom": (160.0, 160.0, 145.0),
+        "left": (80.0, 80.0, 73.0),  # darker → gain > 1 near left
+    }
+    out = flatfield_correct(
+        img,
+        edge_means=edges,
+        edge_positions={
+            "top": (50.0, 0.0),
+            "right": (100.0, 50.0),
+            "bottom": (50.0, 100.0),
+            "left": (0.0, 50.0),
+        },
+        grid_bbox=(0.0, 0.0, 100.0, 100.0),
+        canonical_neutral=canonical,
+        px_per_mm=1.0,
+    )
+    left_px = out.frame[50, 5]
+    right_px = out.frame[50, 95]
+    # Left side should now be brighter than the right side.
+    assert int(left_px[1]) > int(right_px[1])
