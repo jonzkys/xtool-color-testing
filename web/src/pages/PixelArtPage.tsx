@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Upload } from "lucide-react";
+import { RefreshCw, Upload } from "lucide-react";
 import {
   Button,
   Card,
@@ -72,11 +72,21 @@ import {
 interface PipelineResult extends KMeansResult {
   cols: number;
   rows: number;
+  /** Per-cell raw mean hex (#rrggbb) before quantisation, indexed
+   *  row-major ``row * cols + col``. ``null`` for skipped cells.
+   *  Powers the "Original" preview-mode toggle so the user can A/B
+   *  the quantised vs. source-mean rendering without re-running the
+   *  pipeline. */
+  cellMeansHex: (string | null)[];
 }
 
 const DEFAULT_CELLS_ACROSS = 32;
 const DEFAULT_MAX_K = 8;
 const DEBOUNCE_MS = 150;
+/** Bumped from 150ms when the user is driving the crop so the
+ *  pipeline doesn't fight the drag. The dedicated re-render button
+ *  forces an immediate run when this longer wait is in the way. */
+const CROP_DEBOUNCE_MS = 600;
 
 export function PixelArtPage() {
   const { machine } = useCurrentMachine();
@@ -117,6 +127,23 @@ export function PixelArtPage() {
   const [matchByColor, setMatchByColor] = useState<Record<string, PaletteEntry | null>>({});
   const [error, setError] = useState<string | undefined>();
   const [generating, setGenerating] = useState(false);
+  // Off by default: the burn fits whatever crop the user picks. When
+  // on, the crop frame snaps to the material's aspect (the original
+  // behaviour). Toggleable in case the user wants the burn to mirror
+  // the material outline exactly.
+  const [lockAspect, setLockAspect] = useState(false);
+  // "representative" = paint each cell with its k-means centroid
+  // colour (what gets burned). "original" = paint each cell with its
+  // raw source-mean colour (what the source image looks like at this
+  // cell resolution). Toggle lives on the preview header.
+  const [previewMode, setPreviewMode] = useState<"representative" | "original">(
+    "representative",
+  );
+  // Bumping this counter forces the pipeline effect to re-run even
+  // when its other inputs haven't changed. Drives the manual
+  // "re-render" button so users dragging the crop frame can flush a
+  // stale auto-debounce without waiting it out.
+  const [renderTick, setRenderTick] = useState(0);
 
   // Initial material wiring — once library + active material are
   // known, hydrate the dimensions if the user hasn't picked one.
@@ -187,9 +214,17 @@ export function PixelArtPage() {
       setPipelineResult(null);
       return;
     }
-    const aspect = widthMm > 0 && heightMm > 0 ? widthMm / heightMm : 1;
-    const derivedRows = Math.max(1, Math.round(cellsAcross / aspect));
+    // Derive raster rows from the *crop* aspect, not the material —
+    // when the aspect lock is off, the crop's own ratio is what
+    // should drive the cell grid so a tall portrait crop doesn't
+    // collapse to a wide raster.
+    const cropAspect = crop.w > 0 && crop.h > 0 ? crop.w / crop.h : 1;
+    const derivedRows = Math.max(1, Math.round(cellsAcross / cropAspect));
     let cancelled = false;
+    // The crop drag fires at every pointer move; bump the debounce
+    // so we're not running k-means on every frame. ``renderTick`` is
+    // the controlled escape hatch — it triggers an immediate run.
+    const wait = renderTick > 0 ? 0 : CROP_DEBOUNCE_MS;
     const handle = window.setTimeout(() => {
       try {
         const cells = sampleCellGrid(imageData, {
@@ -207,17 +242,23 @@ export function PixelArtPage() {
             centroidsHex: result.centroidsHex,
             cols: cellsAcross,
             rows: derivedRows,
+            cellMeansHex: cells,
           });
         }
       } catch (err) {
         if (!cancelled) setError((err as Error).message);
       }
-    }, DEBOUNCE_MS);
+    }, wait);
     return () => {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [imageData, cellsAcross, maxK, crop, widthMm, heightMm]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- ``renderTick`` is intentionally an input
+  }, [imageData, cellsAcross, maxK, crop, widthMm, heightMm, renderTick]);
+
+  // Suppress the unused-name warning for the legacy debounce window —
+  // kept around in case we want a "fast" lane back later.
+  void DEBOUNCE_MS;
 
   // ── Derive layer rows from the pipeline result + matches ──────────
   const rows = useMemo<PixelArtLayerRow[]>(() => {
@@ -253,7 +294,9 @@ export function PixelArtPage() {
 
   const previewState = useMemo<PreviewState | null>(() => {
     if (!pipelineResult) return null;
-    const { labels, centroidsHex, cols, rows: pRows } = pipelineResult;
+    const {
+      labels, centroidsHex, cols, rows: pRows, cellMeansHex,
+    } = pipelineResult;
     const enabledMap = new Map(rows.map((r) => [r.color, r.enabled]));
 
     // Group cell d-string fragments by label, then materialise one path
@@ -285,6 +328,7 @@ export function PixelArtPage() {
       paths,
       pathCount: paths.length,
       kColors: centroidsHex.length,
+      cellMeansHex,
     };
   }, [pipelineResult, rows]);
 
@@ -445,7 +489,10 @@ export function PixelArtPage() {
   const cellMm = widthMm > 0 ? widthMm / cellsAcross : 0;
 
   return (
-    <div className="relative min-h-full">
+    <div
+      className="relative flex flex-col"
+      style={{ height: "calc(100dvh - var(--app-chrome-h, 0px))" }}
+    >
       {/* Diagonal warp backdrop — quiet, always-on brand motif. */}
       <div
         aria-hidden
@@ -455,22 +502,19 @@ export function PixelArtPage() {
             "repeating-linear-gradient(135deg, var(--color-ink) 0 1px, transparent 1px 24px)",
         }}
       />
-      <PageContainer maxWidth="wide" className="relative py-8">
-        <header className="mb-6">
+      <PageContainer
+        maxWidth="wide"
+        className="relative pt-4 pb-3 flex-1 min-h-0 flex flex-col"
+      >
+        <header className="mb-3 shrink-0">
           <div className="flex items-end justify-between gap-4 flex-wrap">
             <div>
               <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
                 Workshop · raster
               </div>
-              <h1 className="mt-1 text-[26px] font-semibold tracking-tight text-[color:var(--color-ink)]">
+              <h1 className="mt-0.5 text-[22px] font-semibold tracking-tight text-[color:var(--color-ink)]">
                 Pixel art
               </h1>
-              <p className="mt-1 text-[13px] text-[color:var(--color-ink-muted)] max-w-[60ch]">
-                Quantise an image to K colours, then burn each colour as
-                one compound engrave path with its matched palette
-                params — one display element per colour, regardless of
-                grid size.
-              </p>
             </div>
             <input
               ref={fileInputRef}
@@ -483,25 +527,40 @@ export function PixelArtPage() {
                 e.target.value = "";
               }}
             />
-            <Button
-              variant="primary"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Upload className="h-4 w-4" />
-              {image ? "Replace image" : "Upload image"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setRenderTick((t) => t + 1)}
+                disabled={!imageData}
+                title="Force the pipeline to re-run now (skips the auto-debounce)."
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Re-render
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="h-4 w-4" />
+                {image ? "Replace image" : "Upload image"}
+              </Button>
+            </div>
           </div>
         </header>
 
         {error && (
-          <div className="mb-4 rounded-[8px] border border-[color:var(--color-destructive)]/30 bg-[color:var(--color-destructive-tint)] px-3 py-2 text-[13px] text-[color:var(--color-destructive)]">
+          <div className="mb-3 shrink-0 rounded-[8px] border border-[color:var(--color-destructive)]/30 bg-[color:var(--color-destructive-tint)] px-3 py-2 text-[13px] text-[color:var(--color-destructive)]">
             {error}
           </div>
         )}
 
-        <div className="grid grid-cols-[260px_minmax(0,1fr)_340px] gap-5 items-start">
+        <div
+          className="grid grid-cols-[260px_minmax(0,1fr)_320px] gap-4 items-stretch flex-1 min-h-0"
+        >
           {/* ── Settings (left) ────────────────────────────────────── */}
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col min-h-0 overflow-y-auto pr-1">
             <Card padded={false} className="p-4 flex flex-col gap-3">
               <Section title="Project" dense>
                 <Field label="Output name">
@@ -555,6 +614,19 @@ export function PixelArtPage() {
                     onChange={setStartY}
                   />
                 </div>
+                <label className="flex items-center gap-2 text-[12px] text-[color:var(--color-ink-muted)] mt-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={lockAspect}
+                    onChange={(e) => setLockAspect(e.target.checked)}
+                  />
+                  <span>
+                    Lock crop to material aspect
+                    <span className="block text-[10.5px] text-[color:var(--color-ink-subtle)]">
+                      Off = burn fits the chosen crop. On = crop snaps to W/H.
+                    </span>
+                  </span>
+                </label>
               </Section>
 
               <Section title="Grid" dense
@@ -610,8 +682,11 @@ export function PixelArtPage() {
           </div>
 
           {/* ── Canvas (centre) ────────────────────────────────────── */}
-          <div className="min-w-0">
-            <Card padded={false} className={cn("p-4")}>
+          <div className="min-w-0 min-h-0 flex">
+            <Card
+              padded={false}
+              className={cn("p-3 flex-1 min-h-0 flex flex-col")}
+            >
               <PixelArtCanvas
                 image={image}
                 materialWidthMm={widthMm}
@@ -619,13 +694,16 @@ export function PixelArtPage() {
                 crop={crop}
                 onCropChange={setCrop}
                 preview={previewState}
+                previewMode={previewMode}
+                onPreviewModeChange={setPreviewMode}
+                lockAspect={lockAspect}
               />
             </Card>
           </div>
 
           {/* ── Layer panel (right) ────────────────────────────────── */}
-          <div className="flex flex-col gap-3">
-            <Card padded={false} className="p-4">
+          <div className="flex flex-col min-h-0">
+            <Card padded={false} className="p-3 flex-1 min-h-0 flex flex-col">
               <PixelArtLayerPanel
                 rows={rows}
                 paletteEntries={paletteEntries}

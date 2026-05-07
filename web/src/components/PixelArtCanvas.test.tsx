@@ -12,6 +12,9 @@ describe("PixelArtCanvas", () => {
         crop={{ x: 0, y: 0, w: 1, h: 1 }}
         onCropChange={() => {}}
         preview={null}
+        previewMode="representative"
+        onPreviewModeChange={() => {}}
+        lockAspect={false}
       />,
     );
     expect(screen.getByText(/upload an image/i)).toBeInTheDocument();
@@ -28,6 +31,7 @@ describe("PixelArtCanvas", () => {
         { d: "M0,0 h1 v1 h-1 z M1,0 h1 v1 h-1 z", color: "#ff0000" },
         { d: "M2,0 h1 v1 h-1 z", color: "#00ff00" },
       ],
+      cellMeansHex: new Array(16).fill(null),
     };
     const { container } = render(
       <PixelArtCanvas
@@ -37,6 +41,9 @@ describe("PixelArtCanvas", () => {
         crop={{ x: 0, y: 0, w: 1, h: 1 }}
         onCropChange={() => {}}
         preview={preview}
+        previewMode="representative"
+        onPreviewModeChange={() => {}}
+        lockAspect={false}
       />,
     );
     const paths = container.querySelectorAll("svg path");

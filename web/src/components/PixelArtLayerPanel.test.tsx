@@ -47,9 +47,10 @@ describe("PixelArtLayerPanel", () => {
       row("#00ff00", 0.3),
     ];
     const { container } = render(<PixelArtLayerPanel {...baseProps} rows={rows} />);
-    const swatches = container.querySelectorAll("li > div[aria-hidden='true']");
-    // 3 rows = 3 swatches; sorted, so the first should be the 50% red.
-    expect(swatches.length).toBeGreaterThanOrEqual(3);
+    // Compact tiles render one ``<li>`` per centroid; each tile has
+    // 2 aria-hidden colour swatches inside (detected + matched).
+    const tiles = container.querySelectorAll("ul li");
+    expect(tiles.length).toBe(3);
     // header strip shows 3/3 enabled
     expect(screen.getByText(/Colours · 3\/3/)).toBeInTheDocument();
   });

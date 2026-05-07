@@ -10,11 +10,9 @@
  * spec, so the adapter is mostly a stub.
  */
 
-import { useEffect, useRef, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import { useEffect, useState } from "react";
 import {
   Check,
-  ChevronDown,
   Combine,
   Download,
   FileCode2,
@@ -116,8 +114,23 @@ export function PixelArtLayerPanel({
   const hasRows = rows.length > 0;
   const downloadsDisabled = !hasRows || generating === true;
 
+  // Click-to-expand: at most one tile is open at a time. The expanded
+  // panel shows the picker controls without crowding every tile with
+  // its own popover trigger.
+  const [expandedColor, setExpandedColor] = useState<string | null>(null);
+  // Reset the expansion when the colour disappears from rows (a merge,
+  // re-quantise, image swap …).
+  useEffect(() => {
+    if (expandedColor && !rows.some((r) => r.color === expandedColor)) {
+      setExpandedColor(null);
+    }
+  }, [rows, expandedColor]);
+  const expandedRow = expandedColor
+    ? rows.find((r) => r.color === expandedColor) ?? null
+    : null;
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3 flex-1 min-h-0">
       <Section
         title={`Colours · ${enabledCount}/${rows.length}`}
         dense
@@ -128,6 +141,7 @@ export function PixelArtLayerPanel({
             </Badge>
           )
         }
+        className="flex-1 min-h-0 flex flex-col"
       >
         {!hasRows && (
           <div className="rounded-[8px] border border-dashed border-[color:var(--color-border-strong)] px-3 py-6 text-center text-[12.5px] text-[color:var(--color-ink-subtle)] font-mono tracking-[0.04em]">
@@ -136,22 +150,42 @@ export function PixelArtLayerPanel({
         )}
 
         {hasRows && (
-          <ul className="flex flex-col gap-1.5">
-            {sorted.map((row) => (
-              <LayerRow
-                key={row.color}
-                row={row}
+          <div className="flex flex-col gap-2 min-h-0">
+            <ul
+              className={cn(
+                "grid grid-cols-3 gap-1.5",
+                "overflow-y-auto pr-0.5",
+              )}
+              style={{ maxHeight: expandedRow ? 220 : 360 }}
+            >
+              {sorted.map((row) => (
+                <ColorTile
+                  key={row.color}
+                  row={row}
+                  isExpanded={row.color === expandedColor}
+                  onToggle={onToggle}
+                  onSelect={(c) =>
+                    setExpandedColor((prev) => (prev === c ? null : c))
+                  }
+                />
+              ))}
+            </ul>
+            {expandedRow && (
+              <ExpandedLayerPanel
+                row={expandedRow}
                 paletteEntries={paletteEntries}
                 library={library}
-                onToggle={onToggle}
-                onChooseMatch={onChooseMatch}
+                onChooseMatch={(c, e) => {
+                  onChooseMatch(c, e);
+                }}
+                onClose={() => setExpandedColor(null)}
               />
-            ))}
-          </ul>
+            )}
+          </div>
         )}
       </Section>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 shrink-0">
         <div className="grid grid-cols-2 gap-2">
           <Button
             variant="secondary"
@@ -211,244 +245,224 @@ export function PixelArtLayerPanel({
 }
 
 /* ────────────────────────────────────────────────────────────────────
- * One layer row — checkbox · swatch · hex/area · matched-entry sub
+ * One compact tile per centroid colour.
+ *
+ * Top half  → detected colour
+ * Bottom    → matched palette colour (or "no match" hint)
+ * Footer    → hex codes + cell count
+ * Top-right → enable checkbox
+ * Top-left  → "validated" badge if the matched palette entry has a
+ *             passing validation result; otherwise omitted to keep
+ *             quiet tiles for routine matches
+ *
+ * Click anywhere on the tile to expand the dedicated picker panel
+ * below the grid (only one tile is expanded at a time — keeps the
+ * sidebar from running off-screen when there are 32 colours).
  * ──────────────────────────────────────────────────────────────────── */
 
-interface LayerRowProps {
+interface ColorTileProps {
   row: PixelArtLayerRow;
-  paletteEntries: PaletteEntry[];
-  library: LibraryState;
+  isExpanded: boolean;
   onToggle: (color: string, enabled: boolean) => void;
-  onChooseMatch: (color: string, entry: PaletteEntry | null) => void;
+  onSelect: (color: string) => void;
 }
 
-function LayerRow({
-  row,
-  paletteEntries,
-  library,
-  onToggle,
-  onChooseMatch,
-}: LayerRowProps) {
-  const matchName = row.matchedEntry
-    ? paletteEntryLabel(row.matchedEntry, library)
-    : null;
-
+function ColorTile({ row, isExpanded, onToggle, onSelect }: ColorTileProps) {
+  const matched = row.matchedEntry;
   return (
-    <li
-      className={cn(
-        "flex items-center gap-2 rounded-[8px] border px-2.5 py-2",
-        "border-[color:var(--color-border)] bg-[color:var(--color-surface)]",
-        !row.enabled && "opacity-55",
-      )}
-    >
-      <input
-        type="checkbox"
-        checked={row.enabled}
-        onChange={(e) => onToggle(row.color, e.target.checked)}
-        title={row.enabled ? "Disable (skip engrave)" : "Enable"}
-        className="cursor-pointer shrink-0"
-      />
-      <div
-        aria-hidden
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(row.color)}
         className={cn(
-          "h-[18px] w-[18px] rounded-[3px] border border-[color:var(--color-border-strong)] shrink-0",
-          !row.enabled && "opacity-50",
+          "group relative w-full overflow-hidden rounded-[6px] border text-left transition-colors",
+          isExpanded
+            ? "border-[color:var(--color-primary)] ring-1 ring-[color:var(--color-primary)]/40"
+            : "border-[color:var(--color-border)] hover:border-[color:var(--color-border-strong)]",
+          !row.enabled && "opacity-55",
         )}
-        style={{ background: row.color }}
-      />
-      <div className="min-w-0 flex-1 flex flex-col">
-        <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="font-mono text-[11.5px] text-[color:var(--color-ink)] truncate">
+        aria-expanded={isExpanded}
+        aria-label={`Layer ${row.color}${matched ? ` matched to ${matched.hex}` : " no match"}`}
+      >
+        <div
+          aria-hidden
+          className="h-7 w-full"
+          style={{ background: row.color }}
+        />
+        <div
+          aria-hidden
+          className="h-7 w-full relative"
+          style={{ background: matched?.hex ?? "var(--color-surface-elevated)" }}
+        >
+          {!matched && (
+            <span className="absolute inset-0 flex items-center justify-center font-mono text-[8.5px] tracking-[0.15em] uppercase text-[color:var(--color-ink-subtle)]">
+              no match
+            </span>
+          )}
+        </div>
+        <div className="flex items-baseline justify-between gap-1 px-1.5 py-1 bg-[color:var(--color-surface)] border-t border-[color:var(--color-border)]">
+          <span className="font-mono text-[9.5px] text-[color:var(--color-ink)] truncate">
             {row.color}
           </span>
           <span
-            className="font-mono text-[10.5px] tabular-nums text-[color:var(--color-ink-subtle)]"
-            title={`${row.cellCount} cell${row.cellCount === 1 ? "" : "s"} · ${(row.areaPct * 100).toFixed(1)}% of grid`}
+            className={cn(
+              "font-mono text-[9.5px] truncate",
+              matched
+                ? "text-[color:var(--color-ink-muted)]"
+                : "text-[color:var(--color-ink-subtle)]/40",
+            )}
           >
-            · {row.cellCount.toLocaleString()} cells · {(row.areaPct * 100).toFixed(0)}%
+            {matched?.hex ?? "—"}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-1 px-1.5 pb-1 bg-[color:var(--color-surface)]">
+          <span
+            className="font-mono text-[8.5px] tracking-[0.1em] tabular-nums text-[color:var(--color-ink-subtle)]"
+            title={`${row.cellCount.toLocaleString()} cell${row.cellCount === 1 ? "" : "s"} (${(row.areaPct * 100).toFixed(1)}%)`}
+          >
+            {row.cellCount.toLocaleString()} · {(row.areaPct * 100).toFixed(0)}%
           </span>
           {row.isNearWhite && (
             <span
-              className="font-mono text-[9px] tracking-[0.14em] uppercase px-1 py-0.5 rounded-[3px] border border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)]"
-              title="Near-white — disabled by default to skip the background. Tick the box to engrave it anyway."
+              title="Near-white — disabled by default to skip the background. Tick to engrave anyway."
+              className="font-mono text-[8px] tracking-[0.16em] uppercase px-1 rounded-[2px] border border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)]"
             >
               white
             </span>
           )}
         </div>
-        <div className="text-[11px] text-[color:var(--color-ink-muted)] truncate">
-          {!row.enabled ? (
-            <span className="font-mono tracking-[0.06em] text-[10.5px] uppercase opacity-80">
-              skip-engrave (background)
-            </span>
-          ) : matchName ? (
-            <span className="flex items-center gap-1">
-              <Check className="h-3 w-3 text-[color:var(--color-success)]" />
-              {matchName}
-            </span>
-          ) : (
-            <span className="font-mono tracking-[0.04em] text-[10.5px] text-[color:var(--color-ink-subtle)]">
-              → pick palette ▸
-            </span>
-          )}
-        </div>
-      </div>
-
-      <MatchPopover
-        row={row}
-        paletteEntries={paletteEntries}
-        library={library}
-        onChooseMatch={onChooseMatch}
-      />
+        <input
+          type="checkbox"
+          checked={row.enabled}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onToggle(row.color, e.target.checked)}
+          title={row.enabled ? "Disable layer (skip engrave)" : "Enable layer"}
+          className="absolute top-1 right-1 cursor-pointer drop-shadow-[0_0_2px_rgba(0,0,0,0.45)]"
+        />
+      </button>
     </li>
   );
 }
 
 /* ────────────────────────────────────────────────────────────────────
- * Match popover — Radix Popover with a list of top palette matches.
+ * ExpandedLayerPanel — full-width picker for the currently-selected
+ * tile. Lists the K nearest palette matches by ΔE2000, with a Clear
+ * action when something is already picked.
  * ──────────────────────────────────────────────────────────────────── */
 
-function MatchPopover({
-  row,
-  paletteEntries,
-  library,
-  onChooseMatch,
-}: {
+interface ExpandedLayerPanelProps {
   row: PixelArtLayerRow;
   paletteEntries: PaletteEntry[];
   library: LibraryState;
   onChooseMatch: (color: string, entry: PaletteEntry | null) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  // Compute top-K nearest entries on demand, lazily, when the popover opens.
-  // Keep them stable across renders so the keyed list doesn't shuffle when
-  // ``paletteEntries`` props identity changes between renders.
-  const cacheRef = useRef<{ key: string; ranked: { entry: PaletteEntry; dE: number }[] } | null>(
-    null,
-  );
+  onClose: () => void;
+}
 
-  let ranked: { entry: PaletteEntry; dE: number }[] = [];
-  if (open) {
-    const cacheKey = `${row.color}|${paletteEntries.length}`;
-    if (cacheRef.current?.key !== cacheKey) {
-      const targetLab = /^#[0-9a-fA-F]{6}$/.test(row.color)
-        ? hexToLab(row.color)
-        : null;
-      const list = paletteEntries
-        .map((e) => {
-          const eLab =
-            e.lab.length >= 3
-              ? ([e.lab[0], e.lab[1], e.lab[2]] as Lab)
-              : hexToLab(e.hex);
-          const dE = targetLab ? deltaE2000(targetLab, eLab) : 0;
-          return { entry: e, dE };
-        })
-        .sort((a, b) => a.dE - b.dE)
-        .slice(0, 8);
-      cacheRef.current = { key: cacheKey, ranked: list };
-    }
-    ranked = cacheRef.current?.ranked ?? [];
+function ExpandedLayerPanel({
+  row,
+  paletteEntries,
+  library,
+  onChooseMatch,
+  onClose,
+}: ExpandedLayerPanelProps) {
+  // Recompute the top-K matches whenever the row colour or the
+  // palette identity changes. Cheap; the page rarely has more than a
+  // few hundred entries.
+  const ranked: { entry: PaletteEntry; dE: number }[] = [];
+  const targetLab = /^#[0-9a-fA-F]{6}$/.test(row.color)
+    ? hexToLab(row.color)
+    : null;
+  for (const e of paletteEntries) {
+    const eLab =
+      e.lab.length >= 3
+        ? ([e.lab[0], e.lab[1], e.lab[2]] as Lab)
+        : hexToLab(e.hex);
+    ranked.push({
+      entry: e,
+      dE: targetLab ? deltaE2000(targetLab, eLab) : 0,
+    });
   }
-
-  // Reset cache when popover closes so a re-open recomputes.
-  useEffect(() => {
-    if (!open) cacheRef.current = null;
-  }, [open]);
+  ranked.sort((a, b) => a.dE - b.dE);
+  const topRanked = ranked.slice(0, 8);
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
+    <div className="rounded-[8px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] flex flex-col min-h-0">
+      <div className="px-2.5 py-1.5 flex items-center justify-between gap-2 border-b border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]">
+        <div className="flex items-center gap-2 min-w-0">
+          <div
+            aria-hidden
+            className="h-4 w-4 rounded-[3px] border border-[color:var(--color-border-strong)] shrink-0"
+            style={{ background: row.color }}
+          />
+          <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-[color:var(--color-ink-subtle)] truncate">
+            Match · {row.color}
+          </span>
+        </div>
         <button
           type="button"
-          aria-label="Pick palette match"
-          className={cn(
-            "shrink-0 inline-flex items-center justify-center",
-            "h-7 w-7 rounded-[6px]",
-            "border border-[color:var(--color-border)]",
-            "text-[color:var(--color-ink-muted)]",
-            "hover:border-[color:var(--color-primary)]/50 hover:text-[color:var(--color-primary)]",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/40",
-          )}
+          onClick={onClose}
+          className="font-mono text-[9.5px] tracking-[0.16em] uppercase text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-ink)]"
+          aria-label="Close picker"
         >
-          <ChevronDown className="h-3.5 w-3.5" />
+          ✕
         </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          align="end"
-          sideOffset={6}
-          className={cn(
-            "z-50 w-[320px] rounded-[10px] overflow-hidden",
-            "border border-[color:var(--color-border)] bg-[color:var(--color-surface)]",
-            "shadow-[var(--shadow-popover)]",
+      </div>
+      {paletteEntries.length === 0 ? (
+        <div className="px-3 py-3 text-[12px] text-[color:var(--color-ink-subtle)]">
+          No palette entries for the active material. Add some on the
+          Palette tab and the matcher will fill in.
+        </div>
+      ) : (
+        <ul className="overflow-y-auto p-1 flex-1 min-h-0" style={{ maxHeight: 200 }}>
+          {topRanked.map(({ entry, dE }) => {
+            const isSel = row.matchedEntry?.id === entry.id;
+            return (
+              <li key={entry.id}>
+                <button
+                  type="button"
+                  onClick={() => onChooseMatch(row.color, entry)}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-2 py-1.5 rounded-[6px] text-left",
+                    "hover:bg-[color:var(--color-primary-tint)]/40",
+                    isSel && "bg-[color:var(--color-primary-tint)]/60",
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className="h-4 w-4 rounded-[3px] border border-[color:var(--color-border-strong)] shrink-0"
+                    style={{ background: entry.hex }}
+                  />
+                  <span className="flex-1 min-w-0 truncate text-[11.5px] text-[color:var(--color-ink)]">
+                    {paletteEntryLabel(entry, library)}
+                  </span>
+                  <span className="font-mono text-[10px] tabular-nums text-[color:var(--color-ink-subtle)]">
+                    ΔE {dE.toFixed(1)}
+                  </span>
+                  {isSel && (
+                    <Check className="h-3 w-3 text-[color:var(--color-success)] shrink-0" />
+                  )}
+                </button>
+              </li>
+            );
+          })}
+          {row.matchedEntry && (
+            <li className="border-t border-[color:var(--color-border)] mt-1 pt-1">
+              <button
+                type="button"
+                onClick={() => onChooseMatch(row.color, null)}
+                className={cn(
+                  "w-full px-2 py-1.5 rounded-[6px] text-left",
+                  "text-[11px] text-[color:var(--color-ink-muted)]",
+                  "hover:bg-[color:var(--color-primary-tint)]/30",
+                )}
+              >
+                Clear match
+              </button>
+            </li>
           )}
-        >
-          <div className="px-3 py-2 border-b border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]">
-            <span className="font-mono text-[9.5px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
-              Palette match · {row.color}
-            </span>
-          </div>
-          {paletteEntries.length === 0 ? (
-            <div className="px-3 py-4 text-[12px] text-[color:var(--color-ink-subtle)]">
-              No palette entries for the active material. Add some on the
-              Palette tab and the matcher will fill in.
-            </div>
-          ) : (
-            <ul className="max-h-[280px] overflow-y-auto p-1">
-              {ranked.map(({ entry, dE }) => {
-                const isSel = row.matchedEntry?.id === entry.id;
-                return (
-                  <li key={entry.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onChooseMatch(row.color, entry);
-                        setOpen(false);
-                      }}
-                      className={cn(
-                        "w-full flex items-center gap-2 px-2 py-1.5 rounded-[6px] text-left",
-                        "hover:bg-[color:var(--color-primary-tint)]/40",
-                        isSel && "bg-[color:var(--color-primary-tint)]/60",
-                      )}
-                    >
-                      <span
-                        aria-hidden
-                        className="h-4 w-4 rounded-[3px] border border-[color:var(--color-border-strong)] shrink-0"
-                        style={{ background: entry.hex }}
-                      />
-                      <span className="flex-1 min-w-0 truncate text-[12px] text-[color:var(--color-ink)]">
-                        {paletteEntryLabel(entry, library)}
-                      </span>
-                      <span className="font-mono text-[10px] tabular-nums text-[color:var(--color-ink-subtle)]">
-                        ΔE {dE.toFixed(1)}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-              {row.matchedEntry && (
-                <li className="border-t border-[color:var(--color-border)] mt-1 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onChooseMatch(row.color, null);
-                      setOpen(false);
-                    }}
-                    className={cn(
-                      "w-full px-2 py-1.5 rounded-[6px] text-left",
-                      "text-[11.5px] text-[color:var(--color-ink-muted)]",
-                      "hover:bg-[color:var(--color-primary-tint)]/30",
-                    )}
-                  >
-                    Clear match
-                  </button>
-                </li>
-              )}
-            </ul>
-          )}
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+        </ul>
+      )}
+    </div>
   );
 }
 

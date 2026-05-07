@@ -45,7 +45,14 @@ export interface PreviewState {
   /** Number of paths emitted (one per enabled colour). */
   pathCount: number;
   kColors: number;
+  /** Per-cell raw mean hex (#rrggbb) before quantisation, indexed
+   *  row-major. ``null`` for skipped cells. Used by the "Original"
+   *  preview-mode toggle so the user can A/B the source-mean
+   *  rendering vs. the centroid-quantised one. */
+  cellMeansHex: (string | null)[];
 }
+
+export type PreviewRenderMode = "representative" | "original";
 
 export interface PixelArtCanvasProps {
   image: ImageBitmap | null;
@@ -56,6 +63,17 @@ export interface PixelArtCanvasProps {
   crop: CroppedRegion;
   onCropChange: (crop: CroppedRegion) => void;
   preview: PreviewState | null;
+  /** Bottom preview rendering mode. ``representative`` paints each
+   *  cell with its k-means centroid colour (i.e. what gets burned).
+   *  ``original`` paints each cell with its raw source-mean colour
+   *  so the user can A/B against the quantised result. */
+  previewMode: PreviewRenderMode;
+  onPreviewModeChange: (mode: PreviewRenderMode) => void;
+  /** When true, the crop frame snaps to the material's W/H aspect
+   *  ratio (the original behaviour). When false, the crop is free
+   *  and the burn ends up rendering at whatever aspect the user
+   *  picked — the new default. */
+  lockAspect: boolean;
 }
 
 type DragKind =
@@ -127,23 +145,30 @@ export function PixelArtCanvas({
   crop,
   onCropChange,
   preview,
+  previewMode,
+  onPreviewModeChange,
+  lockAspect,
 }: PixelArtCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [containerW, setContainerW] = useState(0);
+  const [containerH, setContainerH] = useState(0);
 
-  // Track the container width in CSS px so we can compute the canvas
-  // contain-fit. ResizeObserver keeps this honest under window resize.
-  // In test environments (jsdom) ResizeObserver may be undefined — fall
-  // back to a one-shot measurement plus a window-resize listener.
+  // Track the container width + height in CSS px so we can compute the
+  // canvas contain-fit. ResizeObserver keeps this honest under window
+  // resize. In test environments (jsdom) ResizeObserver may be
+  // undefined — fall back to a one-shot measurement plus a window-
+  // resize listener.
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     setContainerW(el.clientWidth);
+    setContainerH(el.clientHeight);
     if (typeof ResizeObserver === "undefined") {
       const onResize = () => {
         if (containerRef.current) {
           setContainerW(containerRef.current.clientWidth);
+          setContainerH(containerRef.current.clientHeight);
         }
       };
       window.addEventListener("resize", onResize);
@@ -151,7 +176,10 @@ export function PixelArtCanvas({
     }
     const ro = new ResizeObserver((entries) => {
       const entry = entries[0];
-      if (entry) setContainerW(entry.contentRect.width);
+      if (entry) {
+        setContainerW(entry.contentRect.width);
+        setContainerH(entry.contentRect.height);
+      }
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -164,11 +192,20 @@ export function PixelArtCanvas({
   const imgW = image?.width ?? 0;
   const imgH = image?.height ?? 0;
 
-  // Pick a vertical budget — half of a 800px viewport feels right; the
-  // bottom preview gets the same treatment so the two stacks balance.
-  // Keeps the page from blowing up to 5000px tall on huge sources.
-  const MAX_TOP_H = 380;
-  const MAX_BOTTOM_H = 380;
+  // Split the available vertical space between the original (top) and
+  // the pixelated preview (bottom). Each header strip eats ~30px and
+  // the gap-3 between the stacks eats another 12. The min floors keep
+  // the panes usable on stubby viewports; on a tall page each stack
+  // gets ~half of the parent height so the canvas grows with the
+  // window.
+  const HEADER_H = 30;
+  const STACK_GAP = 12;
+  const stackBudget = Math.max(
+    220,
+    (containerH - 2 * HEADER_H * 2 - STACK_GAP) / 2,
+  );
+  const MAX_TOP_H = stackBudget;
+  const MAX_BOTTOM_H = stackBudget;
 
   const topFit = fitContain(
     imgW || 1,
@@ -220,19 +257,18 @@ export function PixelArtCanvas({
       ? materialWidthMm / materialHeightMm
       : 1;
 
-  // Build the next crop honouring the material aspect lock.
+  // Build the next crop honouring the material aspect lock when the
+  // page asks for it. With ``lockAspect=false`` the crop is free —
+  // the user can pick any rectangle and the burn footprint follows.
   const constrainedCrop = useCallback(
     (next: CroppedRegion): CroppedRegion => {
-      // 1. Honour aspect: width drives height (or height drives width
-      //    when width can't be increased).
       let { x, y, w, h } = next;
-      if (aspect > 0) {
+      if (lockAspect && aspect > 0) {
         // Pick whichever dimension is "more constrained" by the image
         // bounds and recompute the other from it.
         const wFromH = h * aspect;
         const hFromW = w / aspect;
         if (wFromH <= imgW && hFromW > imgH) {
-          // height-driven
           w = wFromH;
         } else {
           h = hFromW;
@@ -240,7 +276,7 @@ export function PixelArtCanvas({
       }
       return clampCropToImage({ x, y, w, h }, imgW, imgH);
     },
-    [aspect, imgW, imgH],
+    [aspect, imgW, imgH, lockAspect],
   );
 
   // Window-level pointer move/up listeners while dragging — set up
@@ -325,7 +361,7 @@ export function PixelArtCanvas({
   const bottomDrawH = bottomFit.drawH;
 
   return (
-    <div ref={containerRef} className="flex flex-col gap-3">
+    <div ref={containerRef} className="flex flex-col gap-3 flex-1 min-h-0">
       {/* ── ORIGINAL ─────────────────────────────────────────────────── */}
       <div className="flex flex-col">
         <div
@@ -499,8 +535,70 @@ export function PixelArtCanvas({
       <div className="flex flex-col">
         <div
           className={cn(
-            "rounded-t-[8px] border border-[color:var(--color-border)] border-b-0",
+            "px-3 py-2 rounded-t-[8px] border border-[color:var(--color-border)] border-b-0",
             "bg-[color:var(--color-surface-elevated)]",
+            "flex items-center justify-between gap-2",
+            "font-mono text-[10.5px] tracking-[0.12em] uppercase text-[color:var(--color-ink-subtle)]",
+          )}
+        >
+          <span>
+            <span className="text-[color:var(--color-ink-muted)] font-semibold">
+              {previewMode === "representative" ? "Pixelated" : "Source means"}
+            </span>
+            {preview && (
+              <span className="opacity-60">
+                {" · "}
+                {preview.cols}×{preview.rows} cells · {preview.kColors}{" "}
+                {previewMode === "representative"
+                  ? `colours · ${preview.pathCount} paths`
+                  : "centroids"}
+              </span>
+            )}
+          </span>
+          <div className="flex items-center gap-1 normal-case tracking-normal">
+            <span className="text-[10px] tracking-[0.14em] uppercase text-[color:var(--color-ink-subtle)]">
+              show
+            </span>
+            <div
+              role="tablist"
+              aria-label="Preview rendering mode"
+              className="inline-flex rounded-[4px] border border-[color:var(--color-border)] overflow-hidden"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={previewMode === "representative"}
+                onClick={() => onPreviewModeChange("representative")}
+                className={cn(
+                  "px-2 py-0.5 text-[10px] tracking-[0.12em] uppercase font-mono",
+                  previewMode === "representative"
+                    ? "bg-[color:var(--color-primary)] text-white"
+                    : "text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface)]",
+                )}
+              >
+                Representative
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={previewMode === "original"}
+                onClick={() => onPreviewModeChange("original")}
+                className={cn(
+                  "px-2 py-0.5 text-[10px] tracking-[0.12em] uppercase font-mono border-l border-[color:var(--color-border)]",
+                  previewMode === "original"
+                    ? "bg-[color:var(--color-primary)] text-white"
+                    : "text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface)]",
+                )}
+              >
+                Original
+              </button>
+            </div>
+          </div>
+        </div>
+        <div
+          className={cn(
+            "rounded-b-[8px] border border-[color:var(--color-border)]",
+            "bg-[color:var(--color-bg)]",
             "flex items-center justify-center",
           )}
           style={{ height: preview ? bottomDrawH : 220 }}
@@ -514,43 +612,41 @@ export function PixelArtCanvas({
               shapeRendering="crispEdges"
               style={{ display: "block" }}
               role="img"
-              aria-label="pixelated preview"
+              aria-label={
+                previewMode === "representative"
+                  ? "pixelated preview"
+                  : "source means preview"
+              }
             >
-              {preview.paths.map((p, i) => (
-                <path
-                  key={i}
-                  d={p.d}
-                  fill={p.color}
-                  fillRule="evenodd"
-                />
-              ))}
+              {previewMode === "representative"
+                ? preview.paths.map((p, i) => (
+                    <path
+                      key={i}
+                      d={p.d}
+                      fill={p.color}
+                      fillRule="evenodd"
+                    />
+                  ))
+                : preview.cellMeansHex.map((hex, i) => {
+                    if (!hex) return null;
+                    const col = i % preview.cols;
+                    const row = Math.floor(i / preview.cols);
+                    return (
+                      <rect
+                        key={i}
+                        x={col}
+                        y={row}
+                        width={1}
+                        height={1}
+                        fill={hex}
+                      />
+                    );
+                  })}
             </svg>
           ) : (
             <div className="text-[12.5px] text-[color:var(--color-ink-subtle)] font-mono tracking-[0.04em]">
               preview appears once an image is uploaded
             </div>
-          )}
-        </div>
-        <div
-          className={cn(
-            "px-3 py-2 rounded-b-[8px] border border-[color:var(--color-border)]",
-            "bg-[color:var(--color-surface-elevated)]",
-            "font-mono text-[10.5px] tracking-[0.12em] uppercase text-[color:var(--color-ink-subtle)]",
-          )}
-        >
-          {preview ? (
-            <>
-              <span className="text-[color:var(--color-ink-muted)] font-semibold">
-                Pixelated
-              </span>
-              <span className="opacity-60">
-                {" · "}
-                {preview.cols}×{preview.rows} cells · {preview.kColors}{" "}
-                colours · {preview.pathCount} paths
-              </span>
-            </>
-          ) : (
-            <span className="opacity-60">awaiting source · no preview</span>
           )}
         </div>
       </div>
