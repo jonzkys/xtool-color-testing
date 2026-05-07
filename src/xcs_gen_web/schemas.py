@@ -705,6 +705,7 @@ class MaterialResponse(BaseModel):
     width_mm: float | None = None
     height_mm: float | None = None
     is_default: bool = False
+    calibration: MaterialCalibrationConfig | None = None
 
 
 class UserRegisterRequest(BaseModel):
@@ -894,6 +895,7 @@ class ResultResponse(BaseModel):
     # ArUco IDs (subset of {1, 2, 3}) that detection did not find.
     # Empty when the homography was fully constrained.
     missing_markers: list[int] = []
+    wb: ResultWBState | None = None
 
 
 class ResultPatch(BaseModel):
@@ -1198,3 +1200,36 @@ class PixelArtRequest(BaseModel):
     # well past anything practical for engraving.
     rects: list[PixelArtRectSpec] = Field(min_length=1, max_length=50_000)
     layers: list[PixelArtLayerSpec] = Field(min_length=1, max_length=64)
+
+
+# ---------------------------------------------------------------------------
+# WB flat-field calibration.
+# Spec: docs/superpowers/specs/2026-05-07-wb-flatfield-design.md
+# ---------------------------------------------------------------------------
+
+
+class MaterialCalibrationConfig(BaseModel):
+    """The WB-related fields of a material."""
+
+    wb_supported: bool = True
+    clean_pass_params: BaseParams | None = None
+
+
+class MaterialCalibrationPatch(BaseModel):
+    """Wire-format for PATCH /api/materials/{id}/calibration."""
+
+    wb_supported: bool | None = None
+    clean_pass_params: BaseParams | None = None
+
+
+class ResultWBState(BaseModel):
+    """Embedded into ResultResponse so the UI can render the badge."""
+
+    mode: str | None = None
+    # flat-field: list of 4 [R, G, B] (top, right, bottom, left).
+    # chromaticity: single [R, G, B].
+    anchor_rgb: list[float] | list[list[float]] | None = None
+    # flat-field: list of 4 {x_mm, y_mm, R, G, B}.
+    # chromaticity: per-channel [sR, sG, sB] flat list.
+    correction: list[dict] | list[float] | None = None
+    canonical_id: str | None = None
