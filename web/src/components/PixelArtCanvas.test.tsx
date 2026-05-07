@@ -21,16 +21,17 @@ describe("PixelArtCanvas", () => {
     expect(screen.getByText(/preview appears once/i)).toBeInTheDocument();
   });
 
-  it("renders one path per enabled colour when preview is non-null", () => {
+  it("renders the bottom preview canvas when preview is non-null", () => {
+    const cellCentroidHex: (string | null)[] = new Array(16).fill(null);
+    cellCentroidHex[0] = "#ff0000";
+    cellCentroidHex[1] = "#ff0000";
+    cellCentroidHex[2] = "#00ff00";
     const preview: PreviewState = {
       cols: 4,
       rows: 4,
       pathCount: 2,
       kColors: 2,
-      paths: [
-        { d: "M0,0 h1 v1 h-1 z M1,0 h1 v1 h-1 z", color: "#ff0000" },
-        { d: "M2,0 h1 v1 h-1 z", color: "#00ff00" },
-      ],
+      cellCentroidHex,
       cellMeansHex: new Array(16).fill(null),
     };
     const { container } = render(
@@ -46,8 +47,11 @@ describe("PixelArtCanvas", () => {
         lockAspect={false}
       />,
     );
-    const paths = container.querySelectorAll("svg path");
-    expect(paths.length).toBe(2);
+    // The bottom preview canvas is present once the preview state
+    // hydrates. (The top canvas only mounts when an image is loaded
+    // — null in this test, so we only see one.)
+    const canvases = container.querySelectorAll("canvas");
+    expect(canvases.length).toBe(1);
     expect(screen.getByText(/4×4 cells/)).toBeInTheDocument();
     expect(screen.getByText(/2 paths/)).toBeInTheDocument();
   });

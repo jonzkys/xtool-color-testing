@@ -50,11 +50,19 @@ export function defaultCrop(
 
 /** Decode a File into both ``ImageBitmap`` (for the canvas paint) and
  *  ``ImageData`` (for the cell sampler). The latter requires a hidden
- *  canvas because ``ImageBitmap`` itself doesn't expose pixel access. */
+ *  canvas because ``ImageBitmap`` itself doesn't expose pixel access.
+ *
+ *  ``imageOrientation: "from-image"`` honours EXIF orientation so
+ *  iPhone / Android camera photos render upright instead of sideways.
+ *  Without it ``createImageBitmap`` ignores the EXIF byte and the
+ *  ``ImageData`` we sample from is rotated 90° relative to what the
+ *  user uploaded. */
 export async function decodeFile(
   file: File,
 ): Promise<{ bitmap: ImageBitmap; data: ImageData }> {
-  const bitmap = await createImageBitmap(file);
+  const bitmap = await createImageBitmap(file, {
+    imageOrientation: "from-image",
+  });
   const c = document.createElement("canvas");
   c.width = bitmap.width;
   c.height = bitmap.height;

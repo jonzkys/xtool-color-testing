@@ -32,17 +32,16 @@ export interface CroppedRegion {
   h: number;
 }
 
-export interface PreviewPath {
-  /** SVG d-string in cell coords (0..cols, 0..rows). */
-  d: string;
-  color: string;
-}
-
 export interface PreviewState {
   cols: number;
   rows: number;
-  paths: PreviewPath[];
-  /** Number of paths emitted (one per enabled colour). */
+  /** Per-cell centroid hex, indexed row-major. ``null`` for skipped
+   *  (transparent) cells; an 8-digit hex (``#rrggbbaa``) for
+   *  disabled-colour cells so the canvas dims them in place — the
+   *  download path skips disabled colours entirely. */
+  cellCentroidHex: (string | null)[];
+  /** Number of distinct enabled centroid colours — drives the
+   *  "K paths" header readout. */
   pathCount: number;
   kColors: number;
   /** Per-cell raw mean hex (#rrggbb) before quantisation, indexed
@@ -151,6 +150,7 @@ export function PixelArtCanvas({
 }: PixelArtCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const [containerW, setContainerW] = useState(0);
   const [containerH, setContainerH] = useState(0);
 
@@ -230,6 +230,47 @@ export function PixelArtCanvas({
       ctx.drawImage(image, 0, 0);
     }
   }, [image, imgW, imgH]);
+
+  // Paint the bottom preview imperatively on every preview / mode
+  // change. Doing this with ImageData keeps the work O(cells) rather
+  // than O(SVG-nodes) — the previous SVG approach materialised one
+  // <rect> per cell which on 1024-cell grids made the toggle feel
+  // queued because each click triggered a giant React reconcile.
+  useEffect(() => {
+    const canvas = previewCanvasRef.current;
+    if (!canvas || !preview) return;
+    canvas.width = preview.cols;
+    canvas.height = preview.rows;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, preview.cols, preview.rows);
+    const source =
+      previewMode === "original"
+        ? preview.cellMeansHex
+        : preview.cellCentroidHex;
+    // ImageData is faster than fillRect for cell-grid blits because
+    // each rect call costs path setup + state changes.
+    const buf = ctx.createImageData(preview.cols, preview.rows);
+    const arr = buf.data;
+    for (let i = 0; i < source.length; i++) {
+      const hex = source[i];
+      const o = i * 4;
+      if (!hex) {
+        arr[o + 3] = 0; // transparent
+        continue;
+      }
+      // Accept "#rrggbb" or "#rrggbbaa".
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      const a = hex.length === 9 ? parseInt(hex.slice(7, 9), 16) : 255;
+      arr[o] = r;
+      arr[o + 1] = g;
+      arr[o + 2] = b;
+      arr[o + 3] = a;
+    }
+    ctx.putImageData(buf, 0, 0);
+  }, [preview, previewMode]);
 
   // ── Crop frame state machine ────────────────────────────────────────
   const [drag, setDrag] = useState<DragKind>({ kind: "idle" });
@@ -544,6 +585,10 @@ export function PixelArtCanvas({
         </div>
       </div>
 
+      {/* The bottom preview paints to a single canvas indexed by
+        * cell position. Both modes (representative + original) draw
+        * cells imperatively so the toggle is one redraw, not a 1024-
+        * node SVG diff. */}
       {/* ── PIXELATED ────────────────────────────────────────────────── */}
       <div className="flex flex-col">
         <div
@@ -617,45 +662,23 @@ export function PixelArtCanvas({
           style={{ height: preview ? bottomDrawH : 220 }}
         >
           {preview ? (
-            <svg
-              width={bottomDrawW}
-              height={bottomDrawH}
-              viewBox={`0 0 ${preview.cols} ${preview.rows}`}
-              preserveAspectRatio="xMidYMid meet"
-              shapeRendering="crispEdges"
-              style={{ display: "block" }}
+            <canvas
+              ref={previewCanvasRef}
+              width={preview.cols}
+              height={preview.rows}
+              style={{
+                width: bottomDrawW,
+                height: bottomDrawH,
+                imageRendering: "pixelated",
+                display: "block",
+              }}
               role="img"
               aria-label={
                 previewMode === "representative"
                   ? "pixelated preview"
                   : "source means preview"
               }
-            >
-              {previewMode === "representative"
-                ? preview.paths.map((p, i) => (
-                    <path
-                      key={i}
-                      d={p.d}
-                      fill={p.color}
-                      fillRule="evenodd"
-                    />
-                  ))
-                : preview.cellMeansHex.map((hex, i) => {
-                    if (!hex) return null;
-                    const col = i % preview.cols;
-                    const row = Math.floor(i / preview.cols);
-                    return (
-                      <rect
-                        key={i}
-                        x={col}
-                        y={row}
-                        width={1}
-                        height={1}
-                        fill={hex}
-                      />
-                    );
-                  })}
-            </svg>
+            />
           ) : (
             <div className="text-[12.5px] text-[color:var(--color-ink-subtle)] font-mono tracking-[0.04em]">
               preview appears once an image is uploaded

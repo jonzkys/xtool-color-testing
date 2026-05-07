@@ -316,34 +316,33 @@ export function PixelArtPage() {
     } = pipelineResult;
     const enabledMap = new Map(rows.map((r) => [r.color, r.enabled]));
 
-    // Group cell d-string fragments by label, then materialise one path
-    // per centroid colour with disabled-colour alpha tacked on.
-    const fragsByLabel: string[][] = centroidsHex.map(() => []);
+    // Per-cell centroid hex (or null for skipped). Disabled colours
+    // get an 8-digit alpha hex so the on-screen canvas paint dims
+    // them while the export path simply omits them.
+    const cellCentroidHex: (string | null)[] = new Array(cols * pRows).fill(null);
+    let enabledColorCount = 0;
+    const seen = new Set<string>();
     for (let row = 0; row < pRows; row++) {
       for (let col = 0; col < cols; col++) {
         const label = labels[row * cols + col];
         if (label < 0) continue;
-        fragsByLabel[label].push(`M${col},${row} h1 v1 h-1 z`);
+        const color = centroidsHex[label];
+        const enabled = enabledMap.get(color) ?? true;
+        cellCentroidHex[row * cols + col] = enabled
+          ? color
+          : `${color}55`;
+        if (enabled && !seen.has(color)) {
+          seen.add(color);
+          enabledColorCount += 1;
+        }
       }
     }
-    const paths = centroidsHex
-      .map((color, i) => {
-        if (fragsByLabel[i].length === 0) return null;
-        const enabled = enabledMap.get(color) ?? true;
-        // Disabled colours render at half alpha so the user can still
-        // see what they're skipping. The download path skips them.
-        return {
-          d: fragsByLabel[i].join(" "),
-          color: enabled ? color : `${color}55`,
-        };
-      })
-      .filter((p): p is { d: string; color: string } => p !== null);
 
     return {
       cols,
       rows: pRows,
-      paths,
-      pathCount: paths.length,
+      cellCentroidHex,
+      pathCount: enabledColorCount,
       kColors: centroidsHex.length,
       cellMeansHex,
     };
