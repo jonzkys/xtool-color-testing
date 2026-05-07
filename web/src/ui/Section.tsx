@@ -7,6 +7,10 @@ export interface SectionProps {
   actions?: ReactNode;
   /** Small subhead rendered below the title. */
   description?: ReactNode;
+  /** Native ``title`` tooltip on the section header. Use for the
+   *  rare longform hint that doesn't justify a permanent
+   *  ``description`` row. */
+  titleHint?: string;
   /** Drop the metallic underline (use in dense adjacent sections). */
   dense?: boolean;
   className?: string;
@@ -22,6 +26,7 @@ export function Section({
   title,
   actions,
   description,
+  titleHint,
   dense,
   className,
   children,
@@ -42,7 +47,10 @@ export function Section({
         >
           <div className="flex-1 min-w-0 basis-[180px]">
             {title && (
-              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
+              <div
+                className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]"
+                title={titleHint}
+              >
                 {title}
               </div>
             )}

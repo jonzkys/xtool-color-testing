@@ -623,23 +623,27 @@ export function PixelArtPage() {
                     onChange={setStartY}
                   />
                 </div>
-                <label className="flex items-center gap-2 text-[12px] text-[color:var(--color-ink-muted)] mt-1 cursor-pointer">
+                <label
+                  className="flex items-center gap-2 text-[12px] text-[color:var(--color-ink-muted)] mt-1 cursor-pointer"
+                  title="Off = burn fits the chosen crop. On = crop snaps to material W/H."
+                >
                   <input
                     type="checkbox"
                     checked={lockAspect}
                     onChange={(e) => setLockAspect(e.target.checked)}
                   />
-                  <span>
-                    Lock crop to material aspect
-                    <span className="block text-[10.5px] text-[color:var(--color-ink-subtle)]">
-                      Off = burn fits the chosen crop. On = crop snaps to W/H.
-                    </span>
-                  </span>
+                  <span>Lock crop to material aspect</span>
                 </label>
               </Section>
 
-              <Section title="Grid" dense
-                description="Cell count across the wide axis. Smaller cells give more detail but cost more rects."
+              <Section
+                title="Grid"
+                dense
+                /* Tooltip on the title surfaces the longer
+                 * "Cell count across the wide axis. Smaller cells
+                 * give more detail but cost more rects." copy
+                 * without spending vertical space on it. */
+                titleHint="Cell count across the wide axis. Smaller cells = more detail, more rects."
               >
                 <Field label={`Cells across · ${cellsAcross}`}>
                   <input
@@ -653,7 +657,7 @@ export function PixelArtPage() {
                   />
                 </Field>
                 <NumberField
-                  label="Cell (mm)"
+                  label={`Cell (mm) · spot ${laserSpotMm.toFixed(2)}`}
                   value={Number(cellMm.toFixed(3))}
                   min={2 * laserSpotMm}
                   step={0.1}
@@ -662,12 +666,13 @@ export function PixelArtPage() {
                     const next = Math.max(8, Math.round(widthMm / v));
                     setCellsAcross(Math.min(cellsAcrossMax, next));
                   }}
-                  hint={`Laser spot: ${laserSpotMm.toFixed(3)} mm`}
                 />
               </Section>
 
-              <Section title="Quantisation" dense
-                description="Upper bound on colours. Fewer = simpler engrave; each colour becomes one compound path on export."
+              <Section
+                title="Quantisation"
+                dense
+                titleHint="Upper bound on colours. Fewer = simpler engrave; each colour = one compound path on export."
               >
                 <Field label={`Max K · ${maxK}`}>
                   <input
