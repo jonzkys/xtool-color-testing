@@ -205,6 +205,23 @@ export function PixelArtPage() {
     [widthMm, laserSpotMm],
   );
 
+  // ── Burn-height auto-sync ──────────────────────────────────────────
+  // When the aspect lock is off, the burn fits the crop's own aspect:
+  // ``burn_h = burn_w / cropAspect``. Drive ``heightMm`` to match so
+  // the value sent to the backend reflects the actual rendered burn
+  // (the cell grid uses widthMm + cropAspect, but heightMm needs to
+  // ride along so /generate stamps the right number on the request).
+  useEffect(() => {
+    if (lockAspect) return;
+    if (!imageData) return;
+    if (crop.w <= 0 || crop.h <= 0) return;
+    const cropAspect = crop.w / crop.h;
+    if (cropAspect <= 0) return;
+    const target = Number((widthMm / cropAspect).toFixed(2));
+    if (Math.abs(target - heightMm) < 0.01) return;
+    setHeightMm(target);
+  }, [lockAspect, imageData, crop.w, crop.h, widthMm, heightMm]);
+
   // ── Pipeline: cells → quantise ─────────────────────────────────────
   // Debounced. Re-runs whenever crop, grid, K, or image change. Path
   // grouping happens downstream in ``previewState`` / ``buildRequest`` —

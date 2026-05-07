@@ -340,11 +340,24 @@ export function PixelArtCanvas({
   const frameW = toScreenX(crop.w);
   const frameH = toScreenY(crop.h);
 
-  // ── Crop mm readout ─────────────────────────────────────────────────
-  const cropFracW = imgW > 0 ? crop.w / imgW : 0;
-  const cropFracH = imgH > 0 ? crop.h / imgH : 0;
-  const cropMmW = (cropFracW * materialWidthMm).toFixed(1);
-  const cropMmH = (cropFracH * materialHeightMm).toFixed(1);
+  // ── Burn footprint readout ──────────────────────────────────────────
+  // Shows the actual mm size the burn will take on the material —
+  // not the crop's fraction of the material outline. With aspect
+  // locked the two coincide; with aspect unlocked the burn fits the
+  // crop's own aspect (W stays = materialWidthMm, H follows from the
+  // crop's aspect ratio) so a square crop on an 18×80 mm material
+  // burns as an 18×18 square, not an 18-mm-tall slice of the 80-mm
+  // long material.
+  const cropAspect =
+    crop.w > 0 && crop.h > 0 ? crop.w / crop.h : 1;
+  const burnWMm = materialWidthMm;
+  const burnHMm = lockAspect
+    ? materialHeightMm
+    : cropAspect > 0
+      ? materialWidthMm / cropAspect
+      : materialHeightMm;
+  const cropMmW = burnWMm.toFixed(1);
+  const cropMmH = burnHMm.toFixed(1);
 
   // ── Bottom preview SVG sizing ───────────────────────────────────────
   const previewAspect =
