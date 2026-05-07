@@ -8,6 +8,10 @@ from xcs_gen_web.wb_correction import (
     chromaticity_correct,
     ChromaticityResult,
 )
+from xcs_gen_web.wb_correction import (
+    reject_specular,
+    SpecularRejectionResult,
+)
 
 # Canonical reference for stainless-ish silver: G normalised to 1.0,
 # B/G ~ 0.91 (derived from samples/color/* empirical work).
@@ -47,3 +51,19 @@ def test_chromaticity_records_scale_factors():
     assert abs(out.scales[1] - 1.0) < 1e-9
     assert out.scales[0] != 1.0
     assert out.scales[2] != 1.0
+
+
+def test_reject_specular_drops_top_quartile_by_luminance():
+    pixels_rgb = np.array(
+        [[100, 100, 100]] * 75 + [[250, 250, 250]] * 25,
+        dtype=np.float32,
+    )
+    out = reject_specular(pixels_rgb, top_pct=0.25)
+    assert isinstance(out, SpecularRejectionResult)
+    assert out.kept.shape[0] == 75
+    assert np.allclose(out.kept.mean(axis=0), [100, 100, 100], atol=1)
+
+
+def test_reject_specular_handles_empty_input():
+    out = reject_specular(np.zeros((0, 3), dtype=np.float32))
+    assert out.kept.shape[0] == 0

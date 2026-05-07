@@ -66,3 +66,34 @@ def chromaticity_correct(
         measured_rgb=unburned_rgb,
         scales=(sR, sG, sB),
     )
+
+
+@dataclass
+class SpecularRejectionResult:
+    kept: np.ndarray
+    rejected: np.ndarray
+    rejected_count: int
+
+
+def reject_specular(
+    pixels_rgb: np.ndarray,
+    *,
+    top_pct: float = 0.25,
+) -> SpecularRejectionResult:
+    """Drop the brightest ``top_pct`` of pixels by luminance."""
+    if pixels_rgb.size == 0:
+        return SpecularRejectionResult(
+            kept=pixels_rgb, rejected=pixels_rgb, rejected_count=0
+        )
+    lum = (
+        0.299 * pixels_rgb[:, 0]
+        + 0.587 * pixels_rgb[:, 1]
+        + 0.114 * pixels_rgb[:, 2]
+    )
+    cutoff = np.quantile(lum, 1.0 - top_pct)
+    keep_mask = lum <= cutoff
+    return SpecularRejectionResult(
+        kept=pixels_rgb[keep_mask],
+        rejected=pixels_rgb[~keep_mask],
+        rejected_count=int((~keep_mask).sum()),
+    )
