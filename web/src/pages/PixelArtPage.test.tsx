@@ -16,11 +16,8 @@ vi.mock("../api/machines", () => ({
 import { PixelArtPage } from "./PixelArtPage";
 
 describe("PixelArtPage", () => {
-  it("renders the masthead, settings panel, and the empty-state placeholders", () => {
+  it("renders the settings panel and the empty-state placeholders", () => {
     render(<PixelArtPage />);
-    expect(
-      screen.getByRole("heading", { name: /Pixel art/i }),
-    ).toBeInTheDocument();
     // PixelArtCanvas placeholders.
     expect(screen.getByText(/upload an image to begin/i)).toBeInTheDocument();
     // PixelArtLayerPanel empty state.

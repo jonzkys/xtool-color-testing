@@ -21,9 +21,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw, Upload } from "lucide-react";
 import {
-  Button,
   Card,
   cn,
   Field,
@@ -543,51 +541,19 @@ export function PixelArtPage() {
       />
       <PageContainer
         maxWidth="wide"
-        className="relative pt-4 pb-3 flex-1 min-h-0 flex flex-col"
+        className="relative pt-3 pb-3 flex-1 min-h-0 flex flex-col"
       >
-        <header className="mb-3 shrink-0">
-          <div className="flex items-end justify-between gap-4 flex-wrap">
-            <div>
-              <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-[color:var(--color-ink-subtle)]">
-                Workshop · raster
-              </div>
-              <h1 className="mt-0.5 text-[22px] font-semibold tracking-tight text-[color:var(--color-ink)]">
-                Pixel art
-              </h1>
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void onFile(f);
-                e.target.value = "";
-              }}
-            />
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setRenderTick((t) => t + 1)}
-                disabled={!imageData}
-                title="Force the pipeline to re-run now (skips the auto-debounce)."
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                Re-render
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload className="h-4 w-4" />
-                {image ? "Replace image" : "Upload image"}
-              </Button>
-            </div>
-          </div>
-        </header>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void onFile(f);
+            e.target.value = "";
+          }}
+        />
 
         {error && (
           <div className="mb-3 shrink-0 rounded-[8px] border border-[color:var(--color-destructive)]/30 bg-[color:var(--color-destructive-tint)] px-3 py-2 text-[13px] text-[color:var(--color-destructive)]">
@@ -738,6 +704,9 @@ export function PixelArtPage() {
                 lockAspect={lockAspect}
                 cropEnabled={cropEnabled}
                 onCropEnabledChange={setCropEnabled}
+                onUpload={() => fileInputRef.current?.click()}
+                onReRender={() => setRenderTick((t) => t + 1)}
+                canReRender={!!imageData}
               />
             </Card>
           </div>

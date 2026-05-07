@@ -79,6 +79,14 @@ export interface PixelArtCanvasProps {
    *  burn the picture as-is. */
   cropEnabled: boolean;
   onCropEnabledChange: (enabled: boolean) => void;
+  /** Triggers the page's hidden file input. Rendered as the centred
+   *  CTA in the empty placeholder + a small chip in the header so
+   *  the page can drop its top-bar entirely. */
+  onUpload?: () => void;
+  /** Forces an immediate pipeline run, bypassing the crop debounce.
+   *  Disabled when ``canReRender`` is false (no image yet). */
+  onReRender?: () => void;
+  canReRender?: boolean;
 }
 
 type DragKind =
@@ -155,6 +163,9 @@ export function PixelArtCanvas({
   lockAspect,
   cropEnabled,
   onCropEnabledChange,
+  onUpload,
+  onReRender,
+  canReRender = false,
 }: PixelArtCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -481,9 +492,45 @@ export function PixelArtCanvas({
                 </button>
               </div>
             )}
-            <span className="text-[10px] tracking-[0.12em]">
-              {image ? `${imgW}×${imgH} px` : "no image"}
-            </span>
+            {image && (
+              <span className="text-[10px] tracking-[0.12em]">
+                {imgW}×{imgH} px
+              </span>
+            )}
+            {/* Compact upload + re-render chips. The page no longer
+              * carries a top bar so these are the canonical entry
+              * points for swapping the picture / forcing a pipeline
+              * run. The placeholder also gets a centred upload CTA
+              * for the cold-start case. */}
+            {onReRender && (
+              <button
+                type="button"
+                onClick={onReRender}
+                disabled={!canReRender}
+                title="Force the pipeline to re-run now (skips the auto-debounce)."
+                className={cn(
+                  "px-2 py-0.5 text-[10px] tracking-[0.12em] uppercase font-mono rounded-[4px] border",
+                  "border-[color:var(--color-border)]",
+                  canReRender
+                    ? "text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface)]"
+                    : "opacity-40 cursor-not-allowed",
+                )}
+              >
+                Re-render
+              </button>
+            )}
+            {onUpload && image && (
+              <button
+                type="button"
+                onClick={onUpload}
+                className={cn(
+                  "px-2 py-0.5 text-[10px] tracking-[0.12em] uppercase font-mono rounded-[4px]",
+                  "bg-[color:var(--color-primary)] text-white hover:bg-[color:var(--color-primary-tint)]",
+                )}
+              >
+                Replace
+              </button>
+            )}
           </div>
         </div>
         <div
@@ -623,8 +670,24 @@ export function PixelArtCanvas({
               )}
             </>
           ) : (
-            <div className="text-[12.5px] text-[color:var(--color-ink-subtle)] font-mono tracking-[0.04em]">
-              upload an image to begin
+            <div className="flex flex-col items-center gap-3">
+              <div className="text-[12.5px] text-[color:var(--color-ink-subtle)] font-mono tracking-[0.04em]">
+                upload an image to begin
+              </div>
+              {onUpload && (
+                <button
+                  type="button"
+                  onClick={onUpload}
+                  className={cn(
+                    "px-3 py-1.5 rounded-[4px]",
+                    "bg-[color:var(--color-primary)] text-white",
+                    "hover:bg-[color:var(--color-primary-tint)]",
+                    "font-mono text-[11px] tracking-[0.14em] uppercase",
+                  )}
+                >
+                  Upload image
+                </button>
+              )}
             </div>
           )}
         </div>
