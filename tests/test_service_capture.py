@@ -18,7 +18,7 @@ def test_run_capture_id_mismatch_raises(monkeypatch):
     # Build a fake image and stub out the pipeline
     fake_img = np.zeros((10, 10, 3), dtype=np.uint8)
     monkeypatch.setattr(cap, "decode_image_bytes", lambda _: fake_img)
-    monkeypatch.setattr(cap, "detect_fiducials", lambda _: (99, 0, {0: (0.0, 0.0), 1: (10.0, 0.0), 2: (0.0, 10.0), 3: (10.0, 10.0)}))
+    monkeypatch.setattr(cap, "detect_fiducials_with_recropping", lambda _: (99, 0, {0: (0.0, 0.0), 1: (10.0, 0.0), 2: (0.0, 10.0), 3: (10.0, 10.0)}))
 
     spec = {
         "width_mm": 40.0, "height_mm": 20.0,
@@ -79,7 +79,7 @@ def test_run_capture_wrapped_1d_samples_each_row(monkeypatch):
 
     fake_img = np.zeros((10, 10, 3), dtype=np.uint8)
     monkeypatch.setattr(cap, "decode_image_bytes", lambda _: fake_img)
-    monkeypatch.setattr(cap, "detect_fiducials", lambda _: (42, 0, {}))
+    monkeypatch.setattr(cap, "detect_fiducials_with_recropping", lambda _: (42, 0, {}))
     monkeypatch.setattr(cap, "warp_to_burn_space", lambda *a, **kw: warped)
 
     spec = {
@@ -126,7 +126,7 @@ def test_run_capture_populates_missing_markers(monkeypatch):
         2: (0.0, 30.0), 3: (30.0, 30.0),
     }
     monkeypatch.setattr(cap, "decode_image_bytes", lambda _: fake_img)
-    monkeypatch.setattr(cap, "detect_fiducials", lambda _: (42, 0, corners))
+    monkeypatch.setattr(cap, "detect_fiducials_with_recropping", lambda _: (42, 0, corners))
     monkeypatch.setattr(cap, "warp_to_burn_space", lambda *a, **kw: warped)
 
     spec = {
@@ -153,7 +153,7 @@ def test_run_capture_missing_markers_empty_when_all_detected(monkeypatch):
         1: (30.0, 0.0), 2: (0.0, 30.0), 3: (30.0, 30.0),
     }
     monkeypatch.setattr(cap, "decode_image_bytes", lambda _: fake_img)
-    monkeypatch.setattr(cap, "detect_fiducials", lambda _: (42, 0, corners))
+    monkeypatch.setattr(cap, "detect_fiducials_with_recropping", lambda _: (42, 0, corners))
     monkeypatch.setattr(cap, "warp_to_burn_space", lambda *a, **kw: warped)
 
     spec = {
@@ -194,7 +194,7 @@ def test_run_capture_uses_spec_sample_aggregator(monkeypatch):
     }
     monkeypatch.setattr(cap, "decode_image_bytes",
                         lambda _: np.zeros((50, 50, 3), dtype=np.uint8))
-    monkeypatch.setattr(cap, "detect_fiducials",
+    monkeypatch.setattr(cap, "detect_fiducials_with_recropping",
                         lambda _: (1, 0, fake_corners))
     monkeypatch.setattr(cap, "warp_to_burn_space",
                         lambda *a, **kw: warped)
@@ -241,7 +241,7 @@ def test_run_capture_default_aggregator_is_saturation_median(monkeypatch):
     }
     monkeypatch.setattr(cap, "decode_image_bytes",
                         lambda _: np.zeros((50, 50, 3), dtype=np.uint8))
-    monkeypatch.setattr(cap, "detect_fiducials",
+    monkeypatch.setattr(cap, "detect_fiducials_with_recropping",
                         lambda _: (1, 0, fake_corners))
     monkeypatch.setattr(cap, "warp_to_burn_space",
                         lambda *a, **kw: warped)
