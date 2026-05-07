@@ -5,9 +5,10 @@
  */
 
 import { deltaE2000, hexToLab, type Lab } from "../color/math";
-import type { PaletteEntry } from "../types";
+import type { BaseParams, Laser, PaletteEntry } from "../types";
 import type { Material } from "../library";
 import type { CroppedRegion } from "../components/PixelArtCanvas";
+import { defaultBaseParams } from "../defaults";
 
 /** Width / height (mm) for the active material; falls back to a 50×50
  *  square when the material has no shape data. */
@@ -71,6 +72,46 @@ export async function decodeFile(
   ctx.drawImage(bitmap, 0, 0);
   const data = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
   return { bitmap, data };
+}
+
+/** Lift the wire-format ``entry.params`` (a loose
+ *  ``Record<string, string | number>``) into a strongly-typed
+ *  ``BaseParams``. Each entry's burn params are what the colour was
+ *  actually validated with, so passing them through to the layer is
+ *  what makes xTool Studio show distinct power / speed / pass-count
+ *  rows per colour. Defaults fill in any missing field so older
+ *  palette entries (or manually-added rows) still produce a usable
+ *  layer instead of being dropped on the floor. */
+export function paletteEntryToBaseParams(
+  entry: PaletteEntry | null,
+): BaseParams {
+  const fallback = defaultBaseParams();
+  if (!entry) return fallback;
+  const p = entry.params ?? {};
+  const num = (k: string, def: number): number => {
+    const v = p[k];
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "") {
+      const parsed = Number(v);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return def;
+  };
+  const laserRaw = p.laser;
+  const laser: Laser =
+    laserRaw === "blue" || laserRaw === "red"
+      ? laserRaw
+      : fallback.laser;
+  return {
+    power: num("power", fallback.power),
+    speed: num("speed", fallback.speed),
+    frequency: num("frequency", fallback.frequency),
+    density: num("density", fallback.density),
+    passes: num("passes", fallback.passes),
+    pulse_width: num("pulse_width", fallback.pulse_width),
+    laser,
+    scan_angle: num("scan_angle", fallback.scan_angle),
+  };
 }
 
 /** Find the palette entry nearest to ``hex`` by deltaE2000. Returns
