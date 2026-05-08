@@ -1090,8 +1090,8 @@ function InfoModalContent({
               ))}
             </div>
             {entry.indices && (
-              <div className="mt-3 border-t border-zinc-800 pt-3">
-                <h4 className="mb-2 font-sans text-xs uppercase tracking-wider text-zinc-400">
+              <div className="mt-3 border-t border-[color:var(--color-border)] pt-3">
+                <h4 className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)]">
                   Exposure indices
                 </h4>
                 <PaletteIndicesChips indices={entry.indices} />

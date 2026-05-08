@@ -20,17 +20,17 @@ interface ChipProps {
 
 const Chip: React.FC<ChipProps> = ({ label, value, bar }) => (
   <div
-    className="flex flex-col gap-0.5 rounded-sm border border-zinc-700/60 bg-zinc-900/40 px-2 py-1 text-xs"
+    className="flex flex-col gap-0.5 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] px-2 py-1 text-xs"
     role="group"
   >
-    <span className="font-sans uppercase tracking-wider text-[10px] text-zinc-400">
+    <span className="font-mono uppercase tracking-[0.16em] text-[9.5px] font-semibold text-[color:var(--color-ink-subtle)]">
       {label}
     </span>
-    <span className="font-mono tabular-nums text-zinc-100">{value}</span>
+    <span className="font-mono tabular-nums text-[color:var(--color-ink)]">{value}</span>
     {bar !== undefined && (
-      <div className="mt-0.5 h-0.5 w-full bg-zinc-800">
+      <div className="mt-0.5 h-0.5 w-full bg-[color:var(--color-border)]">
         <div
-          className="h-full bg-amber-400/70"
+          className="h-full bg-amber-600"
           style={{ width: `${Math.max(0, Math.min(1, bar)) * 100}%` }}
         />
       </div>
@@ -89,7 +89,7 @@ export const PaletteIndicesChips: React.FC<{ indices: LaserIndices }> = ({
           bar={logBar(indices.surface_exposure_index)}
         />
       </div>
-      <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+      <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-[color:var(--color-ink-subtle)]">
         <span
           title={`density_model=${indices.density_model}; power_model=${indices.power_model}`}
         >
