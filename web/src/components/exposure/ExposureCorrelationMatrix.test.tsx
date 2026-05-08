@@ -26,7 +26,7 @@ describe("ExposureCorrelationMatrix", () => {
     expect(container.querySelectorAll('[data-role="col-label"]').length).toBe(5);
   });
 
-  it("shows numeric labels only on cells with |r| >= 0.7", () => {
+  it("shows numeric labels on cells with |r| >= 0.1, padded to two digits", () => {
     const { container } = render(
       <ExposureCorrelationMatrix
         matrix={matrix}
@@ -36,8 +36,13 @@ describe("ExposureCorrelationMatrix", () => {
       />,
     );
     const labels = container.querySelectorAll('[data-role="cell-value"]');
-    expect(labels.length).toBe(1);
-    expect(labels[0].textContent).toContain("84");
+    // 25 cells, all with |r| >= 0.1 in this fixture.
+    expect(labels.length).toBe(25);
+    // Strongest negative value renders as "84"; sign comes from the
+    // SignBadge rendered separately.
+    const texts = Array.from(labels).map((n) => n.textContent);
+    expect(texts).toContain("84");
+    expect(texts).toContain("10");
   });
 
   it("clicking a cell calls onSelect with that (index, channel) pair", () => {

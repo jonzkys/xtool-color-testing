@@ -37,12 +37,45 @@ function rowIndex(row: ExposureRow, key: IndexRow): number {
   return (row.indices[key] as number | null) ?? NaN;
 }
 
-const W = 720;
-const H = 420;
-const PADL = 60;
+const W = 760;
+const H = 440;
+const PADL = 64;
 const PADR = 28;
-const PADT = 24;
-const PADB = 56;
+const PADT = 28;
+const PADB = 60;
+
+const INDEX_PRETTY: Record<IndexRow, string> = {
+  pulse_spacing_mm: "PULSE SPACING (mm)",
+  line_spacing_index: "LINE SPACING IDX",
+  pulse_energy_index: "PULSE ENERGY IDX",
+  pulse_intensity_index: "PULSE INTENSITY IDX",
+  surface_exposure_index: "SURFACE EXPOSURE IDX",
+};
+
+const CHANNEL_PRETTY: Record<ChannelCol, string> = {
+  L: "L*  (LIGHTNESS)",
+  a: "a*  (RED ↔ GREEN)",
+  b: "b*  (YELLOW ↔ BLUE)",
+  hue: "h°  (HUE)",
+  chroma: "C*  (CHROMA)",
+};
+
+function xLabel(key: IndexRow, scale: ScaleKind): string {
+  const base = INDEX_PRETTY[key];
+  return scale === "log" ? `LOG₁₀ ${base}` : base;
+}
+
+function yLabel(
+  mode: ScatterMode,
+  key: ChannelCol | IndexRow,
+  scale: ScaleKind,
+): string {
+  const base =
+    mode === "univariate"
+      ? CHANNEL_PRETTY[key as ChannelCol]
+      : INDEX_PRETTY[key as IndexRow];
+  return scale === "log" ? `LOG₁₀ ${base}` : base;
+}
 
 export const ExposureScatter: React.FC<Props> = ({
   rows,
@@ -106,22 +139,24 @@ export const ExposureScatter: React.FC<Props> = ({
 
   return (
     <svg
-      width={W}
-      height={H}
       viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="xMidYMid meet"
+      className="w-full h-auto block rounded-[6px] bg-[color:var(--color-surface-elevated)]"
       role="img"
       aria-label="exposure scatter"
     >
+      {/* Plot frame */}
       <rect
         x={PADL}
         y={PADT}
         width={W - PADL - PADR}
         height={H - PADT - PADB}
-        fill="none"
+        fill="var(--color-surface)"
         stroke="var(--color-border)"
-        strokeWidth={0.6}
+        strokeWidth={0.8}
       />
 
+      {/* Gridlines */}
       {xTicks.map((t) => (
         <line
           key={`xg-${t}`}
@@ -130,9 +165,9 @@ export const ExposureScatter: React.FC<Props> = ({
           x2={PADL + ((t - xMin) / (xMax - xMin || 1)) * (W - PADL - PADR)}
           y2={H - PADB}
           stroke="var(--color-border)"
-          strokeOpacity={0.4}
+          strokeOpacity={0.55}
           strokeDasharray="2 4"
-          strokeWidth={0.4}
+          strokeWidth={0.5}
         />
       ))}
       {yTicks.map((t) => (
@@ -143,21 +178,21 @@ export const ExposureScatter: React.FC<Props> = ({
           x2={W - PADR}
           y2={H - PADB - ((t - yMin) / (yMax - yMin || 1)) * (H - PADT - PADB)}
           stroke="var(--color-border)"
-          strokeOpacity={0.4}
+          strokeOpacity={0.55}
           strokeDasharray="2 4"
-          strokeWidth={0.4}
+          strokeWidth={0.5}
         />
       ))}
 
+      {/* Tick labels */}
       {xTicks.map((t) => (
         <text
           key={`xl-${t}`}
           x={PADL + ((t - xMin) / (xMax - xMin || 1)) * (W - PADL - PADR)}
-          y={H - PADB + 14}
-          fontSize="10"
-          fontFamily="ui-monospace"
-          fill="var(--color-ink-subtle)"
+          y={H - PADB + 16}
           textAnchor="middle"
+          className="fill-[color:var(--color-ink-muted)]"
+          style={{ font: "10px var(--font-mono)" }}
         >
           {xScale === "log" ? fmtTick(Math.pow(10, t)) : fmtTick(t)}
         </text>
@@ -165,17 +200,17 @@ export const ExposureScatter: React.FC<Props> = ({
       {yTicks.map((t) => (
         <text
           key={`yl-${t}`}
-          x={PADL - 6}
+          x={PADL - 8}
           y={H - PADB - ((t - yMin) / (yMax - yMin || 1)) * (H - PADT - PADB) + 3}
-          fontSize="10"
-          fontFamily="ui-monospace"
-          fill="var(--color-ink-subtle)"
           textAnchor="end"
+          className="fill-[color:var(--color-ink-muted)]"
+          style={{ font: "10px var(--font-mono)" }}
         >
           {yScale === "log" ? fmtTick(Math.pow(10, t)) : fmtTick(t)}
         </text>
       ))}
 
+      {/* Regression line — univariate only */}
       {mode === "univariate" && fit && Number.isFinite(fit.slope) && positiveXs.length > 0 && (
         <line
           data-role="regression-line"
@@ -184,12 +219,13 @@ export const ExposureScatter: React.FC<Props> = ({
           x2={px(maxX)}
           y2={py(fit.intercept + fit.slope * Math.log10(maxX))}
           stroke="var(--color-primary)"
-          strokeWidth={1.4}
+          strokeWidth={1.5}
           strokeDasharray="6 4"
-          opacity={0.85}
+          opacity={0.9}
         />
       )}
 
+      {/* Focus crosshair */}
       {focusedId != null && (() => {
         const focused = rows.find((r) => r.id === focusedId);
         if (!focused) return null;
@@ -200,16 +236,16 @@ export const ExposureScatter: React.FC<Props> = ({
             : rowIndex(focused, yKey as IndexRow);
         if (!Number.isFinite(fx) || !Number.isFinite(fy)) return null;
         return (
-          <g>
+          <g aria-hidden="true">
             <line
               x1={PADL}
               x2={W - PADR}
               y1={py(fy)}
               y2={py(fy)}
               stroke="var(--color-primary)"
-              strokeWidth={0.4}
+              strokeWidth={0.6}
               strokeDasharray="3 3"
-              opacity={0.5}
+              opacity={0.6}
             />
             <line
               x1={px(fx)}
@@ -217,71 +253,98 @@ export const ExposureScatter: React.FC<Props> = ({
               y1={PADT}
               y2={H - PADB}
               stroke="var(--color-primary)"
-              strokeWidth={0.4}
+              strokeWidth={0.6}
               strokeDasharray="3 3"
-              opacity={0.5}
+              opacity={0.6}
             />
           </g>
         );
       })()}
 
-      {rows.map((row) => {
-        const x = rowIndex(row, xKey);
-        const y =
-          mode === "univariate"
-            ? rowChannel(row, yKey as ChannelCol)
-            : rowIndex(row, yKey as IndexRow);
-        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-        const isFocused = row.id === focusedId;
-        const visible = isInDimRange(row);
-        return (
-          <g key={row.id} opacity={visible ? 1 : 0.15}>
-            {isFocused && (
+      {/* Dots — focused last so it sits on top of the cloud */}
+      {rows
+        .map((row, i) => ({ row, isFocused: row.id === focusedId, i }))
+        .sort((a, b) => Number(a.isFocused) - Number(b.isFocused))
+        .map(({ row }) => {
+          const x = rowIndex(row, xKey);
+          const y =
+            mode === "univariate"
+              ? rowChannel(row, yKey as ChannelCol)
+              : rowIndex(row, yKey as IndexRow);
+          if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+          const isFocused = row.id === focusedId;
+          const visible = isInDimRange(row);
+          return (
+            <g key={row.id} opacity={visible ? 1 : 0.13}>
+              {isFocused && (
+                <circle
+                  data-role="focus-halo"
+                  cx={px(x)}
+                  cy={py(y)}
+                  r={11}
+                  fill="none"
+                  stroke="var(--color-primary)"
+                  strokeWidth={2}
+                />
+              )}
               <circle
-                data-role="focus-halo"
+                data-role="scatter-dot"
                 cx={px(x)}
                 cy={py(y)}
-                r={10}
-                fill="none"
-                stroke="var(--color-primary)"
-                strokeWidth={2}
+                r={isFocused ? 6 : 4.5}
+                fill={row.hex}
+                stroke={isFocused ? "var(--color-ink)" : "var(--color-ink-subtle)"}
+                strokeWidth={isFocused ? 1 : 0.6}
+                onMouseEnter={() => onHover(row.id)}
+                onMouseLeave={() => onLeave()}
+                onClick={() => onClick(row.id)}
+                style={{ cursor: "pointer" }}
               />
-            )}
-            <circle
-              data-role="scatter-dot"
-              cx={px(x)}
-              cy={py(y)}
-              r={isFocused ? 6 : 5}
-              fill={row.hex}
-              stroke="var(--color-surface)"
-              strokeWidth={0.6}
-              onMouseEnter={() => onHover(row.id)}
-              onMouseLeave={() => onLeave()}
-              onClick={() => onClick(row.id)}
-              style={{ cursor: "pointer" }}
-            />
-          </g>
-        );
-      })}
+            </g>
+          );
+        })}
 
+      {/* Plot border — drawn last so it sits over gridlines */}
+      <line
+        x1={PADL}
+        x2={PADL}
+        y1={PADT}
+        y2={H - PADB}
+        stroke="var(--color-border-strong)"
+      />
+      <line
+        x1={PADL}
+        x2={W - PADR}
+        y1={H - PADB}
+        y2={H - PADB}
+        stroke="var(--color-border-strong)"
+      />
+
+      {/* Axis titles — instrument register, mid-axis, mono uppercase */}
       <text
-        x={PADL}
-        y={H - 8}
-        fontSize="11"
-        fontFamily="ui-monospace"
-        fill="var(--color-ink-subtle)"
+        x={PADL + (W - PADL - PADR) / 2}
+        y={H - 12}
+        textAnchor="middle"
+        className="fill-[color:var(--color-ink-subtle)]"
+        style={{
+          font: "600 10px var(--font-mono)",
+          letterSpacing: "0.18em",
+        }}
       >
-        {xScale === "log" ? "log10(" : ""}{xKey}{xScale === "log" ? ")" : ""}
+        {xLabel(xKey, xScale)}
       </text>
       <text
-        x={16}
-        y={PADT + 8}
-        fontSize="11"
-        fontFamily="ui-monospace"
-        fill="var(--color-ink-subtle)"
-        transform={`rotate(-90, 16, ${PADT + 8})`}
+        x={20}
+        y={PADT + (H - PADT - PADB) / 2}
+        textAnchor="middle"
+        className="fill-[color:var(--color-ink-subtle)]"
+        transform={`rotate(-90, 20, ${PADT + (H - PADT - PADB) / 2})`}
+        style={{
+          font: "600 10px var(--font-mono)",
+          letterSpacing: "0.18em",
+        }}
       >
-        {yScale === "log" ? "log10(" : ""}{yKey}{yScale === "log" ? ")" : ""}
+        {yLabel(mode, yKey, yScale)}
       </text>
     </svg>
   );
