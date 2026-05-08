@@ -672,3 +672,19 @@ def test_processing_params_from_palette_dict_accepts_canonical_keys() -> None:
     p = _processing_params_from_palette_dict(raw)
     assert p.mopa_frequency == 80
     assert p.repeat == 2
+
+
+def test_processing_params_from_palette_dict_canonical_beats_legacy_on_collision() -> None:
+    from xcs_gen_web.repositories.palette import (
+        _processing_params_from_palette_dict,
+    )
+
+    raw = {
+        "mopa_frequency": 80,
+        "frequency": 60,        # legacy — should be ignored
+        "repeat": 4,
+        "passes": 2,            # legacy — should be ignored
+    }
+    p = _processing_params_from_palette_dict(raw)
+    assert p.mopa_frequency == 80
+    assert p.repeat == 4

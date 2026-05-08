@@ -36,6 +36,21 @@ def _now() -> str:
 
 
 def _processing_params_from_palette_dict(d: dict[str, Any]) -> ProcessingParams:
+    """Build a ProcessingParams (compute_indices-shaped) from the dict
+    stored in palette_entries.params_json.
+
+    Only the six fields consumed by ``xcs_gen.laser_indices.compute_indices``
+    are read out of the dict: ``speed``, ``power``, ``density``,
+    ``mopa_frequency`` (or its legacy alias ``frequency``),
+    ``pulse_width``, ``repeat`` (or its legacy alias ``passes``). Every
+    other ``ProcessingParams`` field — ``dpi``, ``dot_duration``,
+    ``processing_light_source``, ``scan_angle``, ``angle_type``,
+    ``cross_angle``, ``bitmap_scan_mode`` — falls back to the dataclass
+    default regardless of whether the dict carries a value. That's
+    deliberate: this adapter exists to feed ``compute_indices``, not as
+    a general-purpose round-trip. If you need a full round-trip
+    elsewhere, build a separate adapter.
+    """
     defaults = ProcessingParams()
     return ProcessingParams(
         speed=d.get("speed", defaults.speed),
