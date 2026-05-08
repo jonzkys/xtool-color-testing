@@ -15,6 +15,7 @@ import { listMaterials, listPresets } from "../api/library";
 import { listTests } from "../api/tests";
 import { formatRoute, type Route } from "../router";
 import { PaletteEntryDialog } from "./PaletteEntryDialog";
+import { PaletteIndicesChips } from "./PaletteIndicesChips";
 import { getCurrentMachineId } from "../state/machine";
 import { StarToggle } from "./StarToggle";
 import {
@@ -1088,6 +1089,14 @@ function InfoModalContent({
                 <ParamChip key={k} name={k} value={v} />
               ))}
             </div>
+            {entry.indices && (
+              <div className="mt-3 border-t border-zinc-800 pt-3">
+                <h4 className="mb-2 font-sans text-xs uppercase tracking-wider text-zinc-400">
+                  Exposure indices
+                </h4>
+                <PaletteIndicesChips indices={entry.indices} />
+              </div>
+            )}
           </div>
         </>
       )}

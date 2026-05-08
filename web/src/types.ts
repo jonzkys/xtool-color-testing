@@ -318,6 +318,9 @@ export interface PaletteEntry {
    *  colours the user has already burned, so subsequent validation
    *  tests cover new ground. */
   original_validated?: boolean;
+  /** Heuristic laser exposure indices computed from the entry's params.
+   *  Optional for backwards compat — pre-migration rows won't have it. */
+  indices?: import("./components/PaletteIndicesChips").LaserIndices;
 }
 
 export interface PaletteQueryResult {
