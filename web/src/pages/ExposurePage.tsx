@@ -13,6 +13,7 @@ import { ExposureHueRibbon } from "../components/exposure/ExposureHueRibbon";
 import { ExposureCorrelationMatrix } from "../components/exposure/ExposureCorrelationMatrix";
 import { ExposureRangeBrush } from "../components/exposure/ExposureRangeBrush";
 import { ExposureFocusedCard } from "../components/exposure/ExposureFocusedCard";
+import { ExposureNeighboursPanel } from "../components/exposure/ExposureNeighboursPanel";
 import {
   buildCorrelationMatrix,
   buildRawParamCorrelationMatrix,
@@ -133,6 +134,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const [pinnedFocusId, setPinnedFocusId] = useState<number | null>(null);
 
   const focusedId = transientFocusId ?? pinnedFocusId;
+  const focusedRow = focusedId == null ? null : rows.find((r) => r.id === focusedId) ?? null;
 
   const handleHover = useCallback((id: number) => {
     setTransientFocusId(id);
@@ -715,6 +717,20 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               activeFilterAxis={familyFilter?.axis ?? null}
               onSetFilter={(axis, anchorRowId) => setFamilyFilter({ axis, anchorRowId })}
               onClearFilter={() => setFamilyFilter(null)}
+              neighboursSlot={
+                focusedRow ? (
+                  <div className="mt-3 border-t border-[color:var(--color-border)] pt-3">
+                    <ExposureNeighboursPanel
+                      anchor={focusedRow}
+                      candidates={rows}
+                      onSelectNeighbour={(id) => {
+                        setTransientFocusId(null);
+                        setPinnedFocusId(id);
+                      }}
+                    />
+                  </div>
+                ) : undefined
+              }
             />
           </section>
 

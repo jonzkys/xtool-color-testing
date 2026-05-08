@@ -25,6 +25,8 @@ interface Props {
   onSetFilter?: (axis: VaryingAxis, anchorRowId: number) => void;
   /** Clear the active family filter. */
   onClearFilter?: () => void;
+  /** Optional slot rendered below the family-filter section when focused. */
+  neighboursSlot?: React.ReactNode;
 }
 
 const INDEX_LABELS: Record<IndexRow, string> = {
@@ -77,6 +79,7 @@ export const ExposureFocusedCard: React.FC<Props> = ({
   activeFilterAxis,
   onSetFilter,
   onClearFilter,
+  neighboursSlot,
 }) => {
   const focused = focusedId == null ? null : rows.find((r) => r.id === focusedId) ?? null;
 
@@ -199,6 +202,8 @@ export const ExposureFocusedCard: React.FC<Props> = ({
               </div>
             </div>
           )}
+
+          {focused && neighboursSlot}
 
           <div className="border-t border-[color:var(--color-border)] pt-3">
             <div className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold mb-2">
