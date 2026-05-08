@@ -32,56 +32,39 @@ log = logging.getLogger("alembic.runtime.migration.0022")
 
 
 def upgrade() -> None:
-    op.add_column(
-        "palette_entries", sa.Column("pulse_spacing_mm", sa.Float, nullable=True),
-    )
-    op.add_column(
-        "palette_entries", sa.Column("line_spacing_index", sa.Float, nullable=True),
-    )
-    op.add_column(
-        "palette_entries", sa.Column("line_spacing_mm", sa.Float, nullable=True),
-    )
-    op.add_column(
-        "palette_entries", sa.Column("pulse_energy_index", sa.Float, nullable=True),
-    )
-    op.add_column(
-        "palette_entries", sa.Column("pulse_intensity_index", sa.Float, nullable=True),
-    )
-    op.add_column(
-        "palette_entries", sa.Column("surface_exposure_index", sa.Float, nullable=True),
-    )
-    op.add_column(
-        "palette_entries",
-        sa.Column(
-            "indices_formula_version", sa.Integer,
-            nullable=False, server_default="1",
-        ),
-    )
-    op.add_column(
-        "palette_entries",
-        sa.Column(
-            "density_model", sa.String(32),
-            nullable=False, server_default="opaque",
-        ),
-    )
-    op.add_column(
-        "palette_entries",
-        sa.Column(
-            "power_model", sa.String(32),
-            nullable=False, server_default="controller_percent",
-        ),
-    )
-
-    op.create_index(
-        "ix_palette_entries_material_exposure",
-        "palette_entries",
-        ["material_id", "surface_exposure_index"],
-    )
-    op.create_index(
-        "ix_palette_entries_material_intensity",
-        "palette_entries",
-        ["material_id", "pulse_intensity_index"],
-    )
+    with op.batch_alter_table("palette_entries", schema=None) as batch_op:
+        batch_op.add_column(sa.Column("pulse_spacing_mm", sa.Float, nullable=True))
+        batch_op.add_column(sa.Column("line_spacing_index", sa.Float, nullable=True))
+        batch_op.add_column(sa.Column("line_spacing_mm", sa.Float, nullable=True))
+        batch_op.add_column(sa.Column("pulse_energy_index", sa.Float, nullable=True))
+        batch_op.add_column(sa.Column("pulse_intensity_index", sa.Float, nullable=True))
+        batch_op.add_column(sa.Column("surface_exposure_index", sa.Float, nullable=True))
+        batch_op.add_column(
+            sa.Column(
+                "indices_formula_version", sa.Integer,
+                nullable=False, server_default="1",
+            ),
+        )
+        batch_op.add_column(
+            sa.Column(
+                "density_model", sa.String(32),
+                nullable=False, server_default="opaque",
+            ),
+        )
+        batch_op.add_column(
+            sa.Column(
+                "power_model", sa.String(32),
+                nullable=False, server_default="controller_percent",
+            ),
+        )
+        batch_op.create_index(
+            "ix_palette_entries_material_exposure",
+            ["material_id", "surface_exposure_index"],
+        )
+        batch_op.create_index(
+            "ix_palette_entries_material_intensity",
+            ["material_id", "pulse_intensity_index"],
+        )
 
     # Backfill — best-effort; rows that fail get formula_version=0.
     # Imports are local to keep alembic env startup cheap and avoid
@@ -159,18 +142,15 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        "ix_palette_entries_material_intensity", table_name="palette_entries",
-    )
-    op.drop_index(
-        "ix_palette_entries_material_exposure", table_name="palette_entries",
-    )
-    op.drop_column("palette_entries", "power_model")
-    op.drop_column("palette_entries", "density_model")
-    op.drop_column("palette_entries", "indices_formula_version")
-    op.drop_column("palette_entries", "surface_exposure_index")
-    op.drop_column("palette_entries", "pulse_intensity_index")
-    op.drop_column("palette_entries", "pulse_energy_index")
-    op.drop_column("palette_entries", "line_spacing_mm")
-    op.drop_column("palette_entries", "line_spacing_index")
-    op.drop_column("palette_entries", "pulse_spacing_mm")
+    with op.batch_alter_table("palette_entries", schema=None) as batch_op:
+        batch_op.drop_index("ix_palette_entries_material_intensity")
+        batch_op.drop_index("ix_palette_entries_material_exposure")
+        batch_op.drop_column("power_model")
+        batch_op.drop_column("density_model")
+        batch_op.drop_column("indices_formula_version")
+        batch_op.drop_column("surface_exposure_index")
+        batch_op.drop_column("pulse_intensity_index")
+        batch_op.drop_column("pulse_energy_index")
+        batch_op.drop_column("line_spacing_mm")
+        batch_op.drop_column("line_spacing_index")
+        batch_op.drop_column("pulse_spacing_mm")
