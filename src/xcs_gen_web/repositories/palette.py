@@ -15,6 +15,8 @@ from typing import Any, Iterable
 
 from sqlalchemy import and_, or_ as sa_or, select
 
+from xcs_gen.model import ProcessingParams
+
 from ..config import DEFAULT_VISIBILITY, STANDALONE_USER_ID
 from ..db import session_scope
 from ..models import palette_entries
@@ -31,6 +33,20 @@ class MachineMismatchError(Exception):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _processing_params_from_palette_dict(d: dict[str, Any]) -> ProcessingParams:
+    defaults = ProcessingParams()
+    return ProcessingParams(
+        speed=d.get("speed", defaults.speed),
+        power=d.get("power", defaults.power),
+        density=d.get("density", defaults.density),
+        mopa_frequency=d.get(
+            "mopa_frequency", d.get("frequency", defaults.mopa_frequency),
+        ),
+        pulse_width=d.get("pulse_width", defaults.pulse_width),
+        repeat=d.get("repeat", d.get("passes", defaults.repeat)),
+    )
 
 
 def _row_to_entry(r, *, original_validated: bool = False) -> dict[str, Any]:

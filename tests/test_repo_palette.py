@@ -616,3 +616,59 @@ def test_list_all_validated_only_filter(fresh_db):
     assert [r["id"] for r in rows] == [ids[0]]
     rows_all = repo.list_all()
     assert {r["id"] for r in rows_all} == set(ids)
+
+
+def test_processing_params_from_palette_dict_handles_legacy_keys() -> None:
+    from xcs_gen_web.repositories.palette import (
+        _processing_params_from_palette_dict,
+    )
+
+    raw = {
+        "speed": 800,
+        "power": 35.0,
+        "density": 250,
+        "frequency": 60,        # → mopa_frequency on dataclass
+        "passes": 3,            # → repeat on dataclass
+        "pulse_width": 100,
+    }
+    p = _processing_params_from_palette_dict(raw)
+    assert p.speed == 800
+    assert p.power == 35.0
+    assert p.density == 250
+    assert p.mopa_frequency == 60
+    assert p.pulse_width == 100
+    assert p.repeat == 3
+
+
+def test_processing_params_from_palette_dict_falls_back_to_defaults() -> None:
+    from xcs_gen.model import ProcessingParams
+    from xcs_gen_web.repositories.palette import (
+        _processing_params_from_palette_dict,
+    )
+
+    p = _processing_params_from_palette_dict({})
+    defaults = ProcessingParams()
+    assert p.speed == defaults.speed
+    assert p.power == defaults.power
+    assert p.density == defaults.density
+    assert p.mopa_frequency == defaults.mopa_frequency
+    assert p.pulse_width == defaults.pulse_width
+    assert p.repeat == defaults.repeat
+
+
+def test_processing_params_from_palette_dict_accepts_canonical_keys() -> None:
+    from xcs_gen_web.repositories.palette import (
+        _processing_params_from_palette_dict,
+    )
+
+    raw = {
+        "speed": 500,
+        "power": 80.0,
+        "density": 150,
+        "mopa_frequency": 80,    # canonical dataclass name
+        "repeat": 2,             # canonical dataclass name
+        "pulse_width": 60,
+    }
+    p = _processing_params_from_palette_dict(raw)
+    assert p.mopa_frequency == 80
+    assert p.repeat == 2
