@@ -1,8 +1,8 @@
 import * as React from "react";
 import { hueDeg, chroma as chromaFn } from "../../color/math";
-import { niceBounds, niceTicks, fmtTick } from "../stabilityChartMath";
+import { niceBounds, niceTicks } from "../stabilityChartMath";
 import type { ChannelCol, ExposureRow, IndexRow } from "./exposureCorrelations";
-import { logLinearRegression } from "./exposureMath";
+import { logLinearRegression, fmtIndexTick } from "./exposureMath";
 
 export type ScaleKind = "linear" | "log";
 export type ScatterMode = "univariate" | "bivariate";
@@ -194,7 +194,7 @@ export const ExposureScatter: React.FC<Props> = ({
           className="fill-[color:var(--color-ink-muted)]"
           style={{ font: "10px var(--font-mono)" }}
         >
-          {xScale === "log" ? fmtTick(Math.pow(10, t)) : fmtTick(t)}
+          {xScale === "log" ? fmtIndexTick(Math.pow(10, t)) : fmtIndexTick(t)}
         </text>
       ))}
       {yTicks.map((t) => (
@@ -206,7 +206,7 @@ export const ExposureScatter: React.FC<Props> = ({
           className="fill-[color:var(--color-ink-muted)]"
           style={{ font: "10px var(--font-mono)" }}
         >
-          {yScale === "log" ? fmtTick(Math.pow(10, t)) : fmtTick(t)}
+          {yScale === "log" ? fmtIndexTick(Math.pow(10, t)) : fmtIndexTick(t)}
         </text>
       ))}
 
@@ -285,6 +285,8 @@ export const ExposureScatter: React.FC<Props> = ({
                   fill="none"
                   stroke="var(--color-primary)"
                   strokeWidth={2}
+                  onClick={(e) => { e.stopPropagation(); onClick(row.id); }}
+                  style={{ cursor: "pointer" }}
                 />
               )}
               <circle

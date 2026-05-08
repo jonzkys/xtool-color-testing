@@ -3,6 +3,7 @@ import {
   pearson,
   spearman,
   logLinearRegression,
+  fmtIndexTick,
 } from "./exposureMath";
 
 describe("pearson", () => {
@@ -78,5 +79,31 @@ describe("logLinearRegression", () => {
     const fit = logLinearRegression([0, 1, 10, 100], [99, 5, 8, 11]);
     expect(Number.isNaN(fit.slope)).toBe(false);
     expect(fit.r2).toBeCloseTo(1, 4);
+  });
+});
+
+describe("fmtIndexTick", () => {
+  it("uses exponential for very small values", () => {
+    expect(fmtIndexTick(0.0001)).toMatch(/e/);
+    expect(fmtIndexTick(5e-7)).toMatch(/e/);
+  });
+
+  it("uses fixed notation in the readable range", () => {
+    expect(fmtIndexTick(0.005)).toBe("0.0050");
+    expect(fmtIndexTick(0.05)).toBe("0.050");
+    expect(fmtIndexTick(0.5)).toBe("0.500");
+    expect(fmtIndexTick(5)).toBe("5.00");
+    expect(fmtIndexTick(50)).toBe("50.0");
+    expect(fmtIndexTick(500)).toBe("500");
+  });
+
+  it("uses exponential for very large values", () => {
+    expect(fmtIndexTick(1e6)).toMatch(/e/);
+  });
+
+  it("handles zero and non-finite", () => {
+    expect(fmtIndexTick(0)).toBe("0");
+    expect(fmtIndexTick(NaN)).toBe("—");
+    expect(fmtIndexTick(Infinity)).toBe("—");
   });
 });
