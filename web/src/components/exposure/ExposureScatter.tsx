@@ -104,8 +104,16 @@ export const ExposureScatter: React.FC<Props> = ({
     ? ys.filter((v) => Number.isFinite(v) && v > 0).map((v) => Math.log10(v))
     : ys.filter((v) => Number.isFinite(v));
 
-  const { min: xMin, max: xMax } = niceBounds(xsForScale, null);
-  const { min: yMin, max: yMax } = niceBounds(ysForScale, null);
+  const { min: xMinRaw, max: xMaxRaw } = niceBounds(xsForScale, null);
+  const { min: yMinRaw, max: yMaxRaw } = niceBounds(ysForScale, null);
+
+  // Pad bounds by 5% of range so dots don't sit on the frame edge.
+  const xPad = (xMaxRaw - xMinRaw) * 0.05;
+  const yPad = (yMaxRaw - yMinRaw) * 0.05;
+  const xMin = xMinRaw - xPad;
+  const xMax = xMaxRaw + xPad;
+  const yMin = yMinRaw - yPad;
+  const yMax = yMaxRaw + yPad;
 
   const px = (v: number) => {
     const t = ((xScale === "log" ? Math.log10(v) : v) - xMin) / (xMax - xMin || 1);
