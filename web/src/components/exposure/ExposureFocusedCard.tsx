@@ -18,12 +18,12 @@ interface Props {
 
 const INDEX_LABELS: Record<IndexRow, string> = {
   total_exposure_index: "TOTAL_EXPOSURE",
-  ablation_aggression_index: "ABLATION_AGGRESSION",
-  delivery_smoothness_index: "DELIVERY_SMOOTHNESS",
+  ablation_aggression_index: "AGGRESSION",
+  delivery_smoothness_index: "SMOOTHNESS",
   pulse_intensity_index: "PULSE_INTENSITY",
   pulse_energy_index: "PULSE_ENERGY",
-  pulse_spacing_mm: "PULSE_SPACING (mm)",
-  line_spacing_index: "LINE_SPACING_INDEX",
+  pulse_spacing_mm: "PULSE_SPACING_MM",
+  line_spacing_index: "LINE_SPACING",
 };
 
 const INDEX_ORDER: IndexRow[] = [
