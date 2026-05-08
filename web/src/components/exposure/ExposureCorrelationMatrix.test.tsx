@@ -11,18 +11,20 @@ describe("ExposureCorrelationMatrix", () => {
     [0.20, 0.30, 0.40, 0.50, 0.60],
     [0.25, 0.35, 0.45, 0.55, 0.65],
     [-0.84, 0.40, 0.30, 0.40, 0.50],
+    [0.30, 0.35, 0.25, 0.45, 0.55],
+    [0.12, 0.18, 0.22, 0.28, 0.35],
   ];
 
-  it("renders 5 row labels and 5 column labels", () => {
+  it("renders 7 row labels and 5 column labels", () => {
     const { container } = render(
       <ExposureCorrelationMatrix
         matrix={matrix}
-        selectedIndex="surface_exposure_index"
+        selectedIndex="total_exposure_index"
         selectedChannel="L"
         onSelect={() => undefined}
       />,
     );
-    expect(container.querySelectorAll('[data-role="row-label"]').length).toBe(5);
+    expect(container.querySelectorAll('[data-role="row-label"]').length).toBe(7);
     expect(container.querySelectorAll('[data-role="col-label"]').length).toBe(5);
   });
 
@@ -30,14 +32,14 @@ describe("ExposureCorrelationMatrix", () => {
     const { container } = render(
       <ExposureCorrelationMatrix
         matrix={matrix}
-        selectedIndex="surface_exposure_index"
+        selectedIndex="total_exposure_index"
         selectedChannel="L"
         onSelect={() => undefined}
       />,
     );
     const labels = container.querySelectorAll('[data-role="cell-value"]');
-    // 25 cells, all with |r| >= 0.1 in this fixture.
-    expect(labels.length).toBe(25);
+    // 35 cells, all with |r| >= 0.1 in this fixture.
+    expect(labels.length).toBe(35);
     // Strongest negative value renders as "84"; sign comes from the
     // SignBadge rendered separately.
     const texts = Array.from(labels).map((n) => n.textContent);
@@ -50,7 +52,7 @@ describe("ExposureCorrelationMatrix", () => {
     const { container } = render(
       <ExposureCorrelationMatrix
         matrix={matrix}
-        selectedIndex="surface_exposure_index"
+        selectedIndex="total_exposure_index"
         selectedChannel="L"
         onSelect={onSelect}
       />,

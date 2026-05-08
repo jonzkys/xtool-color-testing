@@ -26,7 +26,9 @@ export const INDEX_ROWS = [
   "line_spacing_index",
   "pulse_energy_index",
   "pulse_intensity_index",
-  "surface_exposure_index",
+  "total_exposure_index",
+  "ablation_aggression_index",
+  "delivery_smoothness_index",
 ] as const satisfies readonly (keyof LaserIndices)[];
 export type IndexRow = (typeof INDEX_ROWS)[number];
 
@@ -51,7 +53,7 @@ function channelValue(row: ExposureRow, col: ChannelCol): number {
 }
 
 /**
- * Build the 5×5 Pearson |r| matrix of (index, channel). Rows with
+ * Build the 7×5 Pearson |r| matrix of (index, channel). Rows with
  * `formula_version=0` are dropped (stale-backfill sentinel). NaN
  * cells indicate insufficient data or zero variance.
  */

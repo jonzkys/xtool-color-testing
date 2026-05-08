@@ -57,7 +57,9 @@ const INDEX_LABELS: Record<IndexRow, string> = {
   line_spacing_index: "Line Spacing Index",
   pulse_energy_index: "Pulse Energy Index",
   pulse_intensity_index: "Pulse Intensity Index",
-  surface_exposure_index: "Surface Exposure Index",
+  total_exposure_index: "Total Exposure",
+  ablation_aggression_index: "Ablation Aggression",
+  delivery_smoothness_index: "Delivery Smoothness",
 };
 
 const CHANNEL_LABELS: Record<ChannelCol, string> = {
@@ -79,7 +81,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const [rowsError, setRowsError] = useState<string | null>(null);
 
   // ── axis / mode state ──────────────────────────────────────────────────
-  const [xKey, setXKey] = useState<IndexRow>("surface_exposure_index");
+  const [xKey, setXKey] = useState<IndexRow>("total_exposure_index");
   const [mode, setMode] = useState<ScatterMode>("univariate");
   const [yKeyUni, setYKeyUni] = useState<ChannelCol>("L");
   const [yKeyBi, setYKeyBi] = useState<IndexRow>("pulse_intensity_index");
@@ -498,7 +500,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                 {/* Exposure range brush */}
                 <div className="px-5 pb-5">
                   <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
-                    <PanelLabel title="Exposure range" subtitle="surface_exposure_index, log scale" />
+                    <PanelLabel title="Exposure range" subtitle="total_exposure_index, log scale" />
                     <ExposureRangeBrush
                       rows={rows}
                       range={brushRange}

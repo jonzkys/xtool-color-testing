@@ -17,15 +17,19 @@ interface Props {
 }
 
 const INDEX_LABELS: Record<IndexRow, string> = {
-  surface_exposure_index: "Surface exposure",
-  pulse_intensity_index: "Pulse intensity",
-  pulse_energy_index: "Pulse energy",
-  pulse_spacing_mm: "Pulse spacing (mm)",
-  line_spacing_index: "Line spacing index",
+  total_exposure_index: "TOTAL_EXPOSURE",
+  ablation_aggression_index: "ABLATION_AGGRESSION",
+  delivery_smoothness_index: "DELIVERY_SMOOTHNESS",
+  pulse_intensity_index: "PULSE_INTENSITY",
+  pulse_energy_index: "PULSE_ENERGY",
+  pulse_spacing_mm: "PULSE_SPACING (mm)",
+  line_spacing_index: "LINE_SPACING_INDEX",
 };
 
 const INDEX_ORDER: IndexRow[] = [
-  "surface_exposure_index",
+  "total_exposure_index",
+  "ablation_aggression_index",
+  "delivery_smoothness_index",
   "pulse_intensity_index",
   "pulse_energy_index",
   "pulse_spacing_mm",

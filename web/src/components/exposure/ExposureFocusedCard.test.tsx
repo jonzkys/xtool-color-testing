@@ -40,7 +40,7 @@ describe("ExposureFocusedCard", () => {
     expect(screen.getByText(/hover/i)).toBeInTheDocument();
     // Active-state-only sections (recipe rows, hex readout) aren't rendered.
     expect(screen.queryByText("Hex")).toBeNull();
-    expect(screen.queryByText(/SURFACE EXPOSURE/i)).toBeNull();
+    expect(screen.queryByText(/TOTAL_EXPOSURE/i)).toBeNull();
   });
 
   it("active state shows hex, recipe section, indices section", () => {

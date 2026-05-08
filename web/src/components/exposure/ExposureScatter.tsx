@@ -49,7 +49,9 @@ const INDEX_PRETTY: Record<IndexRow, string> = {
   line_spacing_index: "LINE SPACING IDX",
   pulse_energy_index: "PULSE ENERGY IDX",
   pulse_intensity_index: "PULSE INTENSITY IDX",
-  surface_exposure_index: "SURFACE EXPOSURE IDX",
+  total_exposure_index: "TOTAL EXPOSURE IDX",
+  ablation_aggression_index: "ABLATION AGGRESSION IDX",
+  delivery_smoothness_index: "DELIVERY SMOOTHNESS IDX",
 };
 
 const CHANNEL_PRETTY: Record<ChannelCol, string> = {
@@ -134,9 +136,9 @@ export const ExposureScatter: React.FC<Props> = ({
 
   const isInDimRange = (row: ExposureRow): boolean => {
     if (!dimRange) return true;
-    // dimRange is always compared against surface_exposure_index —
+    // dimRange is always compared against total_exposure_index —
     // the brush is anchored to that axis regardless of xKey (per spec).
-    const v = row.indices.surface_exposure_index as number;
+    const v = row.indices.total_exposure_index as number;
     return v >= dimRange[0] && v <= dimRange[1];
   };
 

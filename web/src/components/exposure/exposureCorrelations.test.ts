@@ -34,16 +34,16 @@ function row(
 }
 
 describe("buildCorrelationMatrix", () => {
-  it("dimensions are 5 indices × 5 channels", () => {
+  it("dimensions are 7 indices × 5 channels", () => {
     const rows: ExposureRow[] = [row(10, 50, 0, 0), row(20, 40, 0, 0), row(30, 30, 0, 0)];
     const m = buildCorrelationMatrix(rows);
-    expect(INDEX_ROWS.length).toBe(5);
+    expect(INDEX_ROWS.length).toBe(7);
     expect(CHANNEL_COLS.length).toBe(5);
-    expect(m.length).toBe(5);
+    expect(m.length).toBe(7);
     expect(m[0].length).toBe(5);
   });
 
-  it("strong negative correlation surface_exposure × L* yields high |r|", () => {
+  it("strong negative correlation total_exposure × L* yields high |r|", () => {
     const rows: ExposureRow[] = [
       row(10, 80, 0, 0),
       row(30, 60, 0, 0),
@@ -51,9 +51,9 @@ describe("buildCorrelationMatrix", () => {
       row(100, 20, 0, 0),
     ];
     const m = buildCorrelationMatrix(rows);
-    const surfaceRow = INDEX_ROWS.indexOf("surface_exposure_index");
+    const totalRow = INDEX_ROWS.indexOf("total_exposure_index");
     const lCol = CHANNEL_COLS.indexOf("L");
-    const r = m[surfaceRow][lCol];
+    const r = m[totalRow][lCol];
     expect(Math.abs(r)).toBeGreaterThan(0.95);
     expect(r).toBeLessThan(0);
   });
@@ -70,9 +70,9 @@ describe("buildCorrelationMatrix", () => {
     const stale = { ...row(99, 99, 0, 0) };
     stale.indices = { ...stale.indices, formula_version: 0 };
     const m = buildCorrelationMatrix([a, b, c, stale]);
-    const surfaceRow = INDEX_ROWS.indexOf("surface_exposure_index");
+    const totalRow = INDEX_ROWS.indexOf("total_exposure_index");
     const lCol = CHANNEL_COLS.indexOf("L");
-    expect(Math.abs(m[surfaceRow][lCol])).toBeGreaterThan(0.99);
+    expect(Math.abs(m[totalRow][lCol])).toBeGreaterThan(0.99);
   });
 
   it("computes hue and chroma columns from a/b", () => {

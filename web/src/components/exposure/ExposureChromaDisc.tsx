@@ -13,7 +13,7 @@ interface Props {
   onClick?: (id: number) => void;
   /** Optional: dim out-of-range entries (Exposure brush). Mirrors
    *  ExposureScatter — comparison is always against
-   *  ``surface_exposure_index``. */
+   *  ``total_exposure_index``. */
   dimRange?: readonly [number, number] | null;
 }
 
@@ -51,7 +51,7 @@ export const ExposureChromaDisc: React.FC<Props> = ({
 
   const inDimRange = (row: ExposureRow): boolean => {
     if (!dimRange) return true;
-    const v = row.indices.surface_exposure_index as number;
+    const v = row.indices.total_exposure_index as number;
     return v >= dimRange[0] && v <= dimRange[1];
   };
 

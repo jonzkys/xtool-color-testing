@@ -37,7 +37,7 @@ describe("ExposureScatter", () => {
       <ExposureScatter
         rows={rows}
         mode="univariate"
-        xKey="surface_exposure_index"
+        xKey="total_exposure_index"
         yKey="L"
         xScale="log"
         yScale="linear"
@@ -55,7 +55,7 @@ describe("ExposureScatter", () => {
       <ExposureScatter
         rows={rows}
         mode="univariate"
-        xKey="surface_exposure_index"
+        xKey="total_exposure_index"
         yKey="L"
         xScale="log"
         yScale="linear"
@@ -73,7 +73,7 @@ describe("ExposureScatter", () => {
       <ExposureScatter
         rows={rows}
         mode="bivariate"
-        xKey="surface_exposure_index"
+        xKey="total_exposure_index"
         yKey="pulse_intensity_index"
         xScale="log"
         yScale="log"
@@ -92,7 +92,7 @@ describe("ExposureScatter", () => {
       <ExposureScatter
         rows={rows}
         mode="univariate"
-        xKey="surface_exposure_index"
+        xKey="total_exposure_index"
         yKey="L"
         xScale="log"
         yScale="linear"
@@ -113,7 +113,7 @@ describe("ExposureScatter", () => {
       <ExposureScatter
         rows={rows}
         mode="univariate"
-        xKey="surface_exposure_index"
+        xKey="total_exposure_index"
         yKey="L"
         xScale="log"
         yScale="linear"
@@ -138,7 +138,7 @@ describe("ExposureScatter — event propagation", () => {
         <ExposureScatter
           rows={singleRow}
           mode="univariate"
-          xKey="surface_exposure_index"
+          xKey="total_exposure_index"
           yKey="L"
           xScale="log"
           yScale="linear"

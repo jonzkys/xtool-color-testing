@@ -18,7 +18,9 @@ const ROW_LABELS: Record<IndexRow, string> = {
   line_spacing_index: "LSp",
   pulse_energy_index: "PEn",
   pulse_intensity_index: "PIn",
-  surface_exposure_index: "SEx",
+  total_exposure_index: "TEx",
+  ablation_aggression_index: "AAg",
+  delivery_smoothness_index: "DSm",
 };
 
 const COL_LABELS: Record<ChannelCol, string> = {

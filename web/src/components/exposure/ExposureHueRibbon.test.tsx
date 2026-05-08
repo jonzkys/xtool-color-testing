@@ -28,7 +28,7 @@ describe("ExposureHueRibbon", () => {
   it("renders one tile per row", () => {
     const rows = [row(1, "#aaa", 10), row(2, "#bbb", 20), row(3, "#ccc", 30)];
     const { container } = render(
-      <ExposureHueRibbon rows={rows} orderBy="surface_exposure_index" focusedId={null} />,
+      <ExposureHueRibbon rows={rows} orderBy="total_exposure_index" focusedId={null} />,
     );
     expect(container.querySelectorAll('[data-role="ribbon-tile"]').length).toBe(3);
   });
@@ -36,7 +36,7 @@ describe("ExposureHueRibbon", () => {
   it("orders tiles ascending by the orderBy index", () => {
     const rows = [row(3, "#ccc", 30), row(1, "#aaa", 10), row(2, "#bbb", 20)];
     const { container } = render(
-      <ExposureHueRibbon rows={rows} orderBy="surface_exposure_index" focusedId={null} />,
+      <ExposureHueRibbon rows={rows} orderBy="total_exposure_index" focusedId={null} />,
     );
     const tiles = Array.from(
       container.querySelectorAll<HTMLElement>('[data-role="ribbon-tile"]'),
@@ -48,7 +48,7 @@ describe("ExposureHueRibbon", () => {
   it("renders a focused mark above the focused tile", () => {
     const rows = [row(1, "#aaa", 10), row(2, "#bbb", 20)];
     const { container } = render(
-      <ExposureHueRibbon rows={rows} orderBy="surface_exposure_index" focusedId={2} />,
+      <ExposureHueRibbon rows={rows} orderBy="total_exposure_index" focusedId={2} />,
     );
     expect(container.querySelector('[data-role="focus-mark"]')).not.toBeNull();
   });

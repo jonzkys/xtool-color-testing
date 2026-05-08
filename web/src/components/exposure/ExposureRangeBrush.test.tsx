@@ -25,7 +25,7 @@ function row(id: number, hex: string, surface: number): ExposureRow {
 }
 
 describe("ExposureRangeBrush", () => {
-  it("renders one tile per row, ordered by surface_exposure_index", () => {
+  it("renders one tile per row, ordered by total_exposure_index", () => {
     const rows = [row(2, "#bbb", 100), row(1, "#aaa", 10), row(3, "#ccc", 1000)];
     const { container } = render(
       <ExposureRangeBrush rows={rows} range={null} onRangeChange={() => undefined} />,
