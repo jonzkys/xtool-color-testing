@@ -66,7 +66,7 @@ export const ExposureHueRibbon: React.FC<Props> = ({
               }}
               onMouseEnter={() => onHover?.(row.id)}
               onMouseLeave={() => onLeave?.()}
-              onClick={() => onClick?.(row.id)}
+              onClick={(e) => { e.stopPropagation(); onClick?.(row.id); }}
               title={`${row.hex} · ${orderBy}=${(row.indices[orderBy] as number).toPrecision(3)}`}
             >
               {isFocused && (

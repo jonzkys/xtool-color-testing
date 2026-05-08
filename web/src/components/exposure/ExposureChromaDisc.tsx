@@ -102,7 +102,7 @@ export const ExposureChromaDisc: React.FC<Props> = ({
             opacity={visible ? 1 : 0.18}
             onMouseEnter={() => onHover?.(row.id)}
             onMouseLeave={() => onLeave?.()}
-            onClick={() => onClick?.(row.id)}
+            onClick={(e) => { e.stopPropagation(); onClick?.(row.id); }}
             style={{ cursor: onClick ? "pointer" : undefined }}
           />
         );

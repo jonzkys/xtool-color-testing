@@ -297,7 +297,7 @@ export const ExposureScatter: React.FC<Props> = ({
                 strokeWidth={isFocused ? 1 : 0.6}
                 onMouseEnter={() => onHover(row.id)}
                 onMouseLeave={() => onLeave()}
-                onClick={() => onClick(row.id)}
+                onClick={(e) => { e.stopPropagation(); onClick(row.id); }}
                 style={{ cursor: "pointer" }}
               />
             </g>

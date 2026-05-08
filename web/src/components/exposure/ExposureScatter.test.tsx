@@ -123,3 +123,32 @@ describe("ExposureScatter", () => {
     expect(container.querySelector('[data-role="focus-halo"]')).not.toBeNull();
   });
 });
+
+describe("ExposureScatter — event propagation", () => {
+  it("dot click does not bubble to a parent click handler", () => {
+    const parentClick = vi.fn();
+    const dotClick = vi.fn();
+    const singleRow = [row(1, "#aaa", 100, 50)];
+
+    const { container } = render(
+      <div onClick={parentClick}>
+        <ExposureScatter
+          rows={singleRow}
+          mode="univariate"
+          xKey="surface_exposure_index"
+          yKey="L"
+          xScale="log"
+          yScale="linear"
+          focusedId={null}
+          onHover={() => undefined}
+          onLeave={() => undefined}
+          onClick={dotClick}
+        />
+      </div>,
+    );
+    const dot = container.querySelector<SVGElement>('[data-role="scatter-dot"]')!;
+    fireEvent.click(dot);
+    expect(dotClick).toHaveBeenCalledTimes(1);
+    expect(parentClick).not.toHaveBeenCalled();
+  });
+});
