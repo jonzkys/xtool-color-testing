@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { listMaterials } from "../api/library";
 import { listPaletteEntries } from "../api/palette";
@@ -21,7 +22,7 @@ import {
   type IndexRow,
 } from "../components/exposure/exposureCorrelations";
 import { pearson, spearman, logLinearRegression } from "../components/exposure/exposureMath";
-import { EmptyState, Button } from "../ui";
+import { EmptyState, Button, MetalBar } from "../ui";
 
 // ── types ──────────────────────────────────────────────────────────────────
 
@@ -224,210 +225,181 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
 
   // ── render ─────────────────────────────────────────────────────────────
 
+  const currentMaterialName = materials.find((m) => m.id === materialId)?.name;
+
   return (
-    <div className="flex flex-col h-full min-h-0 bg-[color:var(--color-surface)]">
+    <div className="flex flex-col h-full min-h-0 bg-[color:var(--color-bg)]">
 
       {/* ── TOP BAR ───────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-4 px-6 py-3 border-b border-[color:var(--color-border)] shrink-0">
-        <span className="font-mono text-xs uppercase tracking-[0.2em] text-[color:var(--color-ink-subtle)]">
-          Exposure Indices
-        </span>
-        <span className="text-[color:var(--color-ink-subtle)] opacity-40">·</span>
-        <span className="font-mono text-[11px] text-[color:var(--color-ink-muted)]">
-          N={rows.length}
-        </span>
-        <div className="flex-1" />
-        {/* Version badge */}
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] opacity-60">
-          v1
-        </span>
-      </div>
+      <header className="shrink-0 px-4 py-2 bg-[color:var(--color-surface)] flex items-baseline justify-between gap-4 flex-wrap">
+        <h1 className="text-[14px] font-semibold text-[color:var(--color-ink)] whitespace-nowrap">
+          How does the burn relate to laser dose?
+        </h1>
+        <div className="font-mono text-[10.5px] tabular-nums tracking-[0.06em] text-[color:var(--color-ink-muted)] flex items-baseline gap-2">
+          {currentMaterialName && (
+            <>
+              <span>{currentMaterialName}</span>
+              <span className="text-[color:var(--color-ink-subtle)]">·</span>
+            </>
+          )}
+          <span>n = {rows.length}</span>
+          <span className="text-[color:var(--color-ink-subtle)]">·</span>
+          <span className="text-[color:var(--color-ink-subtle)] uppercase tracking-[0.18em]">v1</span>
+        </div>
+      </header>
+      <MetalBar />
 
       {/* ── BODY ──────────────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
 
         {/* ── LEFT RAIL ───────────────────────────────────────────────── */}
-        <aside className="w-52 shrink-0 flex flex-col gap-4 px-4 py-4 border-r border-[color:var(--color-border)] overflow-y-auto">
+        <aside className="w-56 shrink-0 flex flex-col gap-5 px-4 py-5 border-r border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-y-auto">
 
           {/* Material picker */}
-          <section>
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] mb-2">
-              Material
-            </div>
-            <div className="flex flex-col gap-1">
+          <RailSection title="Material">
+            <div className="flex flex-col gap-0.5">
               {materials.map((m) => (
-                <button
+                <RailPickerButton
                   key={m.id}
+                  active={m.id === materialId}
                   onClick={() => setMaterialId(m.id)}
-                  className={[
-                    "text-left px-2 py-1.5 rounded text-xs font-mono truncate transition-colors",
-                    m.id === materialId
-                      ? "bg-[color:var(--color-accent)] text-[color:var(--color-accent-fg)]"
-                      : "text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)]",
-                  ].join(" ")}
                 >
                   {m.name}
-                </button>
+                </RailPickerButton>
               ))}
             </div>
-          </section>
+          </RailSection>
 
           {/* Source filters */}
-          <section>
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] mb-2">
-              Sources
-            </div>
-            {(["averaged", "single_result", "manual"] as const).map((src) => (
-              <label key={src} className="flex items-center gap-2 py-1 cursor-pointer">
-                <input
-                  type="checkbox"
+          <RailSection title="Sources">
+            <div className="flex flex-col gap-0.5">
+              {(["averaged", "single_result", "manual"] as const).map((src) => (
+                <RailCheckbox
+                  key={src}
                   checked={sourceFilter.has(src)}
-                  onChange={(e) => {
+                  onChange={(checked) => {
                     setSourceFilter((prev) => {
                       const next = new Set(prev);
-                      if (e.target.checked) next.add(src);
+                      if (checked) next.add(src);
                       else next.delete(src);
                       return next;
                     });
                   }}
-                  className="accent-[color:var(--color-accent)]"
-                />
-                <span className="font-mono text-[11px] text-[color:var(--color-ink-muted)]">
+                >
                   {src}
-                </span>
-              </label>
-            ))}
-            <label className="flex items-center gap-2 py-1 mt-1 cursor-pointer">
-              <input
-                type="checkbox"
+                </RailCheckbox>
+              ))}
+              <RailCheckbox
                 checked={validatedOnly}
-                onChange={(e) => setValidatedOnly(e.target.checked)}
-                className="accent-[color:var(--color-accent)]"
-              />
-              <span className="font-mono text-[11px] text-[color:var(--color-ink-muted)]">
+                onChange={setValidatedOnly}
+              >
                 validated only
-              </span>
-            </label>
-          </section>
+              </RailCheckbox>
+            </div>
+          </RailSection>
 
           {/* X-axis picker */}
-          <section>
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] mb-2">
-              X Axis
-            </div>
+          <RailSection title="X axis">
             <div className="flex flex-col gap-0.5">
               {INDEX_ROWS.map((k) => (
-                <button
+                <RailPickerButton
                   key={k}
+                  active={k === xKey}
                   onClick={() => setXKey(k)}
-                  className={[
-                    "text-left px-2 py-1 rounded text-[11px] font-mono truncate transition-colors",
-                    k === xKey
-                      ? "bg-[color:var(--color-accent)] text-[color:var(--color-accent-fg)]"
-                      : "text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)]",
-                  ].join(" ")}
+                  small
                 >
                   {INDEX_LABELS[k]}
-                </button>
+                </RailPickerButton>
               ))}
             </div>
-            <label className="flex items-center gap-2 py-1 mt-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={xScale === "log"}
-                onChange={(e) => setXScale(e.target.checked ? "log" : "linear")}
-                className="accent-[color:var(--color-accent)]"
-              />
-              <span className="font-mono text-[11px] text-[color:var(--color-ink-muted)]">
-                log scale
-              </span>
-            </label>
-          </section>
+            <RailCheckbox
+              checked={xScale === "log"}
+              onChange={(checked) => setXScale(checked ? "log" : "linear")}
+              className="mt-2"
+            >
+              log scale
+            </RailCheckbox>
+          </RailSection>
 
           {/* Y-axis picker */}
-          <section>
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] mb-2">
-              Y Axis
+          <RailSection title="Y axis">
+            <div className="flex flex-col gap-0.5">
+              {mode === "univariate"
+                ? CHANNEL_COLS.map((k) => (
+                    <RailPickerButton
+                      key={k}
+                      active={k === yKeyUni}
+                      onClick={() => setYKeyUni(k)}
+                      small
+                    >
+                      {CHANNEL_LABELS[k]}
+                    </RailPickerButton>
+                  ))
+                : INDEX_ROWS.map((k) => (
+                    <RailPickerButton
+                      key={k}
+                      active={k === yKeyBi}
+                      onClick={() => setYKeyBi(k)}
+                      small
+                    >
+                      {INDEX_LABELS[k]}
+                    </RailPickerButton>
+                  ))}
             </div>
-            {mode === "univariate" ? (
-              <div className="flex flex-col gap-0.5">
-                {CHANNEL_COLS.map((k) => (
-                  <button
-                    key={k}
-                    onClick={() => setYKeyUni(k)}
-                    className={[
-                      "text-left px-2 py-1 rounded text-[11px] font-mono truncate transition-colors",
-                      k === yKeyUni
-                        ? "bg-[color:var(--color-accent)] text-[color:var(--color-accent-fg)]"
-                        : "text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)]",
-                    ].join(" ")}
-                  >
-                    {CHANNEL_LABELS[k]}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col gap-0.5">
-                {INDEX_ROWS.map((k) => (
-                  <button
-                    key={k}
-                    onClick={() => setYKeyBi(k)}
-                    className={[
-                      "text-left px-2 py-1 rounded text-[11px] font-mono truncate transition-colors",
-                      k === yKeyBi
-                        ? "bg-[color:var(--color-accent)] text-[color:var(--color-accent-fg)]"
-                        : "text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)]",
-                    ].join(" ")}
-                  >
-                    {INDEX_LABELS[k]}
-                  </button>
-                ))}
-              </div>
-            )}
-            <label className="flex items-center gap-2 py-1 mt-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={yScale === "log"}
-                onChange={(e) => setYScale(e.target.checked ? "log" : "linear")}
-                className="accent-[color:var(--color-accent)]"
-              />
-              <span className="font-mono text-[11px] text-[color:var(--color-ink-muted)]">
-                log scale
-              </span>
-            </label>
-          </section>
+            <RailCheckbox
+              checked={yScale === "log"}
+              onChange={(checked) => setYScale(checked ? "log" : "linear")}
+              className="mt-2"
+            >
+              log scale
+            </RailCheckbox>
+          </RailSection>
         </aside>
 
         {/* ── MAIN COLUMN ───────────────────────────────────────────────── */}
-        <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <main className="flex-1 min-w-0 flex flex-col overflow-hidden bg-[color:var(--color-bg)]">
 
           {/* Mode toggle */}
-          <div className="flex items-center gap-2 px-4 pt-3 pb-2 border-b border-[color:var(--color-border)] shrink-0">
-            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] mr-1">
+          <div className="flex items-center gap-2 px-5 pt-3 pb-2.5 border-b border-[color:var(--color-border)] shrink-0 bg-[color:var(--color-surface)]">
+            <span className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold mr-2">
               Mode
             </span>
-            {(["univariate", "bivariate"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={[
-                  "px-3 py-1 rounded text-[11px] font-mono uppercase tracking-[0.14em] transition-colors",
-                  m === mode
-                    ? "bg-[color:var(--color-accent)] text-[color:var(--color-accent-fg)]"
-                    : "text-[color:var(--color-ink-muted)] border border-[color:var(--color-border)] hover:bg-[color:var(--color-surface-elevated)]",
-                ].join(" ")}
-              >
-                {m}
-              </button>
-            ))}
+            <div
+              className="inline-flex border border-[color:var(--color-border)] rounded-[5px] overflow-hidden"
+              role="tablist"
+              aria-label="scatter mode"
+            >
+              {(["univariate", "bivariate"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  role="tab"
+                  aria-selected={m === mode}
+                  onClick={() => setMode(m)}
+                  className={[
+                    "px-3.5 py-1.5 text-[11px] font-mono uppercase tracking-[0.18em] transition-colors",
+                    m === mode
+                      ? "bg-[color:var(--color-primary)] text-white"
+                      : "bg-[color:var(--color-surface)] text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)] hover:text-[color:var(--color-ink)]",
+                  ].join(" ")}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+            {mode === "bivariate" && (
+              <span className="font-mono text-[10px] italic text-[color:var(--color-ink-subtle)] ml-2">
+                index × index — colour coordinates only
+              </span>
+            )}
           </div>
 
           {/* Body: scatter + lower panels */}
           <div className="flex-1 min-h-0 overflow-y-auto">
             {rowsLoading ? (
-              <div className="flex items-center justify-center h-48">
-                <span className="font-mono text-xs text-[color:var(--color-ink-subtle)] animate-pulse">
-                  Loading…
+              <div className="flex items-center justify-center h-64">
+                <span className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] animate-pulse">
+                  Loading entries…
                 </span>
               </div>
             ) : rowsError ? (
@@ -463,42 +435,42 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               />
             ) : rows.length === 0 ? (
               <EmptyState
-                title="No entries"
+                title={materialId === null ? "Pick a material" : "No exposure data yet"}
                 description={
                   materialId === null
-                    ? "Select a material to explore its exposure indices."
-                    : "This material has no palette entries with computed exposure indices."
+                    ? "Choose a material from the rail to explore how its palette colours map to laser dose."
+                    : "This material has no palette entries with computed exposure indices. Burn a few cells, save them, then return."
                 }
               />
             ) : (
               <div className="flex flex-col gap-0">
 
-                {/* Scatter */}
+                {/* Scatter — hero */}
                 <div
-                  className="px-4 pt-4 pb-2"
+                  className="px-5 pt-5 pb-3"
                   onClick={handleBackgroundClear}
                 >
-                  <ExposureScatter
-                    rows={rows}
-                    mode={mode}
-                    xKey={xKey}
-                    yKey={yKey}
-                    xScale={xScale}
-                    yScale={yScale}
-                    focusedId={focusedId}
-                    onHover={handleHover}
-                    onLeave={handleLeave}
-                    onClick={handleClick}
-                    dimRange={brushRange}
-                  />
+                  <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-[var(--shadow-card)] p-4">
+                    <ExposureScatter
+                      rows={rows}
+                      mode={mode}
+                      xKey={xKey}
+                      yKey={yKey}
+                      xScale={xScale}
+                      yScale={yScale}
+                      focusedId={focusedId}
+                      onHover={handleHover}
+                      onLeave={handleLeave}
+                      onClick={handleClick}
+                      dimRange={brushRange}
+                    />
+                  </div>
                 </div>
 
                 {/* Hue ribbon + correlation matrix row */}
-                <div className="flex gap-4 px-4 pb-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] mb-1.5">
-                      Hue Ribbon
-                    </div>
+                <div className="flex gap-4 px-5 pb-3">
+                  <div className="flex-1 min-w-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
+                    <PanelLabel title="Hue ribbon" subtitle={`ordered by ${xKey}`} />
                     <ExposureHueRibbon
                       rows={rows}
                       orderBy={xKey}
@@ -506,12 +478,11 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                       onHover={handleHover}
                       onLeave={handleLeave}
                       onClick={handleClick}
+                      dimRange={brushRange}
                     />
                   </div>
-                  <div className="shrink-0">
-                    <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] mb-1.5">
-                      Correlation Matrix
-                    </div>
+                  <div className="shrink-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
+                    <PanelLabel title="Correlations" subtitle="|r| heatmap" />
                     <ExposureCorrelationMatrix
                       matrix={correlationMatrix}
                       selectedIndex={xKey}
@@ -525,15 +496,15 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                 </div>
 
                 {/* Exposure range brush */}
-                <div className="px-4 pb-4">
-                  <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] mb-1.5">
-                    Exposure Range
+                <div className="px-5 pb-5">
+                  <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
+                    <PanelLabel title="Exposure range" subtitle="surface_exposure_index, log scale" />
+                    <ExposureRangeBrush
+                      rows={rows}
+                      range={brushRange}
+                      onRangeChange={setBrushRange}
+                    />
                   </div>
-                  <ExposureRangeBrush
-                    rows={rows}
-                    range={brushRange}
-                    onRangeChange={setBrushRange}
-                  />
                 </div>
               </div>
             )}
@@ -541,67 +512,62 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
         </main>
 
         {/* ── RIGHT RAIL ────────────────────────────────────────────────── */}
-        <aside className="w-52 shrink-0 flex flex-col gap-4 px-4 py-4 border-l border-[color:var(--color-border)] overflow-y-auto">
+        <aside className="w-60 shrink-0 flex flex-col gap-4 px-4 py-5 border-l border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-y-auto">
 
-          {/* Stats hero */}
+          {/* Stats hero — Pearson r is the anchor */}
           <section>
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] mb-3">
-              Stats
+            <RailHeading>Stats</RailHeading>
+            <MetalBar variant="soft" className="mb-3" />
+
+            {/* Hero r = */}
+            <div className="flex flex-col gap-0.5 mb-3">
+              <span className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold">
+                Pearson r
+              </span>
+              <span
+                className="font-mono text-[28px] leading-none tabular-nums text-[color:var(--color-primary)] font-semibold"
+                title="Linear correlation between X and Y, computed on log-X if log scale is on"
+              >
+                {fmtR(stats.pearsonR)}
+              </span>
             </div>
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-col gap-0.5">
-                <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)]">
-                  Pearson r
-                </span>
-                <span className="font-mono text-lg tabular-nums text-[color:var(--color-ink)] font-semibold">
-                  {fmtR(stats.pearsonR)}
-                </span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)]">
-                  Spearman ρ
-                </span>
-                <span className="font-mono text-lg tabular-nums text-[color:var(--color-ink)] font-semibold">
-                  {fmtR(stats.spearmanRho)}
-                </span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)]">
-                  R² (log-linear)
-                </span>
-                <span className="font-mono text-lg tabular-nums text-[color:var(--color-ink)] font-semibold">
-                  {fmtR2(stats.fit.r2)}
-                </span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)]">
-                  Slope
-                </span>
-                <span className="font-mono text-sm tabular-nums text-[color:var(--color-ink-muted)]">
-                  {Number.isFinite(stats.fit.slope) ? stats.fit.slope.toFixed(3) : "—"}
-                </span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)]">
-                  n
-                </span>
-                <span className="font-mono text-sm tabular-nums text-[color:var(--color-ink-muted)]">
-                  {stats.fit.n}
-                </span>
-              </div>
-              {mode === "bivariate" && (
-                <p className="font-mono text-[10px] italic text-[color:var(--color-ink-subtle)] leading-relaxed mt-2">
-                  No Y outcome — values are colour-cluster coordinates only.
-                </p>
-              )}
+
+            {/* Sub-stats — denser stack */}
+            <div className="grid grid-cols-2 gap-y-2 gap-x-3 font-mono">
+              <SubStat label="Spearman ρ" value={fmtR(stats.spearmanRho)} />
+              <SubStat label="R² (log·lin)" value={fmtR2(stats.fit.r2)} />
+              <SubStat
+                label="Slope"
+                value={Number.isFinite(stats.fit.slope) ? stats.fit.slope.toFixed(3) : "—"}
+              />
+              <SubStat label="n" value={String(stats.fit.n)} />
             </div>
+
+            {mode === "bivariate" && (
+              <p className="font-mono text-[10px] italic text-[color:var(--color-ink-subtle)] leading-relaxed mt-3">
+                No Y outcome — bivariate r is between two indices, not a fit quality.
+              </p>
+            )}
           </section>
 
           {/* Focused entry card */}
           <section>
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] mb-3">
-              {pinnedFocusId != null ? "Pinned" : "Focused"}
+            <div className="flex items-center justify-between mb-1.5">
+              <RailHeading>
+                {pinnedFocusId != null ? "Pinned" : "Focused"}
+              </RailHeading>
+              {focusedId != null && (
+                <button
+                  type="button"
+                  onClick={handleBackgroundClear}
+                  className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-ink-muted)] transition-colors"
+                  title={pinnedFocusId != null ? "Unpin" : "Clear hover"}
+                >
+                  clear
+                </button>
+              )}
             </div>
+            <MetalBar variant="soft" className="mb-3" />
             <ExposureFocusedCard
               rows={rows}
               focusedId={focusedId}
@@ -609,12 +575,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               onDiscHover={handleHover}
               onDiscLeave={handleLeave}
               onDiscClick={handleClick}
+              dimRange={brushRange}
             />
-            {focusedId == null && (
-              <p className="font-mono text-[11px] text-[color:var(--color-ink-subtle)] leading-relaxed mt-1">
-                Hover or click a point to inspect.
-              </p>
-            )}
           </section>
 
           {/* Clear brush shortcut */}
@@ -622,7 +584,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
             <section>
               <button
                 onClick={() => setBrushRange(null)}
-                className="w-full text-left px-2 py-1.5 rounded border border-[color:var(--color-border)] font-mono text-[11px] text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)] transition-colors"
+                className="w-full text-center px-2 py-1.5 rounded-[5px] border border-[color:var(--color-border)] font-mono text-[10px] uppercase tracking-[0.2em] text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)] hover:text-[color:var(--color-ink)] transition-colors"
               >
                 Clear range filter
               </button>
@@ -630,6 +592,123 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
           )}
         </aside>
       </div>
+    </div>
+  );
+}
+
+/* ── Right-rail primitives ──────────────────────────────────────────────── */
+
+function RailHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold mb-1.5">
+      {children}
+    </div>
+  );
+}
+
+function SubStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[9px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)]">
+        {label}
+      </span>
+      <span className="text-[13px] tabular-nums text-[color:var(--color-ink)]">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+/* ── Left-rail primitives ───────────────────────────────────────────────── */
+
+function RailSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <div className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold mb-1.5">
+        {title}
+      </div>
+      <MetalBar variant="soft" className="mb-2" />
+      {children}
+    </section>
+  );
+}
+
+function RailPickerButton({
+  active,
+  onClick,
+  children,
+  small = false,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  small?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={[
+        "text-left rounded-[4px] font-mono truncate transition-colors",
+        small ? "px-2 py-1 text-[11px]" : "px-2 py-1.5 text-[11.5px]",
+        active
+          ? "bg-[color:var(--color-primary-tint)] text-[color:var(--color-primary)] font-semibold"
+          : "text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)] hover:text-[color:var(--color-ink)]",
+      ].join(" ")}
+    >
+      {children}
+    </button>
+  );
+}
+
+function RailCheckbox({
+  checked,
+  onChange,
+  children,
+  className = "",
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <label
+      className={`flex items-center gap-2 py-1 cursor-pointer select-none ${className}`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-3.5 w-3.5 cursor-pointer accent-[color:var(--color-primary)]"
+      />
+      <span className="font-mono text-[11px] text-[color:var(--color-ink-muted)]">
+        {children}
+      </span>
+    </label>
+  );
+}
+
+/* ── Main-column panel label ───────────────────────────────────────────── */
+
+function PanelLabel({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="flex items-baseline gap-2 mb-2.5">
+      <span className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold">
+        {title}
+      </span>
+      {subtitle && (
+        <span className="font-mono text-[10px] text-[color:var(--color-ink-subtle)] truncate">
+          {subtitle}
+        </span>
+      )}
     </div>
   );
 }

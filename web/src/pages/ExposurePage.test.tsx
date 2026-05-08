@@ -48,7 +48,11 @@ beforeEach(() => {
 describe("ExposurePage", () => {
   it("mounts and lists materials", async () => {
     render(<ExposurePage materialId={null} />);
-    await waitFor(() => expect(screen.getByText(/Stainless Steel/i)).toBeInTheDocument());
+    // Material name appears in both the rail (picker) and the header
+    // (current-material breadcrumb), so allow either.
+    await waitFor(() =>
+      expect(screen.getAllByText(/Stainless Steel/i).length).toBeGreaterThan(0),
+    );
   });
 
   it("loads palette entries for the selected material", async () => {
