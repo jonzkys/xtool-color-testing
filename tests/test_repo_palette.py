@@ -688,3 +688,120 @@ def test_processing_params_from_palette_dict_canonical_beats_legacy_on_collision
     p = _processing_params_from_palette_dict(raw)
     assert p.mopa_frequency == 80
     assert p.repeat == 4
+
+
+def test_insert_bulk_populates_indices(fresh_db) -> None:
+    """A new palette entry inserted via insert_bulk has all six index
+    values populated and metadata stamped at the current formula
+    version."""
+    from xcs_gen.laser_indices import INDICES_FORMULA_VERSION
+    from xcs_gen_web.repositories.palette import insert_bulk, get_by_id
+
+    mid = _seed_material()
+    entry = {
+        "test_id": None,
+        "material_id": mid,
+        "x_value": 0.5,
+        "y_value": None,
+        "hex": "#abcdef",
+        "params": {
+            "speed": 1000,
+            "power": 50.0,
+            "density": 100,
+            "frequency": 65,
+            "passes": 1,
+            "pulse_width": 200,
+        },
+        "sigma": 0.1,
+        "source": "averaged",
+        "source_result_id": None,
+        "machine_id": "F2Ultra",
+    }
+    [eid] = insert_bulk([entry])
+    out = get_by_id(eid)
+    assert out is not None
+    assert "indices" in out
+    idx = out["indices"]
+    assert idx["pulse_spacing_mm"] == pytest.approx(1000 / (65 * 1000))
+    assert idx["line_spacing_index"] == pytest.approx(1 / 100)
+    assert idx["line_spacing_mm"] is None
+    assert idx["pulse_energy_index"] == pytest.approx(50 / 65)
+    assert idx["pulse_intensity_index"] == pytest.approx(50 / (65 * 200))
+    assert idx["surface_exposure_index"] == pytest.approx(50 * 100 * 1 / 1000)
+    assert idx["formula_version"] == INDICES_FORMULA_VERSION
+    assert idx["density_model"] == "opaque"
+    assert idx["power_model"] == "controller_percent"
+
+
+def test_create_manual_populates_indices(fresh_db) -> None:
+    from xcs_gen.laser_indices import INDICES_FORMULA_VERSION
+    from xcs_gen_web.repositories.palette import create_manual
+
+    mid = _seed_material()
+    out = create_manual(
+        material_id=mid,
+        hex_="#112233",
+        params={
+            "speed": 800, "power": 40.0, "density": 200,
+            "frequency": 60, "passes": 2, "pulse_width": 100,
+        },
+        notes="manual",
+    )
+    idx = out["indices"]
+    assert idx["surface_exposure_index"] == pytest.approx(40 * 200 * 2 / 800)
+    assert idx["formula_version"] == INDICES_FORMULA_VERSION
+
+
+def test_list_all_includes_indices(fresh_db) -> None:
+    from xcs_gen_web.repositories.palette import insert_bulk, list_all
+
+    mid = _seed_material()
+    insert_bulk([{
+        "test_id": None,
+        "material_id": mid,
+        "x_value": 1.0, "y_value": None,
+        "hex": "#aabbcc",
+        "params": {
+            "speed": 600, "power": 70.0, "density": 150,
+            "frequency": 80, "passes": 1, "pulse_width": 60,
+        },
+        "sigma": 0.0,
+        "source": "averaged",
+        "source_result_id": None,
+        "machine_id": "F2Ultra",
+    }])
+    rows = list_all()
+    assert rows
+    for r in rows:
+        assert "indices" in r
+        assert r["indices"]["formula_version"] >= 1
+
+
+def test_update_entry_refreshes_indices_when_params_change(fresh_db) -> None:
+    from xcs_gen_web.repositories.palette import (
+        create_manual, update_entry, get_by_id,
+    )
+
+    mid = _seed_material()
+    out = create_manual(
+        material_id=mid,
+        hex_="#445566",
+        params={
+            "speed": 1000, "power": 50, "density": 100,
+            "frequency": 65, "passes": 1, "pulse_width": 200,
+        },
+        notes="",
+    )
+    eid = out["id"]
+    original_exposure = out["indices"]["surface_exposure_index"]
+
+    update_entry(eid, params={
+        "speed": 1000, "power": 100, "density": 100,
+        "frequency": 65, "passes": 1, "pulse_width": 200,
+    })
+
+    refreshed = get_by_id(eid)
+    assert refreshed is not None
+    assert refreshed["indices"]["surface_exposure_index"] == pytest.approx(
+        original_exposure * 2,
+    )

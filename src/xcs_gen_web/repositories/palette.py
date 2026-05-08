@@ -15,6 +15,7 @@ from typing import Any, Iterable
 
 from sqlalchemy import and_, or_ as sa_or, select
 
+from xcs_gen.laser_indices import compute_indices
 from xcs_gen.model import ProcessingParams
 
 from ..config import DEFAULT_VISIBILITY, STANDALONE_USER_ID
@@ -111,6 +112,17 @@ def _row_to_entry(r, *, original_validated: bool = False) -> dict[str, Any]:
         # the user has already burned once. Computed by ``list_all``;
         # other callers default to False.
         "original_validated": original_validated,
+        "indices": {
+            "pulse_spacing_mm": r.pulse_spacing_mm,
+            "line_spacing_index": r.line_spacing_index,
+            "line_spacing_mm": r.line_spacing_mm,
+            "pulse_energy_index": r.pulse_energy_index,
+            "pulse_intensity_index": r.pulse_intensity_index,
+            "surface_exposure_index": r.surface_exposure_index,
+            "formula_version": r.indices_formula_version,
+            "density_model": r.density_model,
+            "power_model": r.power_model,
+        },
     }
 
 
@@ -119,6 +131,8 @@ def _build_row(
 ) -> dict[str, Any]:
     """Build a DB row dict from an entry dict. Used by insert_bulk and replace_for_test."""
     L, a, b = hex_to_lab(e["hex"])
+    params_dict = e.get("params", {})
+    indices = compute_indices(_processing_params_from_palette_dict(params_dict))
     return {
         "test_id": e["test_id"],
         "material_id": e["material_id"],
@@ -126,7 +140,7 @@ def _build_row(
         "y_value": e.get("y_value"),
         "hex": e["hex"],
         "lab_l": L, "lab_a": a, "lab_b": b,
-        "params_json": json.dumps(e.get("params", {}), separators=(",", ":")),
+        "params_json": json.dumps(params_dict, separators=(",", ":")),
         "sigma": e["sigma"],
         "source": e["source"],
         "source_result_id": e.get("source_result_id"),
@@ -135,12 +149,32 @@ def _build_row(
         "owner_id": owner_id,
         "visibility": e.get("visibility", visibility),
         "machine_id": e.get("machine_id", "F2Ultra"),
+        "pulse_spacing_mm": indices.pulse_spacing_mm,
+        "line_spacing_index": indices.line_spacing_index,
+        "line_spacing_mm": indices.line_spacing_mm,
+        "pulse_energy_index": indices.pulse_energy_index,
+        "pulse_intensity_index": indices.pulse_intensity_index,
+        "surface_exposure_index": indices.surface_exposure_index,
+        "indices_formula_version": indices.formula_version,
+        "density_model": indices.density_model,
+        "power_model": indices.power_model,
     }
 
 
 # Capture-derived columns refreshed on re-ingest; user-curated columns
 # (notes, favorited, created_at) are preserved.
-_REFRESH_COLUMNS = ("hex", "lab_l", "lab_a", "lab_b", "sigma", "params_json")
+_REFRESH_COLUMNS = (
+    "hex", "lab_l", "lab_a", "lab_b", "sigma", "params_json",
+    "pulse_spacing_mm",
+    "line_spacing_index",
+    "line_spacing_mm",
+    "pulse_energy_index",
+    "pulse_intensity_index",
+    "surface_exposure_index",
+    "indices_formula_version",
+    "density_model",
+    "power_model",
+)
 
 
 def _find_existing_id(s, row: dict[str, Any]) -> int | None:
@@ -581,6 +615,16 @@ def update_entry(
             values["material_id"] = material_id
         if params is not None:
             values["params_json"] = json.dumps(params, separators=(",", ":"))
+            indices = compute_indices(_processing_params_from_palette_dict(params))
+            values["pulse_spacing_mm"] = indices.pulse_spacing_mm
+            values["line_spacing_index"] = indices.line_spacing_index
+            values["line_spacing_mm"] = indices.line_spacing_mm
+            values["pulse_energy_index"] = indices.pulse_energy_index
+            values["pulse_intensity_index"] = indices.pulse_intensity_index
+            values["surface_exposure_index"] = indices.surface_exposure_index
+            values["indices_formula_version"] = indices.formula_version
+            values["density_model"] = indices.density_model
+            values["power_model"] = indices.power_model
         if notes is not None:
             values["notes"] = notes
         if values:
