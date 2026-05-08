@@ -929,6 +929,58 @@ def create_validated_entry(
     return _row_to_entry(out)
 
 
+def recompute_indices(
+    *,
+    material_id: int | None = None,
+    force: bool = False,
+    owner_id: int | None = None,
+) -> int:
+    """Recompute and persist exposure indices on palette_entries rows.
+
+    By default only rows whose `indices_formula_version` doesn't match
+    `INDICES_FORMULA_VERSION` are rewritten. `force=True` rewrites
+    every row that matches the filter regardless of version. Returns
+    the number of rows updated.
+
+    Use after bumping `INDICES_FORMULA_VERSION` (formula change or
+    calibration source switch) to flush stale values across the
+    palette.
+    """
+    from xcs_gen.laser_indices import INDICES_FORMULA_VERSION
+
+    with session_scope() as s:
+        q = select(palette_entries)
+        if material_id is not None:
+            q = q.where(palette_entries.c.material_id == material_id)
+        if owner_id is not None:
+            q = q.where(palette_entries.c.owner_id == owner_id)
+        if not force:
+            q = q.where(
+                palette_entries.c.indices_formula_version
+                != INDICES_FORMULA_VERSION,
+            )
+        rows = s.execute(q).all()
+
+        updated = 0
+        for r in rows:
+            try:
+                params_dict = json.loads(r.params_json) if r.params_json else {}
+                values = _compute_index_values(params_dict)
+                s.execute(
+                    palette_entries.update()
+                    .where(palette_entries.c.id == r.id)
+                    .values(**values)
+                )
+                updated += 1
+            except (ValueError, json.JSONDecodeError):
+                s.execute(
+                    palette_entries.update()
+                    .where(palette_entries.c.id == r.id)
+                    .values(indices_formula_version=0)
+                )
+        return updated
+
+
 def invalidate_entry(
     eid: int,
     *,

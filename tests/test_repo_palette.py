@@ -805,3 +805,107 @@ def test_update_entry_refreshes_indices_when_params_change(fresh_db) -> None:
     assert refreshed["indices"]["surface_exposure_index"] == pytest.approx(
         original_exposure * 2,
     )
+
+
+# ───── palette_db fixture ─────────────────────────────────────────────
+
+@pytest.fixture()
+def palette_db(fresh_db):
+    """Thin fixture over fresh_db that pre-seeds a material and returns
+    a dict with ``material_id`` so recompute tests don't repeat the
+    boilerplate."""
+    mid = _seed_material("recompute_mat")
+    return {"db_url": fresh_db, "material_id": mid}
+
+
+# ───── recompute_indices ──────────────────────────────────────────────
+
+
+def test_recompute_indices_updates_stale_rows(palette_db) -> None:
+    """recompute_indices walks rows whose indices_formula_version
+    doesn't match the current version and rewrites them."""
+    from sqlalchemy import select, update
+
+    from xcs_gen.laser_indices import INDICES_FORMULA_VERSION
+    from xcs_gen_web.db import session_scope
+    from xcs_gen_web.models import palette_entries
+    from xcs_gen_web.repositories.palette import (
+        insert_bulk, recompute_indices,
+    )
+
+    [eid] = insert_bulk([{
+        "test_id": None,
+        "material_id": palette_db["material_id"],
+        "x_value": 0.0, "y_value": None,
+        "hex": "#deadbe",
+        "params": {
+            "speed": 1000, "power": 50, "density": 100,
+            "frequency": 65, "passes": 1, "pulse_width": 200,
+        },
+        "sigma": 0.0,
+        "source": "averaged",
+        "source_result_id": None,
+        "machine_id": "F2Ultra",
+    }])
+
+    with session_scope() as s:
+        s.execute(
+            update(palette_entries)
+            .where(palette_entries.c.id == eid)
+            .values(
+                indices_formula_version=0,
+                surface_exposure_index=None,
+            )
+        )
+
+    n_updated = recompute_indices()
+    assert n_updated >= 1
+
+    with session_scope() as s:
+        row = s.execute(
+            select(palette_entries).where(palette_entries.c.id == eid),
+        ).one()
+    assert row.indices_formula_version == INDICES_FORMULA_VERSION
+    assert row.surface_exposure_index == pytest.approx(50 * 100 * 1 / 1000)
+
+
+def test_recompute_indices_skips_rows_already_at_current_version(
+    palette_db,
+) -> None:
+    from xcs_gen_web.repositories.palette import insert_bulk, recompute_indices
+
+    insert_bulk([{
+        "test_id": None,
+        "material_id": palette_db["material_id"],
+        "x_value": 0.5, "y_value": None,
+        "hex": "#cafe00",
+        "params": {
+            "speed": 1000, "power": 50, "density": 100,
+            "frequency": 65, "passes": 1, "pulse_width": 200,
+        },
+        "sigma": 0.0,
+        "source": "averaged",
+        "source_result_id": None,
+        "machine_id": "F2Ultra",
+    }])
+    assert recompute_indices() == 0
+
+
+def test_recompute_indices_force_updates_everything(palette_db) -> None:
+    from xcs_gen_web.repositories.palette import insert_bulk, recompute_indices
+
+    insert_bulk([{
+        "test_id": None,
+        "material_id": palette_db["material_id"],
+        "x_value": 0.5, "y_value": None,
+        "hex": "#cafe01",
+        "params": {
+            "speed": 1000, "power": 50, "density": 100,
+            "frequency": 65, "passes": 1, "pulse_width": 200,
+        },
+        "sigma": 0.0,
+        "source": "averaged",
+        "source_result_id": None,
+        "machine_id": "F2Ultra",
+    }])
+    assert recompute_indices(force=True) >= 1

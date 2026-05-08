@@ -176,6 +176,20 @@ def main(argv: list[str] | None = None) -> None:
     svg_gen_p.add_argument("--laser", default="red", choices=["red", "blue"],
                            help="Laser source (default: red)")
 
+    # --- recompute-indices command ---
+    rc_p = sub.add_parser(
+        "recompute-indices",
+        help="Recompute exposure indices on palette entries (used after a formula bump).",
+    )
+    rc_p.add_argument(
+        "--material-id", type=int, default=None,
+        help="Limit recompute to one material.",
+    )
+    rc_p.add_argument(
+        "--force", action="store_true",
+        help="Rewrite every row, even those already at the current formula version.",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "svg":
@@ -257,6 +271,13 @@ def main(argv: list[str] | None = None) -> None:
             port=args.port,
             log_level="info",
         )
+        return
+
+    elif args.command == "recompute-indices":
+        from xcs_gen_web.repositories.palette import recompute_indices
+
+        n = recompute_indices(material_id=args.material_id, force=args.force)
+        print(f"Recomputed indices on {n} palette entries.")
         return
 
     elif args.command == "generate":
