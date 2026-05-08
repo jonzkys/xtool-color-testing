@@ -9,6 +9,7 @@ export type Route =
   | { name: "pixel-art" }
   | { name: "library" }
   | { name: "palette" }
+  | { name: "exposure"; materialId?: number }
   | { name: "spectrum"; id?: number }
   | { name: "spectrum-2d"; id?: number }
   | { name: "stability"; id?: number; cell?: number }
@@ -30,6 +31,9 @@ export function parseRoute(hash: string): Route {
   if (h === "pixel-art") return { name: "pixel-art" };
   if (h === "library") return { name: "library" };
   if (h === "palette") return { name: "palette" };
+  if (h === "exposure") return { name: "exposure" };
+  const me = h.match(/^exposure\/(\d+)$/);
+  if (me) return { name: "exposure", materialId: Number(me[1]) };
   if (h === "spectrum-2d") return { name: "spectrum-2d" };
   const m2d = h.match(/^spectrum-2d\/(\d+)$/);
   if (m2d) return { name: "spectrum-2d", id: Number(m2d[1]) };
@@ -76,6 +80,7 @@ export function formatRoute(r: Route): string {
     case "pixel-art":   return "#/pixel-art";
     case "library":     return "#/library";
     case "palette":     return "#/palette";
+    case "exposure":    return r.materialId == null ? "#/exposure" : `#/exposure/${r.materialId}`;
     case "spectrum":    return r.id != null ? `#/spectrum/${r.id}` : "#/spectrum";
     case "spectrum-2d": return r.id != null ? `#/spectrum-2d/${r.id}` : "#/spectrum-2d";
     case "stability": {

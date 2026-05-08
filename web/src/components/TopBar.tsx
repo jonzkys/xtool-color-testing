@@ -35,6 +35,7 @@ type NavRouteName =
   | "pixel-art"
   | "library"
   | "palette"
+  | "exposure"
   | "spectrum"
   | "spectrum-2d"
   | "saved-spectrums";
@@ -62,6 +63,7 @@ const NAV_GROUPS: NavGroup[] = [
     children: [
       { label: "Library", route: "library" },
       { label: "Palette", route: "palette" },
+      { label: "Exposure", route: "exposure" },
     ],
   },
   {
@@ -284,6 +286,7 @@ function activeNavRoute(route: Route): NavRouteName | null {
     case "pixel-art":
     case "library":
     case "palette":
+    case "exposure":
     case "spectrum":
     case "spectrum-2d":
     case "saved-spectrums":
