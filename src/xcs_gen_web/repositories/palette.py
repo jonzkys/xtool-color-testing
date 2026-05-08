@@ -65,6 +65,30 @@ def _processing_params_from_palette_dict(d: dict[str, Any]) -> ProcessingParams:
     )
 
 
+def _compute_index_values(params: dict[str, Any]) -> dict[str, Any]:
+    """Return the 9-key dict of laser-index columns + metadata for a
+    palette_entries row, computed from a params_json-shaped dict.
+
+    Used by every write path (insert, update, validated-entry create)
+    so a future formula or model-string change is a single-edit
+    operation. Wraps `_processing_params_from_palette_dict` ->
+    `compute_indices` and flattens the result to the column names
+    used in the DB.
+    """
+    indices = compute_indices(_processing_params_from_palette_dict(params))
+    return {
+        "pulse_spacing_mm": indices.pulse_spacing_mm,
+        "line_spacing_index": indices.line_spacing_index,
+        "line_spacing_mm": indices.line_spacing_mm,
+        "pulse_energy_index": indices.pulse_energy_index,
+        "pulse_intensity_index": indices.pulse_intensity_index,
+        "surface_exposure_index": indices.surface_exposure_index,
+        "indices_formula_version": indices.formula_version,
+        "density_model": indices.density_model,
+        "power_model": indices.power_model,
+    }
+
+
 def _row_to_entry(r, *, original_validated: bool = False) -> dict[str, Any]:
     validated_lab: list[float] | None = None
     if (
@@ -129,10 +153,9 @@ def _row_to_entry(r, *, original_validated: bool = False) -> dict[str, Any]:
 def _build_row(
     e: dict[str, Any], now: str, owner_id: int, visibility: str,
 ) -> dict[str, Any]:
-    """Build a DB row dict from an entry dict. Used by insert_bulk and replace_for_test."""
+    """Build a DB row dict from an entry dict. Used by insert_bulk, replace_for_test, and create_manual."""
     L, a, b = hex_to_lab(e["hex"])
     params_dict = e.get("params", {})
-    indices = compute_indices(_processing_params_from_palette_dict(params_dict))
     return {
         "test_id": e["test_id"],
         "material_id": e["material_id"],
@@ -149,15 +172,7 @@ def _build_row(
         "owner_id": owner_id,
         "visibility": e.get("visibility", visibility),
         "machine_id": e.get("machine_id", "F2Ultra"),
-        "pulse_spacing_mm": indices.pulse_spacing_mm,
-        "line_spacing_index": indices.line_spacing_index,
-        "line_spacing_mm": indices.line_spacing_mm,
-        "pulse_energy_index": indices.pulse_energy_index,
-        "pulse_intensity_index": indices.pulse_intensity_index,
-        "surface_exposure_index": indices.surface_exposure_index,
-        "indices_formula_version": indices.formula_version,
-        "density_model": indices.density_model,
-        "power_model": indices.power_model,
+        **_compute_index_values(params_dict),
     }
 
 
@@ -615,16 +630,7 @@ def update_entry(
             values["material_id"] = material_id
         if params is not None:
             values["params_json"] = json.dumps(params, separators=(",", ":"))
-            indices = compute_indices(_processing_params_from_palette_dict(params))
-            values["pulse_spacing_mm"] = indices.pulse_spacing_mm
-            values["line_spacing_index"] = indices.line_spacing_index
-            values["line_spacing_mm"] = indices.line_spacing_mm
-            values["pulse_energy_index"] = indices.pulse_energy_index
-            values["pulse_intensity_index"] = indices.pulse_intensity_index
-            values["surface_exposure_index"] = indices.surface_exposure_index
-            values["indices_formula_version"] = indices.formula_version
-            values["density_model"] = indices.density_model
-            values["power_model"] = indices.power_model
+            values.update(_compute_index_values(params))
         if notes is not None:
             values["notes"] = notes
         if values:
@@ -857,11 +863,6 @@ def create_validated_entry(
     L, a, b = float(burn_mean_lab[0]), float(burn_mean_lab[1]), float(burn_mean_lab[2])
     hex_ = lab_to_hex(L, a, b)
     now = _now()
-    # Compute laser exposure indices from the cell params so the new
-    # validated entry carries a fully-populated indices block. Missing
-    # params fields fall back to ProcessingParams defaults via the
-    # adapter (same behaviour as _build_row).
-    indices = compute_indices(_processing_params_from_palette_dict(params or {}))
     refresh_values = {
         "hex": hex_,
         "lab_l": L, "lab_a": a, "lab_b": b,
@@ -876,15 +877,7 @@ def create_validated_entry(
         "validated_lab_b": b,
         "validated_run_count": run_count,
         "validated_residual_de": stability_de,
-        "pulse_spacing_mm": indices.pulse_spacing_mm,
-        "line_spacing_index": indices.line_spacing_index,
-        "line_spacing_mm": indices.line_spacing_mm,
-        "pulse_energy_index": indices.pulse_energy_index,
-        "pulse_intensity_index": indices.pulse_intensity_index,
-        "surface_exposure_index": indices.surface_exposure_index,
-        "indices_formula_version": indices.formula_version,
-        "density_model": indices.density_model,
-        "power_model": indices.power_model,
+        **_compute_index_values(params or {}),
     }
     with session_scope() as s:
         # Natural key: (validated_test_id, validated_cell_index, owner_id).
