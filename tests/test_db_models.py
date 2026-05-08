@@ -59,3 +59,45 @@ def test_server_defaults_on_create_all_insert():
     assert row.notes == ""              # NOT "'"  or "''"
     assert row.visibility == "private"  # server_default kicked in
     assert row.owner_id == 0
+
+
+def test_palette_entries_has_indices_columns() -> None:
+    from xcs_gen_web.models import palette_entries
+
+    expected = {
+        "pulse_spacing_mm",
+        "line_spacing_index",
+        "line_spacing_mm",
+        "pulse_energy_index",
+        "pulse_intensity_index",
+        "surface_exposure_index",
+        "indices_formula_version",
+        "density_model",
+        "power_model",
+    }
+    actual = {c.name for c in palette_entries.columns}
+    missing = expected - actual
+    assert not missing, f"palette_entries missing columns: {missing}"
+
+
+def test_palette_entries_indices_indexes_exist() -> None:
+    from xcs_gen_web.models import palette_entries
+
+    indexed_pairs = {
+        tuple(c.name for c in idx.columns) for idx in palette_entries.indexes
+    }
+    assert ("material_id", "surface_exposure_index") in indexed_pairs, (
+        f"missing (material_id, surface_exposure_index) index; have {indexed_pairs}"
+    )
+    assert ("material_id", "pulse_intensity_index") in indexed_pairs, (
+        f"missing (material_id, pulse_intensity_index) index; have {indexed_pairs}"
+    )
+
+
+def test_line_spacing_mm_is_nullable() -> None:
+    from xcs_gen_web.models import palette_entries
+
+    col = palette_entries.c.line_spacing_mm
+    assert col.nullable is True, (
+        "line_spacing_mm must be nullable — stays NULL while density_model='opaque'"
+    )

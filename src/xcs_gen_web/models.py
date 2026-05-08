@@ -253,6 +253,24 @@ palette_entries = Table(
     # to compare burn parameters by hand. Nullable for legacy rows
     # and any future entry created outside the batch validate path.
     Column("validated_cell_index", Integer, nullable=True),
+    Column("pulse_spacing_mm", Float, nullable=True),
+    Column("line_spacing_index", Float, nullable=True),
+    Column("line_spacing_mm", Float, nullable=True),
+    Column("pulse_energy_index", Float, nullable=True),
+    Column("pulse_intensity_index", Float, nullable=True),
+    Column("surface_exposure_index", Float, nullable=True),
+    Column(
+        "indices_formula_version", Integer,
+        nullable=False, server_default="1",
+    ),
+    Column(
+        "density_model", String(32),
+        nullable=False, server_default="opaque",
+    ),
+    Column(
+        "power_model", String(32),
+        nullable=False, server_default="controller_percent",
+    ),
     CheckConstraint(
         "source IN ('averaged','single_result','manual')",
         name="palette_entries_source_chk",
@@ -265,6 +283,14 @@ palette_entries = Table(
     Index(
         "ix_palette_entries_validated",
         "machine_id", "material_id", "is_validated",
+    ),
+    Index(
+        "ix_palette_entries_material_exposure",
+        "material_id", "surface_exposure_index",
+    ),
+    Index(
+        "ix_palette_entries_material_intensity",
+        "material_id", "pulse_intensity_index",
     ),
 )
 
