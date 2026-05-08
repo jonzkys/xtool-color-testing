@@ -353,7 +353,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
 
           {/* Material picker */}
           <RailSection title="Material">
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto pr-1">
               {materials.map((m) => (
                 <RailPickerButton
                   key={m.id}
