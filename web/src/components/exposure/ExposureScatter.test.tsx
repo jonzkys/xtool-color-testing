@@ -178,6 +178,64 @@ describe("ExposureScatter — family trace", () => {
   });
 });
 
+describe("ExposureScatter — trimOutliers", () => {
+  // Build a dataset with 200 tightly-clustered normal rows and 2 extreme outliers.
+  // The outliers are at ranks 200 and 201 out of 202 total, placing them in the
+  // top ~1% — they will be cut by the 99th-percentile clamp.
+  function makeOutlierRows(): ExposureRow[] {
+    const result: ExposureRow[] = [];
+    for (let i = 0; i < 200; i++) {
+      result.push(row(100 + i, "#aaa", 50 + i, 80));
+    }
+    result.push(row(9998, "#fff", 1e9, 50));
+    result.push(row(9999, "#fff", 2e9, 50));
+    return result;
+  }
+
+  it("hides out-of-percentile dots when trimOutliers is on", () => {
+    const allRows = makeOutlierRows();
+    const { container } = render(
+      <ExposureScatter
+        rows={allRows}
+        mode="univariate"
+        xKey="total_exposure_index"
+        yKey="L"
+        xScale="log"
+        yScale="linear"
+        focusedId={null}
+        onHover={() => undefined}
+        onLeave={() => undefined}
+        onClick={() => undefined}
+        trimOutliers={true}
+      />,
+    );
+    const dots = container.querySelectorAll('[data-role="scatter-dot"]');
+    // Outliers (last 2) should not render — their log values are far beyond the 99th percentile bound.
+    expect(dots.length).toBeLessThan(allRows.length);
+  });
+
+  it("shows all dots when trimOutliers is off", () => {
+    const allRows = makeOutlierRows();
+    const { container } = render(
+      <ExposureScatter
+        rows={allRows}
+        mode="univariate"
+        xKey="total_exposure_index"
+        yKey="L"
+        xScale="log"
+        yScale="linear"
+        focusedId={null}
+        onHover={() => undefined}
+        onLeave={() => undefined}
+        onClick={() => undefined}
+        trimOutliers={false}
+      />,
+    );
+    const dots = container.querySelectorAll('[data-role="scatter-dot"]');
+    expect(dots.length).toBe(allRows.length);
+  });
+});
+
 describe("ExposureScatter — event propagation", () => {
   it("dot click does not bubble to a parent click handler", () => {
     const parentClick = vi.fn();

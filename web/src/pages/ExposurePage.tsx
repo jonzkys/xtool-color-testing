@@ -129,6 +129,10 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   // ── matrix source tab ─────────────────────────────────────────────────
   const [matrixSource, setMatrixSource] = useState<"indices" | "raw">("indices");
 
+  // ── outlier trimming ───────────────────────────────────────────────────
+  const [trimOutliers, setTrimOutliers] = useState<boolean>(true);
+  const [offChartCount, setOffChartCount] = useState<number>(0);
+
   // ── focus state (mirrors StabilityPage transient/pinned pattern) ───────
   const [transientFocusId, setTransientFocusId] = useState<number | null>(null);
   const [pinnedFocusId, setPinnedFocusId] = useState<number | null>(null);
@@ -488,6 +492,21 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                 index × index — colour coordinates only
               </span>
             )}
+            <div className="ml-auto">
+              <button
+                type="button"
+                onClick={() => setTrimOutliers((v) => !v)}
+                className={
+                  "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+                  (trimOutliers
+                    ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
+                    : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+                }
+                title="Trim 1% / 99% percentile to keep outliers from compressing the chart"
+              >
+                Trim outliers{trimOutliers && offChartCount > 0 ? ` (+${offChartCount})` : ""}
+              </button>
+            </div>
           </div>
 
           {/* Body: scatter + lower panels */}
@@ -577,6 +596,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                       onClick={handleClick}
                       dimRange={brushRange}
                       family={focusedFamily ?? undefined}
+                      trimOutliers={trimOutliers}
+                      onOffChartCount={setOffChartCount}
                     />
                   </div>
                 </div>

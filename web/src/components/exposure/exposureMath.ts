@@ -134,3 +134,26 @@ export function logLinearRegression(
   const r2 = ssTot === 0 ? NaN : 1 - ssRes / ssTot;
   return { intercept, slope, r2, n };
 }
+
+/**
+ * Linear-interpolated quantile. Drops NaN values before sorting.
+ * Returns NaN when the input is empty or all-NaN.
+ *
+ * `q` is the quantile in [0, 1]. q=0 → min, q=1 → max, q=0.5 → median.
+ */
+export function quantile(values: readonly number[], q: number): number {
+  const clean: number[] = [];
+  for (const v of values) {
+    if (Number.isFinite(v)) clean.push(v);
+  }
+  const n = clean.length;
+  if (n === 0) return NaN;
+  if (n === 1) return clean[0];
+  clean.sort((a, b) => a - b);
+  const idx = Math.max(0, Math.min(n - 1, q * (n - 1)));
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return clean[lo];
+  const frac = idx - lo;
+  return clean[lo] * (1 - frac) + clean[hi] * frac;
+}

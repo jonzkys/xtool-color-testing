@@ -4,6 +4,7 @@ import {
   spearman,
   logLinearRegression,
   fmtIndexTick,
+  quantile,
 } from "./exposureMath";
 
 describe("pearson", () => {
@@ -105,5 +106,30 @@ describe("fmtIndexTick", () => {
     expect(fmtIndexTick(0)).toBe("0");
     expect(fmtIndexTick(NaN)).toBe("—");
     expect(fmtIndexTick(Infinity)).toBe("—");
+  });
+});
+
+describe("quantile", () => {
+  it("returns the value at the given quantile via linear interpolation", () => {
+    const xs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    expect(quantile(xs, 0.5)).toBeCloseTo(5.5, 6);
+    expect(quantile(xs, 0)).toBeCloseTo(1, 6);
+    expect(quantile(xs, 1)).toBeCloseTo(10, 6);
+  });
+
+  it("ignores NaN values", () => {
+    const xs = [1, 2, NaN, 4, 5];
+    expect(quantile(xs, 0.5)).toBeCloseTo(3, 6);
+  });
+
+  it("returns NaN when input is empty", () => {
+    expect(Number.isNaN(quantile([], 0.5))).toBe(true);
+    expect(Number.isNaN(quantile([NaN, NaN], 0.5))).toBe(true);
+  });
+
+  it("returns the single value when n=1", () => {
+    expect(quantile([42], 0.5)).toBe(42);
+    expect(quantile([42], 0.01)).toBe(42);
+    expect(quantile([42], 0.99)).toBe(42);
   });
 });
