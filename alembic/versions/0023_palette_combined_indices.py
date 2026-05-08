@@ -46,6 +46,8 @@ def upgrade() -> None:
         batch_op.alter_column(
             "surface_exposure_index",
             new_column_name="total_exposure_index",
+            existing_type=sa.Float(),
+            existing_nullable=True,
         )
 
     # Phase 2: add new columns and create new composite indexes.
@@ -162,6 +164,8 @@ def downgrade() -> None:
         batch_op.alter_column(
             "total_exposure_index",
             new_column_name="surface_exposure_index",
+            existing_type=sa.Float(),
+            existing_nullable=True,
         )
 
     # Phase 2: recreate original composite index under the restored column name.
