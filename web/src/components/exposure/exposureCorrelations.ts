@@ -18,6 +18,9 @@ export interface ExposureRow {
   params?: Record<string, number | string>;
 }
 
+// `line_spacing_mm` is intentionally excluded — it stays NULL while
+// density_model="opaque" and is redundant with `line_spacing_index`.
+// Adding it here would require null-handling in buildCorrelationMatrix.
 export const INDEX_ROWS = [
   "pulse_spacing_mm",
   "line_spacing_index",
@@ -57,7 +60,7 @@ export function buildCorrelationMatrix(
 ): number[][] {
   const valid = rows.filter((r) => r.indices.formula_version >= 1);
   return INDEX_ROWS.map((indexKey) => {
-    const xs = valid.map((r) => r.indices[indexKey] as number);
+    const xs = valid.map((r) => (r.indices[indexKey] as number | null) ?? NaN);
     return CHANNEL_COLS.map((col) => {
       const ys = valid.map((r) => channelValue(r, col));
       return pearson(xs, ys);
