@@ -136,6 +136,14 @@ export const ExposureFocusedCard: React.FC<Props> = ({
                 );
               })}
             </div>
+            {focused.test_id != null && (
+              <a
+                href={`#/tests/${focused.test_id}`}
+                className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-primary)] hover:underline mt-2 inline-block"
+              >
+                → Source test #{focused.test_id}
+              </a>
+            )}
           </div>
 
           <div className="border-t border-[color:var(--color-border)] pt-3">

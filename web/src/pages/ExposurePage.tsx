@@ -39,6 +39,7 @@ function paletteToExposureRow(p: PaletteEntry): ExposureRow {
     lab: [p.lab[0], p.lab[1], p.lab[2]],
     indices: p.indices!,
     params: p.params as Record<string, number | string>,
+    test_id: p.test_id,
   };
 }
 

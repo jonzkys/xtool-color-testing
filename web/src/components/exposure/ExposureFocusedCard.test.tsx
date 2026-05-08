@@ -53,4 +53,20 @@ describe("ExposureFocusedCard", () => {
     expect(screen.getByText(/^recipe$/i)).toBeInTheDocument();
     expect(screen.getByText(/^indices$/i)).toBeInTheDocument();
   });
+
+  it("renders a 'Source test' link when focused entry has test_id", () => {
+    const r = row(1, "#a0522d");
+    r.test_id = 42;
+    render(<ExposureFocusedCard rows={[r]} focusedId={1} />);
+    const link = screen.getByText(/source test/i).closest("a");
+    expect(link).not.toBeNull();
+    expect(link!.getAttribute("href")).toContain("/tests/42");
+  });
+
+  it("does not render a 'Source test' link for manual entries", () => {
+    const r = row(1, "#a0522d");
+    r.test_id = null;
+    render(<ExposureFocusedCard rows={[r]} focusedId={1} />);
+    expect(screen.queryByText(/source test/i)).toBeNull();
+  });
 });
