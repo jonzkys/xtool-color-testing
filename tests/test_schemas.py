@@ -224,13 +224,39 @@ def test_palette_entry_response_includes_indices() -> None:
             "line_spacing_mm": None,
             "pulse_energy_index": 0.769,
             "pulse_intensity_index": 0.00385,
-            "surface_exposure_index": 5.0,
-            "formula_version": 1,
+            "total_exposure_index": 5.0,
+            "ablation_aggression_index": 0.01923,
+            "delivery_smoothness_index": 1300.0,
+            "formula_version": 2,
             "density_model": "opaque",
             "power_model": "controller_percent",
         },
     }
     resp = PaletteEntryResponse.model_validate(payload)
     assert isinstance(resp.indices, LaserIndicesResponse)
-    assert resp.indices.surface_exposure_index == 5.0
+    assert resp.indices.total_exposure_index == 5.0
+    assert resp.indices.surface_exposure_index == 5.0  # deprecated alias
     assert resp.indices.line_spacing_mm is None
+
+
+def test_laser_indices_response_serialises_both_total_and_alias() -> None:
+    from xcs_gen_web.schemas import LaserIndicesResponse
+
+    resp = LaserIndicesResponse(
+        pulse_spacing_mm=0.0154,
+        line_spacing_index=0.01,
+        line_spacing_mm=None,
+        pulse_energy_index=0.7692,
+        pulse_intensity_index=0.003846,
+        total_exposure_index=5.0,
+        ablation_aggression_index=0.01923,
+        delivery_smoothness_index=1300.0,
+        formula_version=2,
+        density_model="opaque",
+        power_model="controller_percent",
+    )
+    j = resp.model_dump()
+    assert j["total_exposure_index"] == 5.0
+    assert j["surface_exposure_index"] == 5.0  # deprecated alias
+    assert j["ablation_aggression_index"] == 0.01923
+    assert j["delivery_smoothness_index"] == 1300.0

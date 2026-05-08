@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   buildCorrelationMatrix,
+  buildRawParamCorrelationMatrix,
   INDEX_ROWS,
   CHANNEL_COLS,
+  RAW_PARAM_ROWS,
   type ExposureRow,
 } from "./exposureCorrelations";
 
@@ -23,7 +25,10 @@ function row(
       pulse_energy_index: 0.7,
       pulse_intensity_index: 0.003,
       surface_exposure_index: surface,
-      formula_version: 1,
+      total_exposure_index: surface,
+      ablation_aggression_index: 0.02,
+      delivery_smoothness_index: 1000,
+      formula_version: 2,
       density_model: "opaque",
       power_model: "controller_percent",
     },
@@ -31,16 +36,16 @@ function row(
 }
 
 describe("buildCorrelationMatrix", () => {
-  it("dimensions are 5 indices × 5 channels", () => {
+  it("dimensions are 7 indices × 5 channels", () => {
     const rows: ExposureRow[] = [row(10, 50, 0, 0), row(20, 40, 0, 0), row(30, 30, 0, 0)];
     const m = buildCorrelationMatrix(rows);
-    expect(INDEX_ROWS.length).toBe(5);
+    expect(INDEX_ROWS.length).toBe(7);
     expect(CHANNEL_COLS.length).toBe(5);
-    expect(m.length).toBe(5);
+    expect(m.length).toBe(7);
     expect(m[0].length).toBe(5);
   });
 
-  it("strong negative correlation surface_exposure × L* yields high |r|", () => {
+  it("strong negative correlation total_exposure × L* yields high |r|", () => {
     const rows: ExposureRow[] = [
       row(10, 80, 0, 0),
       row(30, 60, 0, 0),
@@ -48,9 +53,9 @@ describe("buildCorrelationMatrix", () => {
       row(100, 20, 0, 0),
     ];
     const m = buildCorrelationMatrix(rows);
-    const surfaceRow = INDEX_ROWS.indexOf("surface_exposure_index");
+    const totalRow = INDEX_ROWS.indexOf("total_exposure_index");
     const lCol = CHANNEL_COLS.indexOf("L");
-    const r = m[surfaceRow][lCol];
+    const r = m[totalRow][lCol];
     expect(Math.abs(r)).toBeGreaterThan(0.95);
     expect(r).toBeLessThan(0);
   });
@@ -67,9 +72,9 @@ describe("buildCorrelationMatrix", () => {
     const stale = { ...row(99, 99, 0, 0) };
     stale.indices = { ...stale.indices, formula_version: 0 };
     const m = buildCorrelationMatrix([a, b, c, stale]);
-    const surfaceRow = INDEX_ROWS.indexOf("surface_exposure_index");
+    const totalRow = INDEX_ROWS.indexOf("total_exposure_index");
     const lCol = CHANNEL_COLS.indexOf("L");
-    expect(Math.abs(m[surfaceRow][lCol])).toBeGreaterThan(0.99);
+    expect(Math.abs(m[totalRow][lCol])).toBeGreaterThan(0.99);
   });
 
   it("computes hue and chroma columns from a/b", () => {
@@ -77,5 +82,47 @@ describe("buildCorrelationMatrix", () => {
     const m = buildCorrelationMatrix(rows);
     const chromaCol = CHANNEL_COLS.indexOf("chroma");
     expect(Number.isNaN(m[0][chromaCol])).toBe(true);
+  });
+});
+
+describe("buildRawParamCorrelationMatrix", () => {
+  it("returns a 6x5 matrix with all 6 raw param rows", () => {
+    expect(RAW_PARAM_ROWS).toEqual([
+      "power", "speed", "frequency", "density", "passes", "pulse_width",
+    ]);
+    const rows: ExposureRow[] = [
+      row(10, 80, 0, 0), row(20, 60, 0, 0), row(40, 40, 0, 0),
+    ].map((r, i) => ({
+      ...r,
+      params: { power: 10 + i, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 },
+    }));
+    const m = buildRawParamCorrelationMatrix(rows);
+    expect(m.length).toBe(6);
+    expect(m[0].length).toBe(5);
+  });
+
+  it("strong negative correlation power × L*", () => {
+    const rows: ExposureRow[] = [
+      { ...row(10, 80, 0, 0), params: { power: 10, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 } },
+      { ...row(20, 60, 0, 0), params: { power: 20, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 } },
+      { ...row(40, 40, 0, 0), params: { power: 40, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 } },
+      { ...row(80, 20, 0, 0), params: { power: 80, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 } },
+    ];
+    const m = buildRawParamCorrelationMatrix(rows);
+    const powerRow = RAW_PARAM_ROWS.indexOf("power");
+    const lCol = CHANNEL_COLS.indexOf("L");
+    expect(m[powerRow][lCol]).toBeLessThan(-0.95);
+  });
+
+  it("returns NaN cells for params that are constant across all rows", () => {
+    const rows: ExposureRow[] = [
+      { ...row(10, 80, 0, 0), params: { power: 10, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 } },
+      { ...row(20, 60, 0, 0), params: { power: 20, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 } },
+      { ...row(40, 40, 0, 0), params: { power: 40, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 } },
+    ];
+    const m = buildRawParamCorrelationMatrix(rows);
+    // 'speed' is constant 1000 → zero variance → NaN
+    const speedRow = RAW_PARAM_ROWS.indexOf("speed");
+    expect(Number.isNaN(m[speedRow][0])).toBe(true);
   });
 });

@@ -949,8 +949,30 @@ def test_get_palette_returns_indices_block(client, mid) -> None:
         for key in (
             "pulse_spacing_mm", "line_spacing_index", "line_spacing_mm",
             "pulse_energy_index", "pulse_intensity_index",
-            "surface_exposure_index", "formula_version",
-            "density_model", "power_model",
+            "total_exposure_index", "ablation_aggression_index",
+            "delivery_smoothness_index", "surface_exposure_index",
+            "formula_version", "density_model", "power_model",
         ):
             assert key in idx, f"missing {key} in indices for entry {e['id']}"
         assert idx["formula_version"] >= 1
+
+
+def test_get_palette_returns_combined_indices_block(client, mid) -> None:
+    """GET /api/palette entries include the combined indices fields and
+    the deprecated alias surface_exposure_index == total_exposure_index."""
+    _seed_entries(mid)
+    r = client.get("/api/palette")
+    assert r.status_code == 200
+    entries = r.json()
+    assert entries
+    for e in entries:
+        idx = e["indices"]
+        for key in (
+            "total_exposure_index",
+            "ablation_aggression_index",
+            "delivery_smoothness_index",
+            "surface_exposure_index",  # deprecated alias still present
+        ):
+            assert key in idx, f"missing {key} in indices for entry {e['id']}"
+        # alias matches the canonical
+        assert idx["surface_exposure_index"] == idx["total_exposure_index"]

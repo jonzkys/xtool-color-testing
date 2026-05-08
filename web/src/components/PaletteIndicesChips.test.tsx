@@ -9,21 +9,25 @@ const indices = {
   line_spacing_mm: null,
   pulse_energy_index: 0.769,
   pulse_intensity_index: 0.00385,
-  surface_exposure_index: 5.0,
-  formula_version: 1,
+  total_exposure_index: 5.0,
+  ablation_aggression_index: 0.01923,
+  delivery_smoothness_index: 1300.0,
+  formula_version: 2,
   density_model: "opaque",
   power_model: "controller_percent",
 };
 
 describe("PaletteIndicesChips", () => {
-  it("renders all six chip labels", () => {
+  it("renders all eight chip labels", () => {
     render(<PaletteIndicesChips indices={indices} />);
     expect(screen.getByText(/pulse spacing/i)).toBeInTheDocument();
     expect(screen.getByText(/line spacing index/i)).toBeInTheDocument();
     expect(screen.getByText(/line spacing \(mm\)/i)).toBeInTheDocument();
     expect(screen.getByText(/pulse energy/i)).toBeInTheDocument();
     expect(screen.getByText(/pulse intensity/i)).toBeInTheDocument();
-    expect(screen.getByText(/surface exposure/i)).toBeInTheDocument();
+    expect(screen.getByText(/total exposure/i)).toBeInTheDocument();
+    expect(screen.getByText(/ablation aggression/i)).toBeInTheDocument();
+    expect(screen.getByText(/delivery smoothness/i)).toBeInTheDocument();
   });
 
   it("shows '—' when line_spacing_mm is null", () => {
@@ -44,12 +48,12 @@ describe("PaletteIndicesChips", () => {
 
   it("shows the formula version badge", () => {
     render(<PaletteIndicesChips indices={indices} />);
-    expect(screen.getByText(/v1/i)).toBeInTheDocument();
+    expect(screen.getByText(/v2/i)).toBeInTheDocument();
   });
 
-  it("renders surface_exposure_index value", () => {
+  it("renders total_exposure_index value", () => {
     render(<PaletteIndicesChips indices={indices} />);
-    const chip = screen.getByText(/surface exposure/i).closest("div")!;
+    const chip = screen.getByText(/total exposure/i).closest("div")!;
     expect(chip.textContent).toMatch(/5\.0|5(?!\d)/);
   });
 });

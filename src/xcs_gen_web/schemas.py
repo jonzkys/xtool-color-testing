@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
 from xcs_gen.pulse_width import ALLOWED_PULSE_WIDTHS, snap_pulse_width
 
@@ -384,11 +384,8 @@ class SvgPreviewResponse(BaseModel):
 class LaserIndicesResponse(BaseModel):
     """Heuristic exposure indices derived from raw laser params.
 
-    These are NOT calibrated physical quantities — see
+    These are NOT calibrated physical quantities. See
     docs/superpowers/specs/2026-05-07-laser-exposure-indices-design.md.
-    `formula_version`, `density_model`, and `power_model` capture how
-    the values were computed so clients can detect stale rows after a
-    formula bump.
     """
 
     pulse_spacing_mm: float
@@ -396,10 +393,20 @@ class LaserIndicesResponse(BaseModel):
     line_spacing_mm: float | None
     pulse_energy_index: float
     pulse_intensity_index: float
-    surface_exposure_index: float
+    total_exposure_index: float
+    ablation_aggression_index: float
+    delivery_smoothness_index: float
     formula_version: int
     density_model: str
     power_model: str
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def surface_exposure_index(self) -> float:
+        """Deprecated read-side alias for `total_exposure_index`.
+        Kept for any external consumer that hard-coded the old name.
+        Will be removed in a future formula-version bump."""
+        return self.total_exposure_index
 
 
 class PaletteEntryResponse(BaseModel):

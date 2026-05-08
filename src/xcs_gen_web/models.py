@@ -258,7 +258,9 @@ palette_entries = Table(
     Column("line_spacing_mm", Float, nullable=True),
     Column("pulse_energy_index", Float, nullable=True),
     Column("pulse_intensity_index", Float, nullable=True),
-    Column("surface_exposure_index", Float, nullable=True),
+    Column("total_exposure_index", Float, nullable=True),
+    Column("ablation_aggression_index", Float, nullable=True),
+    Column("delivery_smoothness_index", Float, nullable=True),
     Column(
         "indices_formula_version", Integer,
         nullable=False, server_default="1",
@@ -285,8 +287,12 @@ palette_entries = Table(
         "machine_id", "material_id", "is_validated",
     ),
     Index(
-        "ix_palette_entries_material_exposure",
-        "material_id", "surface_exposure_index",
+        "ix_palette_entries_material_total_exposure",
+        "material_id", "total_exposure_index",
+    ),
+    Index(
+        "ix_palette_entries_material_aggression",
+        "material_id", "ablation_aggression_index",
     ),
     Index(
         "ix_palette_entries_material_intensity",

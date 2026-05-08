@@ -66,14 +66,8 @@ def _processing_params_from_palette_dict(d: dict[str, Any]) -> ProcessingParams:
 
 
 def _compute_index_values(params: dict[str, Any]) -> dict[str, Any]:
-    """Return the 9-key dict of laser-index columns + metadata for a
+    """Return the dict of laser-index columns + metadata for a
     palette_entries row, computed from a params_json-shaped dict.
-
-    Used by every write path (insert, update, validated-entry create)
-    so a future formula or model-string change is a single-edit
-    operation. Wraps `_processing_params_from_palette_dict` ->
-    `compute_indices` and flattens the result to the column names
-    used in the DB.
     """
     indices = compute_indices(_processing_params_from_palette_dict(params))
     return {
@@ -82,7 +76,9 @@ def _compute_index_values(params: dict[str, Any]) -> dict[str, Any]:
         "line_spacing_mm": indices.line_spacing_mm,
         "pulse_energy_index": indices.pulse_energy_index,
         "pulse_intensity_index": indices.pulse_intensity_index,
-        "surface_exposure_index": indices.surface_exposure_index,
+        "total_exposure_index": indices.total_exposure_index,
+        "ablation_aggression_index": indices.ablation_aggression_index,
+        "delivery_smoothness_index": indices.delivery_smoothness_index,
         "indices_formula_version": indices.formula_version,
         "density_model": indices.density_model,
         "power_model": indices.power_model,
@@ -142,7 +138,9 @@ def _row_to_entry(r, *, original_validated: bool = False) -> dict[str, Any]:
             "line_spacing_mm": r.line_spacing_mm,
             "pulse_energy_index": r.pulse_energy_index,
             "pulse_intensity_index": r.pulse_intensity_index,
-            "surface_exposure_index": r.surface_exposure_index,
+            "total_exposure_index": r.total_exposure_index,
+            "ablation_aggression_index": r.ablation_aggression_index,
+            "delivery_smoothness_index": r.delivery_smoothness_index,
             "formula_version": r.indices_formula_version,
             "density_model": r.density_model,
             "power_model": r.power_model,
@@ -185,7 +183,9 @@ _REFRESH_COLUMNS = (
     "line_spacing_mm",
     "pulse_energy_index",
     "pulse_intensity_index",
-    "surface_exposure_index",
+    "total_exposure_index",
+    "ablation_aggression_index",
+    "delivery_smoothness_index",
     "indices_formula_version",
     "density_model",
     "power_model",

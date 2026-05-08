@@ -70,7 +70,7 @@ def test_palette_entries_has_indices_columns() -> None:
         "line_spacing_mm",
         "pulse_energy_index",
         "pulse_intensity_index",
-        "surface_exposure_index",
+        "total_exposure_index",
         "indices_formula_version",
         "density_model",
         "power_model",
@@ -86,11 +86,43 @@ def test_palette_entries_indices_indexes_exist() -> None:
     indexed_pairs = {
         tuple(c.name for c in idx.columns) for idx in palette_entries.indexes
     }
-    assert ("material_id", "surface_exposure_index") in indexed_pairs, (
-        f"missing (material_id, surface_exposure_index) index; have {indexed_pairs}"
+    assert ("material_id", "total_exposure_index") in indexed_pairs, (
+        f"missing (material_id, total_exposure_index) index; have {indexed_pairs}"
     )
     assert ("material_id", "pulse_intensity_index") in indexed_pairs, (
         f"missing (material_id, pulse_intensity_index) index; have {indexed_pairs}"
+    )
+
+
+def test_palette_entries_renamed_total_exposure_column() -> None:
+    from xcs_gen_web.models import palette_entries
+
+    cols = {c.name for c in palette_entries.columns}
+    assert "total_exposure_index" in cols
+    assert "surface_exposure_index" not in cols, (
+        "Old column name should be gone after the rename"
+    )
+
+
+def test_palette_entries_has_combined_indices_columns() -> None:
+    from xcs_gen_web.models import palette_entries
+
+    cols = {c.name for c in palette_entries.columns}
+    assert "ablation_aggression_index" in cols
+    assert "delivery_smoothness_index" in cols
+
+
+def test_palette_entries_combined_indices_indexes() -> None:
+    from xcs_gen_web.models import palette_entries
+
+    indexed_pairs = {
+        tuple(c.name for c in idx.columns) for idx in palette_entries.indexes
+    }
+    assert ("material_id", "total_exposure_index") in indexed_pairs, (
+        f"missing renamed (material_id, total_exposure_index); have {indexed_pairs}"
+    )
+    assert ("material_id", "ablation_aggression_index") in indexed_pairs, (
+        f"missing new aggression index; have {indexed_pairs}"
     )
 
 

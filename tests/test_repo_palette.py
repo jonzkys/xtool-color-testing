@@ -727,7 +727,7 @@ def test_insert_bulk_populates_indices(fresh_db) -> None:
     assert idx["line_spacing_mm"] is None
     assert idx["pulse_energy_index"] == pytest.approx(50 / 65)
     assert idx["pulse_intensity_index"] == pytest.approx(50 / (65 * 200))
-    assert idx["surface_exposure_index"] == pytest.approx(50 * 100 * 1 / 1000)
+    assert idx["total_exposure_index"] == pytest.approx(50 * 100 * 1 / 1000)
     assert idx["formula_version"] == INDICES_FORMULA_VERSION
     assert idx["density_model"] == "opaque"
     assert idx["power_model"] == "controller_percent"
@@ -748,7 +748,7 @@ def test_create_manual_populates_indices(fresh_db) -> None:
         notes="manual",
     )
     idx = out["indices"]
-    assert idx["surface_exposure_index"] == pytest.approx(40 * 200 * 2 / 800)
+    assert idx["total_exposure_index"] == pytest.approx(40 * 200 * 2 / 800)
     assert idx["formula_version"] == INDICES_FORMULA_VERSION
 
 
@@ -793,7 +793,7 @@ def test_update_entry_refreshes_indices_when_params_change(fresh_db) -> None:
         notes="",
     )
     eid = out["id"]
-    original_exposure = out["indices"]["surface_exposure_index"]
+    original_exposure = out["indices"]["total_exposure_index"]
 
     update_entry(eid, params={
         "speed": 1000, "power": 100, "density": 100,
@@ -802,7 +802,7 @@ def test_update_entry_refreshes_indices_when_params_change(fresh_db) -> None:
 
     refreshed = get_by_id(eid)
     assert refreshed is not None
-    assert refreshed["indices"]["surface_exposure_index"] == pytest.approx(
+    assert refreshed["indices"]["total_exposure_index"] == pytest.approx(
         original_exposure * 2,
     )
 
@@ -854,7 +854,7 @@ def test_recompute_indices_updates_stale_rows(palette_db) -> None:
             .where(palette_entries.c.id == eid)
             .values(
                 indices_formula_version=0,
-                surface_exposure_index=None,
+                total_exposure_index=None,
             )
         )
 
@@ -866,7 +866,7 @@ def test_recompute_indices_updates_stale_rows(palette_db) -> None:
             select(palette_entries).where(palette_entries.c.id == eid),
         ).one()
     assert row.indices_formula_version == INDICES_FORMULA_VERSION
-    assert row.surface_exposure_index == pytest.approx(50 * 100 * 1 / 1000)
+    assert row.total_exposure_index == pytest.approx(50 * 100 * 1 / 1000)
 
 
 def test_recompute_indices_skips_rows_already_at_current_version(
@@ -909,3 +909,34 @@ def test_recompute_indices_force_updates_everything(palette_db) -> None:
         "machine_id": "F2Ultra",
     }])
     assert recompute_indices(force=True) >= 1
+
+
+def test_combined_indices_in_repo_output(palette_db) -> None:
+    from xcs_gen_web.repositories.palette import insert_bulk, get_by_id
+
+    [eid] = insert_bulk([{
+        "test_id": None,
+        "material_id": palette_db["material_id"],
+        "x_value": 0.0, "y_value": None,
+        "hex": "#abcdef",
+        "params": {
+            "speed": 1000, "power": 50, "density": 100,
+            "frequency": 65, "passes": 1, "pulse_width": 200,
+        },
+        "sigma": 0.0,
+        "source": "averaged",
+        "source_result_id": None,
+        "machine_id": "F2Ultra",
+    }])
+    out = get_by_id(eid)
+    assert out is not None
+    idx = out["indices"]
+    assert "total_exposure_index" in idx
+    assert "ablation_aggression_index" in idx
+    assert "delivery_smoothness_index" in idx
+    aggr = idx["ablation_aggression_index"]
+    smooth = idx["delivery_smoothness_index"]
+    total = idx["total_exposure_index"]
+    pi = idx["pulse_intensity_index"]
+    assert aggr == pytest.approx(total * pi)
+    assert smooth == pytest.approx(total / pi)

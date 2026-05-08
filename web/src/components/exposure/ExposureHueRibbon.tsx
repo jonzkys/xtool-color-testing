@@ -11,7 +11,7 @@ interface Props {
   onClick?: (id: number) => void;
   /** Optional: dim out-of-range tiles when the user has narrowed the
    *  exposure brush. Mirrors ExposureScatter — the brush range is
-   *  always against ``surface_exposure_index`` regardless of orderBy. */
+   *  always against ``total_exposure_index`` regardless of orderBy. */
   dimRange?: readonly [number, number] | null;
 }
 
@@ -44,7 +44,7 @@ export const ExposureHueRibbon: React.FC<Props> = ({
 
   const inDimRange = (row: ExposureRow): boolean => {
     if (!dimRange) return true;
-    const v = row.indices.surface_exposure_index as number;
+    const v = row.indices.total_exposure_index as number;
     return v >= dimRange[0] && v <= dimRange[1];
   };
 
@@ -66,7 +66,7 @@ export const ExposureHueRibbon: React.FC<Props> = ({
               }}
               onMouseEnter={() => onHover?.(row.id)}
               onMouseLeave={() => onLeave?.()}
-              onClick={() => onClick?.(row.id)}
+              onClick={(e) => { e.stopPropagation(); onClick?.(row.id); }}
               title={`${row.hex} · ${orderBy}=${(row.indices[orderBy] as number).toPrecision(3)}`}
             >
               {isFocused && (

@@ -13,15 +13,20 @@ import { ExposureHueRibbon } from "../components/exposure/ExposureHueRibbon";
 import { ExposureCorrelationMatrix } from "../components/exposure/ExposureCorrelationMatrix";
 import { ExposureRangeBrush } from "../components/exposure/ExposureRangeBrush";
 import { ExposureFocusedCard } from "../components/exposure/ExposureFocusedCard";
+import { ExposureNeighboursPanel } from "../components/exposure/ExposureNeighboursPanel";
 import {
   buildCorrelationMatrix,
+  buildRawParamCorrelationMatrix,
   CHANNEL_COLS,
   INDEX_ROWS,
+  RAW_PARAM_ROWS,
   type ChannelCol,
   type ExposureRow,
   type IndexRow,
+  type RawParamRow,
 } from "../components/exposure/exposureCorrelations";
 import { pearson, spearman, logLinearRegression } from "../components/exposure/exposureMath";
+import { buildFamilies, type FamilyMember, type VaryingAxis } from "../components/exposure/recipeFamilies";
 import { EmptyState, Button, MetalBar } from "../ui";
 
 // ── types ──────────────────────────────────────────────────────────────────
@@ -39,6 +44,7 @@ function paletteToExposureRow(p: PaletteEntry): ExposureRow {
     lab: [p.lab[0], p.lab[1], p.lab[2]],
     indices: p.indices!,
     params: p.params as Record<string, number | string>,
+    test_id: p.test_id,
   };
 }
 
@@ -57,7 +63,9 @@ const INDEX_LABELS: Record<IndexRow, string> = {
   line_spacing_index: "Line Spacing Index",
   pulse_energy_index: "Pulse Energy Index",
   pulse_intensity_index: "Pulse Intensity Index",
-  surface_exposure_index: "Surface Exposure Index",
+  total_exposure_index: "Total Exposure",
+  ablation_aggression_index: "Ablation Aggression",
+  delivery_smoothness_index: "Delivery Smoothness",
 };
 
 const CHANNEL_LABELS: Record<ChannelCol, string> = {
@@ -66,6 +74,25 @@ const CHANNEL_LABELS: Record<ChannelCol, string> = {
   b: "b*",
   hue: "Hue°",
   chroma: "Chroma",
+};
+
+const INDEX_LABELS_MATRIX: Record<IndexRow, string> = {
+  pulse_spacing_mm: "PSp",
+  line_spacing_index: "LSp",
+  pulse_energy_index: "PEn",
+  pulse_intensity_index: "PIn",
+  total_exposure_index: "TEx",
+  ablation_aggression_index: "AAg",
+  delivery_smoothness_index: "DSm",
+};
+
+const RAW_PARAM_LABELS: Record<RawParamRow, string> = {
+  power: "PWR",
+  speed: "SPD",
+  frequency: "FRQ",
+  density: "DEN",
+  passes: "PSS",
+  pulse_width: "PWD",
 };
 
 // ── component ──────────────────────────────────────────────────────────────
@@ -79,12 +106,12 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const [rowsError, setRowsError] = useState<string | null>(null);
 
   // ── axis / mode state ──────────────────────────────────────────────────
-  const [xKey, setXKey] = useState<IndexRow>("surface_exposure_index");
-  const [mode, setMode] = useState<ScatterMode>("univariate");
+  const [xKey, setXKey] = useState<IndexRow>("total_exposure_index");
+  const [mode, setMode] = useState<ScatterMode>("bivariate");
   const [yKeyUni, setYKeyUni] = useState<ChannelCol>("L");
   const [yKeyBi, setYKeyBi] = useState<IndexRow>("pulse_intensity_index");
   const [xScale, setXScale] = useState<ScaleKind>("log");
-  const [yScale, setYScale] = useState<ScaleKind>("linear");
+  const [yScale, setYScale] = useState<ScaleKind>("log");
 
   // ── filter state ───────────────────────────────────────────────────────
   const [sourceFilter, setSourceFilter] = useState<Set<"averaged" | "single_result" | "manual">>(
@@ -93,11 +120,25 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const [validatedOnly, setValidatedOnly] = useState(false);
   const [brushRange, setBrushRange] = useState<readonly [number, number] | null>(null);
 
+  interface FamilyFilter {
+    axis: VaryingAxis;
+    anchorRowId: number;
+  }
+  const [familyFilter, setFamilyFilter] = useState<FamilyFilter | null>(null);
+
+  // ── matrix source tab ─────────────────────────────────────────────────
+  const [matrixSource, setMatrixSource] = useState<"indices" | "raw">("indices");
+
+  // ── outlier trimming ───────────────────────────────────────────────────
+  const [trimOutliers, setTrimOutliers] = useState<boolean>(true);
+  const [offChartCount, setOffChartCount] = useState<number>(0);
+
   // ── focus state (mirrors StabilityPage transient/pinned pattern) ───────
   const [transientFocusId, setTransientFocusId] = useState<number | null>(null);
   const [pinnedFocusId, setPinnedFocusId] = useState<number | null>(null);
 
   const focusedId = transientFocusId ?? pinnedFocusId;
+  const focusedRow = focusedId == null ? null : rows.find((r) => r.id === focusedId) ?? null;
 
   const handleHover = useCallback((id: number) => {
     setTransientFocusId(id);
@@ -176,11 +217,12 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [materialId, validatedOnly]);
 
-  // ── reset focus + brush when material changes ─────────────────────────
+  // ── reset focus + brush + family filter when material changes ─────────
   useEffect(() => {
     setPinnedFocusId(null);
     setTransientFocusId(null);
     setBrushRange(null);
+    setFamilyFilter(null);
   }, [materialId]);
 
   // ── bivariate same-index collapse guard ───────────────────────────────
@@ -192,8 +234,66 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     }
   }, [mode, xKey, yKeyBi]);
 
-  // ── correlation matrix (derived from rows) ────────────────────────────
-  const correlationMatrix = useMemo(() => buildCorrelationMatrix(rows), [rows]);
+  // ── recipe families (derived from rows) ───────────────────────────────
+  const families = useMemo(() => buildFamilies(rows), [rows]);
+
+  const focusedFamily = useMemo<FamilyMember[] | null>(() => {
+    if (focusedId == null) return null;
+    let best: FamilyMember[] | null = null;
+    for (const members of families.values()) {
+      if (members.some((m) => m.row.id === focusedId)) {
+        if (
+          !best ||
+          members.length > best.length ||
+          (members.length === best.length &&
+            members[0].varyingAxis < best[0].varyingAxis)
+        ) {
+          best = members;
+        }
+      }
+    }
+    return best;
+  }, [families, focusedId]);
+
+  // ── all families the focused entry belongs to (for filter buttons) ────
+  const focusedAvailableFamilies = useMemo<FamilyMember[][]>(() => {
+    if (focusedId == null) return [];
+    return Array.from(families.values()).filter((m) =>
+      m.some((fm) => fm.row.id === focusedId),
+    );
+  }, [families, focusedId]);
+
+  // ── member set for the active family filter ────────────────────────────
+  const visibleIdsViaFilter = useMemo<Set<number> | null>(() => {
+    if (!familyFilter) return null;
+    for (const members of families.values()) {
+      if (
+        members.some((m) => m.row.id === familyFilter.anchorRowId) &&
+        members[0].varyingAxis === familyFilter.axis
+      ) {
+        return new Set(members.map((m) => m.row.id));
+      }
+    }
+    return null;
+  }, [families, familyFilter]);
+
+  // ── filtered rows for downstream panels ───────────────────────────────
+  const displayRows = useMemo(
+    () =>
+      visibleIdsViaFilter
+        ? rows.filter((r) => visibleIdsViaFilter.has(r.id))
+        : rows,
+    [rows, visibleIdsViaFilter],
+  );
+
+  // ── correlation matrix (derived from displayRows) ─────────────────────
+  const correlationMatrix = useMemo(
+    () =>
+      matrixSource === "indices"
+        ? buildCorrelationMatrix(displayRows)
+        : buildRawParamCorrelationMatrix(displayRows),
+    [displayRows, matrixSource],
+  );
 
   // ── per-axis stats for right-rail hero ────────────────────────────────
   const stats = useMemo(() => {
@@ -257,7 +357,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
 
           {/* Material picker */}
           <RailSection title="Material">
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto pr-1">
               {materials.map((m) => (
                 <RailPickerButton
                   key={m.id}
@@ -392,6 +492,21 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                 index × index — colour coordinates only
               </span>
             )}
+            <div className="ml-auto">
+              <button
+                type="button"
+                onClick={() => setTrimOutliers((v) => !v)}
+                className={
+                  "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+                  (trimOutliers
+                    ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
+                    : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+                }
+                title="Trim 1% / 99% percentile to keep outliers from compressing the chart"
+              >
+                Trim outliers{trimOutliers && offChartCount > 0 ? ` (+${offChartCount})` : ""}
+              </button>
+            </div>
           </div>
 
           {/* Body: scatter + lower panels */}
@@ -451,8 +566,25 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   onClick={handleBackgroundClear}
                 >
                   <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-[var(--shadow-card)] p-4">
+                    {familyFilter && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 mb-2 rounded-sm border border-[color:var(--color-primary)] bg-[color:var(--color-surface-elevated)]">
+                        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-primary)] font-semibold">
+                          Filter active
+                        </span>
+                        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-ink-muted)]">
+                          {familyFilter.axis} sweep · {displayRows.length} entries
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setFamilyFilter(null); }}
+                          className="ml-auto px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] rounded-sm border border-[color:var(--color-primary)] text-[color:var(--color-primary)] hover:bg-[color:var(--color-surface)]"
+                        >
+                          × Clear
+                        </button>
+                      </div>
+                    )}
                     <ExposureScatter
-                      rows={rows}
+                      rows={displayRows}
                       mode={mode}
                       xKey={xKey}
                       yKey={yKey}
@@ -463,6 +595,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                       onLeave={handleLeave}
                       onClick={handleClick}
                       dimRange={brushRange}
+                      family={focusedFamily ?? undefined}
+                      trimOutliers={trimOutliers}
+                      onOffChartCount={setOffChartCount}
                     />
                   </div>
                 </div>
@@ -472,7 +607,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   <div className="flex-1 min-w-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
                     <PanelLabel title="Hue ribbon" subtitle={`ordered by ${xKey}`} />
                     <ExposureHueRibbon
-                      rows={rows}
+                      rows={displayRows}
                       orderBy={xKey}
                       focusedId={focusedId}
                       onHover={handleHover}
@@ -483,24 +618,63 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   </div>
                   <div className="shrink-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
                     <PanelLabel title="Correlations" subtitle="|r| heatmap" />
-                    <ExposureCorrelationMatrix
-                      matrix={correlationMatrix}
-                      selectedIndex={xKey}
-                      selectedChannel={mode === "univariate" ? yKeyUni : "L"}
-                      onSelect={(idx, ch) => {
-                        setXKey(idx);
-                        if (mode === "univariate") setYKeyUni(ch);
-                      }}
-                    />
+                    <div className="flex gap-1 mb-2">
+                      <button
+                        type="button"
+                        onClick={() => setMatrixSource("indices")}
+                        className={
+                          "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+                          (matrixSource === "indices"
+                            ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
+                            : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+                        }
+                      >
+                        Indices
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMatrixSource("raw")}
+                        className={
+                          "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+                          (matrixSource === "raw"
+                            ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
+                            : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+                        }
+                      >
+                        Raw params
+                      </button>
+                    </div>
+                    {matrixSource === "indices" ? (
+                      <ExposureCorrelationMatrix<IndexRow>
+                        matrix={correlationMatrix}
+                        rowKeys={INDEX_ROWS}
+                        rowLabels={INDEX_LABELS_MATRIX}
+                        selectedRowKey={xKey}
+                        selectedChannel={mode === "univariate" ? yKeyUni : "L"}
+                        onSelect={(idx, ch) => {
+                          setXKey(idx);
+                          if (mode === "univariate") setYKeyUni(ch);
+                        }}
+                      />
+                    ) : (
+                      <ExposureCorrelationMatrix<RawParamRow>
+                        matrix={correlationMatrix}
+                        rowKeys={RAW_PARAM_ROWS}
+                        rowLabels={RAW_PARAM_LABELS}
+                        selectedRowKey={null}
+                        selectedChannel={null}
+                        onSelect={null}
+                      />
+                    )}
                   </div>
                 </div>
 
                 {/* Exposure range brush */}
                 <div className="px-5 pb-5">
                   <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
-                    <PanelLabel title="Exposure range" subtitle="surface_exposure_index, log scale" />
+                    <PanelLabel title="Exposure range" subtitle="total_exposure_index, log scale" />
                     <ExposureRangeBrush
-                      rows={rows}
+                      rows={displayRows}
                       range={brushRange}
                       onRangeChange={setBrushRange}
                     />
@@ -576,6 +750,25 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               onDiscLeave={handleLeave}
               onDiscClick={handleClick}
               dimRange={brushRange}
+              focusedFamily={focusedFamily}
+              availableFamilies={focusedAvailableFamilies}
+              activeFilterAxis={familyFilter?.axis ?? null}
+              onSetFilter={(axis, anchorRowId) => setFamilyFilter({ axis, anchorRowId })}
+              onClearFilter={() => setFamilyFilter(null)}
+              neighboursSlot={
+                focusedRow ? (
+                  <div className="mt-3 border-t border-[color:var(--color-border)] pt-3">
+                    <ExposureNeighboursPanel
+                      anchor={focusedRow}
+                      candidates={rows}
+                      onSelectNeighbour={(id) => {
+                        setTransientFocusId(null);
+                        setPinnedFocusId(id);
+                      }}
+                    />
+                  </div>
+                ) : undefined
+              }
             />
           </section>
 

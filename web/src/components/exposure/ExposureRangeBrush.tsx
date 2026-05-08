@@ -23,7 +23,7 @@ function fmtRange(v: number): string {
 
 /**
  * The bottom Exposure Brush. A wide tile strip showing every entry's
- * swatch ordered ascending by surface_exposure_index. Drag handles
+ * swatch ordered ascending by total_exposure_index. Drag handles
  * select an [lo, hi] log-scale range. Pure pointer events.
  */
 export const ExposureRangeBrush: React.FC<Props> = ({
@@ -35,8 +35,8 @@ export const ExposureRangeBrush: React.FC<Props> = ({
   const ordered = React.useMemo(() => {
     return [...rows].sort(
       (a, b) =>
-        (a.indices.surface_exposure_index as number) -
-        (b.indices.surface_exposure_index as number),
+        (a.indices.total_exposure_index as number) -
+        (b.indices.total_exposure_index as number),
     );
   }, [rows]);
 
@@ -45,8 +45,8 @@ export const ExposureRangeBrush: React.FC<Props> = ({
   const [exposureMin, exposureMax] = React.useMemo(() => {
     if (ordered.length === 0) return [1, 1] as const;
     return [
-      Math.max(1e-3, ordered[0].indices.surface_exposure_index as number),
-      Math.max(1e-2, ordered[ordered.length - 1].indices.surface_exposure_index as number),
+      Math.max(1e-3, ordered[0].indices.total_exposure_index as number),
+      Math.max(1e-2, ordered[ordered.length - 1].indices.total_exposure_index as number),
     ] as const;
   }, [ordered]);
 

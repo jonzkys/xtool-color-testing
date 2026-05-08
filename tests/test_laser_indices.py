@@ -5,7 +5,7 @@ Reference values are hand-computed from the formulas in the spec:
 - line_spacing_index   = 1 / density
 - pulse_energy_index   = power_percent / mopa_frequency_khz
 - pulse_intensity_index = power_percent / (mopa_frequency_khz * pulse_width_ns)
-- surface_exposure_index = power_percent * density * repeat / speed
+- total_exposure_index = power_percent * density * repeat / speed
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def test_defaults_match_hand_computation() -> None:
     assert indices.line_spacing_mm is None
     assert indices.pulse_energy_index == pytest.approx(50 / 65)
     assert indices.pulse_intensity_index == pytest.approx(50 / (65 * 200))
-    assert indices.surface_exposure_index == pytest.approx(50 * 100 * 1 / 1000)
+    assert indices.total_exposure_index == pytest.approx(50 * 100 * 1 / 1000)
     assert indices.formula_version == INDICES_FORMULA_VERSION
     assert indices.density_model == "opaque"
     assert indices.power_model == "controller_percent"
@@ -39,7 +39,7 @@ def test_defaults_match_hand_computation() -> None:
 def test_stainless_high_density_case() -> None:
     p = ProcessingParams(speed=400, density=2566, repeat=2)
     indices = compute_indices(p)
-    assert indices.surface_exposure_index == pytest.approx(50 * 2566 * 2 / 400)
+    assert indices.total_exposure_index == pytest.approx(50 * 2566 * 2 / 400)
     assert indices.line_spacing_index == pytest.approx(1 / 2566)
 
 
@@ -72,15 +72,15 @@ def test_line_spacing_mm_stays_none_under_opaque_model() -> None:
     assert indices.line_spacing_mm is None
 
 
-def test_formula_version_is_one() -> None:
-    assert INDICES_FORMULA_VERSION == 1
+def test_formula_version_is_two() -> None:
+    assert INDICES_FORMULA_VERSION == 2
 
 
 def test_immutable_dataclass() -> None:
     p = ProcessingParams()
     indices = compute_indices(p)
     with pytest.raises(FrozenInstanceError):
-        indices.surface_exposure_index = 999.0  # type: ignore[misc]
+        indices.total_exposure_index = 999.0  # type: ignore[misc]
 
 
 def test_finite_values_for_all_indices() -> None:
@@ -90,7 +90,33 @@ def test_finite_values_for_all_indices() -> None:
         "line_spacing_index",
         "pulse_energy_index",
         "pulse_intensity_index",
-        "surface_exposure_index",
+        "total_exposure_index",
     ):
         v = getattr(indices, name)
         assert math.isfinite(v), f"{name} is not finite: {v}"
+
+
+def test_ablation_aggression_is_total_exposure_times_pulse_intensity() -> None:
+    indices = compute_indices(ProcessingParams())
+    expected = indices.total_exposure_index * indices.pulse_intensity_index
+    assert indices.ablation_aggression_index == pytest.approx(expected)
+
+
+def test_delivery_smoothness_is_total_exposure_over_pulse_intensity() -> None:
+    indices = compute_indices(ProcessingParams())
+    expected = indices.total_exposure_index / indices.pulse_intensity_index
+    assert indices.delivery_smoothness_index == pytest.approx(expected)
+
+
+def test_log_space_rotation_identities() -> None:
+    """The new pair is a 45° rotation of (total_exposure,
+    pulse_intensity) in log-space. Verify two consequences:
+    geometric mean recovers total_exposure; ratio is pulse_intensity²."""
+    import math
+    indices = compute_indices(ProcessingParams())
+    aggr = indices.ablation_aggression_index
+    smooth = indices.delivery_smoothness_index
+    geom_mean = math.sqrt(aggr * smooth)
+    ratio = aggr / smooth
+    assert geom_mean == pytest.approx(indices.total_exposure_index, rel=1e-9)
+    assert ratio == pytest.approx(indices.pulse_intensity_index ** 2, rel=1e-9)

@@ -6,7 +6,12 @@ export interface LaserIndices {
   line_spacing_mm: number | null;
   pulse_energy_index: number;
   pulse_intensity_index: number;
-  surface_exposure_index: number;
+  total_exposure_index: number;
+  ablation_aggression_index: number;
+  delivery_smoothness_index: number;
+  /** @deprecated alias for total_exposure_index — will go away
+   *  with the next formula-version bump. New code should not read it. */
+  surface_exposure_index?: number;
   formula_version: number;
   density_model: string;
   power_model: string;
@@ -58,7 +63,7 @@ export const PaletteIndicesChips: React.FC<{ indices: LaserIndices }> = ({
 }) => {
   return (
     <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
         <Chip
           label="Pulse spacing"
           value={`${fmtNum(indices.pulse_spacing_mm)} mm`}
@@ -84,9 +89,19 @@ export const PaletteIndicesChips: React.FC<{ indices: LaserIndices }> = ({
           value={fmtNum(indices.pulse_intensity_index)}
         />
         <Chip
-          label="Surface exposure"
-          value={fmtNum(indices.surface_exposure_index)}
-          bar={logBar(indices.surface_exposure_index)}
+          label="Total exposure"
+          value={fmtNum(indices.total_exposure_index)}
+          bar={logBar(indices.total_exposure_index)}
+        />
+        <Chip
+          label="Ablation aggression"
+          value={fmtNum(indices.ablation_aggression_index)}
+          bar={logBar(indices.ablation_aggression_index, 1e-4, 1e2)}
+        />
+        <Chip
+          label="Delivery smoothness"
+          value={fmtNum(indices.delivery_smoothness_index)}
+          bar={logBar(indices.delivery_smoothness_index, 1e2, 1e7)}
         />
       </div>
       <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-[color:var(--color-ink-subtle)]">

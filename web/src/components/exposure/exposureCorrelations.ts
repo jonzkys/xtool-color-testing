@@ -16,6 +16,9 @@ export interface ExposureRow {
    *  not every consumer of ExposureRow needs them — ExposureFocusedCard
    *  does, the math helpers don't. */
   params?: Record<string, number | string>;
+  /** Source test that produced this entry, if any. Manual entries
+   *  have null. Used by the focused-card's "Source test" link. */
+  test_id?: number | null;
 }
 
 // `line_spacing_mm` is intentionally excluded — it stays NULL while
@@ -26,7 +29,9 @@ export const INDEX_ROWS = [
   "line_spacing_index",
   "pulse_energy_index",
   "pulse_intensity_index",
-  "surface_exposure_index",
+  "total_exposure_index",
+  "ablation_aggression_index",
+  "delivery_smoothness_index",
 ] as const satisfies readonly (keyof LaserIndices)[];
 export type IndexRow = (typeof INDEX_ROWS)[number];
 
@@ -51,7 +56,7 @@ function channelValue(row: ExposureRow, col: ChannelCol): number {
 }
 
 /**
- * Build the 5×5 Pearson |r| matrix of (index, channel). Rows with
+ * Build the 7×5 Pearson |r| matrix of (index, channel). Rows with
  * `formula_version=0` are dropped (stale-backfill sentinel). NaN
  * cells indicate insufficient data or zero variance.
  */
@@ -61,6 +66,32 @@ export function buildCorrelationMatrix(
   const valid = rows.filter((r) => r.indices.formula_version >= 1);
   return INDEX_ROWS.map((indexKey) => {
     const xs = valid.map((r) => (r.indices[indexKey] as number | null) ?? NaN);
+    return CHANNEL_COLS.map((col) => {
+      const ys = valid.map((r) => channelValue(r, col));
+      return pearson(xs, ys);
+    });
+  });
+}
+
+export const RAW_PARAM_ROWS = [
+  "power",
+  "speed",
+  "frequency",
+  "density",
+  "passes",
+  "pulse_width",
+] as const;
+export type RawParamRow = (typeof RAW_PARAM_ROWS)[number];
+
+export function buildRawParamCorrelationMatrix(
+  rows: readonly ExposureRow[],
+): number[][] {
+  const valid = rows.filter((r) => r.indices.formula_version >= 1 && r.params);
+  return RAW_PARAM_ROWS.map((paramKey) => {
+    const xs = valid.map((r) => {
+      const v = r.params?.[paramKey];
+      return typeof v === "number" ? v : NaN;
+    });
     return CHANNEL_COLS.map((col) => {
       const ys = valid.map((r) => channelValue(r, col));
       return pearson(xs, ys);

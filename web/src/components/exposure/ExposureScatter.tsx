@@ -1,8 +1,10 @@
 import * as React from "react";
 import { hueDeg, chroma as chromaFn } from "../../color/math";
-import { niceBounds, niceTicks, fmtTick } from "../stabilityChartMath";
+import { niceBounds, niceTicks } from "../stabilityChartMath";
 import type { ChannelCol, ExposureRow, IndexRow } from "./exposureCorrelations";
-import { logLinearRegression } from "./exposureMath";
+import { logLinearRegression, fmtIndexTick, quantile } from "./exposureMath";
+import { ExposureFamilyTrace } from "./ExposureFamilyTrace";
+import type { FamilyMember } from "./recipeFamilies";
 
 export type ScaleKind = "linear" | "log";
 export type ScatterMode = "univariate" | "bivariate";
@@ -20,6 +22,12 @@ interface Props {
   onClick: (id: number) => void;
   /** Optional: dim out-of-range entries (Exposure brush). null = no dim. */
   dimRange?: readonly [number, number] | null;
+  /** Optional: family members to trace as a polyline behind the dots. */
+  family?: readonly FamilyMember[];
+  /** When true, axis bounds clamp to 1st/99th percentile, hiding extreme outliers. Default false. */
+  trimOutliers?: boolean;
+  /** Optional callback fired with the count of dots hidden by trimOutliers. */
+  onOffChartCount?: (count: number) => void;
 }
 
 function rowChannel(row: ExposureRow, key: ChannelCol): number {
@@ -49,7 +57,9 @@ const INDEX_PRETTY: Record<IndexRow, string> = {
   line_spacing_index: "LINE SPACING IDX",
   pulse_energy_index: "PULSE ENERGY IDX",
   pulse_intensity_index: "PULSE INTENSITY IDX",
-  surface_exposure_index: "SURFACE EXPOSURE IDX",
+  total_exposure_index: "TOTAL EXPOSURE IDX",
+  ablation_aggression_index: "ABLATION AGGRESSION IDX",
+  delivery_smoothness_index: "DELIVERY SMOOTHNESS IDX",
 };
 
 const CHANNEL_PRETTY: Record<ChannelCol, string> = {
@@ -89,6 +99,9 @@ export const ExposureScatter: React.FC<Props> = ({
   onLeave,
   onClick,
   dimRange,
+  family,
+  trimOutliers = false,
+  onOffChartCount,
 }) => {
   const xs = rows.map((r) => rowIndex(r, xKey));
   const ys = rows.map((r) =>
@@ -104,8 +117,22 @@ export const ExposureScatter: React.FC<Props> = ({
     ? ys.filter((v) => Number.isFinite(v) && v > 0).map((v) => Math.log10(v))
     : ys.filter((v) => Number.isFinite(v));
 
-  const { min: xMin, max: xMax } = niceBounds(xsForScale, null);
-  const { min: yMin, max: yMax } = niceBounds(ysForScale, null);
+  const { min: xMinRaw, max: xMaxRaw } = niceBounds(xsForScale, null);
+  const { min: yMinRaw, max: yMaxRaw } = niceBounds(ysForScale, null);
+
+  // When trimOutliers is on, clamp bounds to 1st/99th percentile of in-scope data.
+  const xLo = trimOutliers ? quantile(xsForScale, 0.01) : xMinRaw;
+  const xHi = trimOutliers ? quantile(xsForScale, 0.99) : xMaxRaw;
+  const yLo = trimOutliers ? quantile(ysForScale, 0.01) : yMinRaw;
+  const yHi = trimOutliers ? quantile(ysForScale, 0.99) : yMaxRaw;
+
+  // Pad bounds by 5% of range so dots don't sit on the frame edge.
+  const xPad = (xHi - xLo) * 0.05;
+  const yPad = (yHi - yLo) * 0.05;
+  const xMin = xLo - xPad;
+  const xMax = xHi + xPad;
+  const yMin = yLo - yPad;
+  const yMax = yHi + yPad;
 
   const px = (v: number) => {
     const t = ((xScale === "log" ? Math.log10(v) : v) - xMin) / (xMax - xMin || 1);
@@ -126,9 +153,9 @@ export const ExposureScatter: React.FC<Props> = ({
 
   const isInDimRange = (row: ExposureRow): boolean => {
     if (!dimRange) return true;
-    // dimRange is always compared against surface_exposure_index —
+    // dimRange is always compared against total_exposure_index —
     // the brush is anchored to that axis regardless of xKey (per spec).
-    const v = row.indices.surface_exposure_index as number;
+    const v = row.indices.total_exposure_index as number;
     return v >= dimRange[0] && v <= dimRange[1];
   };
 
@@ -136,6 +163,27 @@ export const ExposureScatter: React.FC<Props> = ({
   const minPosX = positiveXs.length > 0 ? Math.min(...positiveXs) : 1;
   const finiteXs = xs.filter(Number.isFinite);
   const maxX = finiteXs.length > 0 ? Math.max(...finiteXs) : 1;
+
+  // Off-chart count: dots whose scaled coordinates fall outside the clamped bounds.
+  const offChartCount = React.useMemo(() => {
+    if (!trimOutliers) return 0;
+    let n = 0;
+    for (const row of rows) {
+      const x = rowIndex(row, xKey);
+      const y = mode === "univariate"
+        ? rowChannel(row, yKey as ChannelCol)
+        : rowIndex(row, yKey as IndexRow);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      const xCheck = xScale === "log" ? Math.log10(Math.max(1e-9, x)) : x;
+      const yCheck = yScale === "log" ? Math.log10(Math.max(1e-9, y)) : y;
+      if (xCheck < xMin || xCheck > xMax || yCheck < yMin || yCheck > yMax) n++;
+    }
+    return n;
+  }, [rows, xKey, yKey, mode, xScale, yScale, xMin, xMax, yMin, yMax, trimOutliers]);
+
+  React.useEffect(() => {
+    onOffChartCount?.(offChartCount);
+  }, [offChartCount, onOffChartCount]);
 
   return (
     <svg
@@ -194,7 +242,7 @@ export const ExposureScatter: React.FC<Props> = ({
           className="fill-[color:var(--color-ink-muted)]"
           style={{ font: "10px var(--font-mono)" }}
         >
-          {xScale === "log" ? fmtTick(Math.pow(10, t)) : fmtTick(t)}
+          {xScale === "log" ? fmtIndexTick(Math.pow(10, t)) : fmtIndexTick(t)}
         </text>
       ))}
       {yTicks.map((t) => (
@@ -206,7 +254,7 @@ export const ExposureScatter: React.FC<Props> = ({
           className="fill-[color:var(--color-ink-muted)]"
           style={{ font: "10px var(--font-mono)" }}
         >
-          {yScale === "log" ? fmtTick(Math.pow(10, t)) : fmtTick(t)}
+          {yScale === "log" ? fmtIndexTick(Math.pow(10, t)) : fmtIndexTick(t)}
         </text>
       ))}
 
@@ -235,6 +283,12 @@ export const ExposureScatter: React.FC<Props> = ({
             ? rowChannel(focused, yKey as ChannelCol)
             : rowIndex(focused, yKey as IndexRow);
         if (!Number.isFinite(fx) || !Number.isFinite(fy)) return null;
+        // Don't render crosshair for out-of-clamp focused entries.
+        if (trimOutliers) {
+          const xCheck = xScale === "log" ? Math.log10(Math.max(1e-9, fx)) : fx;
+          const yCheck = yScale === "log" ? Math.log10(Math.max(1e-9, fy)) : fy;
+          if (xCheck < xMin || xCheck > xMax || yCheck < yMin || yCheck > yMax) return null;
+        }
         return (
           <g aria-hidden="true">
             <line
@@ -261,6 +315,29 @@ export const ExposureScatter: React.FC<Props> = ({
         );
       })()}
 
+      {/* Family trace — rendered behind the dots */}
+      {family && family.length >= 2 && (
+        <ExposureFamilyTrace
+          points={family
+            .map((m) => {
+              const x = rowIndex(m.row, xKey);
+              const y =
+                mode === "univariate"
+                  ? rowChannel(m.row, yKey as ChannelCol)
+                  : rowIndex(m.row, yKey as IndexRow);
+              if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+              // Skip family members that are outside clamped bounds.
+              if (trimOutliers) {
+                const xCheck = xScale === "log" ? Math.log10(Math.max(1e-9, x)) : x;
+                const yCheck = yScale === "log" ? Math.log10(Math.max(1e-9, y)) : y;
+                if (xCheck < xMin || xCheck > xMax || yCheck < yMin || yCheck > yMax) return null;
+              }
+              return [px(x), py(y)] as const;
+            })
+            .filter((p): p is readonly [number, number] => p !== null)}
+        />
+      )}
+
       {/* Dots — focused last so it sits on top of the cloud */}
       {rows
         .map((row, i) => ({ row, isFocused: row.id === focusedId, i }))
@@ -272,6 +349,12 @@ export const ExposureScatter: React.FC<Props> = ({
               ? rowChannel(row, yKey as ChannelCol)
               : rowIndex(row, yKey as IndexRow);
           if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+          // Skip out-of-clamp dots when trimOutliers is on.
+          if (trimOutliers) {
+            const xCheck = xScale === "log" ? Math.log10(Math.max(1e-9, x)) : x;
+            const yCheck = yScale === "log" ? Math.log10(Math.max(1e-9, y)) : y;
+            if (xCheck < xMin || xCheck > xMax || yCheck < yMin || yCheck > yMax) return null;
+          }
           const isFocused = row.id === focusedId;
           const visible = isInDimRange(row);
           return (
@@ -285,6 +368,8 @@ export const ExposureScatter: React.FC<Props> = ({
                   fill="none"
                   stroke="var(--color-primary)"
                   strokeWidth={2}
+                  onClick={(e) => { e.stopPropagation(); onClick(row.id); }}
+                  style={{ cursor: "pointer" }}
                 />
               )}
               <circle
@@ -297,7 +382,7 @@ export const ExposureScatter: React.FC<Props> = ({
                 strokeWidth={isFocused ? 1 : 0.6}
                 onMouseEnter={() => onHover(row.id)}
                 onMouseLeave={() => onLeave()}
-                onClick={() => onClick(row.id)}
+                onClick={(e) => { e.stopPropagation(); onClick(row.id); }}
                 style={{ cursor: "pointer" }}
               />
             </g>

@@ -10,6 +10,25 @@
  * helpers drop NaN-containing rows rather than poisoning the result.
  */
 
+/**
+ * Format a tick label intelligently for arbitrary-magnitude axes.
+ * Uses fixed notation in the [0.001, 99999] range, exponential
+ * notation otherwise, and tries to use the minimum significant
+ * digits needed for adjacent ticks to be distinguishable.
+ */
+export function fmtIndexTick(v: number): string {
+  if (!Number.isFinite(v)) return "—";
+  if (v === 0) return "0";
+  const abs = Math.abs(v);
+  if (abs < 1e-3 || abs >= 1e5) return v.toExponential(1);
+  if (abs >= 1000) return v.toFixed(0);
+  if (abs >= 100) return v.toFixed(0);
+  if (abs >= 10) return v.toFixed(1);
+  if (abs >= 1) return v.toFixed(2);
+  if (abs >= 0.01) return v.toFixed(3);
+  return v.toFixed(4);
+}
+
 export function pearson(xs: readonly number[], ys: readonly number[]): number {
   if (xs.length !== ys.length) return NaN;
   const cleanXs: number[] = [];
@@ -114,4 +133,27 @@ export function logLinearRegression(
   }
   const r2 = ssTot === 0 ? NaN : 1 - ssRes / ssTot;
   return { intercept, slope, r2, n };
+}
+
+/**
+ * Linear-interpolated quantile. Drops NaN values before sorting.
+ * Returns NaN when the input is empty or all-NaN.
+ *
+ * `q` is the quantile in [0, 1]. q=0 → min, q=1 → max, q=0.5 → median.
+ */
+export function quantile(values: readonly number[], q: number): number {
+  const clean: number[] = [];
+  for (const v of values) {
+    if (Number.isFinite(v)) clean.push(v);
+  }
+  const n = clean.length;
+  if (n === 0) return NaN;
+  if (n === 1) return clean[0];
+  clean.sort((a, b) => a - b);
+  const idx = Math.max(0, Math.min(n - 1, q * (n - 1)));
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return clean[lo];
+  const frac = idx - lo;
+  return clean[lo] * (1 - frac) + clean[hi] * frac;
 }
