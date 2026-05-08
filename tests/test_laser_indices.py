@@ -10,6 +10,7 @@ Reference values are hand-computed from the formulas in the spec:
 from __future__ import annotations
 
 import math
+from dataclasses import FrozenInstanceError
 
 import pytest
 
@@ -78,8 +79,8 @@ def test_formula_version_is_one() -> None:
 def test_immutable_dataclass() -> None:
     p = ProcessingParams()
     indices = compute_indices(p)
-    with pytest.raises(Exception):
-        indices.surface_exposure_index = 999.0
+    with pytest.raises(FrozenInstanceError):
+        indices.surface_exposure_index = 999.0  # type: ignore[misc]
 
 
 def test_finite_values_for_all_indices() -> None:

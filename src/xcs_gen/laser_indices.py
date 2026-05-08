@@ -73,13 +73,6 @@ def compute_indices(
     if pw == 0:
         raise ValueError("pulse_width must be non-zero to compute laser indices")
 
-    pulse_spacing_mm = speed / (freq * 1000)
-    line_spacing_index = 1 / density
-    pulse_energy_index = power / freq
-    pulse_intensity_index = power / (freq * pw)
-    surface_exposure_index = power * density * repeat / speed
-
-    line_spacing_mm: float | None = None
     if density_model != "opaque":
         raise ValueError(
             f"density_model={density_model!r} not supported in formula "
@@ -91,6 +84,13 @@ def compute_indices(
             f"power_model={power_model!r} not supported in formula "
             f"version {INDICES_FORMULA_VERSION}",
         )
+
+    pulse_spacing_mm = speed / (freq * 1000)
+    line_spacing_index = 1 / density
+    line_spacing_mm: float | None = None
+    pulse_energy_index = power / freq
+    pulse_intensity_index = power / (freq * pw)
+    surface_exposure_index = power * density * repeat / speed
 
     return LaserIndices(
         pulse_spacing_mm=pulse_spacing_mm,
