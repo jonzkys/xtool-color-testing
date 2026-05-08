@@ -11,14 +11,17 @@ interface Props {
   onDiscHover?: (id: number) => void;
   onDiscLeave?: () => void;
   onDiscClick?: (id: number) => void;
+  /** Optional: mirrors ExposurePage's exposure brush so the disc
+   *  fades out-of-range entries in lockstep with the scatter. */
+  dimRange?: readonly [number, number] | null;
 }
 
 const INDEX_LABELS: Record<IndexRow, string> = {
-  surface_exposure_index: "SURFACE_EXPOSURE",
-  pulse_intensity_index: "PULSE_INTENSITY",
-  pulse_energy_index: "PULSE_ENERGY",
-  pulse_spacing_mm: "PULSE_SPACING (mm)",
-  line_spacing_index: "LINE_SPACING_INDEX",
+  surface_exposure_index: "Surface exposure",
+  pulse_intensity_index: "Pulse intensity",
+  pulse_energy_index: "Pulse energy",
+  pulse_spacing_mm: "Pulse spacing (mm)",
+  line_spacing_index: "Line spacing index",
 };
 
 const INDEX_ORDER: IndexRow[] = [
@@ -38,12 +41,12 @@ function fmt(n: number | null | undefined): string {
 }
 
 const PARAM_FIELDS: { key: string; label: string; suffix?: string }[] = [
-  { key: "power", label: "POWER", suffix: " %" },
-  { key: "speed", label: "SPEED", suffix: " mm/s" },
-  { key: "frequency", label: "FREQUENCY", suffix: " kHz" },
-  { key: "density", label: "DENSITY" },
-  { key: "passes", label: "PASSES" },
-  { key: "pulse_width", label: "PULSE_WIDTH", suffix: " ns" },
+  { key: "power", label: "Power", suffix: " %" },
+  { key: "speed", label: "Speed", suffix: " mm/s" },
+  { key: "frequency", label: "Frequency", suffix: " kHz" },
+  { key: "density", label: "Density" },
+  { key: "passes", label: "Passes" },
+  { key: "pulse_width", label: "Pulse width", suffix: " ns" },
 ];
 
 export const ExposureFocusedCard: React.FC<Props> = ({
@@ -53,58 +56,77 @@ export const ExposureFocusedCard: React.FC<Props> = ({
   onDiscHover,
   onDiscLeave,
   onDiscClick,
+  dimRange,
 }) => {
   const focused = focusedId == null ? null : rows.find((r) => r.id === focusedId) ?? null;
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex gap-3">
-        {focused && (
+      {/* Disc — always visible. The card stays readable when nothing
+          is focused so the rail doesn't collapse to a tiny stub. */}
+      <div className="flex justify-center">
+        <ExposureChromaDisc
+          rows={rows}
+          focusedId={focusedId}
+          size={150}
+          onHover={onDiscHover}
+          onLeave={onDiscLeave}
+          onClick={onDiscClick}
+          dimRange={dimRange}
+        />
+      </div>
+
+      {/* Swatch — only when focused. */}
+      {focused && (
+        <div className="flex items-center gap-2">
           <div
-            className="flex-shrink-0 flex items-end justify-center w-[120px] h-[120px] rounded-sm border border-[color:var(--color-border)] p-2"
+            className="h-9 w-9 shrink-0 rounded-[3px] border border-[color:var(--color-border-strong)]"
             style={{ background: focused.hex }}
-          >
-            <span className="font-mono text-xs uppercase text-white drop-shadow-md">
+            aria-label={`swatch ${focused.hex}`}
+          />
+          <div className="flex flex-col leading-tight">
+            <span className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)]">
+              Hex
+            </span>
+            <span className="font-mono text-[12.5px] tabular-nums text-[color:var(--color-ink)]">
               {focused.hex.toUpperCase()}
             </span>
           </div>
-        )}
-        <div className="flex-1">
-          <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)] mb-1">
-            a* / b* CHROMATICITY
-          </div>
-          <ExposureChromaDisc
-            rows={rows}
-            focusedId={focusedId}
-            size={140}
-            onHover={onDiscHover}
-            onLeave={onDiscLeave}
-            onClick={onDiscClick}
-          />
         </div>
-      </div>
+      )}
 
       {!focused && (
-        <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)] py-4 text-center border-t border-[color:var(--color-border)]">
-          hover any dot to inspect
+        <div className="border-t border-[color:var(--color-border)] pt-3 text-center">
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)]">
+            Idle
+          </p>
+          <p className="font-mono text-[11px] text-[color:var(--color-ink-muted)] mt-1 leading-snug">
+            Hover or click any dot to inspect its recipe and indices.
+          </p>
         </div>
       )}
 
       {focused && (
         <>
           <div className="border-t border-[color:var(--color-border)] pt-3">
-            <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)] mb-2">
-              RECIPE
+            <div className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold mb-2">
+              Recipe
             </div>
             <div className="flex flex-col gap-1">
               {PARAM_FIELDS.map((field) => {
                 const v = focused.params?.[field.key];
                 if (v == null) return null;
                 return (
-                  <div key={field.key} className="flex justify-between font-mono text-xs">
-                    <span className="text-[color:var(--color-ink-subtle)]">{field.label}</span>
-                    <span className="text-[color:var(--color-ink)]">
-                      {String(v)}{field.suffix ?? ""}
+                  <div
+                    key={field.key}
+                    className="flex justify-between items-baseline font-mono text-[11.5px]"
+                  >
+                    <span className="text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)]">
+                      {field.label}
+                    </span>
+                    <span className="tabular-nums text-[color:var(--color-ink)]">
+                      {String(v)}
+                      {field.suffix ?? ""}
                     </span>
                   </div>
                 );
@@ -113,8 +135,8 @@ export const ExposureFocusedCard: React.FC<Props> = ({
           </div>
 
           <div className="border-t border-[color:var(--color-border)] pt-3">
-            <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)] mb-2">
-              INDICES
+            <div className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold mb-2">
+              Indices
             </div>
             <div className="flex flex-col gap-1">
               {INDEX_ORDER.map((key) => {
@@ -124,22 +146,32 @@ export const ExposureFocusedCard: React.FC<Props> = ({
                     ? focused.indices.pulse_spacing_mm
                     : (focused.indices[key] as number | null);
                 return (
-                  <div key={key} className="flex justify-between font-mono text-xs">
+                  <div
+                    key={key}
+                    className={[
+                      "flex justify-between items-baseline font-mono text-[11.5px] rounded-[3px] -mx-1 px-1 py-0.5",
+                      isHighlighted
+                        ? "bg-[color:var(--color-primary-tint)]"
+                        : "",
+                    ].join(" ")}
+                  >
                     <span
-                      className={
+                      className={[
+                        "text-[10px] uppercase tracking-[0.16em]",
                         isHighlighted
                           ? "text-[color:var(--color-primary)] font-semibold"
-                          : "text-[color:var(--color-ink-subtle)]"
-                      }
+                          : "text-[color:var(--color-ink-subtle)]",
+                      ].join(" ")}
                     >
                       {INDEX_LABELS[key]}
                     </span>
                     <span
-                      className={
+                      className={[
+                        "tabular-nums",
                         isHighlighted
                           ? "text-[color:var(--color-primary)] font-semibold"
-                          : "text-[color:var(--color-ink)]"
-                      }
+                          : "text-[color:var(--color-ink)]",
+                      ].join(" ")}
                     >
                       {fmt(v as number | null)}
                     </span>

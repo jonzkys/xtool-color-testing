@@ -7,8 +7,18 @@ interface Props {
    *  null = "no filter" = all rows in scope. */
   range: readonly [number, number] | null;
   onRangeChange: (range: readonly [number, number] | null) => void;
-  /** Strip pixel height. Default 24. */
+  /** Strip pixel height. Default 28. */
   height?: number;
+}
+
+function fmtRange(v: number): string {
+  if (!Number.isFinite(v)) return "—";
+  const abs = Math.abs(v);
+  if (abs === 0) return "0";
+  if (abs < 1e-2 || abs >= 1e4) return v.toExponential(1);
+  if (abs >= 100) return v.toFixed(0);
+  if (abs >= 10) return v.toFixed(1);
+  return v.toFixed(2);
 }
 
 /**
@@ -20,7 +30,7 @@ export const ExposureRangeBrush: React.FC<Props> = ({
   rows,
   range,
   onRangeChange,
-  height = 24,
+  height = 28,
 }) => {
   const ordered = React.useMemo(() => {
     return [...rows].sort(
@@ -89,22 +99,39 @@ export const ExposureRangeBrush: React.FC<Props> = ({
   const onClearRange = () => onRangeChange(null);
 
   return (
-    <div className="flex flex-col gap-1 w-full">
-      <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em] font-mono text-[color:var(--color-ink-subtle)]">
-        <span>Exposure brush · drag handles</span>
+    <div className="flex flex-col gap-1.5 w-full">
+      {/* Header strip — value readout + clear button */}
+      <div className="flex items-baseline justify-between font-mono">
+        <div className="flex items-baseline gap-3">
+          <span className="text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold">
+            Selected
+          </span>
+          <span className="text-[11px] tabular-nums text-[color:var(--color-ink)]">
+            {range ? fmtRange(range[0]) : fmtRange(exposureMin)}
+            <span className="text-[color:var(--color-ink-subtle)] mx-1.5">→</span>
+            {range ? fmtRange(range[1]) : fmtRange(exposureMax)}
+          </span>
+          {!range && (
+            <span className="text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)]">
+              · all
+            </span>
+          )}
+        </div>
         {range && (
           <button
             type="button"
-            className="px-2 py-0.5 text-[color:var(--color-primary)] hover:underline"
+            className="px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-[color:var(--color-primary)] hover:text-[color:var(--color-primary-hover)]"
             onClick={onClearRange}
           >
             clear
           </button>
         )}
       </div>
+
+      {/* The strip itself */}
       <div
         ref={containerRef}
-        className="relative w-full border border-[color:var(--color-border)]"
+        className="relative w-full rounded-[3px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-hidden"
         style={{ height: `${height}px` }}
       >
         {ordered.map((row, i) => (
@@ -120,33 +147,68 @@ export const ExposureRangeBrush: React.FC<Props> = ({
             }}
           />
         ))}
+
+        {/* Range veil — subtle parchment-tone block over the muted ends */}
         {range && (
           <>
             <div
-              className="absolute top-0 bottom-0 left-0 bg-[color:var(--color-bg)] opacity-70"
+              className="absolute top-0 bottom-0 left-0 bg-[color:var(--color-bg)] opacity-78"
               style={{ width: `${loF * 100}%` }}
             />
             <div
-              className="absolute top-0 bottom-0 right-0 bg-[color:var(--color-bg)] opacity-70"
+              className="absolute top-0 bottom-0 right-0 bg-[color:var(--color-bg)] opacity-78"
               style={{ width: `${(1 - hiF) * 100}%` }}
             />
           </>
         )}
+
+        {/* Range frame — when active, an amber bracket sits over the
+            chosen window so its edges read at a glance. */}
+        {range && (
+          <div
+            aria-hidden="true"
+            className="absolute top-0 bottom-0 pointer-events-none"
+            style={{
+              left: `${loF * 100}%`,
+              right: `${(1 - hiF) * 100}%`,
+              borderLeft: "1px solid var(--color-primary)",
+              borderRight: "1px solid var(--color-primary)",
+              boxShadow: "inset 0 1px 0 var(--color-primary), inset 0 -1px 0 var(--color-primary)",
+            }}
+          />
+        )}
+
+        {/* Drag handles */}
         <div
           role="slider"
           aria-label="lower bound"
-          className="absolute top-[-4px] bottom-[-4px] w-1 bg-[color:var(--color-primary)] cursor-ew-resize"
+          aria-valuemin={exposureMin}
+          aria-valuemax={exposureMax}
+          aria-valuenow={lo}
+          tabIndex={0}
+          className="absolute top-[-5px] bottom-[-5px] w-1 bg-[color:var(--color-primary)] cursor-ew-resize shadow-[0_0_0_1px_rgba(255,255,255,0.6)]"
           style={{ left: `calc(${loF * 100}% - 2px)` }}
           onPointerDown={onHandleDown("lo")}
         />
         <div
           role="slider"
           aria-label="upper bound"
-          className="absolute top-[-4px] bottom-[-4px] w-1 bg-[color:var(--color-primary)] cursor-ew-resize"
+          aria-valuemin={exposureMin}
+          aria-valuemax={exposureMax}
+          aria-valuenow={hi}
+          tabIndex={0}
+          className="absolute top-[-5px] bottom-[-5px] w-1 bg-[color:var(--color-primary)] cursor-ew-resize shadow-[0_0_0_1px_rgba(255,255,255,0.6)]"
           style={{ left: `calc(${hiF * 100}% - 2px)` }}
           onPointerDown={onHandleDown("hi")}
         />
       </div>
+
+      {/* Hint — only shown idle so the active state isn't cluttered */}
+      {!range && (
+        <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[color:var(--color-ink-subtle)]">
+          drag a handle to dim entries outside the range
+        </p>
+      )}
     </div>
   );
 };
