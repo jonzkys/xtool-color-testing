@@ -11,12 +11,14 @@ the version so a recompute pass can flush stale values.
 
 Formulas (see docs/superpowers/specs/2026-05-07-laser-exposure-indices-design.md):
 
-    pulse_spacing_mm        = speed / (mopa_frequency * 1000)        # honest mm
-    line_spacing_index      = 1 / density                             # opaque
-    line_spacing_mm         = NULL while density_model == "opaque"
-    pulse_energy_index      = power / mopa_frequency
-    pulse_intensity_index   = power / (mopa_frequency * pulse_width)
-    surface_exposure_index  = power * density * repeat / speed
+    pulse_spacing_mm           = speed / (mopa_frequency * 1000)        # honest mm
+    line_spacing_index         = 1 / density                             # opaque
+    line_spacing_mm            = NULL while density_model == "opaque"
+    pulse_energy_index         = power / mopa_frequency
+    pulse_intensity_index      = power / (mopa_frequency * pulse_width)
+    total_exposure_index       = power * density * repeat / speed
+    ablation_aggression_index  = total_exposure_index * pulse_intensity_index
+    delivery_smoothness_index  = total_exposure_index / pulse_intensity_index
 
 `mopa_frequency` is in kHz; `speed` is mm/s; `pulse_width` is ns;
 `power` is the controller % setting.
@@ -28,7 +30,7 @@ from dataclasses import dataclass
 
 from .model import ProcessingParams
 
-INDICES_FORMULA_VERSION = 1
+INDICES_FORMULA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -38,7 +40,9 @@ class LaserIndices:
     line_spacing_mm: float | None
     pulse_energy_index: float
     pulse_intensity_index: float
-    surface_exposure_index: float
+    total_exposure_index: float
+    ablation_aggression_index: float
+    delivery_smoothness_index: float
     formula_version: int
     density_model: str
     power_model: str
@@ -90,7 +94,9 @@ def compute_indices(
     line_spacing_mm: float | None = None
     pulse_energy_index = power / freq
     pulse_intensity_index = power / (freq * pw)
-    surface_exposure_index = power * density * repeat / speed
+    total_exposure_index = power * density * repeat / speed
+    ablation_aggression_index = total_exposure_index * pulse_intensity_index
+    delivery_smoothness_index = total_exposure_index / pulse_intensity_index
 
     return LaserIndices(
         pulse_spacing_mm=pulse_spacing_mm,
@@ -98,7 +104,9 @@ def compute_indices(
         line_spacing_mm=line_spacing_mm,
         pulse_energy_index=pulse_energy_index,
         pulse_intensity_index=pulse_intensity_index,
-        surface_exposure_index=surface_exposure_index,
+        total_exposure_index=total_exposure_index,
+        ablation_aggression_index=ablation_aggression_index,
+        delivery_smoothness_index=delivery_smoothness_index,
         formula_version=INDICES_FORMULA_VERSION,
         density_model=density_model,
         power_model=power_model,
