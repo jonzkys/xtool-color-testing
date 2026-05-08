@@ -1,6 +1,6 @@
 import * as React from "react";
 import { hueDeg, chroma as chromaFn } from "../../color/math";
-import { niceBounds, niceTicks } from "../stabilityChartMath";
+import { niceBounds, niceTicks, fmtTick } from "../stabilityChartMath";
 import type { ChannelCol, ExposureRow, IndexRow } from "./exposureCorrelations";
 import { logLinearRegression } from "./exposureMath";
 
@@ -93,13 +93,16 @@ export const ExposureScatter: React.FC<Props> = ({
 
   const isInDimRange = (row: ExposureRow): boolean => {
     if (!dimRange) return true;
+    // dimRange is always compared against surface_exposure_index —
+    // the brush is anchored to that axis regardless of xKey (per spec).
     const v = row.indices.surface_exposure_index as number;
     return v >= dimRange[0] && v <= dimRange[1];
   };
 
   const positiveXs = xs.filter((v) => Number.isFinite(v) && v > 0);
   const minPosX = positiveXs.length > 0 ? Math.min(...positiveXs) : 1;
-  const maxX = xs.length > 0 ? Math.max(...xs.filter(Number.isFinite)) : 1;
+  const finiteXs = xs.filter(Number.isFinite);
+  const maxX = finiteXs.length > 0 ? Math.max(...finiteXs) : 1;
 
   return (
     <svg
@@ -156,7 +159,7 @@ export const ExposureScatter: React.FC<Props> = ({
           fill="var(--color-ink-subtle)"
           textAnchor="middle"
         >
-          {xScale === "log" ? `10^${t}` : t}
+          {xScale === "log" ? fmtTick(Math.pow(10, t)) : fmtTick(t)}
         </text>
       ))}
       {yTicks.map((t) => (
@@ -169,7 +172,7 @@ export const ExposureScatter: React.FC<Props> = ({
           fill="var(--color-ink-subtle)"
           textAnchor="end"
         >
-          {yScale === "log" ? `10^${t}` : t}
+          {yScale === "log" ? fmtTick(Math.pow(10, t)) : fmtTick(t)}
         </text>
       ))}
 
@@ -179,7 +182,7 @@ export const ExposureScatter: React.FC<Props> = ({
           x1={px(minPosX)}
           y1={py(fit.intercept + fit.slope * Math.log10(minPosX))}
           x2={px(maxX)}
-          y2={py(fit.intercept + fit.slope * Math.log10(Math.max(1e-3, maxX)))}
+          y2={py(fit.intercept + fit.slope * Math.log10(maxX))}
           stroke="var(--color-primary)"
           strokeWidth={1.4}
           strokeDasharray="6 4"
