@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   buildCorrelationMatrix,
+  buildRawParamCorrelationMatrix,
   INDEX_ROWS,
   CHANNEL_COLS,
+  RAW_PARAM_ROWS,
   type ExposureRow,
 } from "./exposureCorrelations";
 
@@ -80,5 +82,47 @@ describe("buildCorrelationMatrix", () => {
     const m = buildCorrelationMatrix(rows);
     const chromaCol = CHANNEL_COLS.indexOf("chroma");
     expect(Number.isNaN(m[0][chromaCol])).toBe(true);
+  });
+});
+
+describe("buildRawParamCorrelationMatrix", () => {
+  it("returns a 6x5 matrix with all 6 raw param rows", () => {
+    expect(RAW_PARAM_ROWS).toEqual([
+      "power", "speed", "frequency", "density", "passes", "pulse_width",
+    ]);
+    const rows: ExposureRow[] = [
+      row(10, 80, 0, 0), row(20, 60, 0, 0), row(40, 40, 0, 0),
+    ].map((r, i) => ({
+      ...r,
+      params: { power: 10 + i, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 },
+    }));
+    const m = buildRawParamCorrelationMatrix(rows);
+    expect(m.length).toBe(6);
+    expect(m[0].length).toBe(5);
+  });
+
+  it("strong negative correlation power × L*", () => {
+    const rows: ExposureRow[] = [
+      { ...row(10, 80, 0, 0), params: { power: 10, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 } },
+      { ...row(20, 60, 0, 0), params: { power: 20, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 } },
+      { ...row(40, 40, 0, 0), params: { power: 40, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 } },
+      { ...row(80, 20, 0, 0), params: { power: 80, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 } },
+    ];
+    const m = buildRawParamCorrelationMatrix(rows);
+    const powerRow = RAW_PARAM_ROWS.indexOf("power");
+    const lCol = CHANNEL_COLS.indexOf("L");
+    expect(m[powerRow][lCol]).toBeLessThan(-0.95);
+  });
+
+  it("returns NaN cells for params that are constant across all rows", () => {
+    const rows: ExposureRow[] = [
+      { ...row(10, 80, 0, 0), params: { power: 10, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 } },
+      { ...row(20, 60, 0, 0), params: { power: 20, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 } },
+      { ...row(40, 40, 0, 0), params: { power: 40, speed: 1000, frequency: 65, density: 100, passes: 1, pulse_width: 200 } },
+    ];
+    const m = buildRawParamCorrelationMatrix(rows);
+    // 'speed' is constant 1000 → zero variance → NaN
+    const speedRow = RAW_PARAM_ROWS.indexOf("speed");
+    expect(Number.isNaN(m[speedRow][0])).toBe(true);
   });
 });

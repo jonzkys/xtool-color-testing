@@ -2,7 +2,25 @@ import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 
 import { ExposureCorrelationMatrix } from "./ExposureCorrelationMatrix";
-import { INDEX_ROWS, CHANNEL_COLS } from "./exposureCorrelations";
+import { INDEX_ROWS, CHANNEL_COLS, type IndexRow, type ChannelCol } from "./exposureCorrelations";
+
+const INDEX_ROW_LABELS: Record<IndexRow, string> = {
+  pulse_spacing_mm: "PSp",
+  line_spacing_index: "LSp",
+  pulse_energy_index: "PEn",
+  pulse_intensity_index: "PIn",
+  total_exposure_index: "TEx",
+  ablation_aggression_index: "AAg",
+  delivery_smoothness_index: "DSm",
+};
+
+const COL_LABELS: Record<ChannelCol, string> = {
+  L: "L*",
+  a: "a*",
+  b: "b*",
+  hue: "h°",
+  chroma: "C*",
+};
 
 describe("ExposureCorrelationMatrix", () => {
   const matrix: number[][] = [
@@ -17,9 +35,11 @@ describe("ExposureCorrelationMatrix", () => {
 
   it("renders 7 row labels and 5 column labels", () => {
     const { container } = render(
-      <ExposureCorrelationMatrix
+      <ExposureCorrelationMatrix<IndexRow>
         matrix={matrix}
-        selectedIndex="total_exposure_index"
+        rowKeys={INDEX_ROWS}
+        rowLabels={INDEX_ROW_LABELS}
+        selectedRowKey="total_exposure_index"
         selectedChannel="L"
         onSelect={() => undefined}
       />,
@@ -30,9 +50,11 @@ describe("ExposureCorrelationMatrix", () => {
 
   it("shows numeric labels on cells with |r| >= 0.1, padded to two digits", () => {
     const { container } = render(
-      <ExposureCorrelationMatrix
+      <ExposureCorrelationMatrix<IndexRow>
         matrix={matrix}
-        selectedIndex="total_exposure_index"
+        rowKeys={INDEX_ROWS}
+        rowLabels={INDEX_ROW_LABELS}
+        selectedRowKey="total_exposure_index"
         selectedChannel="L"
         onSelect={() => undefined}
       />,
@@ -50,9 +72,11 @@ describe("ExposureCorrelationMatrix", () => {
   it("clicking a cell calls onSelect with that (index, channel) pair", () => {
     const onSelect = vi.fn();
     const { container } = render(
-      <ExposureCorrelationMatrix
+      <ExposureCorrelationMatrix<IndexRow>
         matrix={matrix}
-        selectedIndex="total_exposure_index"
+        rowKeys={INDEX_ROWS}
+        rowLabels={INDEX_ROW_LABELS}
+        selectedRowKey="total_exposure_index"
         selectedChannel="L"
         onSelect={onSelect}
       />,
@@ -60,5 +84,40 @@ describe("ExposureCorrelationMatrix", () => {
     const cells = container.querySelectorAll<HTMLElement>('[data-role="matrix-cell"]');
     fireEvent.click(cells[0]);
     expect(onSelect).toHaveBeenCalledWith(INDEX_ROWS[0], CHANNEL_COLS[0]);
+  });
+
+  it("renders read-only cells as divs (not buttons) when onSelect is null", () => {
+    const { container } = render(
+      <ExposureCorrelationMatrix<IndexRow>
+        matrix={matrix}
+        rowKeys={INDEX_ROWS}
+        rowLabels={INDEX_ROW_LABELS}
+        selectedRowKey={null}
+        selectedChannel={null}
+        onSelect={null}
+      />,
+    );
+    const cells = container.querySelectorAll('[data-role="matrix-cell"]');
+    expect(cells.length).toBe(35);
+    // In read-only mode cells are divs not buttons
+    const buttons = container.querySelectorAll('button[data-role="matrix-cell"]');
+    expect(buttons.length).toBe(0);
+  });
+
+  it("renders correct col labels", () => {
+    const { container } = render(
+      <ExposureCorrelationMatrix<IndexRow>
+        matrix={matrix}
+        rowKeys={INDEX_ROWS}
+        rowLabels={INDEX_ROW_LABELS}
+        selectedRowKey="total_exposure_index"
+        selectedChannel="L"
+        onSelect={() => undefined}
+      />,
+    );
+    const colLabels = Array.from(container.querySelectorAll('[data-role="col-label"]')).map(
+      (el) => el.textContent,
+    );
+    expect(colLabels).toEqual(CHANNEL_COLS.map((c) => COL_LABELS[c]));
   });
 });

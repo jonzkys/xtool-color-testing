@@ -72,3 +72,29 @@ export function buildCorrelationMatrix(
     });
   });
 }
+
+export const RAW_PARAM_ROWS = [
+  "power",
+  "speed",
+  "frequency",
+  "density",
+  "passes",
+  "pulse_width",
+] as const;
+export type RawParamRow = (typeof RAW_PARAM_ROWS)[number];
+
+export function buildRawParamCorrelationMatrix(
+  rows: readonly ExposureRow[],
+): number[][] {
+  const valid = rows.filter((r) => r.indices.formula_version >= 1 && r.params);
+  return RAW_PARAM_ROWS.map((paramKey) => {
+    const xs = valid.map((r) => {
+      const v = r.params?.[paramKey];
+      return typeof v === "number" ? v : NaN;
+    });
+    return CHANNEL_COLS.map((col) => {
+      const ys = valid.map((r) => channelValue(r, col));
+      return pearson(xs, ys);
+    });
+  });
+}

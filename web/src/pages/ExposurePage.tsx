@@ -15,11 +15,14 @@ import { ExposureRangeBrush } from "../components/exposure/ExposureRangeBrush";
 import { ExposureFocusedCard } from "../components/exposure/ExposureFocusedCard";
 import {
   buildCorrelationMatrix,
+  buildRawParamCorrelationMatrix,
   CHANNEL_COLS,
   INDEX_ROWS,
+  RAW_PARAM_ROWS,
   type ChannelCol,
   type ExposureRow,
   type IndexRow,
+  type RawParamRow,
 } from "../components/exposure/exposureCorrelations";
 import { pearson, spearman, logLinearRegression } from "../components/exposure/exposureMath";
 import { buildFamilies, type FamilyMember, type VaryingAxis } from "../components/exposure/recipeFamilies";
@@ -72,6 +75,25 @@ const CHANNEL_LABELS: Record<ChannelCol, string> = {
   chroma: "Chroma",
 };
 
+const INDEX_LABELS_MATRIX: Record<IndexRow, string> = {
+  pulse_spacing_mm: "PSp",
+  line_spacing_index: "LSp",
+  pulse_energy_index: "PEn",
+  pulse_intensity_index: "PIn",
+  total_exposure_index: "TEx",
+  ablation_aggression_index: "AAg",
+  delivery_smoothness_index: "DSm",
+};
+
+const RAW_PARAM_LABELS: Record<RawParamRow, string> = {
+  power: "PWR",
+  speed: "SPD",
+  frequency: "FRQ",
+  density: "DEN",
+  passes: "PSS",
+  pulse_width: "PWD",
+};
+
 // ── component ──────────────────────────────────────────────────────────────
 
 export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) {
@@ -102,6 +124,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     anchorRowId: number;
   }
   const [familyFilter, setFamilyFilter] = useState<FamilyFilter | null>(null);
+
+  // ── matrix source tab ─────────────────────────────────────────────────
+  const [matrixSource, setMatrixSource] = useState<"indices" | "raw">("indices");
 
   // ── focus state (mirrors StabilityPage transient/pinned pattern) ───────
   const [transientFocusId, setTransientFocusId] = useState<number | null>(null);
@@ -203,9 +228,6 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     }
   }, [mode, xKey, yKeyBi]);
 
-  // ── correlation matrix (derived from rows) ────────────────────────────
-  const correlationMatrix = useMemo(() => buildCorrelationMatrix(rows), [rows]);
-
   // ── recipe families (derived from rows) ───────────────────────────────
   const families = useMemo(() => buildFamilies(rows), [rows]);
 
@@ -256,6 +278,15 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
         ? rows.filter((r) => visibleIdsViaFilter.has(r.id))
         : rows,
     [rows, visibleIdsViaFilter],
+  );
+
+  // ── correlation matrix (derived from displayRows) ─────────────────────
+  const correlationMatrix = useMemo(
+    () =>
+      matrixSource === "indices"
+        ? buildCorrelationMatrix(displayRows)
+        : buildRawParamCorrelationMatrix(displayRows),
+    [displayRows, matrixSource],
   );
 
   // ── per-axis stats for right-rail hero ────────────────────────────────
@@ -547,15 +578,54 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   </div>
                   <div className="shrink-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
                     <PanelLabel title="Correlations" subtitle="|r| heatmap" />
-                    <ExposureCorrelationMatrix
-                      matrix={correlationMatrix}
-                      selectedIndex={xKey}
-                      selectedChannel={mode === "univariate" ? yKeyUni : "L"}
-                      onSelect={(idx, ch) => {
-                        setXKey(idx);
-                        if (mode === "univariate") setYKeyUni(ch);
-                      }}
-                    />
+                    <div className="flex gap-1 mb-2">
+                      <button
+                        type="button"
+                        onClick={() => setMatrixSource("indices")}
+                        className={
+                          "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+                          (matrixSource === "indices"
+                            ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
+                            : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+                        }
+                      >
+                        Indices
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMatrixSource("raw")}
+                        className={
+                          "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+                          (matrixSource === "raw"
+                            ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
+                            : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+                        }
+                      >
+                        Raw params
+                      </button>
+                    </div>
+                    {matrixSource === "indices" ? (
+                      <ExposureCorrelationMatrix<IndexRow>
+                        matrix={correlationMatrix}
+                        rowKeys={INDEX_ROWS}
+                        rowLabels={INDEX_LABELS_MATRIX}
+                        selectedRowKey={xKey}
+                        selectedChannel={mode === "univariate" ? yKeyUni : "L"}
+                        onSelect={(idx, ch) => {
+                          setXKey(idx);
+                          if (mode === "univariate") setYKeyUni(ch);
+                        }}
+                      />
+                    ) : (
+                      <ExposureCorrelationMatrix<RawParamRow>
+                        matrix={correlationMatrix}
+                        rowKeys={RAW_PARAM_ROWS}
+                        rowLabels={RAW_PARAM_LABELS}
+                        selectedRowKey={null}
+                        selectedChannel={null}
+                        onSelect={null}
+                      />
+                    )}
                   </div>
                 </div>
 

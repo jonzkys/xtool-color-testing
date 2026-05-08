@@ -1,27 +1,17 @@
 import * as React from "react";
 import {
   CHANNEL_COLS,
-  INDEX_ROWS,
   type ChannelCol,
-  type IndexRow,
 } from "./exposureCorrelations";
 
-interface Props {
+interface Props<RowKey extends string> {
   matrix: readonly (readonly number[])[];
-  selectedIndex: IndexRow;
-  selectedChannel: ChannelCol;
-  onSelect: (index: IndexRow, channel: ChannelCol) => void;
+  rowKeys: readonly RowKey[];
+  rowLabels: Record<RowKey, string>;
+  selectedRowKey: RowKey | null;
+  selectedChannel: ChannelCol | null;
+  onSelect: ((rowKey: RowKey, channel: ChannelCol) => void) | null;
 }
-
-const ROW_LABELS: Record<IndexRow, string> = {
-  pulse_spacing_mm: "PSp",
-  line_spacing_index: "LSp",
-  pulse_energy_index: "PEn",
-  pulse_intensity_index: "PIn",
-  total_exposure_index: "TEx",
-  ablation_aggression_index: "AAg",
-  delivery_smoothness_index: "DSm",
-};
 
 const COL_LABELS: Record<ChannelCol, string> = {
   L: "L*",
@@ -56,12 +46,14 @@ function SignBadge({ r }: { r: number }) {
   );
 }
 
-export const ExposureCorrelationMatrix: React.FC<Props> = ({
+export function ExposureCorrelationMatrix<RowKey extends string>({
   matrix,
-  selectedIndex,
+  rowKeys,
+  rowLabels,
+  selectedRowKey,
   selectedChannel,
   onSelect,
-}) => {
+}: Props<RowKey>) {
   return (
     <div className="font-mono">
       <div
@@ -87,53 +79,30 @@ export const ExposureCorrelationMatrix: React.FC<Props> = ({
             {COL_LABELS[c]}
           </div>
         ))}
-        {INDEX_ROWS.map((idx, r) => (
+        {rowKeys.map((idx, r) => (
           <React.Fragment key={idx}>
             <div
               data-role="row-label"
               className={[
                 "text-[10px] uppercase tracking-[0.16em] pr-2 self-center text-right",
-                idx === selectedIndex
+                idx === selectedRowKey
                   ? "text-[color:var(--color-primary)] font-semibold"
                   : "text-[color:var(--color-ink-subtle)]",
               ].join(" ")}
             >
-              {ROW_LABELS[idx]}
+              {rowLabels[idx]}
             </div>
             {CHANNEL_COLS.map((col, c) => {
               const value = matrix[r]?.[c] ?? NaN;
-              const isSelected = idx === selectedIndex && col === selectedChannel;
+              const isSelected = idx === selectedRowKey && col === selectedChannel;
               const pct = inkPctFor(value);
               const showLabel = Number.isFinite(value) && Math.abs(value) >= 0.1;
               const labelText = showLabel
                 ? Math.round(Math.abs(value) * 100).toString().padStart(2, "0")
                 : "";
               const inkOnDark = pct >= 35;
-              return (
-                <button
-                  key={col}
-                  type="button"
-                  data-role="matrix-cell"
-                  className={[
-                    "relative h-7 cursor-pointer rounded-[2px] transition-shadow outline-none",
-                    isSelected
-                      ? "ring-2 ring-[color:var(--color-primary)] ring-offset-1 ring-offset-[color:var(--color-surface)]"
-                      : "ring-1 ring-inset ring-[color:var(--color-border)] hover:ring-[color:var(--color-border-strong)]",
-                    "focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]",
-                  ].join(" ")}
-                  style={{
-                    background:
-                      pct === 0
-                        ? "var(--color-surface-elevated)"
-                        : `color-mix(in oklch, var(--color-ink) ${pct}%, var(--color-surface) ${100 - pct}%)`,
-                  }}
-                  onClick={() => onSelect(idx, col)}
-                  title={
-                    Number.isFinite(value)
-                      ? `${ROW_LABELS[idx]} × ${COL_LABELS[col]} : r = ${value.toFixed(2)}`
-                      : `${ROW_LABELS[idx]} × ${COL_LABELS[col]} : n/a`
-                  }
-                >
+              const cellContent = (
+                <>
                   {showLabel && (
                     <>
                       <SignBadge r={value} />
@@ -150,15 +119,65 @@ export const ExposureCorrelationMatrix: React.FC<Props> = ({
                       </span>
                     </>
                   )}
-                </button>
+                </>
+              );
+              const cellStyle = {
+                background:
+                  pct === 0
+                    ? "var(--color-surface-elevated)"
+                    : `color-mix(in oklch, var(--color-ink) ${pct}%, var(--color-surface) ${100 - pct}%)`,
+              };
+              const baseClass = [
+                "relative h-7 rounded-[2px] transition-shadow outline-none",
+                isSelected
+                  ? "ring-2 ring-[color:var(--color-primary)] ring-offset-1 ring-offset-[color:var(--color-surface)]"
+                  : "ring-1 ring-inset ring-[color:var(--color-border)]",
+              ].join(" ");
+              const titleText = Number.isFinite(value)
+                ? `${rowLabels[idx]} × ${COL_LABELS[col]} : r = ${value.toFixed(2)}`
+                : `${rowLabels[idx]} × ${COL_LABELS[col]} : n/a`;
+
+              if (onSelect !== null) {
+                return (
+                  <button
+                    key={col}
+                    type="button"
+                    data-role="matrix-cell"
+                    className={[
+                      baseClass,
+                      "cursor-pointer",
+                      !isSelected
+                        ? "hover:ring-[color:var(--color-border-strong)]"
+                        : "",
+                      "focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]",
+                    ].join(" ")}
+                    style={cellStyle}
+                    onClick={() => onSelect(idx, col)}
+                    title={titleText}
+                  >
+                    {cellContent}
+                  </button>
+                );
+              }
+
+              return (
+                <div
+                  key={col}
+                  data-role="matrix-cell"
+                  className={[baseClass, "cursor-default"].join(" ")}
+                  style={cellStyle}
+                  title={titleText}
+                >
+                  {cellContent}
+                </div>
               );
             })}
           </React.Fragment>
         ))}
       </div>
       <p className="mt-2 font-mono text-[9.5px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)]">
-        |r|×100 · click to select pair
+        {onSelect !== null ? "|r|×100 · click to select pair" : "|r|×100 · read-only"}
       </p>
     </div>
   );
-};
+}
