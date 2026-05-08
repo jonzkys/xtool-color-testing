@@ -4,6 +4,7 @@ import {
   Field, Input, NumberField, Section, Select,
 } from "../ui";
 import { PulseWidthSelect } from "./PulseWidthSelect";
+import { PaletteIndicesChips } from "./PaletteIndicesChips";
 import type { BaseParams, PaletteEntry } from "../types";
 import type { Material } from "../library";
 import { defaultBaseParams } from "../defaults";
@@ -230,6 +231,15 @@ export function PaletteEntryDialog({
               </div>
             </Section>
           </Card>
+
+          {entry?.indices && (
+            <div className="mt-3 border-t border-[color:var(--color-border)] pt-3">
+              <h4 className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)]">
+                Exposure indices
+              </h4>
+              <PaletteIndicesChips indices={entry.indices} />
+            </div>
+          )}
 
           {error && (
             <p className="text-[12px] text-[color:var(--color-destructive)]">{error}</p>

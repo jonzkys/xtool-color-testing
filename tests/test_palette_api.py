@@ -932,3 +932,25 @@ def test_batch_validate_filters_by_result_ids(client, mid):
     assert r_all["result_count"] == 2
     assert len(r_all["skipped"]) == 0
     assert len(r_all["drifted"]) == 1
+
+
+def test_get_palette_returns_indices_block(client, mid) -> None:
+    """GET /api/palette returns each entry with a populated `indices`
+    block (or with `formula_version=0` for unparseable rows — but the
+    seeded entries are guaranteed-clean)."""
+    _seed_entries(mid)
+    r = client.get("/api/palette")
+    assert r.status_code == 200
+    entries = r.json()
+    assert entries
+    for e in entries:
+        assert "indices" in e
+        idx = e["indices"]
+        for key in (
+            "pulse_spacing_mm", "line_spacing_index", "line_spacing_mm",
+            "pulse_energy_index", "pulse_intensity_index",
+            "surface_exposure_index", "formula_version",
+            "density_model", "power_model",
+        ):
+            assert key in idx, f"missing {key} in indices for entry {e['id']}"
+        assert idx["formula_version"] >= 1

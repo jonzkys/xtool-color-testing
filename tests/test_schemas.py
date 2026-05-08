@@ -199,3 +199,38 @@ def test_svg_layers_material_id_required():
 def test_svg_layers_material_id_rejects_non_string():
     with pytest.raises(ValidationError):
         SvgLayersRequest(**_svg_layers_payload(material_id=1))
+
+
+def test_palette_entry_response_includes_indices() -> None:
+    from xcs_gen_web.schemas import LaserIndicesResponse, PaletteEntryResponse
+
+    payload = {
+        "id": 1,
+        "test_id": None,
+        "material_id": 1,
+        "source": "averaged",
+        "hex": "#aabbcc",
+        "lab": [50.0, 0.0, 0.0],
+        "params": {"speed": 1000},
+        "sigma": 0.1,
+        "notes": "",
+        "created_at": "2026-05-08T00:00:00+00:00",
+        "owner_id": 1,
+        "visibility": "private",
+        "machine_id": "F2Ultra",
+        "indices": {
+            "pulse_spacing_mm": 0.0154,
+            "line_spacing_index": 0.01,
+            "line_spacing_mm": None,
+            "pulse_energy_index": 0.769,
+            "pulse_intensity_index": 0.00385,
+            "surface_exposure_index": 5.0,
+            "formula_version": 1,
+            "density_model": "opaque",
+            "power_model": "controller_percent",
+        },
+    }
+    resp = PaletteEntryResponse.model_validate(payload)
+    assert isinstance(resp.indices, LaserIndicesResponse)
+    assert resp.indices.surface_exposure_index == 5.0
+    assert resp.indices.line_spacing_mm is None

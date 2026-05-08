@@ -15,6 +15,9 @@ from typing import Any, Iterable
 
 from sqlalchemy import and_, or_ as sa_or, select
 
+from xcs_gen.laser_indices import compute_indices
+from xcs_gen.model import ProcessingParams
+
 from ..config import DEFAULT_VISIBILITY, STANDALONE_USER_ID
 from ..db import session_scope
 from ..models import palette_entries
@@ -31,6 +34,59 @@ class MachineMismatchError(Exception):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _processing_params_from_palette_dict(d: dict[str, Any]) -> ProcessingParams:
+    """Build a ProcessingParams (compute_indices-shaped) from the dict
+    stored in palette_entries.params_json.
+
+    Only the six fields consumed by ``xcs_gen.laser_indices.compute_indices``
+    are read out of the dict: ``speed``, ``power``, ``density``,
+    ``mopa_frequency`` (or its legacy alias ``frequency``),
+    ``pulse_width``, ``repeat`` (or its legacy alias ``passes``). Every
+    other ``ProcessingParams`` field — ``dpi``, ``dot_duration``,
+    ``processing_light_source``, ``scan_angle``, ``angle_type``,
+    ``cross_angle``, ``bitmap_scan_mode`` — falls back to the dataclass
+    default regardless of whether the dict carries a value. That's
+    deliberate: this adapter exists to feed ``compute_indices``, not as
+    a general-purpose round-trip. If you need a full round-trip
+    elsewhere, build a separate adapter.
+    """
+    defaults = ProcessingParams()
+    return ProcessingParams(
+        speed=d.get("speed", defaults.speed),
+        power=d.get("power", defaults.power),
+        density=d.get("density", defaults.density),
+        mopa_frequency=d.get(
+            "mopa_frequency", d.get("frequency", defaults.mopa_frequency),
+        ),
+        pulse_width=d.get("pulse_width", defaults.pulse_width),
+        repeat=d.get("repeat", d.get("passes", defaults.repeat)),
+    )
+
+
+def _compute_index_values(params: dict[str, Any]) -> dict[str, Any]:
+    """Return the 9-key dict of laser-index columns + metadata for a
+    palette_entries row, computed from a params_json-shaped dict.
+
+    Used by every write path (insert, update, validated-entry create)
+    so a future formula or model-string change is a single-edit
+    operation. Wraps `_processing_params_from_palette_dict` ->
+    `compute_indices` and flattens the result to the column names
+    used in the DB.
+    """
+    indices = compute_indices(_processing_params_from_palette_dict(params))
+    return {
+        "pulse_spacing_mm": indices.pulse_spacing_mm,
+        "line_spacing_index": indices.line_spacing_index,
+        "line_spacing_mm": indices.line_spacing_mm,
+        "pulse_energy_index": indices.pulse_energy_index,
+        "pulse_intensity_index": indices.pulse_intensity_index,
+        "surface_exposure_index": indices.surface_exposure_index,
+        "indices_formula_version": indices.formula_version,
+        "density_model": indices.density_model,
+        "power_model": indices.power_model,
+    }
 
 
 def _row_to_entry(r, *, original_validated: bool = False) -> dict[str, Any]:
@@ -80,14 +136,26 @@ def _row_to_entry(r, *, original_validated: bool = False) -> dict[str, Any]:
         # the user has already burned once. Computed by ``list_all``;
         # other callers default to False.
         "original_validated": original_validated,
+        "indices": {
+            "pulse_spacing_mm": r.pulse_spacing_mm,
+            "line_spacing_index": r.line_spacing_index,
+            "line_spacing_mm": r.line_spacing_mm,
+            "pulse_energy_index": r.pulse_energy_index,
+            "pulse_intensity_index": r.pulse_intensity_index,
+            "surface_exposure_index": r.surface_exposure_index,
+            "formula_version": r.indices_formula_version,
+            "density_model": r.density_model,
+            "power_model": r.power_model,
+        },
     }
 
 
 def _build_row(
     e: dict[str, Any], now: str, owner_id: int, visibility: str,
 ) -> dict[str, Any]:
-    """Build a DB row dict from an entry dict. Used by insert_bulk and replace_for_test."""
+    """Build a DB row dict from an entry dict. Used by insert_bulk, replace_for_test, and create_manual."""
     L, a, b = hex_to_lab(e["hex"])
+    params_dict = e.get("params", {})
     return {
         "test_id": e["test_id"],
         "material_id": e["material_id"],
@@ -95,7 +163,7 @@ def _build_row(
         "y_value": e.get("y_value"),
         "hex": e["hex"],
         "lab_l": L, "lab_a": a, "lab_b": b,
-        "params_json": json.dumps(e.get("params", {}), separators=(",", ":")),
+        "params_json": json.dumps(params_dict, separators=(",", ":")),
         "sigma": e["sigma"],
         "source": e["source"],
         "source_result_id": e.get("source_result_id"),
@@ -104,12 +172,24 @@ def _build_row(
         "owner_id": owner_id,
         "visibility": e.get("visibility", visibility),
         "machine_id": e.get("machine_id", "F2Ultra"),
+        **_compute_index_values(params_dict),
     }
 
 
 # Capture-derived columns refreshed on re-ingest; user-curated columns
 # (notes, favorited, created_at) are preserved.
-_REFRESH_COLUMNS = ("hex", "lab_l", "lab_a", "lab_b", "sigma", "params_json")
+_REFRESH_COLUMNS = (
+    "hex", "lab_l", "lab_a", "lab_b", "sigma", "params_json",
+    "pulse_spacing_mm",
+    "line_spacing_index",
+    "line_spacing_mm",
+    "pulse_energy_index",
+    "pulse_intensity_index",
+    "surface_exposure_index",
+    "indices_formula_version",
+    "density_model",
+    "power_model",
+)
 
 
 def _find_existing_id(s, row: dict[str, Any]) -> int | None:
@@ -550,6 +630,7 @@ def update_entry(
             values["material_id"] = material_id
         if params is not None:
             values["params_json"] = json.dumps(params, separators=(",", ":"))
+            values.update(_compute_index_values(params))
         if notes is not None:
             values["notes"] = notes
         if values:
@@ -796,6 +877,7 @@ def create_validated_entry(
         "validated_lab_b": b,
         "validated_run_count": run_count,
         "validated_residual_de": stability_de,
+        **_compute_index_values(params or {}),
     }
     with session_scope() as s:
         # Natural key: (validated_test_id, validated_cell_index, owner_id).
@@ -845,6 +927,58 @@ def create_validated_entry(
             select(palette_entries).where(palette_entries.c.id == new_id),
         ).one()
     return _row_to_entry(out)
+
+
+def recompute_indices(
+    *,
+    material_id: int | None = None,
+    force: bool = False,
+    owner_id: int | None = None,
+) -> int:
+    """Recompute and persist exposure indices on palette_entries rows.
+
+    By default only rows whose `indices_formula_version` doesn't match
+    `INDICES_FORMULA_VERSION` are rewritten. `force=True` rewrites
+    every row that matches the filter regardless of version. Returns
+    the number of rows updated.
+
+    Use after bumping `INDICES_FORMULA_VERSION` (formula change or
+    calibration source switch) to flush stale values across the
+    palette.
+    """
+    from xcs_gen.laser_indices import INDICES_FORMULA_VERSION
+
+    with session_scope() as s:
+        q = select(palette_entries)
+        if material_id is not None:
+            q = q.where(palette_entries.c.material_id == material_id)
+        if owner_id is not None:
+            q = q.where(palette_entries.c.owner_id == owner_id)
+        if not force:
+            q = q.where(
+                palette_entries.c.indices_formula_version
+                != INDICES_FORMULA_VERSION,
+            )
+        rows = s.execute(q).all()
+
+        updated = 0
+        for r in rows:
+            try:
+                params_dict = json.loads(r.params_json) if r.params_json else {}
+                values = _compute_index_values(params_dict)
+                s.execute(
+                    palette_entries.update()
+                    .where(palette_entries.c.id == r.id)
+                    .values(**values)
+                )
+                updated += 1
+            except (ValueError, json.JSONDecodeError):
+                s.execute(
+                    palette_entries.update()
+                    .where(palette_entries.c.id == r.id)
+                    .values(indices_formula_version=0)
+                )
+        return updated
 
 
 def invalidate_entry(

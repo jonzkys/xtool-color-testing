@@ -616,3 +616,296 @@ def test_list_all_validated_only_filter(fresh_db):
     assert [r["id"] for r in rows] == [ids[0]]
     rows_all = repo.list_all()
     assert {r["id"] for r in rows_all} == set(ids)
+
+
+def test_processing_params_from_palette_dict_handles_legacy_keys() -> None:
+    from xcs_gen_web.repositories.palette import (
+        _processing_params_from_palette_dict,
+    )
+
+    raw = {
+        "speed": 800,
+        "power": 35.0,
+        "density": 250,
+        "frequency": 60,        # → mopa_frequency on dataclass
+        "passes": 3,            # → repeat on dataclass
+        "pulse_width": 100,
+    }
+    p = _processing_params_from_palette_dict(raw)
+    assert p.speed == 800
+    assert p.power == 35.0
+    assert p.density == 250
+    assert p.mopa_frequency == 60
+    assert p.pulse_width == 100
+    assert p.repeat == 3
+
+
+def test_processing_params_from_palette_dict_falls_back_to_defaults() -> None:
+    from xcs_gen.model import ProcessingParams
+    from xcs_gen_web.repositories.palette import (
+        _processing_params_from_palette_dict,
+    )
+
+    p = _processing_params_from_palette_dict({})
+    defaults = ProcessingParams()
+    assert p.speed == defaults.speed
+    assert p.power == defaults.power
+    assert p.density == defaults.density
+    assert p.mopa_frequency == defaults.mopa_frequency
+    assert p.pulse_width == defaults.pulse_width
+    assert p.repeat == defaults.repeat
+
+
+def test_processing_params_from_palette_dict_accepts_canonical_keys() -> None:
+    from xcs_gen_web.repositories.palette import (
+        _processing_params_from_palette_dict,
+    )
+
+    raw = {
+        "speed": 500,
+        "power": 80.0,
+        "density": 150,
+        "mopa_frequency": 80,    # canonical dataclass name
+        "repeat": 2,             # canonical dataclass name
+        "pulse_width": 60,
+    }
+    p = _processing_params_from_palette_dict(raw)
+    assert p.mopa_frequency == 80
+    assert p.repeat == 2
+
+
+def test_processing_params_from_palette_dict_canonical_beats_legacy_on_collision() -> None:
+    from xcs_gen_web.repositories.palette import (
+        _processing_params_from_palette_dict,
+    )
+
+    raw = {
+        "mopa_frequency": 80,
+        "frequency": 60,        # legacy — should be ignored
+        "repeat": 4,
+        "passes": 2,            # legacy — should be ignored
+    }
+    p = _processing_params_from_palette_dict(raw)
+    assert p.mopa_frequency == 80
+    assert p.repeat == 4
+
+
+def test_insert_bulk_populates_indices(fresh_db) -> None:
+    """A new palette entry inserted via insert_bulk has all six index
+    values populated and metadata stamped at the current formula
+    version."""
+    from xcs_gen.laser_indices import INDICES_FORMULA_VERSION
+    from xcs_gen_web.repositories.palette import insert_bulk, get_by_id
+
+    mid = _seed_material()
+    entry = {
+        "test_id": None,
+        "material_id": mid,
+        "x_value": 0.5,
+        "y_value": None,
+        "hex": "#abcdef",
+        "params": {
+            "speed": 1000,
+            "power": 50.0,
+            "density": 100,
+            "frequency": 65,
+            "passes": 1,
+            "pulse_width": 200,
+        },
+        "sigma": 0.1,
+        "source": "averaged",
+        "source_result_id": None,
+        "machine_id": "F2Ultra",
+    }
+    [eid] = insert_bulk([entry])
+    out = get_by_id(eid)
+    assert out is not None
+    assert "indices" in out
+    idx = out["indices"]
+    assert idx["pulse_spacing_mm"] == pytest.approx(1000 / (65 * 1000))
+    assert idx["line_spacing_index"] == pytest.approx(1 / 100)
+    assert idx["line_spacing_mm"] is None
+    assert idx["pulse_energy_index"] == pytest.approx(50 / 65)
+    assert idx["pulse_intensity_index"] == pytest.approx(50 / (65 * 200))
+    assert idx["surface_exposure_index"] == pytest.approx(50 * 100 * 1 / 1000)
+    assert idx["formula_version"] == INDICES_FORMULA_VERSION
+    assert idx["density_model"] == "opaque"
+    assert idx["power_model"] == "controller_percent"
+
+
+def test_create_manual_populates_indices(fresh_db) -> None:
+    from xcs_gen.laser_indices import INDICES_FORMULA_VERSION
+    from xcs_gen_web.repositories.palette import create_manual
+
+    mid = _seed_material()
+    out = create_manual(
+        material_id=mid,
+        hex_="#112233",
+        params={
+            "speed": 800, "power": 40.0, "density": 200,
+            "frequency": 60, "passes": 2, "pulse_width": 100,
+        },
+        notes="manual",
+    )
+    idx = out["indices"]
+    assert idx["surface_exposure_index"] == pytest.approx(40 * 200 * 2 / 800)
+    assert idx["formula_version"] == INDICES_FORMULA_VERSION
+
+
+def test_list_all_includes_indices(fresh_db) -> None:
+    from xcs_gen_web.repositories.palette import insert_bulk, list_all
+
+    mid = _seed_material()
+    insert_bulk([{
+        "test_id": None,
+        "material_id": mid,
+        "x_value": 1.0, "y_value": None,
+        "hex": "#aabbcc",
+        "params": {
+            "speed": 600, "power": 70.0, "density": 150,
+            "frequency": 80, "passes": 1, "pulse_width": 60,
+        },
+        "sigma": 0.0,
+        "source": "averaged",
+        "source_result_id": None,
+        "machine_id": "F2Ultra",
+    }])
+    rows = list_all()
+    assert rows
+    for r in rows:
+        assert "indices" in r
+        assert r["indices"]["formula_version"] >= 1
+
+
+def test_update_entry_refreshes_indices_when_params_change(fresh_db) -> None:
+    from xcs_gen_web.repositories.palette import (
+        create_manual, update_entry, get_by_id,
+    )
+
+    mid = _seed_material()
+    out = create_manual(
+        material_id=mid,
+        hex_="#445566",
+        params={
+            "speed": 1000, "power": 50, "density": 100,
+            "frequency": 65, "passes": 1, "pulse_width": 200,
+        },
+        notes="",
+    )
+    eid = out["id"]
+    original_exposure = out["indices"]["surface_exposure_index"]
+
+    update_entry(eid, params={
+        "speed": 1000, "power": 100, "density": 100,
+        "frequency": 65, "passes": 1, "pulse_width": 200,
+    })
+
+    refreshed = get_by_id(eid)
+    assert refreshed is not None
+    assert refreshed["indices"]["surface_exposure_index"] == pytest.approx(
+        original_exposure * 2,
+    )
+
+
+# ───── palette_db fixture ─────────────────────────────────────────────
+
+@pytest.fixture()
+def palette_db(fresh_db):
+    """Thin fixture over fresh_db that pre-seeds a material and returns
+    a dict with ``material_id`` so recompute tests don't repeat the
+    boilerplate."""
+    mid = _seed_material("recompute_mat")
+    return {"db_url": fresh_db, "material_id": mid}
+
+
+# ───── recompute_indices ──────────────────────────────────────────────
+
+
+def test_recompute_indices_updates_stale_rows(palette_db) -> None:
+    """recompute_indices walks rows whose indices_formula_version
+    doesn't match the current version and rewrites them."""
+    from sqlalchemy import select, update
+
+    from xcs_gen.laser_indices import INDICES_FORMULA_VERSION
+    from xcs_gen_web.db import session_scope
+    from xcs_gen_web.models import palette_entries
+    from xcs_gen_web.repositories.palette import (
+        insert_bulk, recompute_indices,
+    )
+
+    [eid] = insert_bulk([{
+        "test_id": None,
+        "material_id": palette_db["material_id"],
+        "x_value": 0.0, "y_value": None,
+        "hex": "#deadbe",
+        "params": {
+            "speed": 1000, "power": 50, "density": 100,
+            "frequency": 65, "passes": 1, "pulse_width": 200,
+        },
+        "sigma": 0.0,
+        "source": "averaged",
+        "source_result_id": None,
+        "machine_id": "F2Ultra",
+    }])
+
+    with session_scope() as s:
+        s.execute(
+            update(palette_entries)
+            .where(palette_entries.c.id == eid)
+            .values(
+                indices_formula_version=0,
+                surface_exposure_index=None,
+            )
+        )
+
+    n_updated = recompute_indices()
+    assert n_updated >= 1
+
+    with session_scope() as s:
+        row = s.execute(
+            select(palette_entries).where(palette_entries.c.id == eid),
+        ).one()
+    assert row.indices_formula_version == INDICES_FORMULA_VERSION
+    assert row.surface_exposure_index == pytest.approx(50 * 100 * 1 / 1000)
+
+
+def test_recompute_indices_skips_rows_already_at_current_version(
+    palette_db,
+) -> None:
+    from xcs_gen_web.repositories.palette import insert_bulk, recompute_indices
+
+    insert_bulk([{
+        "test_id": None,
+        "material_id": palette_db["material_id"],
+        "x_value": 0.5, "y_value": None,
+        "hex": "#cafe00",
+        "params": {
+            "speed": 1000, "power": 50, "density": 100,
+            "frequency": 65, "passes": 1, "pulse_width": 200,
+        },
+        "sigma": 0.0,
+        "source": "averaged",
+        "source_result_id": None,
+        "machine_id": "F2Ultra",
+    }])
+    assert recompute_indices() == 0
+
+
+def test_recompute_indices_force_updates_everything(palette_db) -> None:
+    from xcs_gen_web.repositories.palette import insert_bulk, recompute_indices
+
+    insert_bulk([{
+        "test_id": None,
+        "material_id": palette_db["material_id"],
+        "x_value": 0.5, "y_value": None,
+        "hex": "#cafe01",
+        "params": {
+            "speed": 1000, "power": 50, "density": 100,
+            "frequency": 65, "passes": 1, "pulse_width": 200,
+        },
+        "sigma": 0.0,
+        "source": "averaged",
+        "source_result_id": None,
+        "machine_id": "F2Ultra",
+    }])
+    assert recompute_indices(force=True) >= 1
