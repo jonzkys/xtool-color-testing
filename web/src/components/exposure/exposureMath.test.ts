@@ -52,6 +52,11 @@ describe("spearman", () => {
     expect(r).toBeGreaterThan(0);
     expect(r).toBeLessThan(1);
   });
+
+  it("ignores NaN values in either series", () => {
+    const r = spearman([1, 2, NaN, 4, 5], [10, 100, 999, 10000, 100000]);
+    expect(r).toBeCloseTo(1, 6);
+  });
 });
 
 describe("logLinearRegression", () => {
