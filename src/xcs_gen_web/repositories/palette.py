@@ -857,6 +857,11 @@ def create_validated_entry(
     L, a, b = float(burn_mean_lab[0]), float(burn_mean_lab[1]), float(burn_mean_lab[2])
     hex_ = lab_to_hex(L, a, b)
     now = _now()
+    # Compute laser exposure indices from the cell params so the new
+    # validated entry carries a fully-populated indices block. Missing
+    # params fields fall back to ProcessingParams defaults via the
+    # adapter (same behaviour as _build_row).
+    indices = compute_indices(_processing_params_from_palette_dict(params or {}))
     refresh_values = {
         "hex": hex_,
         "lab_l": L, "lab_a": a, "lab_b": b,
@@ -871,6 +876,15 @@ def create_validated_entry(
         "validated_lab_b": b,
         "validated_run_count": run_count,
         "validated_residual_de": stability_de,
+        "pulse_spacing_mm": indices.pulse_spacing_mm,
+        "line_spacing_index": indices.line_spacing_index,
+        "line_spacing_mm": indices.line_spacing_mm,
+        "pulse_energy_index": indices.pulse_energy_index,
+        "pulse_intensity_index": indices.pulse_intensity_index,
+        "surface_exposure_index": indices.surface_exposure_index,
+        "indices_formula_version": indices.formula_version,
+        "density_model": indices.density_model,
+        "power_model": indices.power_model,
     }
     with session_scope() as s:
         # Natural key: (validated_test_id, validated_cell_index, owner_id).

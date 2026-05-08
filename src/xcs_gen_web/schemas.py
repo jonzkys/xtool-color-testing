@@ -381,6 +381,27 @@ class SvgPreviewResponse(BaseModel):
 # consumes or produces raster-trace options.
 
 
+class LaserIndicesResponse(BaseModel):
+    """Heuristic exposure indices derived from raw laser params.
+
+    These are NOT calibrated physical quantities — see
+    docs/superpowers/specs/2026-05-07-laser-exposure-indices-design.md.
+    `formula_version`, `density_model`, and `power_model` capture how
+    the values were computed so clients can detect stale rows after a
+    formula bump.
+    """
+
+    pulse_spacing_mm: float
+    line_spacing_index: float
+    line_spacing_mm: float | None
+    pulse_energy_index: float
+    pulse_intensity_index: float
+    surface_exposure_index: float
+    formula_version: int
+    density_model: str
+    power_model: str
+
+
 class PaletteEntryResponse(BaseModel):
     id: int
     test_id: int | None = None
@@ -425,6 +446,7 @@ class PaletteEntryResponse(BaseModel):
     # autopick to skip colours the user has already burned, so
     # subsequent validation tests cover new ground.
     original_validated: bool = False
+    indices: LaserIndicesResponse
 
 
 class PaletteQueryResult(BaseModel):
