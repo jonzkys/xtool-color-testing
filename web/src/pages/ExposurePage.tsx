@@ -83,11 +83,11 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
 
   // ── axis / mode state ──────────────────────────────────────────────────
   const [xKey, setXKey] = useState<IndexRow>("total_exposure_index");
-  const [mode, setMode] = useState<ScatterMode>("univariate");
+  const [mode, setMode] = useState<ScatterMode>("bivariate");
   const [yKeyUni, setYKeyUni] = useState<ChannelCol>("L");
   const [yKeyBi, setYKeyBi] = useState<IndexRow>("pulse_intensity_index");
   const [xScale, setXScale] = useState<ScaleKind>("log");
-  const [yScale, setYScale] = useState<ScaleKind>("linear");
+  const [yScale, setYScale] = useState<ScaleKind>("log");
 
   // ── filter state ───────────────────────────────────────────────────────
   const [sourceFilter, setSourceFilter] = useState<Set<"averaged" | "single_result" | "manual">>(
