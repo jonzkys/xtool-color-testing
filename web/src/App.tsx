@@ -59,6 +59,9 @@ const ChangelogPage = lazy(() =>
 const SavedSpectrumsPage = lazy(() =>
   import("./pages/SavedSpectrumsPage").then((m) => ({ default: m.SavedSpectrumsPage })),
 );
+const ExposurePage = lazy(() =>
+  import("./pages/ExposurePage").then((m) => ({ default: m.ExposurePage })),
+);
 const MobileUploadPage = lazy(() =>
   import("./pages/MobileUploadPage").then((m) => ({ default: m.MobileUploadPage })),
 );
@@ -159,6 +162,7 @@ export default function App() {
     : route.name === "spectrum-2d" ? "Spectrum · 2D"
     : route.name === "stability" ? "Stability"
     : route.name === "saved-spectrums" ? "Saved spectrums"
+    : route.name === "exposure"   ? "Exposure"
     : route.name === "guide"      ? "Guide"
     : route.name === "changelog"  ? "Changelog"
     : route.name === "demo"       ? "Demo"
@@ -201,6 +205,7 @@ export default function App() {
           {gate === "ready" && route.name === "guide"        && <GuidePage />}
           {gate === "ready" && route.name === "changelog"    && <ChangelogPage />}
           {gate === "ready" && route.name === "saved-spectrums" && <SavedSpectrumsPage />}
+          {gate === "ready" && route.name === "exposure"       && <ExposurePage materialId={route.materialId ?? null} />}
         </Suspense>
       </main>
       <WelcomeDialog
