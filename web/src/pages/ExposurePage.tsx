@@ -175,6 +175,22 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [materialId, validatedOnly]);
 
+  // ── reset focus + brush when material changes ─────────────────────────
+  useEffect(() => {
+    setPinnedFocusId(null);
+    setTransientFocusId(null);
+    setBrushRange(null);
+  }, [materialId]);
+
+  // ── bivariate same-index collapse guard ───────────────────────────────
+  useEffect(() => {
+    if (mode === "bivariate" && yKeyBi === xKey) {
+      // Find the first INDEX_ROWS entry that isn't xKey.
+      const next = INDEX_ROWS.find((k) => k !== xKey);
+      if (next) setYKeyBi(next);
+    }
+  }, [mode, xKey, yKeyBi]);
+
   // ── correlation matrix (derived from rows) ────────────────────────────
   const correlationMatrix = useMemo(() => buildCorrelationMatrix(rows), [rows]);
 
@@ -573,6 +589,11 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   {stats.fit.n}
                 </span>
               </div>
+              {mode === "bivariate" && (
+                <p className="font-mono text-[10px] italic text-[color:var(--color-ink-subtle)] leading-relaxed mt-2">
+                  No Y outcome — values are colour-cluster coordinates only.
+                </p>
+              )}
             </div>
           </section>
 
