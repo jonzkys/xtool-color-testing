@@ -547,6 +547,23 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   onClick={handleBackgroundClear}
                 >
                   <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-[var(--shadow-card)] p-4">
+                    {familyFilter && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 mb-2 rounded-sm border border-[color:var(--color-primary)] bg-[color:var(--color-surface-elevated)]">
+                        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-primary)] font-semibold">
+                          Filter active
+                        </span>
+                        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-ink-muted)]">
+                          {familyFilter.axis} sweep · {displayRows.length} entries
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setFamilyFilter(null); }}
+                          className="ml-auto px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] rounded-sm border border-[color:var(--color-primary)] text-[color:var(--color-primary)] hover:bg-[color:var(--color-surface)]"
+                        >
+                          × Clear
+                        </button>
+                      </div>
+                    )}
                     <ExposureScatter
                       rows={displayRows}
                       mode={mode}
