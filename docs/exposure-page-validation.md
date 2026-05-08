@@ -17,14 +17,14 @@
 
 Given a material's palette of burnt colours, the page lets you ask: **does any of the laser parameters (or any combination of them) explain the colours you got?**
 
-Phase 1 gave each palette entry six derived "exposure indices". Phase 2 (this page) lets you scatter-plot them against the entries' actual colours, scoped to a single material, and read off whatever signal is there.
+Phase 1 gave each palette entry six derived "exposure indices". Phase 2.5a adds two combined indices (`ablation_aggression_index` and `delivery_smoothness_index`) and renames `surface_exposure_index` to `total_exposure_index`. Phase 2 (this page) lets you scatter-plot them against the entries' actual colours, scoped to a single material, and read off whatever signal is there.
 
 ---
 
 ## 2. The indices — formulas and what each means
 
-All five are computed from the raw laser-recipe parameters of a palette entry. The function lives at
-`src/xcs_gen/laser_indices.py::compute_indices` and is called once per row at insert time (and re-run on the whole palette by the `0022_palette_exposure_indices` migration's backfill).
+All seven are computed from the raw laser-recipe parameters of a palette entry. The function lives at
+`src/xcs_gen/laser_indices.py::compute_indices` and is called once per row at insert time (and re-run on the whole palette by the `0022_palette_exposure_indices` / `0023` migrations' backfill).
 
 **Inputs (raw recipe params):**
 
@@ -40,12 +40,18 @@ All five are computed from the raw laser-recipe parameters of a palette entry. T
 ### 2.1 The formulas
 
 ```
-pulse_spacing_mm        = S / (f × 1000)              [real mm]
-line_spacing_index      = 1 / D                       [opaque, dimensionless]
-line_spacing_mm         = NULL while density_model="opaque"
-pulse_energy_index      = P / f                       [opaque]
-pulse_intensity_index   = P / (f × τ)                 [opaque]
-surface_exposure_index  = P × D × R / S               [opaque]
+pulse_spacing_mm          = S / (f × 1000)              [real mm]
+line_spacing_index        = 1 / D                       [opaque, dimensionless]
+line_spacing_mm           = NULL while density_model="opaque"
+pulse_energy_index        = P / f                       [opaque]
+pulse_intensity_index     = P / (f × τ)                 [opaque]
+total_exposure_index      = P × D × R / S               [opaque]
+
+ablation_aggression_index = total_exposure × pulse_intensity
+                          = P² × D × R / (S × f × τ)
+
+delivery_smoothness_index = total_exposure / pulse_intensity
+                          = D × R × f × τ / S
 ```
 
 ### 2.2 Worked example — `ProcessingParams` defaults
@@ -59,7 +65,9 @@ Defaults: `S=1000, P=50, D=100, f=65, τ=200, R=1`.
 | `line_spacing_mm` | (null while density_model="opaque") | `null` |
 | `pulse_energy_index` | `50 / 65` | **0.7692** |
 | `pulse_intensity_index` | `50 / (65 × 200)` | **0.003846** |
-| `surface_exposure_index` | `50 × 100 × 1 / 1000` | **5.0** |
+| `total_exposure_index` | `50 × 100 × 1 / 1000` | **5.0** |
+| `ablation_aggression_index` | `5.0 × 0.003846` | **0.01923** |
+| `delivery_smoothness_index` | `5.0 / 0.003846` | **1300** |
 
 You can verify by opening any entry on the page and reading the right-rail INDICES section. The numbers should match the formulas to ~4 significant figures (we round display via `fmtIndexTick` and `fmt`).
 
@@ -73,7 +81,9 @@ For the focused dot you screenshotted earlier (`#66616B`, `power=10.4, speed=800
 | `line_spacing_index` | `1 / 5000` | 2.00e-4 | 2.00e-4 ✓ |
 | `pulse_energy_index` | `10.4 / 125` | 0.0832 | 0.0832 ✓ |
 | `pulse_intensity_index` | `10.4 / (125 × 200)` | 4.16e-4 | 4.16e-4 ✓ |
-| `surface_exposure_index` | `10.4 × 5000 × 2 / 800` | 130.0 | 130.0 ✓ |
+| `total_exposure_index` | `10.4 × 5000 × 2 / 800` | 130.0 | 130.0 ✓ |
+| `ablation_aggression_index` | `130.0 × 4.16e-4` | 0.05408 | 0.05408 ✓ |
+| `delivery_smoothness_index` | `130.0 / 4.16e-4` | 312500 | 312500 ✓ |
 
 If those match on the live page, the math layer is correct.
 
@@ -110,22 +120,53 @@ The reciprocal of the controller's "density" setting, dimensionless.
 - Long pulse + high frequency at the same average power → low peak intensity → annealing regime (warm interferential colours).
 - This is the axis that distinguishes "violent" pulses from "gentle" pulses **at the same total energy**.
 
-#### `surface_exposure_index`
+#### `total_exposure_index`
 
 `power × density × repeat / speed`. Captures the **total exposure delivered per unit area** — a stand-in for fluence (J/cm²), if we trusted `power` and `density` as calibrated values.
 
 - Frequency and pulse width **drop out**: they only redistribute the same total energy among more or fewer pulses; they don't change how much energy reaches each cm² over time.
 - Two engravings with different frequencies but identical (`P × D × R / S`) deliver the same bulk energy to the surface — but the per-pulse character is different (see `pulse_intensity_index`).
-- This is why on the page, varying frequency moves entries vertically (along `pulse_spacing` or `pulse_intensity` axes) but doesn't move them along `surface_exposure`.
+- This is why on the page, varying frequency moves entries vertically (along `pulse_spacing` or `pulse_intensity` axes) but doesn't move them along `total_exposure`.
+
+Previously called `surface_exposure_index`; the old name lives on as a Pydantic deprecated alias for backwards-compat.
+
+#### `ablation_aggression_index`
+
+`total_exposure × pulse_intensity = P² × D × R / (S × f × τ)`. Reads as
+"how violently the surface was hit per unit area" — high when both the
+total energy and the per-pulse violence are high.
+
+The new pair `(ablation_aggression, delivery_smoothness)` is a 45°
+rotation of `(total_exposure, pulse_intensity)` in log-space:
+
+```
+log(aggression)  = log(total_exposure) + log(pulse_intensity)
+log(smoothness)  = log(total_exposure) − log(pulse_intensity)
+```
+
+So `geometric_mean(aggression, smoothness) = total_exposure` and
+`aggression / smoothness = pulse_intensity²`. The new pair carries
+the same information; the rotation just makes the axes physically
+more interpretable.
+
+#### `delivery_smoothness_index`
+
+`total_exposure / pulse_intensity = D × R × f × τ / S`. **Power
+cancels** — the formula depends only on density, repeat, frequency,
+pulse width, and speed. Physically: smoothness describes how
+thoroughly the head paints the surface (density × passes ×
+duty-cycle / speed), regardless of how hard each pulse hits. This
+makes it a candidate for predicting *colour family* across power
+sweeps (where colour shifts but smoothness is constant).
 
 ### 2.5 The version stamp
 
 Every row carries:
-- `indices_formula_version` (currently `1`)
+- `indices_formula_version` (currently `2`)
 - `density_model` (currently `"opaque"`)
 - `power_model` (currently `"controller_percent"`)
 
-When calibration arrives (e.g. `density_model="lines_per_cm_calibrated"`), the formula version bumps and `xcs-gen recompute-indices` flushes the whole palette to the new version. The footer chip shows `v1 · heuristic indices, not calibrated values` so users don't misread the numbers as joules.
+When calibration arrives (e.g. `density_model="lines_per_cm_calibrated"`), the formula version bumps and `xcs-gen recompute-indices` flushes the whole palette to the new version. The footer chip shows `v2 · heuristic indices, not calibrated values` so users don't misread the numbers as joules.
 
 ---
 
@@ -144,7 +185,7 @@ A material-scoped exploration. Pick one material from the left rail, the page dr
 │  picker    │    ┌────────────────────────┐    │ │ r = 0.84    │ │
 │            │    │                        │    │ │ ρ = 0.78    │ │
 │  SOURCES   │    │   SCATTER              │    │ │ slope ...   │ │
-│  - average │    │   X = surface_exposure │    │ │ R² = 0.71   │ │
+│  - average │    │   X = total_exposure   │    │ │ R² = 0.71   │ │
 │  - manual  │    │   Y = L*               │    │ │ n = 47      │ │
 │  - single  │    │                        │    │ └─────────────┘ │
 │            │    │                        │    │                 │
@@ -158,7 +199,7 @@ A material-scoped exploration. Pick one material from the left rail, the page dr
 │            │  ┌──────────────────────────────┐│ ...             │
 │            │  │ EXPOSURE BRUSH (drag handle) ││                 │
 │            │  └──────────────────────────────┘│ INDICES         │
-│            │                                  │ surface  130    │
+│            │                                  │ total_ex  130   │
 │            │                                  │ pulse_int 4e-4  │
 └────────────┴──────────────────────────────────┴─────────────────┘
 ```
@@ -182,9 +223,11 @@ The hero. One dot per palette entry, **dot fill = entry's actual swatch hex**. W
 - `line_spacing_index`
 - `pulse_energy_index`
 - `pulse_intensity_index`
-- `surface_exposure_index` (default)
+- `total_exposure_index` (default)
+- `ablation_aggression_index` (default log)
+- `delivery_smoothness_index` (default log)
 
-Each axis has a `lin / log` toggle. Default is **log** for the three index-typed values that span orders of magnitude (`surface_exposure`, `pulse_intensity`, `pulse_energy`); **linear** for the two spatial values.
+Each axis has a `lin / log` toggle. Default is **log** for the index-typed values that span orders of magnitude (`total_exposure`, `pulse_intensity`, `pulse_energy`, `ablation_aggression`, `delivery_smoothness`); **linear** for the two spatial values.
 
 **Y-axis options:**
 - **Univariate mode** (default): one of `L*`, `a*`, `b*`, `hue (°)`, `chroma`. The chart asks "does this index drive this colour channel?"
@@ -195,7 +238,7 @@ The mode toggle sits at the top of the chart card.
 **Decoration:**
 - **Regression overlay** — a dashed amber log-linear fit, rendered only in univariate mode (in bivariate mode neither axis is the "outcome" so a regression would mislead).
 - **Focus halo + crosshair guides** — dashed orange lines through the focused dot's X and Y; a 2 px ring around the dot.
-- **Brush dim** — entries whose `surface_exposure_index` falls outside the bottom Exposure Brush range render at 15 % opacity.
+- **Brush dim** — entries whose `total_exposure_index` falls outside the bottom Exposure Brush range render at 15 % opacity.
 
 **5 % bounds margin** — the rendered axis range is padded by 5 % of the data range on each side so dots don't sit on the frame edge. The regression line endpoints still snap to the actual data extent.
 
@@ -211,9 +254,9 @@ A horizontal strip of every entry's swatch, **ordered ascending by the current X
 
 ### 4.3 Correlations Matrix (centre, beside ribbon)
 
-A 5 × 5 heatmap of `|r|` between every (`index`, `colour channel`) pair.
+A 7 × 5 heatmap of `|r|` between every (`index`, `colour channel`) pair.
 
-- **Rows** are the 5 indices: `PSp` (pulse spacing), `LSp` (line spacing), `PEn` (pulse energy), `PIn` (pulse intensity), `SEx` (surface exposure).
+- **Rows** are the 7 indices: `PSp` (pulse spacing), `LSp` (line spacing), `PEn` (pulse energy), `PIn` (pulse intensity), `TEx` (total exposure), `AAg` (ablation aggression), `DSm` (delivery smoothness).
 - **Columns** are the 5 channels: `L*`, `a*`, `b*`, `hue`, `chroma`.
 - **Cell colour intensity** is proportional to `|r|`, mapped via `color-mix(in oklch, var(--color-ink) <pct>%, var(--color-surface))` so contrast scales smoothly from 0 → 1.
 - **Numeric label** appears only on cells with `|r| ≥ 0.7` (avoids clutter at low correlations); the value is rendered as `Math.round(|r| × 100)`.
@@ -248,10 +291,10 @@ A **clear** button appears in the rail header when something is focused; clickin
 
 ### 4.6 Bottom Exposure Brush
 
-A thin tile strip at the bottom of the main column, showing every entry's swatch ordered ascending by `surface_exposure_index` on a **log scale**.
+A thin tile strip at the bottom of the main column, showing every entry's swatch ordered ascending by `total_exposure_index` on a **log scale**.
 
 - Two drag handles select an `[lo, hi]` range.
-- **Anchor: always `surface_exposure_index`**, regardless of which X axis the scatter is using. This is intentional — the brush is the project's reference axis for "how much energy did this burn get".
+- **Anchor: always `total_exposure_index`**, regardless of which X axis the scatter is using. This is intentional — the brush is the project's reference axis for "how much energy did this burn get".
 - Out-of-range entries dim to 15 % on the scatter, ribbon, and focused-card disc.
 - Brush range resets to "all" when the material changes.
 
@@ -304,7 +347,7 @@ Focus propagates everywhere: scatter halo + crosshair guides, ribbon mark, disc 
 
 2. **Vertical and horizontal columns** — when a sweep varies one or two parameters at a time (the natural way to test), the OTHER indices stay constant for that whole sweep, producing dense column/line patterns. The chart is being mathematically faithful, but it can hide the analytic signal when one specific param is the variable. Phase-2.5 "recipe-family traces" + "filter to one sweep" address this.
 
-3. **`surface_exposure` doesn't depend on frequency** — by design (frequency cancels in the bulk-fluence formula). This is correct physics but counterintuitive at first glance. Frequency's effect on colour comes through `pulse_intensity_index`, which the bivariate mode + the correlations matrix surface.
+3. **`total_exposure` doesn't depend on frequency** — by design (frequency cancels in the bulk-fluence formula). This is correct physics but counterintuitive at first glance. Frequency's effect on colour comes through `pulse_intensity_index`, which the bivariate mode + the correlations matrix surface.
 
 4. **Power and density are opaque controller settings.** Calibration is phase 3. Until then, "fluence" is in heuristic units, not joules. The page never claims joules.
 
@@ -319,26 +362,35 @@ Focus propagates everywhere: scatter halo + crosshair guides, ribbon mark, disc 
 Run these against the live page (server on port 8017, your local DB):
 
 ### 9.1 Index math (Section 2)
-- [ ] Pick any palette entry. Read its raw recipe (power, speed, freq, density, passes, pulse_width). Compute the five indices by hand. Confirm the page shows them to 4 sig figs.
+- [ ] Pick any palette entry. Read its raw recipe (power, speed, freq, density, passes, pulse_width). Compute the seven indices by hand. Confirm the page shows them to 4 sig figs.
 - [ ] Repeat for an entry where one index would be very small (e.g., low power on stainless). Confirm `fmtIndexTick` renders it readably (not `0.00`).
 - [ ] Confirm `line_spacing_mm` is `—` everywhere (because `density_model="opaque"`).
-- [ ] Open the chip-strip footer on any entry — confirm it reads `v1 · heuristic indices, not calibrated values`.
+- [ ] Pick any palette entry. Confirm the chip strip shows 8 chips, not 6.
+- [ ] Hand-compute `ablation_aggression = total_exposure × pulse_intensity`. Confirm to 4 sig figs.
+- [ ] Hand-compute `delivery_smoothness = total_exposure / pulse_intensity`. Confirm to 4 sig figs.
+- [ ] Verify the geometric-mean identity: √(aggression × smoothness) ≈ total_exposure (within 0.5%).
+- [ ] Footer chip badge reads `v2`, not `v1`.
 
 ### 9.2 Scatter behaviour (Section 4.1)
-- [ ] Switch X through all 5 indices. Confirm `pulse_spacing` is linear by default; the others are log by default.
+- [ ] Switch X through all 7 indices. Confirm `pulse_spacing` is linear by default; the others are log by default.
 - [ ] Toggle log → linear and back. Tick labels should reformat.
 - [ ] Switch to bivariate. Confirm Y dropdown lists indices, not channels. Confirm the regression line disappears.
 - [ ] Confirm dots have ~5% breathing room from the frame on all 4 sides.
+- [ ] X-axis dropdown lists 7 indices (including the two new ones).
+- [ ] Pick `delivery_smoothness_index` on X. Toggle X-scale log/lin. Confirm tick labels reformat readably (no `0.00` collapse).
+- [ ] In bivariate mode, scatter `(total_exposure, pulse_intensity)`. Then switch to `(ablation_aggression, delivery_smoothness)`. The two scatters should look *visually identical except rotated 45°* — confirm the rotation interpretation.
 
 ### 9.3 Hue ribbon (Section 4.2)
 - [ ] Switch X axis. Confirm the ribbon **reorders**.
-- [ ] On `surface_exposure` (your default), the ribbon should read as a clean gradient (light → dark) on stainless. If yes, the "exposure drives lightness" claim holds.
+- [ ] On `total_exposure` (your default), the ribbon should read as a clean gradient (light → dark) on stainless. If yes, the "exposure drives lightness" claim holds.
 - [ ] Hover a tile → the focused-card fills, and a tick marker appears above the same tile.
 
 ### 9.4 Correlations matrix (Section 4.3)
-- [ ] On stainless, the `(SEx, L*)` cell should be the highest-magnitude `|r|` (your data shows `r = -0.84`, so cell value `84`).
+- [ ] On stainless, the `(TEx, L*)` cell should be the highest-magnitude `|r|` (your data shows `r = -0.84`, so cell value `84`).
 - [ ] Click another cell → scatter axes switch to that pair.
 - [ ] Cells with `|r| < 0.7` should render colour only, no number.
+- [ ] Matrix is 7 rows × 5 columns (PSp, LSp, PEn, PIn, TEx, AAg, DSm).
+- [ ] Click any of the new rows (TEx, AAg, DSm) → scatter axes update to that pair.
 
 ### 9.5 Stats (Section 4.4)
 - [ ] Hero `r =` updates as you change axes.
@@ -354,7 +406,7 @@ Run these against the live page (server on port 8017, your local DB):
 
 ### 9.7 Brush (Section 4.6)
 - [ ] Drag the brush handles. Out-of-range entries on the scatter dim to ~15%.
-- [ ] Confirm the brush is anchored to `surface_exposure_index` even when X is something else (per design).
+- [ ] Confirm the brush is anchored to `total_exposure_index` even when X is something else (per design).
 - [ ] Confirm the stats hero **does not change** when you brush (brush is dim-only). This is intentional but worth knowing.
 - [ ] Click "clear" — brush resets.
 
@@ -369,16 +421,22 @@ Run these against the live page (server on port 8017, your local DB):
 
 ## 10. Where the bugs / gaps queue stands
 
-Already shipped fixes:
+Already shipped:
+- ✅ Phase 1: chip strip with 6 indices
+- ✅ Phase 2: exposure exploration page
+- ✅ Phase 2.5a: combined indices — total_exposure (rename) + ablation_aggression + delivery_smoothness
 - ✅ Dot click no longer deselects (event-bubble fix on dots/tiles).
 - ✅ Focused card halo is the click target (annular ring fix).
 - ✅ Axis tick labels readable for sub-decimal values (`fmtIndexTick`).
 - ✅ Dots no longer sit on the frame edge (5 % bounds margin).
 
-Queued for phase 2.5:
+Queued (Phase 2.5b):
 - **A** — recipe-family trajectories (connect dots that came from one parameter sweep).
 - **C** — "filter to this recipe family" on a focused entry (isolate one sweep).
 - **D** — link from a focused entry to its source test page (`#/tests/<id>`).
+- **E** — default scatter mode = bivariate.
+- **F** — raw-parameter correlation matrix.
+- **G** — nearest-neighbour view.
 
 Queued for further follow-up (no agreed scope yet):
 - Circular-aware correlation on hue (instead of plain Pearson).
