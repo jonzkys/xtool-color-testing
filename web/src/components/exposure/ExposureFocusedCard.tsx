@@ -1,6 +1,7 @@
 import * as React from "react";
 import type { ExposureRow, IndexRow } from "./exposureCorrelations";
 import { ExposureChromaDisc } from "./ExposureChromaDisc";
+import type { FamilyMember } from "./recipeFamilies";
 
 interface Props {
   rows: readonly ExposureRow[];
@@ -14,6 +15,8 @@ interface Props {
   /** Optional: mirrors ExposurePage's exposure brush so the disc
    *  fades out-of-range entries in lockstep with the scatter. */
   dimRange?: readonly [number, number] | null;
+  /** Optional: the recipe family the focused entry belongs to. */
+  focusedFamily?: readonly FamilyMember[] | null;
 }
 
 const INDEX_LABELS: Record<IndexRow, string> = {
@@ -61,6 +64,7 @@ export const ExposureFocusedCard: React.FC<Props> = ({
   onDiscLeave,
   onDiscClick,
   dimRange,
+  focusedFamily,
 }) => {
   const focused = focusedId == null ? null : rows.find((r) => r.id === focusedId) ?? null;
 
@@ -143,6 +147,11 @@ export const ExposureFocusedCard: React.FC<Props> = ({
               >
                 → Source test #{focused.test_id}
               </a>
+            )}
+            {focused && focusedFamily && focusedFamily.length >= 3 && (
+              <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)] mt-2">
+                Member of {focusedFamily.length}-entry {focusedFamily[0].varyingAxis} sweep
+              </div>
             )}
           </div>
 

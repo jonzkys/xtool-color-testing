@@ -69,4 +69,25 @@ describe("ExposureFocusedCard", () => {
     render(<ExposureFocusedCard rows={[r]} focusedId={1} />);
     expect(screen.queryByText(/source test/i)).toBeNull();
   });
+
+  it("renders 'Member of N-entry [axis] sweep' when focusedFamily has 3+ members", () => {
+    const r = row(1, "#a0522d");
+    const fam = [
+      { row: r, varyingAxis: "power" as const, varyingValue: 10 },
+      { row: { ...r, id: 2 }, varyingAxis: "power" as const, varyingValue: 11 },
+      { row: { ...r, id: 3 }, varyingAxis: "power" as const, varyingValue: 12 },
+    ];
+    render(<ExposureFocusedCard rows={[r]} focusedId={1} focusedFamily={fam} />);
+    expect(screen.getByText(/member of 3-entry power sweep/i)).toBeInTheDocument();
+  });
+
+  it("does not render sweep badge when focusedFamily has fewer than 3 members", () => {
+    const r = row(1, "#a0522d");
+    const fam = [
+      { row: r, varyingAxis: "power" as const, varyingValue: 10 },
+      { row: { ...r, id: 2 }, varyingAxis: "power" as const, varyingValue: 11 },
+    ];
+    render(<ExposureFocusedCard rows={[r]} focusedId={1} focusedFamily={fam} />);
+    expect(screen.queryByText(/member of.*sweep/i)).toBeNull();
+  });
 });

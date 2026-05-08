@@ -127,6 +127,57 @@ describe("ExposureScatter", () => {
   });
 });
 
+describe("ExposureScatter — family trace", () => {
+  const rows = [
+    row(1, "#aaa", 10, 80),
+    row(2, "#bbb", 50, 60),
+    row(3, "#ccc", 200, 40),
+    row(4, "#ddd", 800, 20),
+  ];
+
+  it("renders a family-trace polyline when family prop is given", () => {
+    const fam = [
+      { row: rows[0], varyingAxis: "power" as const, varyingValue: 10 },
+      { row: rows[1], varyingAxis: "power" as const, varyingValue: 11 },
+      { row: rows[2], varyingAxis: "power" as const, varyingValue: 12 },
+    ];
+    const { container } = render(
+      <ExposureScatter
+        rows={rows}
+        mode="univariate"
+        xKey="total_exposure_index"
+        yKey="L"
+        xScale="log"
+        yScale="linear"
+        focusedId={null}
+        onHover={() => undefined}
+        onLeave={() => undefined}
+        onClick={() => undefined}
+        family={fam}
+      />,
+    );
+    expect(container.querySelector('[data-role="family-trace"]')).not.toBeNull();
+  });
+
+  it("does NOT render a family-trace polyline when family prop is absent", () => {
+    const { container } = render(
+      <ExposureScatter
+        rows={rows}
+        mode="univariate"
+        xKey="total_exposure_index"
+        yKey="L"
+        xScale="log"
+        yScale="linear"
+        focusedId={null}
+        onHover={() => undefined}
+        onLeave={() => undefined}
+        onClick={() => undefined}
+      />,
+    );
+    expect(container.querySelector('[data-role="family-trace"]')).toBeNull();
+  });
+});
+
 describe("ExposureScatter — event propagation", () => {
   it("dot click does not bubble to a parent click handler", () => {
     const parentClick = vi.fn();

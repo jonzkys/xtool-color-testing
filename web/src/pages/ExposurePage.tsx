@@ -22,6 +22,7 @@ import {
   type IndexRow,
 } from "../components/exposure/exposureCorrelations";
 import { pearson, spearman, logLinearRegression } from "../components/exposure/exposureMath";
+import { buildFamilies, type FamilyMember } from "../components/exposure/recipeFamilies";
 import { EmptyState, Button, MetalBar } from "../ui";
 
 // ── types ──────────────────────────────────────────────────────────────────
@@ -197,6 +198,27 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
 
   // ── correlation matrix (derived from rows) ────────────────────────────
   const correlationMatrix = useMemo(() => buildCorrelationMatrix(rows), [rows]);
+
+  // ── recipe families (derived from rows) ───────────────────────────────
+  const families = useMemo(() => buildFamilies(rows), [rows]);
+
+  const focusedFamily = useMemo<FamilyMember[] | null>(() => {
+    if (focusedId == null) return null;
+    let best: FamilyMember[] | null = null;
+    for (const members of families.values()) {
+      if (members.some((m) => m.row.id === focusedId)) {
+        if (
+          !best ||
+          members.length > best.length ||
+          (members.length === best.length &&
+            members[0].varyingAxis < best[0].varyingAxis)
+        ) {
+          best = members;
+        }
+      }
+    }
+    return best;
+  }, [families, focusedId]);
 
   // ── per-axis stats for right-rail hero ────────────────────────────────
   const stats = useMemo(() => {
@@ -466,6 +488,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                       onLeave={handleLeave}
                       onClick={handleClick}
                       dimRange={brushRange}
+                      family={focusedFamily ?? undefined}
                     />
                   </div>
                 </div>
@@ -579,6 +602,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               onDiscLeave={handleLeave}
               onDiscClick={handleClick}
               dimRange={brushRange}
+              focusedFamily={focusedFamily}
             />
           </section>
 

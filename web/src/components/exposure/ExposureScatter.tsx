@@ -3,6 +3,8 @@ import { hueDeg, chroma as chromaFn } from "../../color/math";
 import { niceBounds, niceTicks } from "../stabilityChartMath";
 import type { ChannelCol, ExposureRow, IndexRow } from "./exposureCorrelations";
 import { logLinearRegression, fmtIndexTick } from "./exposureMath";
+import { ExposureFamilyTrace } from "./ExposureFamilyTrace";
+import type { FamilyMember } from "./recipeFamilies";
 
 export type ScaleKind = "linear" | "log";
 export type ScatterMode = "univariate" | "bivariate";
@@ -20,6 +22,8 @@ interface Props {
   onClick: (id: number) => void;
   /** Optional: dim out-of-range entries (Exposure brush). null = no dim. */
   dimRange?: readonly [number, number] | null;
+  /** Optional: family members to trace as a polyline behind the dots. */
+  family?: readonly FamilyMember[];
 }
 
 function rowChannel(row: ExposureRow, key: ChannelCol): number {
@@ -91,6 +95,7 @@ export const ExposureScatter: React.FC<Props> = ({
   onLeave,
   onClick,
   dimRange,
+  family,
 }) => {
   const xs = rows.map((r) => rowIndex(r, xKey));
   const ys = rows.map((r) =>
@@ -270,6 +275,23 @@ export const ExposureScatter: React.FC<Props> = ({
           </g>
         );
       })()}
+
+      {/* Family trace — rendered behind the dots */}
+      {family && family.length >= 2 && (
+        <ExposureFamilyTrace
+          points={family
+            .map((m) => {
+              const x = rowIndex(m.row, xKey);
+              const y =
+                mode === "univariate"
+                  ? rowChannel(m.row, yKey as ChannelCol)
+                  : rowIndex(m.row, yKey as IndexRow);
+              if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+              return [px(x), py(y)] as const;
+            })
+            .filter((p): p is readonly [number, number] => p !== null)}
+        />
+      )}
 
       {/* Dots — focused last so it sits on top of the cloud */}
       {rows
