@@ -22,7 +22,7 @@ import {
   type IndexRow,
 } from "../components/exposure/exposureCorrelations";
 import { pearson, spearman, logLinearRegression } from "../components/exposure/exposureMath";
-import { buildFamilies, type FamilyMember } from "../components/exposure/recipeFamilies";
+import { buildFamilies, type FamilyMember, type VaryingAxis } from "../components/exposure/recipeFamilies";
 import { EmptyState, Button, MetalBar } from "../ui";
 
 // ── types ──────────────────────────────────────────────────────────────────
@@ -96,6 +96,12 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   );
   const [validatedOnly, setValidatedOnly] = useState(false);
   const [brushRange, setBrushRange] = useState<readonly [number, number] | null>(null);
+
+  interface FamilyFilter {
+    axis: VaryingAxis;
+    anchorRowId: number;
+  }
+  const [familyFilter, setFamilyFilter] = useState<FamilyFilter | null>(null);
 
   // ── focus state (mirrors StabilityPage transient/pinned pattern) ───────
   const [transientFocusId, setTransientFocusId] = useState<number | null>(null);
@@ -180,11 +186,12 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [materialId, validatedOnly]);
 
-  // ── reset focus + brush when material changes ─────────────────────────
+  // ── reset focus + brush + family filter when material changes ─────────
   useEffect(() => {
     setPinnedFocusId(null);
     setTransientFocusId(null);
     setBrushRange(null);
+    setFamilyFilter(null);
   }, [materialId]);
 
   // ── bivariate same-index collapse guard ───────────────────────────────
@@ -219,6 +226,37 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     }
     return best;
   }, [families, focusedId]);
+
+  // ── all families the focused entry belongs to (for filter buttons) ────
+  const focusedAvailableFamilies = useMemo<FamilyMember[][]>(() => {
+    if (focusedId == null) return [];
+    return Array.from(families.values()).filter((m) =>
+      m.some((fm) => fm.row.id === focusedId),
+    );
+  }, [families, focusedId]);
+
+  // ── member set for the active family filter ────────────────────────────
+  const visibleIdsViaFilter = useMemo<Set<number> | null>(() => {
+    if (!familyFilter) return null;
+    for (const members of families.values()) {
+      if (
+        members.some((m) => m.row.id === familyFilter.anchorRowId) &&
+        members[0].varyingAxis === familyFilter.axis
+      ) {
+        return new Set(members.map((m) => m.row.id));
+      }
+    }
+    return null;
+  }, [families, familyFilter]);
+
+  // ── filtered rows for downstream panels ───────────────────────────────
+  const displayRows = useMemo(
+    () =>
+      visibleIdsViaFilter
+        ? rows.filter((r) => visibleIdsViaFilter.has(r.id))
+        : rows,
+    [rows, visibleIdsViaFilter],
+  );
 
   // ── per-axis stats for right-rail hero ────────────────────────────────
   const stats = useMemo(() => {
@@ -477,7 +515,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                 >
                   <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-[var(--shadow-card)] p-4">
                     <ExposureScatter
-                      rows={rows}
+                      rows={displayRows}
                       mode={mode}
                       xKey={xKey}
                       yKey={yKey}
@@ -498,7 +536,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   <div className="flex-1 min-w-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
                     <PanelLabel title="Hue ribbon" subtitle={`ordered by ${xKey}`} />
                     <ExposureHueRibbon
-                      rows={rows}
+                      rows={displayRows}
                       orderBy={xKey}
                       focusedId={focusedId}
                       onHover={handleHover}
@@ -526,7 +564,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
                     <PanelLabel title="Exposure range" subtitle="total_exposure_index, log scale" />
                     <ExposureRangeBrush
-                      rows={rows}
+                      rows={displayRows}
                       range={brushRange}
                       onRangeChange={setBrushRange}
                     />
@@ -603,6 +641,10 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               onDiscClick={handleClick}
               dimRange={brushRange}
               focusedFamily={focusedFamily}
+              availableFamilies={focusedAvailableFamilies}
+              activeFilterAxis={familyFilter?.axis ?? null}
+              onSetFilter={(axis, anchorRowId) => setFamilyFilter({ axis, anchorRowId })}
+              onClearFilter={() => setFamilyFilter(null)}
             />
           </section>
 

@@ -90,4 +90,34 @@ describe("ExposureFocusedCard", () => {
     render(<ExposureFocusedCard rows={[r]} focusedId={1} focusedFamily={fam} />);
     expect(screen.queryByText(/member of.*sweep/i)).toBeNull();
   });
+
+  it("renders filter-to-sweep buttons when availableFamilies has entries", () => {
+    const r = row(1, "#a0522d");
+    const fam = [
+      { row: r, varyingAxis: "power" as const, varyingValue: 10 },
+      { row: { ...r, id: 2 }, varyingAxis: "power" as const, varyingValue: 11 },
+      { row: { ...r, id: 3 }, varyingAxis: "power" as const, varyingValue: 12 },
+    ];
+    render(
+      <ExposureFocusedCard
+        rows={[r]}
+        focusedId={1}
+        availableFamilies={[fam]}
+      />,
+    );
+    expect(screen.getByText(/filter to sweep/i)).toBeInTheDocument();
+    expect(screen.getByText(/power \(3\)/i)).toBeInTheDocument();
+  });
+
+  it("renders clear button when activeFilterAxis is set", () => {
+    const r = row(1, "#a0522d");
+    render(
+      <ExposureFocusedCard
+        rows={[r]}
+        focusedId={1}
+        activeFilterAxis="power"
+      />,
+    );
+    expect(screen.getByText(/clear \(power\)/i)).toBeInTheDocument();
+  });
 });

@@ -1,7 +1,7 @@
 import * as React from "react";
 import type { ExposureRow, IndexRow } from "./exposureCorrelations";
 import { ExposureChromaDisc } from "./ExposureChromaDisc";
-import type { FamilyMember } from "./recipeFamilies";
+import type { FamilyMember, VaryingAxis } from "./recipeFamilies";
 
 interface Props {
   rows: readonly ExposureRow[];
@@ -17,6 +17,14 @@ interface Props {
   dimRange?: readonly [number, number] | null;
   /** Optional: the recipe family the focused entry belongs to. */
   focusedFamily?: readonly FamilyMember[] | null;
+  /** All families the focused entry belongs to (one per varying axis). */
+  availableFamilies?: readonly (readonly FamilyMember[])[];
+  /** Which axis filter is currently active, if any. */
+  activeFilterAxis?: VaryingAxis | null;
+  /** Activate a family filter for the given axis. */
+  onSetFilter?: (axis: VaryingAxis, anchorRowId: number) => void;
+  /** Clear the active family filter. */
+  onClearFilter?: () => void;
 }
 
 const INDEX_LABELS: Record<IndexRow, string> = {
@@ -65,6 +73,10 @@ export const ExposureFocusedCard: React.FC<Props> = ({
   onDiscClick,
   dimRange,
   focusedFamily,
+  availableFamilies,
+  activeFilterAxis,
+  onSetFilter,
+  onClearFilter,
 }) => {
   const focused = focusedId == null ? null : rows.find((r) => r.id === focusedId) ?? null;
 
@@ -154,6 +166,39 @@ export const ExposureFocusedCard: React.FC<Props> = ({
               </div>
             )}
           </div>
+
+          {focused && (activeFilterAxis || (availableFamilies && availableFamilies.length > 0)) && (
+            <div className="mt-3 border-t border-[color:var(--color-border)] pt-3">
+              <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)] mb-2">
+                {activeFilterAxis ? "Filter active" : "Filter to sweep"}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {activeFilterAxis ? (
+                  <button
+                    type="button"
+                    onClick={onClearFilter}
+                    className="px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border border-[color:var(--color-primary)] text-[color:var(--color-primary)] hover:bg-[color:var(--color-surface-elevated)]"
+                  >
+                    Clear ({activeFilterAxis})
+                  </button>
+                ) : (
+                  (availableFamilies ?? []).map((fam) => {
+                    const axis = fam[0].varyingAxis;
+                    return (
+                      <button
+                        key={axis}
+                        type="button"
+                        onClick={() => onSetFilter?.(axis, focused.id)}
+                        className="px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:border-[color:var(--color-primary)] hover:text-[color:var(--color-primary)]"
+                      >
+                        {axis} ({fam.length})
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="border-t border-[color:var(--color-border)] pt-3">
             <div className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold mb-2">
