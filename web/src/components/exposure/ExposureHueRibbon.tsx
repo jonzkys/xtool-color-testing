@@ -81,23 +81,33 @@ export const ExposureHueRibbon: React.FC<Props> = ({
           );
         })}
       </div>
-      {focusedId != null && (() => {
-        const idx = ordered.findIndex((r) => r.id === focusedId);
-        if (idx < 0) return null;
-        const left = `calc(${(idx + 0.5) * (100 / ordered.length)}% - 3px)`;
+      {(() => {
+        // Always render the marker row so the ribbon's vertical
+        // footprint is constant — only show the caret when an entry
+        // is focused. Otherwise the ribbon's bottom edge jumps by
+        // 8px every time the cursor enters/leaves the scatter.
+        const idx = focusedId == null
+          ? -1
+          : ordered.findIndex((r) => r.id === focusedId);
+        const visible = idx >= 0;
+        const left = visible
+          ? `calc(${(idx + 0.5) * (100 / ordered.length)}% - 3px)`
+          : "0";
         return (
           <div
             data-role="focus-mark"
             className="relative w-full h-2"
             aria-hidden="true"
           >
-            <div
-              className="absolute top-0 h-2 w-1.5 bg-[color:var(--color-primary)]"
-              style={{
-                left,
-                clipPath: "polygon(0 0, 100% 0, 50% 100%)",
-              }}
-            />
+            {visible && (
+              <div
+                className="absolute top-0 h-2 w-1.5 bg-[color:var(--color-primary)]"
+                style={{
+                  left,
+                  clipPath: "polygon(0 0, 100% 0, 50% 100%)",
+                }}
+              />
+            )}
           </div>
         );
       })()}
