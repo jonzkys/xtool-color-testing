@@ -11,8 +11,7 @@ function row(id: number, hex: string, surface: number, l: number): ExposureRow {
     id, hex, lab: [l, 0, 0],
     indices: {
       pulse_spacing_mm: 0.01,
-      line_spacing_index: 0.01,
-      line_spacing_mm: null,
+      line_spacing_mm: 0.05,
       pulse_energy_index: 0.7,
       pulse_intensity_index: 0.003,
       surface_exposure_index: surface,
@@ -275,8 +274,7 @@ const FIXTURE_ROW: ExposureRow = {
   lab: [50, 0, 0],
   indices: {
     pulse_spacing_mm: 0.05,
-    line_spacing_index: 0.083,
-    line_spacing_mm: null,
+    line_spacing_mm: 0.05,
     pulse_energy_index: 0.5,
     pulse_intensity_index: 0.0025,
     total_exposure_index: 6.0,

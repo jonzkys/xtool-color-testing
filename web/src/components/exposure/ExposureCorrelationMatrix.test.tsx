@@ -6,7 +6,7 @@ import { INDEX_ROWS, CHANNEL_COLS, type IndexRow, type ChannelCol } from "./expo
 
 const INDEX_ROW_LABELS: Record<IndexRow, string> = {
   pulse_spacing_mm: "PSp",
-  line_spacing_index: "LSp",
+  line_spacing_mm: "LSp",
   pulse_energy_index: "PEn",
   pulse_intensity_index: "PIn",
   total_exposure_index: "TEx",

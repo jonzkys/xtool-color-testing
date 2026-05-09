@@ -9,8 +9,7 @@ function row(id: number, hex: string): ExposureRow {
     id, hex, lab: [50, 20, 10],
     indices: {
       pulse_spacing_mm: 0.0154,
-      line_spacing_index: 0.01,
-      line_spacing_mm: null,
+      line_spacing_mm: 0.05,
       pulse_energy_index: 0.769,
       pulse_intensity_index: 0.00385,
       surface_exposure_index: 195.0,

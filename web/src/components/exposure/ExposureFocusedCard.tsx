@@ -36,7 +36,7 @@ const INDEX_LABELS: Record<IndexRow, string> = {
   pulse_intensity_index: "PULSE_INTENSITY",
   pulse_energy_index: "PULSE_ENERGY",
   pulse_spacing_mm: "PULSE_SPACING_MM",
-  line_spacing_index: "LINE_SPACING",
+  line_spacing_mm: "LINE_SPACING (mm)",
 };
 
 const INDEX_ORDER: IndexRow[] = [
@@ -46,7 +46,7 @@ const INDEX_ORDER: IndexRow[] = [
   "pulse_intensity_index",
   "pulse_energy_index",
   "pulse_spacing_mm",
-  "line_spacing_index",
+  "line_spacing_mm",
 ];
 
 function fmt(n: number | null | undefined): string {
