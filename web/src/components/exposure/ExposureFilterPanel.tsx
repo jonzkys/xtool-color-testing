@@ -1,0 +1,192 @@
+import {
+  DEFAULT_FILTERS, FILTERABLE_PARAMS,
+  type ActiveFilters, type FilterableParam,
+  type SourceKind, type TestSummary,
+} from "./exposureFilters";
+import { ExposureRangeSlider } from "./ExposureRangeSlider";
+
+interface Props {
+  filters: ActiveFilters;
+  onChange: (next: ActiveFilters) => void;
+  tests: readonly TestSummary[];
+  dataRanges: Record<FilterableParam, { min: number; max: number } | null>;
+}
+
+const SOURCE_OPTIONS: SourceKind[] = ["averaged", "single_result", "manual"];
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold">
+        {title}
+      </h3>
+      <div className="h-[1px] bg-[color:var(--color-border)]" />
+      {children}
+    </section>
+  );
+}
+
+export function ExposureFilterPanel({
+  filters: f, onChange, tests, dataRanges,
+}: Props) {
+  const setSources = (next: ReadonlySet<SourceKind>) =>
+    onChange({ ...f, sources: next });
+  const setRange = (k: FilterableParam, r: { min: number | null; max: number | null } | undefined) =>
+    onChange({ ...f, paramRanges: { ...f.paramRanges, [k]: r } });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Section title="Source / validated">
+        <div className="flex flex-col gap-1">
+          {SOURCE_OPTIONS.map((s) => (
+            <label key={s} className="flex items-center gap-2 font-mono text-[10.5px]">
+              <input
+                type="checkbox"
+                checked={f.sources.has(s)}
+                onChange={(e) => {
+                  const next = new Set(f.sources);
+                  if (e.target.checked) next.add(s); else next.delete(s);
+                  setSources(next);
+                }}
+              />
+              {s}
+            </label>
+          ))}
+          <label className="flex items-center gap-2 font-mono text-[10.5px]">
+            <input
+              type="checkbox"
+              checked={f.validatedOnly}
+              onChange={(e) =>
+                onChange({ ...f, validatedOnly: e.target.checked })}
+              aria-label="validated only"
+            />
+            validated only
+          </label>
+        </div>
+      </Section>
+
+      <Section title="Test">
+        <select
+          className="font-mono text-[10.5px] px-1 py-1 rounded-sm border border-[color:var(--color-border)] bg-[color:var(--color-surface)]"
+          value={f.testId ?? ""}
+          onChange={(e) => {
+            const v = e.target.value === "" ? null : Number(e.target.value);
+            onChange({ ...f, testId: v, testLineage: new Set() });
+          }}
+        >
+          <option value="">— all —</option>
+          {tests.map((t) => (
+            <option key={t.id} value={t.id}>
+              #{t.id} · {t.name} · {t.kind}
+            </option>
+          ))}
+        </select>
+        {f.testId != null && (
+          <div className="flex flex-col gap-1 pl-2">
+            {(["source", "parent"] as const).map((tag) => (
+              <label key={tag} className="flex items-center gap-2 font-mono text-[10.5px]">
+                <input
+                  type="checkbox"
+                  checked={f.testLineage.has(tag)}
+                  onChange={(e) => {
+                    const next = new Set(f.testLineage);
+                    if (e.target.checked) next.add(tag); else next.delete(tag);
+                    onChange({ ...f, testLineage: next });
+                  }}
+                />
+                + {tag} test
+              </label>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-1">
+          {(["all", "sweep", "validation"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => onChange({ ...f, testKind: k })}
+              className={
+                "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+                (f.testKind === k
+                  ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
+                  : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+              }
+            >
+              {k}
+            </button>
+          ))}
+        </div>
+      </Section>
+
+      <Section title="Ranges">
+        <div className="flex flex-col gap-3">
+          {FILTERABLE_PARAMS.map((k) => {
+            const dr = dataRanges[k];
+            if (!dr) return null;
+            return (
+              <ExposureRangeSlider
+                key={k}
+                param={k}
+                domain={dr}
+                value={f.paramRanges[k] ?? { min: null, max: null }}
+                onChange={(r) => setRange(k,
+                  (r.min == null && r.max == null) ? undefined : r)}
+              />
+            );
+          })}
+        </div>
+      </Section>
+
+      <Section title="Recipe family">
+        {f.family ? (
+          <div className="flex items-center gap-2 font-mono text-[10.5px]">
+            <span>{f.family.axis} sweep</span>
+            <button
+              type="button"
+              onClick={() => onChange({ ...f, family: null })}
+              className="ml-auto text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-primary)]"
+            >
+              clear
+            </button>
+          </div>
+        ) : (
+          <p className="font-mono text-[9.5px] italic text-[color:var(--color-ink-subtle)]">
+            Set from the focused card.
+          </p>
+        )}
+      </Section>
+
+      <Section title="Outliers / brush">
+        <label className="flex items-center gap-2 font-mono text-[10.5px]">
+          <input
+            type="checkbox"
+            checked={f.trimOutliers}
+            onChange={(e) =>
+              onChange({ ...f, trimOutliers: e.target.checked })}
+          />
+          trim 1%/99%
+        </label>
+        {f.brushRange ? (
+          <div className="flex items-center gap-2 font-mono text-[10px]">
+            <span>brush: {f.brushRange[0]}–{f.brushRange[1]}</span>
+            <button
+              type="button"
+              onClick={() => onChange({ ...f, brushRange: null })}
+              className="ml-auto text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-primary)]"
+            >
+              clear
+            </button>
+          </div>
+        ) : null}
+      </Section>
+
+      <button
+        type="button"
+        onClick={() => onChange(DEFAULT_FILTERS)}
+        className="font-mono text-[10px] uppercase tracking-[0.18em] py-1.5 rounded-sm border border-[color:var(--color-border)] hover:border-[color:var(--color-primary)] hover:text-[color:var(--color-primary)]"
+      >
+        Clear all filters
+      </button>
+    </div>
+  );
+}
