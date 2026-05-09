@@ -27,6 +27,15 @@ import {
 } from "../components/exposure/exposureCorrelations";
 import { pearson, spearman, logLinearRegression } from "../components/exposure/exposureMath";
 import { buildFamilies, type FamilyMember, type VaryingAxis } from "../components/exposure/recipeFamilies";
+import { HelpTip } from "../components/HelpTip";
+import {
+  EXPOSURE_INDEX_HELP,
+  EXPOSURE_RAW_PARAM_HELP,
+} from "../components/exposure/exposureHelpCopy";
+import {
+  IndexCardBody,
+  RawParamCardBody,
+} from "../components/exposure/ExposureHelpCardBody";
 import { EmptyState, Button, MetalBar } from "../ui";
 
 // ── types ──────────────────────────────────────────────────────────────────
@@ -655,6 +664,14 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                           setXKey(idx);
                           if (mode === "univariate") setYKeyUni(ch);
                         }}
+                        renderRowLabel={(rowKey, label) => (
+                          <HelpTip
+                            help={EXPOSURE_INDEX_HELP[rowKey]}
+                            Body={IndexCardBody}
+                          >
+                            <span className="cursor-help">{label}</span>
+                          </HelpTip>
+                        )}
                       />
                     ) : (
                       <ExposureCorrelationMatrix<RawParamRow>
@@ -664,6 +681,14 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                         selectedRowKey={null}
                         selectedChannel={null}
                         onSelect={null}
+                        renderRowLabel={(rowKey, label) => (
+                          <HelpTip
+                            help={EXPOSURE_RAW_PARAM_HELP[rowKey]}
+                            Body={RawParamCardBody}
+                          >
+                            <span className="cursor-help">{label}</span>
+                          </HelpTip>
+                        )}
                       />
                     )}
                   </div>
