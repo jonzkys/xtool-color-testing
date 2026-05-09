@@ -25,4 +25,10 @@ describe("ExposureHelpSchematic", () => {
       expect(svg?.getAttribute("aria-hidden")).not.toBeNull();
     });
   }
+
+  it("renders both DOSE and INTENSITY labels in the combination family", () => {
+    const { container } = render(<ExposureHelpSchematic schematic="combination" />);
+    expect(container.textContent).toContain("DOSE");
+    expect(container.textContent).toContain("INTENSITY");
+  });
 });

@@ -21,6 +21,12 @@ const STROKE_OP = 0.8;
 const FAINT = "var(--color-border)";
 const LABEL = "var(--color-ink-subtle)";
 
+const LABEL_STYLE = {
+  fontFamily: "var(--font-mono)",
+  letterSpacing: "0.16em",
+  textTransform: "uppercase" as const,
+};
+
 export const EXPOSURE_SCHEMATIC_IDS: readonly ExposureSchematicId[] = [
   "dot_pitch",
   "line_pitch",
@@ -104,11 +110,10 @@ function DotPitch() {
       <text
         x={x0 + dx / 2}
         y={cy + 24}
-        fontFamily="var(--font-mono)"
+        style={LABEL_STYLE}
         fontSize={9}
         fill={LABEL}
         textAnchor="middle"
-        letterSpacing="0.16em"
       >
         SPACING
       </text>
@@ -138,11 +143,10 @@ function LinePitch() {
       <text
         x={70}
         y={75}
-        fontFamily="var(--font-mono)"
+        style={LABEL_STYLE}
         fontSize={9}
         fill={LABEL}
         textAnchor="middle"
-        letterSpacing="0.16em"
       >
         LINE PITCH
       </text>
@@ -178,11 +182,10 @@ function PulseShape() {
       <text
         x={70}
         y={75}
-        fontFamily="var(--font-mono)"
+        style={LABEL_STYLE}
         fontSize={9}
         fill={LABEL}
         textAnchor="middle"
-        letterSpacing="0.16em"
       >
         ENERGY · PEAK
       </text>
@@ -212,11 +215,10 @@ function Accumulation() {
       <text
         x={70}
         y={75}
-        fontFamily="var(--font-mono)"
+        style={LABEL_STYLE}
         fontSize={9}
         fill={LABEL}
         textAnchor="middle"
-        letterSpacing="0.16em"
       >
         PASSES STACK
       </text>
@@ -245,20 +247,18 @@ function Combination() {
       <text
         x={42}
         y={cy - 6}
-        fontFamily="var(--font-mono)"
+        style={LABEL_STYLE}
         fontSize={8}
         fill={LABEL}
-        letterSpacing="0.16em"
       >
         DOSE
       </text>
       <text
         x={cx + 4}
         y={66}
-        fontFamily="var(--font-mono)"
+        style={LABEL_STYLE}
         fontSize={8}
         fill={LABEL}
-        letterSpacing="0.16em"
       >
         INTENSITY
       </text>
