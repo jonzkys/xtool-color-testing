@@ -56,17 +56,17 @@ export const EXPOSURE_INDEX_HELP: Record<IndexRow, ExposureIndexHelp> = {
       "Smaller is denser coverage along the scan direction. Once spacing falls below the spot diameter, pulses start to overlap and the burn behaves as a continuous mark — bigger gains in colour from there usually mean more passes, not denser pulses.",
     schematic: "dot_pitch",
   },
-  line_spacing_index: {
+  line_spacing_mm: {
     heading: "Line spacing",
-    unit: "dimensionless",
+    unit: "mm",
     definition:
-      "Inverse of the controller's density setting — how far apart adjacent scan lines sit, in opaque controller units.",
-    formula: "1 ÷ density",
+      "Physical distance between adjacent scan lines, derived from the controller's density setting.",
+    formula: "10 ÷ density",
     inputs: [
-      { name: "density", unit: "controller value (opaque)" },
+      { name: "density", unit: "lines/cm" },
     ],
     guide:
-      "Higher means lines further apart, lower means denser hatching. xTool's density mapping isn't physical, so this stays opaque — calibration upgrades it to mm later.",
+      "Smaller is denser hatching. Below the spot diameter, lines start to overlap and the burn behaves as a continuous fill — additional density gains then translate into more pulse overlap, not finer hatching.",
     schematic: "line_pitch",
   },
   pulse_energy_index: {
@@ -106,7 +106,7 @@ export const EXPOSURE_INDEX_HELP: Record<IndexRow, ExposureIndexHelp> = {
     formula: "power × density × passes ÷ speed",
     inputs: [
       { name: "power", unit: "% controller setting" },
-      { name: "density", unit: "controller value (opaque)" },
+      { name: "density", unit: "lines/cm" },
       { name: "passes", unit: "count" },
       { name: "speed", unit: "mm/s" },
     ],
@@ -123,7 +123,7 @@ export const EXPOSURE_INDEX_HELP: Record<IndexRow, ExposureIndexHelp> = {
       "(power × density × passes ÷ speed) × (power ÷ (frequency × pulse_width))",
     inputs: [
       { name: "power", unit: "% controller setting" },
-      { name: "density", unit: "controller value (opaque)" },
+      { name: "density", unit: "lines/cm" },
       { name: "passes", unit: "count" },
       { name: "speed", unit: "mm/s" },
       { name: "frequency", unit: "kHz" },
@@ -142,7 +142,7 @@ export const EXPOSURE_INDEX_HELP: Record<IndexRow, ExposureIndexHelp> = {
       "(power × density × passes ÷ speed) ÷ (power ÷ (frequency × pulse_width))",
     inputs: [
       { name: "power", unit: "% controller setting" },
-      { name: "density", unit: "controller value (opaque)" },
+      { name: "density", unit: "lines/cm" },
       { name: "passes", unit: "count" },
       { name: "speed", unit: "mm/s" },
       { name: "frequency", unit: "kHz" },
@@ -213,9 +213,9 @@ export const EXPOSURE_RAW_PARAM_HELP: Record<RawParamRow, ExposureRawParamHelp> 
   },
   density: {
     heading: "Density",
-    unit: "controller value (opaque)",
+    unit: "lines/cm",
     definition:
-      "Controller density setting. Inversely related to scan-line spacing; mapping is non-physical.",
+      "Number of laser scan lines per centimetre. Stepped controller value (e.g. 10–200 for the STANDARD profile).",
   },
   passes: {
     heading: "Passes",

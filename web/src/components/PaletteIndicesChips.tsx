@@ -6,8 +6,7 @@ import type { IndexRow } from "./exposure/exposureCorrelations";
 
 export interface LaserIndices {
   pulse_spacing_mm: number;
-  line_spacing_index: number;
-  line_spacing_mm: number | null;
+  line_spacing_mm: number;
   pulse_energy_index: number;
   pulse_intensity_index: number;
   total_exposure_index: number;

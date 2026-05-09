@@ -21,12 +21,9 @@ export interface ExposureRow {
   test_id?: number | null;
 }
 
-// `line_spacing_mm` is intentionally excluded — it stays NULL while
-// density_model="opaque" and is redundant with `line_spacing_index`.
-// Adding it here would require null-handling in buildCorrelationMatrix.
 export const INDEX_ROWS = [
   "pulse_spacing_mm",
-  "line_spacing_index",
+  "line_spacing_mm",
   "pulse_energy_index",
   "pulse_intensity_index",
   "total_exposure_index",
