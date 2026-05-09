@@ -199,13 +199,27 @@ function HelpTipPortal<H>({
     let left = a.left + a.width / 2 - p.width / 2;
     if (left + p.width + margin > vw) left = vw - p.width - margin;
     if (left < margin) left = margin;
-    // Prefer below; flip above if it'd clip.
-    let top = a.bottom + 6;
+
+    // Prefer below the anchor; flip above when below clips. If both clip
+    // (card taller than the available space in either direction), pin to
+    // the top of the viewport — the card's own overflow-y:auto handles
+    // the rest.
+    const spaceBelow = vh - a.bottom - margin;
+    const spaceAbove = a.top - margin;
+    let top: number;
     let flipped = false;
-    if (top + p.height + margin > vh) {
+    if (p.height + 6 <= spaceBelow) {
+      top = a.bottom + 6;
+    } else if (p.height + 6 <= spaceAbove) {
       top = a.top - p.height - 6;
       flipped = true;
+    } else {
+      // Neither side fits — pin so the top of the card is visible.
+      top = margin;
+      flipped = a.top > vh / 2;
     }
+    // Final clamp so the card never overflows the top edge.
+    if (top < margin) top = margin;
     setPlacement({ left, top, flipped });
   }, [closing, anchor]);
 
@@ -229,6 +243,8 @@ function HelpTipPortal<H>({
       style={{
         left: placement.left,
         top: placement.top,
+        maxHeight: `calc(100vh - 16px)`,
+        overflowY: "auto",
         // Catch pointer events so the user can move the cursor into
         // the card without triggering close.
         pointerEvents: "auto",

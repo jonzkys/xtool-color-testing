@@ -196,11 +196,14 @@ export const ExposureScatter: React.FC<Props> = ({
   const xHelp: ExposureIndexHelp = EXPOSURE_INDEX_HELP[xKey];
 
   return (
-    <div className="relative">
+    <div
+      className="relative"
+      style={{ paddingLeft: 28, paddingBottom: 36 }}
+    >
     <svg
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="xMidYMid meet"
-      className="w-full h-auto block rounded-[6px] bg-[color:var(--color-surface-elevated)]"
+      className="block w-full h-auto rounded-[6px] bg-[color:var(--color-surface-elevated)]"
       role="img"
       aria-label="exposure scatter"
     >
@@ -417,11 +420,11 @@ export const ExposureScatter: React.FC<Props> = ({
       />
     </svg>
 
-      {/* X axis label overlay — two lines, centered along the bottom */}
+      {/* X axis label — sits in the wrapper's bottom 36px strip, BELOW the SVG */}
       <HelpTip help={xHelp} Body={IndexCardBody}>
         <div
-          className="absolute left-0 right-0 flex flex-col items-center cursor-help"
-          style={{ bottom: 2 }}
+          className="absolute left-7 right-0 bottom-0 flex flex-col items-center justify-center cursor-help"
+          style={{ height: 36 }}
         >
           <div className="font-mono uppercase tracking-[0.18em] text-[10px] font-semibold text-[color:var(--color-ink-subtle)]">
             {xLabelDisplay}
@@ -432,12 +435,12 @@ export const ExposureScatter: React.FC<Props> = ({
         </div>
       </HelpTip>
 
-      {/* Y axis label overlay — rotated, two lines */}
+      {/* Y axis label — sits in the wrapper's left 28px strip, LEFT of the SVG */}
       {yIsChannel ? (
         <HelpTip help={EXPOSURE_CHANNEL_HELP[yKey as ChannelCol]} Body={ChannelCardBody}>
           <div
-            className="absolute top-0 bottom-0 left-0 flex items-center cursor-help"
-            style={{ width: 24 }}
+            className="absolute top-0 left-0 flex items-center justify-center cursor-help"
+            style={{ width: 28, bottom: 36 }}
           >
             <div
               className="flex flex-col items-center whitespace-nowrap"
@@ -452,8 +455,8 @@ export const ExposureScatter: React.FC<Props> = ({
       ) : (
         <HelpTip help={EXPOSURE_INDEX_HELP[yKey as IndexRow]} Body={IndexCardBody}>
           <div
-            className="absolute top-0 bottom-0 left-0 flex items-center cursor-help"
-            style={{ width: 24 }}
+            className="absolute top-0 left-0 flex items-center justify-center cursor-help"
+            style={{ width: 28, bottom: 36 }}
           >
             <div
               className="flex flex-col items-center whitespace-nowrap"
