@@ -30,10 +30,12 @@ import { buildFamilies, type FamilyMember, type VaryingAxis } from "../component
 import { HelpTip } from "../components/HelpTip";
 import {
   EXPOSURE_INDEX_HELP,
+  EXPOSURE_CHANNEL_HELP,
   EXPOSURE_RAW_PARAM_HELP,
 } from "../components/exposure/exposureHelpCopy";
 import {
   IndexCardBody,
+  ChannelCardBody,
   RawParamCardBody,
 } from "../components/exposure/ExposureHelpCardBody";
 import { EmptyState, Button, MetalBar } from "../ui";
@@ -411,14 +413,19 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
           <RailSection title="X axis">
             <div className="flex flex-col gap-0.5">
               {INDEX_ROWS.map((k) => (
-                <RailPickerButton
+                <HelpTip
                   key={k}
-                  active={k === xKey}
-                  onClick={() => setXKey(k)}
-                  small
+                  help={EXPOSURE_INDEX_HELP[k]}
+                  Body={IndexCardBody}
                 >
-                  {INDEX_LABELS[k]}
-                </RailPickerButton>
+                  <RailPickerButton
+                    active={k === xKey}
+                    onClick={() => setXKey(k)}
+                    small
+                  >
+                    {INDEX_LABELS[k]}
+                  </RailPickerButton>
+                </HelpTip>
               ))}
             </div>
             <RailCheckbox
@@ -435,24 +442,34 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
             <div className="flex flex-col gap-0.5">
               {mode === "univariate"
                 ? CHANNEL_COLS.map((k) => (
-                    <RailPickerButton
+                    <HelpTip
                       key={k}
-                      active={k === yKeyUni}
-                      onClick={() => setYKeyUni(k)}
-                      small
+                      help={EXPOSURE_CHANNEL_HELP[k]}
+                      Body={ChannelCardBody}
                     >
-                      {CHANNEL_LABELS[k]}
-                    </RailPickerButton>
+                      <RailPickerButton
+                        active={k === yKeyUni}
+                        onClick={() => setYKeyUni(k)}
+                        small
+                      >
+                        {CHANNEL_LABELS[k]}
+                      </RailPickerButton>
+                    </HelpTip>
                   ))
                 : INDEX_ROWS.map((k) => (
-                    <RailPickerButton
+                    <HelpTip
                       key={k}
-                      active={k === yKeyBi}
-                      onClick={() => setYKeyBi(k)}
-                      small
+                      help={EXPOSURE_INDEX_HELP[k]}
+                      Body={IndexCardBody}
                     >
-                      {INDEX_LABELS[k]}
-                    </RailPickerButton>
+                      <RailPickerButton
+                        active={k === yKeyBi}
+                        onClick={() => setYKeyBi(k)}
+                        small
+                      >
+                        {INDEX_LABELS[k]}
+                      </RailPickerButton>
+                    </HelpTip>
                   ))}
             </div>
             <RailCheckbox
