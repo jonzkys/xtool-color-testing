@@ -19,8 +19,7 @@ vi.mock("../api/palette", () => ({
       params: { power: 65, speed: 800, frequency: 60, density: 120, passes: 2, pulse_width: 100 },
       indices: {
         pulse_spacing_mm: 0.0154,
-        line_spacing_index: 0.0083,
-        line_spacing_mm: null,
+        line_spacing_mm: 0.083,
         pulse_energy_index: 1.083,
         pulse_intensity_index: 0.0181,
         surface_exposure_index: 195.0,
