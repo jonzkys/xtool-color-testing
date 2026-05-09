@@ -18,16 +18,21 @@ describe("exposureHelpCopy", () => {
     }
   });
 
-  it("has an entry for every ChannelCol", () => {
+  it("has a fully-populated entry for every ChannelCol", () => {
     for (const k of CHANNEL_COLS) {
       expect(EXPOSURE_CHANNEL_HELP[k]).toBeDefined();
       expect(EXPOSURE_CHANNEL_HELP[k].heading.length).toBeGreaterThan(0);
+      expect(EXPOSURE_CHANNEL_HELP[k].definition.length).toBeGreaterThan(0);
+      expect(EXPOSURE_CHANNEL_HELP[k].guide.length).toBeGreaterThan(0);
+      expect(EXPOSURE_CHANNEL_HELP[k].schematic.length).toBeGreaterThan(0);
     }
   });
 
-  it("has an entry for every RawParamRow", () => {
+  it("has a fully-populated entry for every RawParamRow", () => {
     for (const k of RAW_PARAM_ROWS) {
       expect(EXPOSURE_RAW_PARAM_HELP[k]).toBeDefined();
+      expect(EXPOSURE_RAW_PARAM_HELP[k].heading.length).toBeGreaterThan(0);
+      expect(EXPOSURE_RAW_PARAM_HELP[k].unit.length).toBeGreaterThan(0);
       expect(EXPOSURE_RAW_PARAM_HELP[k].definition.length).toBeGreaterThan(0);
     }
   });
