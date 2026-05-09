@@ -629,7 +629,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                 </div>
 
                 {/* Hue ribbon + correlation matrix row */}
-                <div className="flex gap-4 px-5 pb-3">
+                <div className="flex gap-4 px-5 pb-3 items-start">
                   <div className="flex-1 min-w-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
                     <PanelLabel title="Hue ribbon" subtitle={`ordered by ${xKey}`} />
                     <ExposureHueRibbon
