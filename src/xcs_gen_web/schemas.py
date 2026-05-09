@@ -384,12 +384,12 @@ class SvgPreviewResponse(BaseModel):
 class LaserIndicesResponse(BaseModel):
     """Heuristic exposure indices derived from raw laser params.
 
-    These are NOT calibrated physical quantities. See
-    docs/superpowers/specs/2026-05-07-laser-exposure-indices-design.md.
+    Formula version 3: ``density_model='lpc'`` is the canonical state.
+    The ``"opaque"`` literal is retained for legacy rows where the
+    backfill couldn't recompute (formula_version=0).
     """
 
     pulse_spacing_mm: float
-    line_spacing_index: float
     line_spacing_mm: float | None
     pulse_energy_index: float
     pulse_intensity_index: float
@@ -397,7 +397,7 @@ class LaserIndicesResponse(BaseModel):
     ablation_aggression_index: float
     delivery_smoothness_index: float
     formula_version: int
-    density_model: str
+    density_model: Literal["lpc", "opaque"] = "lpc"
     power_model: str
 
     @computed_field  # type: ignore[misc]
@@ -453,6 +453,7 @@ class PaletteEntryResponse(BaseModel):
     # autopick to skip colours the user has already burned, so
     # subsequent validation tests cover new ground.
     original_validated: bool = False
+    derived_from_entry_id: int | None = None
     indices: LaserIndicesResponse
 
 
@@ -891,6 +892,8 @@ class TestUpdate(BaseModel):
     # palette entries already harvested from the test cascade to the
     # new material in the same transaction.
     material_id: int | None = None
+    parent_test_id: int | None = None
+    tag: str | None = None
 
 
 class TestResponse(BaseModel):
@@ -914,6 +917,12 @@ class TestResponse(BaseModel):
     # Test variety — "sweep" (legacy axis-sweep) or "validation"
     # (per-cell palette validation). Defaults to sweep for legacy rows.
     kind: Literal["sweep", "validation"] = "sweep"
+    # Lineage: the original test this was retested from (immutable after
+    # creation), the immediate predecessor in the retest chain (if
+    # branched from a specific test), and a user-defined campaign tag.
+    source_test_id: int | None = None
+    parent_test_id: int | None = None
+    tag: str | None = None
     # Frozen per-cell snapshots for kind=validation tests; empty list
     # for sweep tests. Read-only on this schema — clients mutate the
     # cell list via ``PATCH /api/tests/{id}/validation-cells``.
