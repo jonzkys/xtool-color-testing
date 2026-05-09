@@ -56,6 +56,9 @@ def _row(r, *, ingested: bool = False) -> dict[str, Any]:
         # carry an int.
         "retest_index": int(getattr(r, "retest_index", 0) or 0),
         "machine_id": getattr(r, "machine_id", "F2Ultra"),
+        "source_test_id": getattr(r, "source_test_id", None),
+        "parent_test_id": getattr(r, "parent_test_id", None),
+        "tag": getattr(r, "tag", None),
         # Derived: does this test have at least one swatch in the
         # palette? Set per-call from the palette_entries table — see
         # ``_ingested_test_ids``. Defaults to False for safety on
@@ -160,6 +163,8 @@ def update(
     material_id: int | None = None,
     visibility: str | None = None,
     machine_id: str | None = None,
+    parent_test_id: int | None = None,
+    tag: str | None = None,
 ) -> dict[str, Any] | None:
     cur = get(tid, owner_id=owner_id)
     if cur is None:
@@ -187,6 +192,12 @@ def update(
         values["material_id"] = material_id
     if visibility is not None:
         values["visibility"] = visibility
+    if parent_test_id is not None:
+        # Sentinel: pass -1 to clear; positive ints set the FK.
+        values["parent_test_id"] = None if parent_test_id == -1 else parent_test_id
+    if tag is not None:
+        # Sentinel: empty string clears.
+        values["tag"] = None if tag == "" else tag
     with session_scope() as s:
         s.execute(
             tests.update()

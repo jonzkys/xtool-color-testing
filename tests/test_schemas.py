@@ -260,3 +260,48 @@ def test_laser_indices_response_serialises_both_total_and_alias() -> None:
     assert j["surface_exposure_index"] == 5.0  # deprecated alias
     assert j["ablation_aggression_index"] == 0.01923
     assert j["delivery_smoothness_index"] == 1300.0
+
+
+def test_laser_indices_response_drops_line_spacing_index():
+    from xcs_gen_web.schemas import LaserIndicesResponse
+    fields = LaserIndicesResponse.model_fields
+    assert "line_spacing_index" not in fields
+    assert "line_spacing_mm" in fields
+    payload = {
+        "pulse_spacing_mm": 0.05,
+        "line_spacing_mm": 0.1,
+        "pulse_energy_index": 1.0,
+        "pulse_intensity_index": 0.001,
+        "total_exposure_index": 5.0,
+        "ablation_aggression_index": 0.005,
+        "delivery_smoothness_index": 5000.0,
+        "formula_version": 3,
+        "density_model": "lpc",
+        "power_model": "controller_percent",
+    }
+    out = LaserIndicesResponse(**payload)
+    assert out.density_model == "lpc"
+    # Legacy "opaque" rows still parse for backward compat.
+    out_legacy = LaserIndicesResponse(**{**payload, "density_model": "opaque",
+                                          "formula_version": 2})
+    assert out_legacy.density_model == "opaque"
+
+
+def test_test_response_carries_lineage_fields():
+    from xcs_gen_web.schemas import TestResponse
+    fields = TestResponse.model_fields
+    assert "source_test_id" in fields
+    assert "parent_test_id" in fields
+    assert "tag" in fields
+
+
+def test_test_update_accepts_parent_test_id_and_tag():
+    from xcs_gen_web.schemas import TestUpdate
+    out = TestUpdate(parent_test_id=42, tag="campaign-a")
+    assert out.parent_test_id == 42
+    assert out.tag == "campaign-a"
+
+
+def test_palette_entry_response_carries_derived_from_entry_id():
+    from xcs_gen_web.schemas import PaletteEntryResponse
+    assert "derived_from_entry_id" in PaletteEntryResponse.model_fields

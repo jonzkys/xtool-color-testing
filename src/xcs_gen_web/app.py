@@ -1965,6 +1965,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # produced it (otherwise auto-match has no recipe to apply).
         cells_for_buckets = []
         cell_params: dict[int, dict] = {}
+        cell_src_entry: dict[int, int | None] = {}
         for c in cells_full:
             exp = c.get("expected_lab")
             if not isinstance(exp, list) or len(exp) != 3:
@@ -1977,6 +1978,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "expected_lab_b": exp[2],
             })
             cell_params[c["cell_index"]] = c.get("params") or {}
+            cell_src_entry[c["cell_index"]] = c.get("palette_entry_id")
 
         buckets = validate_service.compute_validation_buckets(
             cells=cells_for_buckets,
@@ -2014,6 +2016,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 run_count=int(entry["run_count"]),
                 stability_de=float(entry["stability_de"]),
                 params=cell_params.get(entry["cell_index"]) or {},
+                derived_from_entry_id=cell_src_entry.get(int(entry["cell_index"])),
                 owner_id=user_id,
             )
             new_ids[entry["cell_index"]] = new_entry["id"]

@@ -64,7 +64,7 @@ const PADB = 60;
 
 const INDEX_PRETTY: Record<IndexRow, string> = {
   pulse_spacing_mm: "PULSE SPACING (mm)",
-  line_spacing_index: "LINE SPACING IDX",
+  line_spacing_mm: "LINE SPACING (mm)",
   pulse_energy_index: "PULSE ENERGY IDX",
   pulse_intensity_index: "PULSE INTENSITY IDX",
   total_exposure_index: "TOTAL EXPOSURE IDX",

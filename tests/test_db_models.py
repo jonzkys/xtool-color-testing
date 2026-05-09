@@ -66,7 +66,6 @@ def test_palette_entries_has_indices_columns() -> None:
 
     expected = {
         "pulse_spacing_mm",
-        "line_spacing_index",
         "line_spacing_mm",
         "pulse_energy_index",
         "pulse_intensity_index",
@@ -133,3 +132,28 @@ def test_line_spacing_mm_is_nullable() -> None:
     assert col.nullable is True, (
         "line_spacing_mm must be nullable — stays NULL while density_model='opaque'"
     )
+
+
+def test_tests_table_has_lineage_columns():
+    from xcs_gen_web.models import tests
+    cols = {c.name for c in tests.columns}
+    assert "source_test_id" in cols
+    assert "parent_test_id" in cols
+    assert "tag" in cols
+    # FKs point at tests.id with ON DELETE SET NULL.
+    src_fk = next(fk for c in tests.columns for fk in c.foreign_keys
+                  if c.name == "source_test_id")
+    assert src_fk.target_fullname == "tests.id"
+    assert src_fk.ondelete == "SET NULL"
+
+
+def test_palette_entries_table_has_derived_from_and_no_line_spacing_index():
+    from xcs_gen_web.models import palette_entries
+    cols = {c.name for c in palette_entries.columns}
+    assert "derived_from_entry_id" in cols
+    assert "line_spacing_index" not in cols
+    assert "line_spacing_mm" in cols
+    fk = next(fk for c in palette_entries.columns for fk in c.foreign_keys
+              if c.name == "derived_from_entry_id")
+    assert fk.target_fullname == "palette_entries.id"
+    assert fk.ondelete == "SET NULL"

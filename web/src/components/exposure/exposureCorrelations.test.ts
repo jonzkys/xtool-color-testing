@@ -20,8 +20,7 @@ function row(
     lab: [l, a, b],
     indices: {
       pulse_spacing_mm: 0.01,
-      line_spacing_index: 0.01,
-      line_spacing_mm: null,
+      line_spacing_mm: 0.1,
       pulse_energy_index: 0.7,
       pulse_intensity_index: 0.003,
       surface_exposure_index: surface,

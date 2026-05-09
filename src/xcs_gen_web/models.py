@@ -154,6 +154,17 @@ tests = Table(
     Column("retest_index", Integer, nullable=False, server_default="0"),
     Column("machine_id", String(_MACHINE_ID_LEN), nullable=False, server_default="F2Ultra"),
     Column("kind", String(_STATUS_LEN), nullable=False, server_default="sweep"),
+    Column(
+        "source_test_id", Integer,
+        ForeignKey("tests.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column(
+        "parent_test_id", Integer,
+        ForeignKey("tests.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column("tag", String(64), nullable=True),
     CheckConstraint("status IN ('created','tested','deleted')", name="tests_status_chk"),
     CheckConstraint("kind IN ('sweep','validation')", name="tests_kind_chk"),
     CheckConstraint(_VISIBILITY_CHECK, name="tests_visibility_chk"),
@@ -161,6 +172,9 @@ tests = Table(
     Index("ix_tests_status", "status"),
     Index("ix_tests_owner", "owner_id"),
     Index("ix_tests_owner_machine", "owner_id", "machine_id"),
+    Index("ix_tests_source_test_id", "source_test_id"),
+    Index("ix_tests_parent_test_id", "parent_test_id"),
+    Index("ix_tests_tag", "tag"),
 )
 
 results = Table(
@@ -253,8 +267,12 @@ palette_entries = Table(
     # to compare burn parameters by hand. Nullable for legacy rows
     # and any future entry created outside the batch validate path.
     Column("validated_cell_index", Integer, nullable=True),
+    Column(
+        "derived_from_entry_id", Integer,
+        ForeignKey("palette_entries.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
     Column("pulse_spacing_mm", Float, nullable=True),
-    Column("line_spacing_index", Float, nullable=True),
     Column("line_spacing_mm", Float, nullable=True),
     Column("pulse_energy_index", Float, nullable=True),
     Column("pulse_intensity_index", Float, nullable=True),
@@ -297,6 +315,10 @@ palette_entries = Table(
     Index(
         "ix_palette_entries_material_intensity",
         "material_id", "pulse_intensity_index",
+    ),
+    Index(
+        "ix_palette_entries_derived_from",
+        "derived_from_entry_id",
     ),
 )
 

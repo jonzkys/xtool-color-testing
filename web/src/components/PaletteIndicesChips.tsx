@@ -6,8 +6,7 @@ import type { IndexRow } from "./exposure/exposureCorrelations";
 
 export interface LaserIndices {
   pulse_spacing_mm: number;
-  line_spacing_index: number;
-  line_spacing_mm: number | null;
+  line_spacing_mm: number;
   pulse_energy_index: number;
   pulse_intensity_index: number;
   total_exposure_index: number;
@@ -49,8 +48,7 @@ const Chip: React.FC<ChipProps> = ({ label, value, bar }) => (
 
 const CHIP_INDEX_KEY: Record<string, IndexRow | null> = {
   "Pulse spacing": "pulse_spacing_mm",
-  "Line spacing index": "line_spacing_index",
-  "Line spacing (mm)": null,
+  "Line spacing": "line_spacing_mm",
   "Pulse energy": "pulse_energy_index",
   "Pulse intensity": "pulse_intensity_index",
   "Total exposure": "total_exposure_index",
@@ -94,16 +92,8 @@ export const PaletteIndicesChips: React.FC<{ indices: LaserIndices }> = ({
           value={`${fmtNum(indices.pulse_spacing_mm)} mm`}
         />
         <HelpfulChip
-          label="Line spacing index"
-          value={fmtNum(indices.line_spacing_index)}
-        />
-        <HelpfulChip
-          label="Line spacing (mm)"
-          value={
-            indices.line_spacing_mm === null
-              ? "—"
-              : `${fmtNum(indices.line_spacing_mm)}`
-          }
+          label="Line spacing"
+          value={`${fmtNum(indices.line_spacing_mm)} mm`}
         />
         <HelpfulChip
           label="Pulse energy"

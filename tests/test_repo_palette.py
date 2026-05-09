@@ -723,13 +723,13 @@ def test_insert_bulk_populates_indices(fresh_db) -> None:
     assert "indices" in out
     idx = out["indices"]
     assert idx["pulse_spacing_mm"] == pytest.approx(1000 / (65 * 1000))
-    assert idx["line_spacing_index"] == pytest.approx(1 / 100)
-    assert idx["line_spacing_mm"] is None
+    assert "line_spacing_index" not in idx
+    assert idx["line_spacing_mm"] == pytest.approx(10 / 100)
     assert idx["pulse_energy_index"] == pytest.approx(50 / 65)
     assert idx["pulse_intensity_index"] == pytest.approx(50 / (65 * 200))
     assert idx["total_exposure_index"] == pytest.approx(50 * 100 * 1 / 1000)
     assert idx["formula_version"] == INDICES_FORMULA_VERSION
-    assert idx["density_model"] == "opaque"
+    assert idx["density_model"] == "lpc"
     assert idx["power_model"] == "controller_percent"
 
 
@@ -940,3 +940,43 @@ def test_combined_indices_in_repo_output(palette_db) -> None:
     pi = idx["pulse_intensity_index"]
     assert aggr == pytest.approx(total * pi)
     assert smooth == pytest.approx(total / pi)
+
+
+def test_create_validated_entry_persists_derived_from_entry_id(fresh_db):
+    from xcs_gen_web.repositories import palette as pal_repo
+    # Seed: a source palette entry that the validation will be derived from.
+    mid = _seed_material("derived_mat")
+    tid = _seed_test(mid)
+    src = pal_repo.create_manual(
+        material_id=mid, hex_="#ffaa00",
+        params={"speed": 600, "power": 50, "density": 100,
+                "mopa_frequency": 30, "pulse_width": 2, "repeat": 1},
+        notes="",
+        owner_id=0, machine_id="F2Ultra",
+    )
+    new_entry = pal_repo.create_validated_entry(
+        machine_id="F2Ultra", material_id=mid,
+        burn_mean_lab=(50.0, 0.0, 0.0),
+        validated_test_id=tid, validated_cell_index=0,
+        run_count=3, stability_de=1.5,
+        params={"speed": 600, "power": 50, "density": 100,
+                "mopa_frequency": 30, "pulse_width": 2, "repeat": 1},
+        derived_from_entry_id=src["id"],
+        owner_id=0,
+    )
+    assert new_entry["derived_from_entry_id"] == src["id"]
+
+
+def test_palette_entry_dict_has_no_line_spacing_index(fresh_db):
+    from xcs_gen_web.repositories import palette as pal_repo
+    mid = _seed_material("no_lsi_mat")
+    e = pal_repo.create_manual(
+        material_id=mid, hex_="#ffaa00",
+        params={"speed": 600, "power": 50, "density": 100,
+                "mopa_frequency": 30, "pulse_width": 2, "repeat": 1},
+        notes="",
+        owner_id=0, machine_id="F2Ultra",
+    )
+    assert "line_spacing_index" not in e["indices"]
+    assert "line_spacing_mm" in e["indices"]
+    assert e["indices"]["line_spacing_mm"] == pytest.approx(10 / 100)

@@ -71,7 +71,7 @@ function fmtR2(r2: number): string {
 
 const INDEX_LABELS: Record<IndexRow, string> = {
   pulse_spacing_mm: "Pulse Spacing (mm)",
-  line_spacing_index: "Line Spacing Index",
+  line_spacing_mm: "Line Spacing (mm)",
   pulse_energy_index: "Pulse Energy Index",
   pulse_intensity_index: "Pulse Intensity Index",
   total_exposure_index: "Total Exposure",
@@ -89,7 +89,7 @@ const CHANNEL_LABELS: Record<ChannelCol, string> = {
 
 const INDEX_LABELS_MATRIX: Record<IndexRow, string> = {
   pulse_spacing_mm: "PSp",
-  line_spacing_index: "LSp",
+  line_spacing_mm: "LSp",
   pulse_energy_index: "PEn",
   pulse_intensity_index: "PIn",
   total_exposure_index: "TEx",

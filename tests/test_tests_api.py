@@ -5,7 +5,9 @@ from fastapi.testclient import TestClient
 from xcs_gen_web.app import create_app
 from xcs_gen_web.repositories import materials as m_repo
 from xcs_gen_web.repositories import palette as pal_repo
+from xcs_gen_web.repositories import results as r_repo
 from xcs_gen_web.repositories import tests as t_repo
+from xcs_gen_web.repositories import validation_cells as vc_repo
 
 
 BASE = {"power": 50, "speed": 1000, "frequency": 60,
@@ -261,3 +263,90 @@ def test_tests_lock_unlock_refused_after_results(fresh_db):
     r = c.post(f"/api/tests/{tid}/lock", json={"locked": False})
     assert r.status_code == 409
     assert "duplicate" in r.json()["detail"].lower()
+
+
+# ── Validate batch — derived_from_entry_id lineage ───────────────────────────
+
+# A minimal 1-row × 4-cell spec used for lineage tests. cells_per_row=4.
+_VAL_SPEC = {
+    "x_param": "speed", "x_min": 500, "x_max": 3000, "x_steps": 4,
+    "rows": 1, "width_mm": 50, "height_mm": 10, "gap_mm": 0.5,
+    "cell_shape": "rect", "square_cells": True, "angle_mode": "fixed",
+    "unidirectional": False,
+    "base_params": BASE,
+    "registration": {"mode": "on"},
+}
+
+
+def test_validate_persists_derived_from_entry_id(fresh_db):
+    """When a validation test ingests results, each new palette entry
+    carries derived_from_entry_id pointing at the source palette entry
+    whose cell was burned to validate.
+
+    Strategy: use repos directly to avoid image-upload plumbing. Two
+    results (same swatches) give stability_de ≈ 0, well within the
+    default 8 ΔE tolerance, so cell 0 lands in the stable bucket and
+    gets persisted (dry_run=false, no overrides).
+    """
+    c = TestClient(create_app())
+
+    # Two materials: one for the source sweep, one for the validation run.
+    src_mid = m_repo.create(name="SrcMaterial")["id"]
+    val_mid = m_repo.create(name="ValMaterial")["id"]
+
+    # Create a source sweep test and harvest one palette entry from it.
+    src_tid = t_repo.create(name="SrcSweep", material_id=src_mid, spec=_VAL_SPEC)["id"]
+    [src_eid] = pal_repo.insert_bulk([{
+        "test_id": src_tid,
+        "material_id": src_mid,
+        "hex": "#3c3c3c",
+        "sigma": 0.5,
+        "source": "averaged",
+        "params": {"power": 50, "speed": 500},
+    }])
+
+    # Create a validation test and populate cell 0 with palette_entry_id
+    # pointing at the source entry.
+    val_tid = t_repo.create(
+        name="ValRun", material_id=val_mid, spec=_VAL_SPEC, kind="validation",
+    )["id"]
+    vc_repo.replace_for_test(test_id=val_tid, cells=[{
+        "cell_index": 0,
+        "palette_entry_id": src_eid,
+        "expected_hex": "#3c3c3c",
+        "expected_lab": [23.0, 0.0, 0.0],
+        "params": {"power": 50, "speed": 500},
+    }])
+
+    # Two results, identical swatches for cell 0 (row=0, col=0).
+    # stability_de ≈ 0 → stable bucket.
+    swatch = {"row": 0, "col": 0, "lab": [24.0, 0.1, -0.1]}
+    for _ in range(2):
+        r_repo.create(
+            test_id=val_tid,
+            image_path="/dev/null",
+            image_sha256="a" * 64,
+            swatches=[swatch],
+        )
+
+    # POST to the validate endpoint — not dry_run, no overrides.
+    resp = c.post(
+        f"/api/tests/{val_tid}/validate",
+        json={"tolerance_de": 8.0, "dry_run": False},
+    )
+    assert resp.status_code == 200, resp.json()
+    body = resp.json()
+
+    # Cell 0 must be in stable and persisted.
+    stable = body["stable"]
+    assert len(stable) >= 1
+    persisted_cell = next((e for e in stable if e["cell_index"] == 0), None)
+    assert persisted_cell is not None, "cell 0 not found in stable bucket"
+    assert persisted_cell["persisted"] is True
+    new_eid = persisted_cell["new_entry_id"]
+    assert new_eid is not None
+
+    # The new palette entry must carry derived_from_entry_id == src_eid.
+    new_entry = pal_repo.get_by_id(new_eid)
+    assert new_entry is not None
+    assert new_entry["derived_from_entry_id"] == src_eid
