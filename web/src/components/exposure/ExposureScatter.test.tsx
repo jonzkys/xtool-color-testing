@@ -4,6 +4,7 @@ import * as React from "react";
 
 import { ExposureScatter } from "./ExposureScatter";
 import type { ExposureRow } from "./exposureCorrelations";
+import { __testing__ as HelpTipTesting } from "../HelpTip";
 
 function row(id: number, hex: string, surface: number, l: number): ExposureRow {
   return {
@@ -321,7 +322,7 @@ describe("ExposureScatter axis labels", () => {
     render(<MinimalScatter xKey="total_exposure_index" yKey="L" mode="univariate" />);
     const trigger = screen.getByText(/TOTAL EXPOSURE/);
     fireEvent.pointerEnter(trigger);
-    act(() => { vi.advanceTimersByTime(500); });
+    act(() => { vi.advanceTimersByTime(HelpTipTesting.OPEN_DELAY_MS + 50); });
     expect(screen.getByRole("tooltip").textContent).toContain(
       "power × density × passes ÷ speed",
     );
