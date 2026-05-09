@@ -1,4 +1,8 @@
 import * as React from "react";
+import { HelpTip } from "./HelpTip";
+import { EXPOSURE_INDEX_HELP } from "./exposure/exposureHelpCopy";
+import { IndexCardBody } from "./exposure/ExposureHelpCardBody";
+import type { IndexRow } from "./exposure/exposureCorrelations";
 
 export interface LaserIndices {
   pulse_spacing_mm: number;
@@ -43,6 +47,27 @@ const Chip: React.FC<ChipProps> = ({ label, value, bar }) => (
   </div>
 );
 
+const CHIP_INDEX_KEY: Record<string, IndexRow | null> = {
+  "Pulse spacing": "pulse_spacing_mm",
+  "Line spacing index": "line_spacing_index",
+  "Line spacing (mm)": null,
+  "Pulse energy": "pulse_energy_index",
+  "Pulse intensity": "pulse_intensity_index",
+  "Total exposure": "total_exposure_index",
+  "Ablation aggression": "ablation_aggression_index",
+  "Delivery smoothness": "delivery_smoothness_index",
+};
+
+const HelpfulChip: React.FC<ChipProps> = (props) => {
+  const indexKey = CHIP_INDEX_KEY[props.label] ?? null;
+  if (indexKey === null) return <Chip {...props} />;
+  return (
+    <HelpTip help={EXPOSURE_INDEX_HELP[indexKey]} Body={IndexCardBody}>
+      <Chip {...props} />
+    </HelpTip>
+  );
+};
+
 function fmtNum(n: number, sig: number = 4): string {
   if (!Number.isFinite(n)) return "—";
   const abs = Math.abs(n);
@@ -64,15 +89,15 @@ export const PaletteIndicesChips: React.FC<{ indices: LaserIndices }> = ({
   return (
     <div className="flex flex-col gap-2">
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-        <Chip
+        <HelpfulChip
           label="Pulse spacing"
           value={`${fmtNum(indices.pulse_spacing_mm)} mm`}
         />
-        <Chip
+        <HelpfulChip
           label="Line spacing index"
           value={fmtNum(indices.line_spacing_index)}
         />
-        <Chip
+        <HelpfulChip
           label="Line spacing (mm)"
           value={
             indices.line_spacing_mm === null
@@ -80,25 +105,25 @@ export const PaletteIndicesChips: React.FC<{ indices: LaserIndices }> = ({
               : `${fmtNum(indices.line_spacing_mm)}`
           }
         />
-        <Chip
+        <HelpfulChip
           label="Pulse energy"
           value={fmtNum(indices.pulse_energy_index)}
         />
-        <Chip
+        <HelpfulChip
           label="Pulse intensity"
           value={fmtNum(indices.pulse_intensity_index)}
         />
-        <Chip
+        <HelpfulChip
           label="Total exposure"
           value={fmtNum(indices.total_exposure_index)}
           bar={logBar(indices.total_exposure_index)}
         />
-        <Chip
+        <HelpfulChip
           label="Ablation aggression"
           value={fmtNum(indices.ablation_aggression_index)}
           bar={logBar(indices.ablation_aggression_index, 1e-4, 1e2)}
         />
-        <Chip
+        <HelpfulChip
           label="Delivery smoothness"
           value={fmtNum(indices.delivery_smoothness_index)}
           bar={logBar(indices.delivery_smoothness_index, 1e2, 1e7)}
