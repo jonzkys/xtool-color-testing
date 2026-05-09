@@ -11,6 +11,10 @@ interface Props<RowKey extends string> {
   selectedRowKey: RowKey | null;
   selectedChannel: ChannelCol | null;
   onSelect: ((rowKey: RowKey, channel: ChannelCol) => void) | null;
+  /** Optional override for how a row's label is rendered. Defaults
+   *  to a plain styled <div>. Receives the rowKey and the resolved
+   *  label string from rowLabels. */
+  renderRowLabel?: (rowKey: RowKey, label: string) => React.ReactNode;
 }
 
 const COL_LABELS: Record<ChannelCol, string> = {
@@ -53,6 +57,7 @@ export function ExposureCorrelationMatrix<RowKey extends string>({
   selectedRowKey,
   selectedChannel,
   onSelect,
+  renderRowLabel,
 }: Props<RowKey>) {
   return (
     <div className="font-mono">
@@ -90,7 +95,9 @@ export function ExposureCorrelationMatrix<RowKey extends string>({
                   : "text-[color:var(--color-ink-subtle)]",
               ].join(" ")}
             >
-              {rowLabels[idx]}
+              {renderRowLabel
+                ? renderRowLabel(idx, rowLabels[idx])
+                : rowLabels[idx]}
             </div>
             {CHANNEL_COLS.map((col, c) => {
               const value = matrix[r]?.[c] ?? NaN;

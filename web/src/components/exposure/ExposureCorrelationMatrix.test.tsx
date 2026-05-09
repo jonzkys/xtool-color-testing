@@ -120,4 +120,24 @@ describe("ExposureCorrelationMatrix", () => {
     );
     expect(colLabels).toEqual(CHANNEL_COLS.map((c) => COL_LABELS[c]));
   });
+
+  it("invokes renderRowLabel for each row when supplied, with rowKey + label", () => {
+    const rendered: { rowKey: string; label: string }[] = [];
+    render(
+      <ExposureCorrelationMatrix<IndexRow>
+        matrix={matrix}
+        rowKeys={INDEX_ROWS}
+        rowLabels={INDEX_ROW_LABELS}
+        selectedRowKey="total_exposure_index"
+        selectedChannel="L"
+        onSelect={() => undefined}
+        renderRowLabel={(rowKey, label) => {
+          rendered.push({ rowKey, label });
+          return <span data-testid={`hooked-${rowKey}`}>{label}</span>;
+        }}
+      />,
+    );
+    expect(rendered).toHaveLength(7);
+    expect(rendered.map((r) => r.rowKey)).toEqual([...INDEX_ROWS]);
+  });
 });

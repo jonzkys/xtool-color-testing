@@ -27,6 +27,17 @@ import {
 } from "../components/exposure/exposureCorrelations";
 import { pearson, spearman, logLinearRegression } from "../components/exposure/exposureMath";
 import { buildFamilies, type FamilyMember, type VaryingAxis } from "../components/exposure/recipeFamilies";
+import { HelpTip } from "../components/HelpTip";
+import {
+  EXPOSURE_INDEX_HELP,
+  EXPOSURE_CHANNEL_HELP,
+  EXPOSURE_RAW_PARAM_HELP,
+} from "../components/exposure/exposureHelpCopy";
+import {
+  IndexCardBody,
+  ChannelCardBody,
+  RawParamCardBody,
+} from "../components/exposure/ExposureHelpCardBody";
 import { EmptyState, Button, MetalBar } from "../ui";
 
 // ── types ──────────────────────────────────────────────────────────────────
@@ -402,14 +413,19 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
           <RailSection title="X axis">
             <div className="flex flex-col gap-0.5">
               {INDEX_ROWS.map((k) => (
-                <RailPickerButton
+                <HelpTip
                   key={k}
-                  active={k === xKey}
-                  onClick={() => setXKey(k)}
-                  small
+                  help={EXPOSURE_INDEX_HELP[k]}
+                  Body={IndexCardBody}
                 >
-                  {INDEX_LABELS[k]}
-                </RailPickerButton>
+                  <RailPickerButton
+                    active={k === xKey}
+                    onClick={() => setXKey(k)}
+                    small
+                  >
+                    {INDEX_LABELS[k]}
+                  </RailPickerButton>
+                </HelpTip>
               ))}
             </div>
             <RailCheckbox
@@ -426,24 +442,34 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
             <div className="flex flex-col gap-0.5">
               {mode === "univariate"
                 ? CHANNEL_COLS.map((k) => (
-                    <RailPickerButton
+                    <HelpTip
                       key={k}
-                      active={k === yKeyUni}
-                      onClick={() => setYKeyUni(k)}
-                      small
+                      help={EXPOSURE_CHANNEL_HELP[k]}
+                      Body={ChannelCardBody}
                     >
-                      {CHANNEL_LABELS[k]}
-                    </RailPickerButton>
+                      <RailPickerButton
+                        active={k === yKeyUni}
+                        onClick={() => setYKeyUni(k)}
+                        small
+                      >
+                        {CHANNEL_LABELS[k]}
+                      </RailPickerButton>
+                    </HelpTip>
                   ))
                 : INDEX_ROWS.map((k) => (
-                    <RailPickerButton
+                    <HelpTip
                       key={k}
-                      active={k === yKeyBi}
-                      onClick={() => setYKeyBi(k)}
-                      small
+                      help={EXPOSURE_INDEX_HELP[k]}
+                      Body={IndexCardBody}
                     >
-                      {INDEX_LABELS[k]}
-                    </RailPickerButton>
+                      <RailPickerButton
+                        active={k === yKeyBi}
+                        onClick={() => setYKeyBi(k)}
+                        small
+                      >
+                        {INDEX_LABELS[k]}
+                      </RailPickerButton>
+                    </HelpTip>
                   ))}
             </div>
             <RailCheckbox
@@ -602,19 +628,37 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   </div>
                 </div>
 
-                {/* Hue ribbon + correlation matrix row */}
-                <div className="flex gap-4 px-5 pb-3">
-                  <div className="flex-1 min-w-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
-                    <PanelLabel title="Hue ribbon" subtitle={`ordered by ${xKey}`} />
-                    <ExposureHueRibbon
-                      rows={displayRows}
-                      orderBy={xKey}
-                      focusedId={focusedId}
-                      onHover={handleHover}
-                      onLeave={handleLeave}
-                      onClick={handleClick}
-                      dimRange={brushRange}
-                    />
+                {/* Hue ribbon + exposure range (left) | correlation matrix (right) */}
+                <div className="flex gap-4 px-5 pb-5 items-stretch">
+                  <div className="flex-1 min-w-0 flex flex-col gap-4">
+                    <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 flex-1 min-h-0 flex flex-col">
+                      <PanelLabel title="Hue ribbon" subtitle={`ordered by ${xKey}`} />
+                      <div className="flex-1 min-h-0 flex items-center">
+                        <div className="w-full">
+                          <ExposureHueRibbon
+                            rows={displayRows}
+                            orderBy={xKey}
+                            focusedId={focusedId}
+                            onHover={handleHover}
+                            onLeave={handleLeave}
+                            onClick={handleClick}
+                            dimRange={brushRange}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 flex-1 min-h-0 flex flex-col">
+                      <PanelLabel title="Exposure range" subtitle="total_exposure_index, log scale" />
+                      <div className="flex-1 min-h-0 flex items-center">
+                        <div className="w-full">
+                          <ExposureRangeBrush
+                            rows={displayRows}
+                            range={brushRange}
+                            onRangeChange={setBrushRange}
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                   <div className="shrink-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
                     <PanelLabel title="Correlations" subtitle="|r| heatmap" />
@@ -655,6 +699,14 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                           setXKey(idx);
                           if (mode === "univariate") setYKeyUni(ch);
                         }}
+                        renderRowLabel={(rowKey, label) => (
+                          <HelpTip
+                            help={EXPOSURE_INDEX_HELP[rowKey]}
+                            Body={IndexCardBody}
+                          >
+                            <span className="cursor-help">{label}</span>
+                          </HelpTip>
+                        )}
                       />
                     ) : (
                       <ExposureCorrelationMatrix<RawParamRow>
@@ -664,20 +716,16 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                         selectedRowKey={null}
                         selectedChannel={null}
                         onSelect={null}
+                        renderRowLabel={(rowKey, label) => (
+                          <HelpTip
+                            help={EXPOSURE_RAW_PARAM_HELP[rowKey]}
+                            Body={RawParamCardBody}
+                          >
+                            <span className="cursor-help">{label}</span>
+                          </HelpTip>
+                        )}
                       />
                     )}
-                  </div>
-                </div>
-
-                {/* Exposure range brush */}
-                <div className="px-5 pb-5">
-                  <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
-                    <PanelLabel title="Exposure range" subtitle="total_exposure_index, log scale" />
-                    <ExposureRangeBrush
-                      rows={displayRows}
-                      range={brushRange}
-                      onRangeChange={setBrushRange}
-                    />
                   </div>
                 </div>
               </div>

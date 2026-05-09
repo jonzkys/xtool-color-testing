@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 
 import { PaletteIndicesChips } from "./PaletteIndicesChips";
 
@@ -55,5 +55,19 @@ describe("PaletteIndicesChips", () => {
     render(<PaletteIndicesChips indices={indices} />);
     const chip = screen.getByText(/total exposure/i).closest("div")!;
     expect(chip.textContent).toMatch(/5\.0|5(?!\d)/);
+  });
+});
+
+describe("PaletteIndicesChips hover help", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.runOnlyPendingTimers(); vi.useRealTimers(); });
+
+  it("opens an exposure help card when a chip is hovered", () => {
+    render(<PaletteIndicesChips indices={indices} />);
+    fireEvent.pointerEnter(screen.getByText(/total exposure/i));
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(screen.getByRole("tooltip").textContent).toContain(
+      "power × density × passes ÷ speed",
+    );
   });
 });

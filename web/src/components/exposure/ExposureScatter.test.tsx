@@ -1,8 +1,10 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, fireEvent, screen, act } from "@testing-library/react";
+import * as React from "react";
 
 import { ExposureScatter } from "./ExposureScatter";
 import type { ExposureRow } from "./exposureCorrelations";
+import { __testing__ as HelpTipTesting } from "../HelpTip";
 
 function row(id: number, hex: string, surface: number, l: number): ExposureRow {
   return {
@@ -262,5 +264,67 @@ describe("ExposureScatter — event propagation", () => {
     fireEvent.click(dot);
     expect(dotClick).toHaveBeenCalledTimes(1);
     expect(parentClick).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Fixture for axis-label tests ─────────────────────────────────────────
+
+const FIXTURE_ROW: ExposureRow = {
+  id: 1,
+  hex: "#000000",
+  lab: [50, 0, 0],
+  indices: {
+    pulse_spacing_mm: 0.05,
+    line_spacing_index: 0.083,
+    line_spacing_mm: null,
+    pulse_energy_index: 0.5,
+    pulse_intensity_index: 0.0025,
+    total_exposure_index: 6.0,
+    ablation_aggression_index: 0.015,
+    delivery_smoothness_index: 2400,
+    formula_version: 2,
+    density_model: "opaque",
+    power_model: "controller_percent",
+  },
+  params: { speed: 600, power: 50, density: 12, mopa_frequency: 200, pulse_width: 100, repeat: 1 },
+  test_id: null,
+};
+
+function MinimalScatter(props: Partial<React.ComponentProps<typeof ExposureScatter>>) {
+  return (
+    <ExposureScatter
+      rows={[FIXTURE_ROW]}
+      mode={props.mode ?? "univariate"}
+      xKey={props.xKey ?? "total_exposure_index"}
+      yKey={props.yKey ?? "L"}
+      xScale={props.xScale ?? "linear"}
+      yScale={props.yScale ?? "linear"}
+      focusedId={props.focusedId ?? null}
+      onHover={props.onHover ?? (() => undefined)}
+      onLeave={props.onLeave ?? (() => undefined)}
+      onClick={props.onClick ?? (() => undefined)}
+      {...props}
+    />
+  );
+}
+
+describe("ExposureScatter axis labels", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.runOnlyPendingTimers(); vi.useRealTimers(); });
+
+  it("renders the X-axis name and the words formula on a second line", () => {
+    const { container } = render(<MinimalScatter xKey="total_exposure_index" yKey="L" mode="univariate" />);
+    expect(container.textContent).toContain("TOTAL EXPOSURE");
+    expect(container.textContent).toContain("power × density × passes ÷ speed");
+  });
+
+  it("opens the index help card when the X axis label is hovered", () => {
+    render(<MinimalScatter xKey="total_exposure_index" yKey="L" mode="univariate" />);
+    const trigger = screen.getByText(/TOTAL EXPOSURE/);
+    fireEvent.pointerEnter(trigger);
+    act(() => { vi.advanceTimersByTime(HelpTipTesting.OPEN_DELAY_MS + 50); });
+    expect(screen.getByRole("tooltip").textContent).toContain(
+      "power × density × passes ÷ speed",
+    );
   });
 });
