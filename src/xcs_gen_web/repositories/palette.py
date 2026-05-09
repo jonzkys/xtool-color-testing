@@ -72,7 +72,6 @@ def _compute_index_values(params: dict[str, Any]) -> dict[str, Any]:
     indices = compute_indices(_processing_params_from_palette_dict(params))
     return {
         "pulse_spacing_mm": indices.pulse_spacing_mm,
-        "line_spacing_index": indices.line_spacing_index,
         "line_spacing_mm": indices.line_spacing_mm,
         "pulse_energy_index": indices.pulse_energy_index,
         "pulse_intensity_index": indices.pulse_intensity_index,
@@ -132,9 +131,9 @@ def _row_to_entry(r, *, original_validated: bool = False) -> dict[str, Any]:
         # the user has already burned once. Computed by ``list_all``;
         # other callers default to False.
         "original_validated": original_validated,
+        "derived_from_entry_id": r.derived_from_entry_id,
         "indices": {
             "pulse_spacing_mm": r.pulse_spacing_mm,
-            "line_spacing_index": r.line_spacing_index,
             "line_spacing_mm": r.line_spacing_mm,
             "pulse_energy_index": r.pulse_energy_index,
             "pulse_intensity_index": r.pulse_intensity_index,
@@ -179,7 +178,6 @@ def _build_row(
 _REFRESH_COLUMNS = (
     "hex", "lab_l", "lab_a", "lab_b", "sigma", "params_json",
     "pulse_spacing_mm",
-    "line_spacing_index",
     "line_spacing_mm",
     "pulse_energy_index",
     "pulse_intensity_index",
@@ -829,6 +827,7 @@ def create_validated_entry(
     burn_mean_lab: tuple[float, float, float],
     validated_test_id: int,
     validated_cell_index: int,
+    derived_from_entry_id: int | None = None,
     run_count: int,
     stability_de: float,
     params: dict[str, Any] | None = None,
@@ -877,6 +876,7 @@ def create_validated_entry(
         "validated_lab_b": b,
         "validated_run_count": run_count,
         "validated_residual_de": stability_de,
+        "derived_from_entry_id": derived_from_entry_id,
         **_compute_index_values(params or {}),
     }
     with session_scope() as s:
