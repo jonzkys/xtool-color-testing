@@ -628,19 +628,37 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   </div>
                 </div>
 
-                {/* Hue ribbon + correlation matrix row */}
-                <div className="flex gap-4 px-5 pb-3 items-start">
-                  <div className="flex-1 min-w-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
-                    <PanelLabel title="Hue ribbon" subtitle={`ordered by ${xKey}`} />
-                    <ExposureHueRibbon
-                      rows={displayRows}
-                      orderBy={xKey}
-                      focusedId={focusedId}
-                      onHover={handleHover}
-                      onLeave={handleLeave}
-                      onClick={handleClick}
-                      dimRange={brushRange}
-                    />
+                {/* Hue ribbon + exposure range (left) | correlation matrix (right) */}
+                <div className="flex gap-4 px-5 pb-5 items-stretch">
+                  <div className="flex-1 min-w-0 flex flex-col gap-4">
+                    <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 flex-1 min-h-0 flex flex-col">
+                      <PanelLabel title="Hue ribbon" subtitle={`ordered by ${xKey}`} />
+                      <div className="flex-1 min-h-0 flex items-center">
+                        <div className="w-full">
+                          <ExposureHueRibbon
+                            rows={displayRows}
+                            orderBy={xKey}
+                            focusedId={focusedId}
+                            onHover={handleHover}
+                            onLeave={handleLeave}
+                            onClick={handleClick}
+                            dimRange={brushRange}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 flex-1 min-h-0 flex flex-col">
+                      <PanelLabel title="Exposure range" subtitle="total_exposure_index, log scale" />
+                      <div className="flex-1 min-h-0 flex items-center">
+                        <div className="w-full">
+                          <ExposureRangeBrush
+                            rows={displayRows}
+                            range={brushRange}
+                            onRangeChange={setBrushRange}
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                   <div className="shrink-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
                     <PanelLabel title="Correlations" subtitle="|r| heatmap" />
@@ -708,18 +726,6 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                         )}
                       />
                     )}
-                  </div>
-                </div>
-
-                {/* Exposure range brush */}
-                <div className="px-5 pb-5">
-                  <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
-                    <PanelLabel title="Exposure range" subtitle="total_exposure_index, log scale" />
-                    <ExposureRangeBrush
-                      rows={displayRows}
-                      range={brushRange}
-                      onRangeChange={setBrushRange}
-                    />
                   </div>
                 </div>
               </div>

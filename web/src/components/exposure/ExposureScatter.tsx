@@ -55,8 +55,8 @@ function rowIndex(row: ExposureRow, key: IndexRow): number {
   return (row.indices[key] as number | null) ?? NaN;
 }
 
-const W = 760;
-const H = 440;
+const W = 680;
+const H = 380;
 const PADL = 64;
 const PADR = 28;
 const PADT = 28;
@@ -189,9 +189,6 @@ export const ExposureScatter: React.FC<Props> = ({
     ? CHANNEL_PRETTY[yKey as ChannelCol]
     : INDEX_PRETTY[yKey as IndexRow];
   const yLabelDisplay = yScale === "log" ? `LOG₁₀ ${yLabelTop}` : yLabelTop;
-  const yFormula = yIsChannel
-    ? null
-    : EXPOSURE_INDEX_HELP[yKey as IndexRow].formula;
 
   const xHelp: ExposureIndexHelp = EXPOSURE_INDEX_HELP[xKey];
 
@@ -199,13 +196,14 @@ export const ExposureScatter: React.FC<Props> = ({
     <div
       className="grid"
       style={{
-        gridTemplateColumns: "32px 1fr",
+        gridTemplateColumns: "44px 1fr",
         gridTemplateRows: "1fr 40px",
         columnGap: 0,
         rowGap: 0,
       }}
     >
-      {/* (1, 1) — Y axis label, vertical writing mode, full height minus the X row */}
+      {/* (1, 1) — Y axis label, single rotated heading line. Formula
+          lives in the hover card to keep this column readable. */}
       {yIsChannel ? (
         <HelpTip
           help={EXPOSURE_CHANNEL_HELP[yKey as ChannelCol]}
@@ -213,20 +211,17 @@ export const ExposureScatter: React.FC<Props> = ({
         >
           <div
             className="flex items-center justify-center cursor-help"
-            style={{ gridColumn: 1, gridRow: 1, padding: "0 4px" }}
+            style={{ gridColumn: 1, gridRow: 1, paddingRight: 10 }}
           >
             <div
-              className="flex flex-col items-center"
+              className="font-mono uppercase tracking-[0.18em] text-[10px] font-semibold text-[color:var(--color-ink-subtle)]"
               style={{
                 writingMode: "vertical-rl" as React.CSSProperties["writingMode"],
                 transform: "rotate(180deg)",
                 whiteSpace: "nowrap",
-                gap: 2,
               }}
             >
-              <div className="font-mono uppercase tracking-[0.18em] text-[10px] font-semibold text-[color:var(--color-ink-subtle)]">
-                {yLabelDisplay}
-              </div>
+              {yLabelDisplay}
             </div>
           </div>
         </HelpTip>
@@ -237,25 +232,17 @@ export const ExposureScatter: React.FC<Props> = ({
         >
           <div
             className="flex items-center justify-center cursor-help"
-            style={{ gridColumn: 1, gridRow: 1, padding: "0 4px" }}
+            style={{ gridColumn: 1, gridRow: 1, paddingRight: 10 }}
           >
             <div
-              className="flex flex-col items-center"
+              className="font-mono uppercase tracking-[0.18em] text-[10px] font-semibold text-[color:var(--color-ink-subtle)]"
               style={{
                 writingMode: "vertical-rl" as React.CSSProperties["writingMode"],
                 transform: "rotate(180deg)",
                 whiteSpace: "nowrap",
-                gap: 2,
               }}
             >
-              <div className="font-mono uppercase tracking-[0.18em] text-[10px] font-semibold text-[color:var(--color-ink-subtle)]">
-                {yLabelDisplay}
-              </div>
-              {yFormula ? (
-                <div className="font-mono text-[9px] text-[color:var(--color-ink-subtle)] opacity-70">
-                  {yFormula}
-                </div>
-              ) : null}
+              {yLabelDisplay}
             </div>
           </div>
         </HelpTip>
