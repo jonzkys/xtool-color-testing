@@ -137,3 +137,56 @@ def test_create_validation_kind_inlines_cells(fresh_db):
     [listed] = [x for x in repo.list_all() if x["id"] == t["id"]]
     assert listed["kind"] == "validation"
     assert [c["cell_index"] for c in listed["validation_cells"]] == [0, 1]
+
+
+def test_test_dict_has_lineage_fields(fresh_db):
+    mid = _seed(fresh_db)
+    t = repo.create(name="t", material_id=mid, spec=SPEC)
+    assert t["source_test_id"] is None
+    assert t["parent_test_id"] is None
+    assert t["tag"] is None
+
+
+def test_update_accepts_parent_test_id_and_tag(fresh_db):
+    mid = _seed(fresh_db)
+    parent = repo.create(name="parent", material_id=mid, spec=SPEC)
+    child = repo.create(name="child", material_id=mid, spec=SPEC)
+    updated = repo.update(
+        child["id"],
+        parent_test_id=parent["id"], tag="blues-exploration",
+    )
+    assert updated["parent_test_id"] == parent["id"]
+    assert updated["tag"] == "blues-exploration"
+
+
+def test_replace_validation_cells_recomputes_source_test_id(fresh_db):
+    """Setting validation cells whose palette_entry_ids all came from the
+    same source test populates tests.source_test_id with that id."""
+    mid = _seed(fresh_db)
+    src_test = repo.create(name="sweep", material_id=mid, spec=SPEC)
+    src_entry_ids = pal_repo.insert_bulk([
+        {
+            "test_id": src_test["id"],
+            "material_id": mid,
+            "x_value": float(i), "y_value": None,
+            "hex": f"#{i:02x}aa00",
+            "params": {"speed": 600, "power": 50, "density": 100,
+                       "mopa_frequency": 30, "pulse_width": 2, "repeat": 1},
+            "sigma": 0.0, "source": "averaged",
+        }
+        for i in range(3)
+    ])
+    val_test = repo.create(
+        name="val", material_id=mid, spec=SPEC, kind="validation",
+    )
+    cells = [
+        {"cell_index": i,
+         "palette_entry_id": src_entry_ids[i],
+         "expected_hex": "#000000",
+         "expected_lab": [50.0, 0.0, 0.0],
+         "params": {}} for i in range(3)
+    ]
+    vc_repo.replace_for_test(test_id=val_test["id"], cells=cells)
+
+    refreshed = repo.get(val_test["id"])
+    assert refreshed["source_test_id"] == src_test["id"]

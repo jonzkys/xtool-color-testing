@@ -24,12 +24,13 @@ Write shape (accepted by ``replace_for_test``):
 from __future__ import annotations
 
 import json
+from collections import Counter
 from typing import Any, Iterable
 
 from sqlalchemy import delete, insert, select
 
 from ..db import session_scope
-from ..models import validation_cells
+from ..models import palette_entries, tests as tests_table, validation_cells
 
 
 def _row_to_dict(r) -> dict[str, Any]:
@@ -55,7 +56,13 @@ def list_for_test(*, test_id: int) -> list[dict[str, Any]]:
 
 
 def replace_for_test(*, test_id: int, cells: Iterable[dict[str, Any]]) -> None:
-    """Atomic replace — wipes existing cells and inserts the new batch."""
+    """Atomic replace — wipes existing cells and inserts the new batch.
+
+    Also recomputes tests.source_test_id from the modal
+    palette_entries.test_id of the new cells, so a validation test
+    auto-records which test produced the palette it's validating.
+    """
+    cell_list = list(cells)
     payload = [
         {
             "test_id": test_id,
@@ -67,7 +74,7 @@ def replace_for_test(*, test_id: int, cells: Iterable[dict[str, Any]]) -> None:
             "expected_lab_b": float(c["expected_lab"][2]),
             "params_json": json.dumps(c.get("params", {}), separators=(",", ":")),
         }
-        for c in cells
+        for c in cell_list
     ]
     with session_scope() as s:
         s.execute(
@@ -75,6 +82,27 @@ def replace_for_test(*, test_id: int, cells: Iterable[dict[str, Any]]) -> None:
         )
         if payload:
             s.execute(insert(validation_cells), payload)
+
+        # Recompute tests.source_test_id from the modal palette_entries
+        # .test_id of the new cells. NULL if no resolvable source.
+        entry_ids = [
+            c.get("palette_entry_id") for c in cell_list
+            if c.get("palette_entry_id") is not None
+        ]
+        source_test_id: int | None = None
+        if entry_ids:
+            rows = s.execute(
+                select(palette_entries.c.test_id)
+                .where(palette_entries.c.id.in_(entry_ids))
+            ).all()
+            counts = Counter(int(r.test_id) for r in rows if r.test_id is not None)
+            if counts:
+                source_test_id = counts.most_common(1)[0][0]
+        s.execute(
+            tests_table.update()
+            .where(tests_table.c.id == test_id)
+            .values(source_test_id=source_test_id)
+        )
 
 
 def delete_for_test(*, test_id: int) -> None:
