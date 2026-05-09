@@ -194,33 +194,50 @@ function HelpTipPortal<H>({
     const a = anchor.getBoundingClientRect();
     const p = ref.current.getBoundingClientRect();
     const margin = 8;
+    const gap = 6;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    let left = a.left + a.width / 2 - p.width / 2;
+
+    const spaceRight = vw - a.right - margin - gap;
+    const spaceLeft = a.left - margin - gap;
+    const spaceBelow = vh - a.bottom - margin - gap;
+    const spaceAbove = a.top - margin - gap;
+
+    let left: number;
+    let top: number;
+
+    if (p.width <= spaceRight) {
+      // Preferred: card to the right of the trigger, top-aligned.
+      left = a.right + gap;
+      top = a.top;
+    } else if (p.width <= spaceLeft) {
+      // Flip: card to the left of the trigger, top-aligned.
+      left = a.left - p.width - gap;
+      top = a.top;
+    } else if (p.height <= spaceBelow) {
+      // Fall back to below the trigger (narrow viewports).
+      top = a.bottom + gap;
+      left = a.left + a.width / 2 - p.width / 2;
+    } else if (p.height <= spaceAbove) {
+      // Or above the trigger.
+      top = a.top - p.height - gap;
+      left = a.left + a.width / 2 - p.width / 2;
+    } else {
+      // Last resort: pin to the top of the viewport, horizontally centered.
+      left = vw / 2 - p.width / 2;
+      top = margin;
+    }
+
+    // Clamp horizontally so we never overflow.
     if (left + p.width + margin > vw) left = vw - p.width - margin;
     if (left < margin) left = margin;
 
-    // Prefer below the anchor; flip above when below clips. If both clip
-    // (card taller than the available space in either direction), pin to
-    // the top of the viewport — the card's own overflow-y:auto handles
-    // the rest.
-    const spaceBelow = vh - a.bottom - margin;
-    const spaceAbove = a.top - margin;
-    let top: number;
-    let flipped = false;
-    if (p.height + 6 <= spaceBelow) {
-      top = a.bottom + 6;
-    } else if (p.height + 6 <= spaceAbove) {
-      top = a.top - p.height - 6;
-      flipped = true;
-    } else {
-      // Neither side fits — pin so the top of the card is visible.
-      top = margin;
-      flipped = a.top > vh / 2;
-    }
-    // Final clamp so the card never overflows the top edge.
+    // Clamp vertically — the maxHeight + overflowY on the card body
+    // handle over-tall cards, this just keeps the top edge on-screen.
+    if (top + p.height + margin > vh) top = Math.max(margin, vh - p.height - margin);
     if (top < margin) top = margin;
-    setPlacement({ left, top, flipped });
+
+    setPlacement({ left, top, flipped: false });
   }, [closing, anchor]);
 
   // Cards are rendered into ``document.body`` so they're never clipped

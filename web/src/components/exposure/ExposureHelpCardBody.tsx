@@ -31,31 +31,28 @@ function HeaderStrip({
   );
 }
 
-function DefinitionGuide({
-  definition,
-  guide,
-}: {
-  definition: string;
-  guide: string;
-}) {
+function DefinitionBlock({ definition }: { definition: string }) {
   return (
-    <div className="flex flex-col gap-2.5 min-w-0 flex-1">
-      <div className="flex flex-col gap-1">
-        <div className="font-mono text-[8.5px] tracking-[0.22em] uppercase font-semibold text-[color:var(--color-ink-subtle)]">
-          Definition
-        </div>
-        <p className="font-mono text-[11.5px] leading-relaxed text-[color:var(--color-ink)] m-0">
-          {definition}
-        </p>
+    <div className="flex flex-col gap-1 min-w-0 flex-1">
+      <div className="font-mono text-[8.5px] tracking-[0.22em] uppercase font-semibold text-[color:var(--color-ink-subtle)]">
+        Definition
       </div>
-      <div className="flex flex-col gap-1">
-        <div className="font-mono text-[8.5px] tracking-[0.22em] uppercase font-semibold text-[color:var(--color-ink-subtle)]">
-          How to read it
-        </div>
-        <p className="font-mono text-[11.5px] leading-relaxed text-[color:var(--color-ink-muted)] m-0">
-          {guide}
-        </p>
+      <p className="font-mono text-[11.5px] leading-relaxed text-[color:var(--color-ink)] m-0">
+        {definition}
+      </p>
+    </div>
+  );
+}
+
+function GuideBlock({ guide }: { guide: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="font-mono text-[8.5px] tracking-[0.22em] uppercase font-semibold text-[color:var(--color-ink-subtle)]">
+        How to read it
       </div>
+      <p className="font-mono text-[11.5px] leading-relaxed text-[color:var(--color-ink-muted)] m-0">
+        {guide}
+      </p>
     </div>
   );
 }
@@ -68,13 +65,18 @@ export function IndexCardBody({ help }: { help: ExposureIndexHelp }) {
     >
       <HeaderStrip heading={help.heading} unit={help.unit} />
 
+      {/* Top row: schematic + definition */}
       <div className="flex items-start gap-3">
         <div className="shrink-0 pt-0.5">
           <ExposureHelpSchematic schematic={help.schematic} />
         </div>
-        <DefinitionGuide definition={help.definition} guide={help.guide} />
+        <DefinitionBlock definition={help.definition} />
       </div>
 
+      {/* How-to-read it spans full width */}
+      <GuideBlock guide={help.guide} />
+
+      {/* Formula + inputs */}
       <div className="flex flex-col gap-1.5 pt-1 border-t border-[color:var(--color-border)]">
         <div className="font-mono text-[8.5px] tracking-[0.22em] uppercase font-semibold text-[color:var(--color-ink-subtle)]">
           Formula
@@ -107,12 +109,15 @@ export function ChannelCardBody({ help }: { help: ExposureChannelHelp }) {
       style={{ width: CARD_WIDTH }}
     >
       <HeaderStrip heading={help.heading} />
+
       <div className="flex items-start gap-3">
         <div className="shrink-0 pt-0.5">
           <StabilityHelpSchematic schematic={help.schematic} />
         </div>
-        <DefinitionGuide definition={help.definition} guide={help.guide} />
+        <DefinitionBlock definition={help.definition} />
       </div>
+
+      <GuideBlock guide={help.guide} />
     </div>
   );
 }
