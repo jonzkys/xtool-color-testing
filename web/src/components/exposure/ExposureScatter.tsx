@@ -5,6 +5,16 @@ import type { ChannelCol, ExposureRow, IndexRow } from "./exposureCorrelations";
 import { logLinearRegression, fmtIndexTick, quantile } from "./exposureMath";
 import { ExposureFamilyTrace } from "./ExposureFamilyTrace";
 import type { FamilyMember } from "./recipeFamilies";
+import { HelpTip } from "../HelpTip";
+import {
+  EXPOSURE_INDEX_HELP,
+  EXPOSURE_CHANNEL_HELP,
+  type ExposureIndexHelp,
+} from "./exposureHelpCopy";
+import {
+  ChannelCardBody,
+  IndexCardBody,
+} from "./ExposureHelpCardBody";
 
 export type ScaleKind = "linear" | "log";
 export type ScatterMode = "univariate" | "bivariate";
@@ -70,22 +80,6 @@ const CHANNEL_PRETTY: Record<ChannelCol, string> = {
   chroma: "C*  (CHROMA)",
 };
 
-function xLabel(key: IndexRow, scale: ScaleKind): string {
-  const base = INDEX_PRETTY[key];
-  return scale === "log" ? `LOG₁₀ ${base}` : base;
-}
-
-function yLabel(
-  mode: ScatterMode,
-  key: ChannelCol | IndexRow,
-  scale: ScaleKind,
-): string {
-  const base =
-    mode === "univariate"
-      ? CHANNEL_PRETTY[key as ChannelCol]
-      : INDEX_PRETTY[key as IndexRow];
-  return scale === "log" ? `LOG₁₀ ${base}` : base;
-}
 
 export const ExposureScatter: React.FC<Props> = ({
   rows,
@@ -185,7 +179,24 @@ export const ExposureScatter: React.FC<Props> = ({
     onOffChartCount?.(offChartCount);
   }, [offChartCount, onOffChartCount]);
 
+  // Top-line + formula resolution
+  const xLabelTop = INDEX_PRETTY[xKey];
+  const xLabelDisplay = xScale === "log" ? `LOG₁₀ ${xLabelTop}` : xLabelTop;
+  const xFormula = EXPOSURE_INDEX_HELP[xKey].formula;
+
+  const yIsChannel = mode === "univariate";
+  const yLabelTop = yIsChannel
+    ? CHANNEL_PRETTY[yKey as ChannelCol]
+    : INDEX_PRETTY[yKey as IndexRow];
+  const yLabelDisplay = yScale === "log" ? `LOG₁₀ ${yLabelTop}` : yLabelTop;
+  const yFormula = yIsChannel
+    ? null
+    : EXPOSURE_INDEX_HELP[yKey as IndexRow].formula;
+
+  const xHelp: ExposureIndexHelp = EXPOSURE_INDEX_HELP[xKey];
+
   return (
+    <div className="relative">
     <svg
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="xMidYMid meet"
@@ -404,33 +415,62 @@ export const ExposureScatter: React.FC<Props> = ({
         y2={H - PADB}
         stroke="var(--color-border-strong)"
       />
-
-      {/* Axis titles — instrument register, mid-axis, mono uppercase */}
-      <text
-        x={PADL + (W - PADL - PADR) / 2}
-        y={H - 12}
-        textAnchor="middle"
-        className="fill-[color:var(--color-ink-subtle)]"
-        style={{
-          font: "600 10px var(--font-mono)",
-          letterSpacing: "0.18em",
-        }}
-      >
-        {xLabel(xKey, xScale)}
-      </text>
-      <text
-        x={20}
-        y={PADT + (H - PADT - PADB) / 2}
-        textAnchor="middle"
-        className="fill-[color:var(--color-ink-subtle)]"
-        transform={`rotate(-90, 20, ${PADT + (H - PADT - PADB) / 2})`}
-        style={{
-          font: "600 10px var(--font-mono)",
-          letterSpacing: "0.18em",
-        }}
-      >
-        {yLabel(mode, yKey, yScale)}
-      </text>
     </svg>
+
+      {/* X axis label overlay — two lines, centered along the bottom */}
+      <HelpTip help={xHelp} Body={IndexCardBody}>
+        <div
+          className="absolute left-0 right-0 flex flex-col items-center cursor-help"
+          style={{ bottom: 2 }}
+        >
+          <div className="font-mono uppercase tracking-[0.18em] text-[10px] font-semibold text-[color:var(--color-ink-subtle)]">
+            {xLabelDisplay}
+          </div>
+          <div className="font-mono text-[9px] text-[color:var(--color-ink-subtle)] opacity-70">
+            {xFormula}
+          </div>
+        </div>
+      </HelpTip>
+
+      {/* Y axis label overlay — rotated, two lines */}
+      {yIsChannel ? (
+        <HelpTip help={EXPOSURE_CHANNEL_HELP[yKey as ChannelCol]} Body={ChannelCardBody}>
+          <div
+            className="absolute top-0 bottom-0 left-0 flex items-center cursor-help"
+            style={{ width: 24 }}
+          >
+            <div
+              className="flex flex-col items-center whitespace-nowrap"
+              style={{ transform: "rotate(-90deg)", transformOrigin: "center" }}
+            >
+              <div className="font-mono uppercase tracking-[0.18em] text-[10px] font-semibold text-[color:var(--color-ink-subtle)]">
+                {yLabelDisplay}
+              </div>
+            </div>
+          </div>
+        </HelpTip>
+      ) : (
+        <HelpTip help={EXPOSURE_INDEX_HELP[yKey as IndexRow]} Body={IndexCardBody}>
+          <div
+            className="absolute top-0 bottom-0 left-0 flex items-center cursor-help"
+            style={{ width: 24 }}
+          >
+            <div
+              className="flex flex-col items-center whitespace-nowrap"
+              style={{ transform: "rotate(-90deg)", transformOrigin: "center" }}
+            >
+              <div className="font-mono uppercase tracking-[0.18em] text-[10px] font-semibold text-[color:var(--color-ink-subtle)]">
+                {yLabelDisplay}
+              </div>
+              {yFormula ? (
+                <div className="font-mono text-[9px] text-[color:var(--color-ink-subtle)] opacity-70">
+                  {yFormula}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </HelpTip>
+      )}
+    </div>
   );
 };
