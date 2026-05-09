@@ -14,7 +14,7 @@ import {
 describe("IndexCardBody", () => {
   it("shows heading, unit, definition, guide, formula, and inputs", () => {
     const help = EXPOSURE_INDEX_HELP.total_exposure_index;
-    render(<IndexCardBody help={help} />);
+    const { container } = render(<IndexCardBody help={help} />);
     expect(screen.getByText(help.heading)).toBeTruthy();
     expect(screen.getByText(help.unit)).toBeTruthy();
     expect(screen.getByText(help.definition)).toBeTruthy();
@@ -24,6 +24,7 @@ describe("IndexCardBody", () => {
       // input rows render `name · unit` so query by the name.
       expect(screen.getAllByText(new RegExp(input.name)).length).toBeGreaterThan(0);
     }
+    expect(container.querySelector("svg")).not.toBeNull();
   });
 });
 
@@ -36,6 +37,7 @@ describe("ChannelCardBody", () => {
     expect(screen.getByText(help.guide)).toBeTruthy();
     expect(container.textContent).not.toMatch(/INPUTS/i);
     expect(container.textContent).not.toMatch(/FORMULA/i);
+    expect(container.querySelector("svg")).not.toBeNull();
   });
 });
 
