@@ -2,6 +2,7 @@ import * as React from "react";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { listMaterials } from "../api/library";
 import { listPaletteEntries } from "../api/palette";
+import { listTests } from "../api/tests";
 import type { Material } from "../library";
 import type { PaletteEntry } from "../types";
 import {
@@ -21,12 +22,17 @@ import {
   INDEX_ROWS,
   RAW_PARAM_ROWS,
   type ChannelCol,
-  type ExposureRow,
   type IndexRow,
   type RawParamRow,
 } from "../components/exposure/exposureCorrelations";
 import { pearson, spearman, logLinearRegression } from "../components/exposure/exposureMath";
-import { buildFamilies, type FamilyMember, type VaryingAxis } from "../components/exposure/recipeFamilies";
+import { buildFamilies, type FamilyMember } from "../components/exposure/recipeFamilies";
+import {
+  applyFilters, dataRanges, DEFAULT_FILTERS,
+  type ActiveFilters,
+  type TestSummary,
+} from "../components/exposure/exposureFilters";
+import { useFiltersUrlSync } from "../components/exposure/exposureFiltersUrl";
 import { HelpTip } from "../components/HelpTip";
 import {
   EXPOSURE_INDEX_HELP,
@@ -47,17 +53,6 @@ export interface ExposurePageProps {
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
-
-function paletteToExposureRow(p: PaletteEntry): ExposureRow {
-  return {
-    id: p.id,
-    hex: p.hex,
-    lab: [p.lab[0], p.lab[1], p.lab[2]],
-    indices: p.indices!,
-    params: p.params as Record<string, number | string>,
-    test_id: p.test_id,
-  };
-}
 
 function fmtR(r: number): string {
   if (!Number.isFinite(r)) return "—";
@@ -112,7 +107,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   // ── material + data state ──────────────────────────────────────────────
   const [materials, setMaterials] = useState<Material[]>([]);
   const [materialId, setMaterialId] = useState<number | null>(propMaterialId);
-  const [rows, setRows] = useState<ExposureRow[]>([]);
+  const [rows, setRows] = useState<PaletteEntry[]>([]);
   const [rowsLoading, setRowsLoading] = useState(false);
   const [rowsError, setRowsError] = useState<string | null>(null);
 
@@ -124,24 +119,16 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const [xScale, setXScale] = useState<ScaleKind>("log");
   const [yScale, setYScale] = useState<ScaleKind>("log");
 
-  // ── filter state ───────────────────────────────────────────────────────
-  const [sourceFilter, setSourceFilter] = useState<Set<"averaged" | "single_result" | "manual">>(
-    new Set(["averaged", "manual"]),
-  );
-  const [validatedOnly, setValidatedOnly] = useState(false);
-  const [brushRange, setBrushRange] = useState<readonly [number, number] | null>(null);
+  // ── unified filter state ───────────────────────────────────────────────
+  const [filters, setFilters] = useState<ActiveFilters>(DEFAULT_FILTERS);
+  useFiltersUrlSync(filters, setFilters);
 
-  interface FamilyFilter {
-    axis: VaryingAxis;
-    anchorRowId: number;
-  }
-  const [familyFilter, setFamilyFilter] = useState<FamilyFilter | null>(null);
+  const [tests, setTests] = useState<TestSummary[]>([]);
 
   // ── matrix source tab ─────────────────────────────────────────────────
   const [matrixSource, setMatrixSource] = useState<"indices" | "raw">("indices");
 
-  // ── outlier trimming ───────────────────────────────────────────────────
-  const [trimOutliers, setTrimOutliers] = useState<boolean>(true);
+  // ── outlier off-chart count (display only) ────────────────────────────
   const [offChartCount, setOffChartCount] = useState<number>(0);
 
   // ── focus state (mirrors StabilityPage transient/pinned pattern) ───────
@@ -149,7 +136,6 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const [pinnedFocusId, setPinnedFocusId] = useState<number | null>(null);
 
   const focusedId = transientFocusId ?? pinnedFocusId;
-  const focusedRow = focusedId == null ? null : rows.find((r) => r.id === focusedId) ?? null;
 
   const handleHover = useCallback((id: number) => {
     setTransientFocusId(id);
@@ -199,20 +185,27 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     }
   }, [propMaterialId]);
 
-  // ── fetch: palette entries on materialId / validatedOnly change ────────
+  // ── fetch: palette entries + tests in parallel on materialId change ────
   useEffect(() => {
     if (materialId === null) return;
     let cancelled = false;
     setRowsLoading(true);
     setRowsError(null);
-    listPaletteEntries({ material_id: materialId, validated_only: validatedOnly })
-      .then((entries) => {
+
+    Promise.all([
+      listPaletteEntries({ material_id: materialId }),
+      listTests({ material_id: materialId }),
+    ])
+      .then(([entries, fetchedTests]) => {
         if (cancelled) return;
-        // Post-fetch source filter
-        const filtered = entries.filter(
-          (e) => sourceFilter.has(e.source) && e.indices != null,
-        );
-        setRows(filtered.map(paletteToExposureRow));
+        setRows(entries.filter((e) => e.indices != null));
+        setTests(fetchedTests.map((t): TestSummary => ({
+          id: t.id,
+          name: t.name,
+          kind: t.kind,
+          source_test_id: t.source_test_id ?? null,
+          parent_test_id: t.parent_test_id ?? null,
+        })));
         setRowsLoading(false);
       })
       .catch((err) => {
@@ -220,20 +213,14 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
         setRowsError(err instanceof Error ? err.message : "Failed to load palette entries");
         setRowsLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
-    // sourceFilter is intentionally excluded — source filtering is applied
-    // at fetch-projection time but does NOT re-trigger a network request.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [materialId, validatedOnly]);
+    return () => { cancelled = true; };
+  }, [materialId]);
 
-  // ── reset focus + brush + family filter when material changes ─────────
+  // ── reset focus + filters when material changes ────────────────────────
   useEffect(() => {
     setPinnedFocusId(null);
     setTransientFocusId(null);
-    setBrushRange(null);
-    setFamilyFilter(null);
+    if (materialId !== null) setFilters(DEFAULT_FILTERS);
   }, [materialId]);
 
   // ── bivariate same-index collapse guard ───────────────────────────────
@@ -245,8 +232,26 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     }
   }, [mode, xKey, yKeyBi]);
 
-  // ── recipe families (derived from rows) ───────────────────────────────
-  const families = useMemo(() => buildFamilies(rows), [rows]);
+  // ── derived filter chain ───────────────────────────────────────────────
+  const testsById = useMemo(
+    () => new Map(tests.map((t) => [t.id, t])),
+    [tests],
+  );
+
+  const filteredRows = useMemo(
+    () => applyFilters(rows, filters, testsById),
+    [rows, filters, testsById],
+  );
+
+  // ranges derived from unfiltered rows so sliders span full data extent
+  const ranges = useMemo(() => dataRanges(rows), [rows]);
+
+  // focusedRow looks up from filteredRows
+  const focusedRow = focusedId == null ? null : filteredRows.find((r) => r.id === focusedId) ?? null;
+
+  // Recipe families derived from filtered rows so a power range narrows
+  // the families themselves.
+  const families = useMemo(() => buildFamilies(filteredRows), [filteredRows]);
 
   const focusedFamily = useMemo<FamilyMember[] | null>(() => {
     if (focusedId == null) return null;
@@ -276,25 +281,25 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
 
   // ── member set for the active family filter ────────────────────────────
   const visibleIdsViaFilter = useMemo<Set<number> | null>(() => {
-    if (!familyFilter) return null;
+    if (!filters.family) return null;
     for (const members of families.values()) {
       if (
-        members.some((m) => m.row.id === familyFilter.anchorRowId) &&
-        members[0].varyingAxis === familyFilter.axis
+        members.some((m) => m.row.id === filters.family!.anchorRowId) &&
+        members[0].varyingAxis === filters.family.axis
       ) {
         return new Set(members.map((m) => m.row.id));
       }
     }
     return null;
-  }, [families, familyFilter]);
+  }, [families, filters.family]);
 
   // ── filtered rows for downstream panels ───────────────────────────────
   const displayRows = useMemo(
     () =>
       visibleIdsViaFilter
-        ? rows.filter((r) => visibleIdsViaFilter.has(r.id))
-        : rows,
-    [rows, visibleIdsViaFilter],
+        ? filteredRows.filter((r) => visibleIdsViaFilter.has(r.id))
+        : filteredRows,
+    [filteredRows, visibleIdsViaFilter],
   );
 
   // ── correlation matrix (derived from displayRows) ─────────────────────
@@ -308,11 +313,11 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
 
   // ── per-axis stats for right-rail hero ────────────────────────────────
   const stats = useMemo(() => {
-    const xs = rows.map((r) => (r.indices[xKey] as number | null) ?? NaN);
+    const xs = filteredRows.map((r) => (r.indices[xKey] as number | null) ?? NaN);
     let ys: number[];
     if (mode === "univariate") {
       const ch = yKeyUni;
-      ys = rows.map((r) => {
+      ys = filteredRows.map((r) => {
         const [l, a, b] = r.lab;
         switch (ch) {
           case "L":      return l;
@@ -323,20 +328,23 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
         }
       });
     } else {
-      ys = rows.map((r) => (r.indices[yKeyBi] as number | null) ?? NaN);
+      ys = filteredRows.map((r) => (r.indices[yKeyBi] as number | null) ?? NaN);
     }
     return {
       pearsonR: pearson(xs, ys),
       spearmanRho: spearman(xs, ys),
       fit: logLinearRegression(xs, ys),
     };
-  }, [rows, xKey, mode, yKeyUni, yKeyBi]);
+  }, [filteredRows, xKey, mode, yKeyUni, yKeyBi]);
 
   // ── (currentMaterial available for future use — not shown in top bar) ─
 
   // ── render ─────────────────────────────────────────────────────────────
 
   const currentMaterialName = materials.find((m) => m.id === materialId)?.name;
+
+  // suppress unused-variable warning for ranges until T9 mounts FilterPanel
+  void ranges;
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-[color:var(--color-bg)]">
@@ -353,7 +361,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               <span className="text-[color:var(--color-ink-subtle)]">·</span>
             </>
           )}
-          <span>n = {rows.length}</span>
+          <span>n = {filteredRows.length}</span>
           <span className="text-[color:var(--color-ink-subtle)]">·</span>
           <span className="text-[color:var(--color-ink-subtle)] uppercase tracking-[0.18em]">v1</span>
         </div>
@@ -387,13 +395,12 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               {(["averaged", "single_result", "manual"] as const).map((src) => (
                 <RailCheckbox
                   key={src}
-                  checked={sourceFilter.has(src)}
+                  checked={filters.sources.has(src)}
                   onChange={(checked) => {
-                    setSourceFilter((prev) => {
-                      const next = new Set(prev);
-                      if (checked) next.add(src);
-                      else next.delete(src);
-                      return next;
+                    setFilters((prev) => {
+                      const next = new Set(prev.sources);
+                      if (checked) next.add(src); else next.delete(src);
+                      return { ...prev, sources: next };
                     });
                   }}
                 >
@@ -401,8 +408,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                 </RailCheckbox>
               ))}
               <RailCheckbox
-                checked={validatedOnly}
-                onChange={setValidatedOnly}
+                checked={filters.validatedOnly}
+                onChange={(checked) => setFilters((prev) => ({ ...prev, validatedOnly: checked }))}
               >
                 validated only
               </RailCheckbox>
@@ -521,16 +528,16 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
             <div className="ml-auto">
               <button
                 type="button"
-                onClick={() => setTrimOutliers((v) => !v)}
+                onClick={() => setFilters((prev) => ({ ...prev, trimOutliers: !prev.trimOutliers }))}
                 className={
                   "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
-                  (trimOutliers
+                  (filters.trimOutliers
                     ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
                     : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
                 }
                 title="Trim 1% / 99% percentile to keep outliers from compressing the chart"
               >
-                Trim outliers{trimOutliers && offChartCount > 0 ? ` (+${offChartCount})` : ""}
+                Trim outliers{filters.trimOutliers && offChartCount > 0 ? ` (+${offChartCount})` : ""}
               </button>
             </div>
           </div>
@@ -555,12 +562,19 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                       setRowsError(null);
                       if (materialId !== null) {
                         setRowsLoading(true);
-                        listPaletteEntries({ material_id: materialId, validated_only: validatedOnly })
-                          .then((entries) => {
-                            const filtered = entries.filter(
-                              (e) => sourceFilter.has(e.source) && e.indices != null,
-                            );
-                            setRows(filtered.map(paletteToExposureRow));
+                        Promise.all([
+                          listPaletteEntries({ material_id: materialId }),
+                          listTests({ material_id: materialId }),
+                        ])
+                          .then(([entries, fetchedTests]) => {
+                            setRows(entries.filter((e) => e.indices != null));
+                            setTests(fetchedTests.map((t): TestSummary => ({
+                              id: t.id,
+                              name: t.name,
+                              kind: t.kind,
+                              source_test_id: t.source_test_id ?? null,
+                              parent_test_id: t.parent_test_id ?? null,
+                            })));
                             setRowsLoading(false);
                           })
                           .catch((err) => {
@@ -574,7 +588,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   </Button>
                 }
               />
-            ) : rows.length === 0 ? (
+            ) : filteredRows.length === 0 ? (
               <EmptyState
                 title={materialId === null ? "Pick a material" : "No exposure data yet"}
                 description={
@@ -592,17 +606,17 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   onClick={handleBackgroundClear}
                 >
                   <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-[var(--shadow-card)] p-4">
-                    {familyFilter && (
+                    {filters.family && (
                       <div className="flex items-center gap-2 px-3 py-1.5 mb-2 rounded-sm border border-[color:var(--color-primary)] bg-[color:var(--color-surface-elevated)]">
                         <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--color-primary)] font-semibold">
                           Filter active
                         </span>
                         <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-ink-muted)]">
-                          {familyFilter.axis} sweep · {displayRows.length} entries
+                          {filters.family.axis} sweep · {displayRows.length} entries
                         </span>
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); setFamilyFilter(null); }}
+                          onClick={(e) => { e.stopPropagation(); setFilters((prev) => ({ ...prev, family: null })); }}
                           className="ml-auto px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] rounded-sm border border-[color:var(--color-primary)] text-[color:var(--color-primary)] hover:bg-[color:var(--color-surface)]"
                         >
                           × Clear
@@ -620,9 +634,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                       onHover={handleHover}
                       onLeave={handleLeave}
                       onClick={handleClick}
-                      dimRange={brushRange}
+                      dimRange={filters.brushRange}
                       family={focusedFamily ?? undefined}
-                      trimOutliers={trimOutliers}
+                      trimOutliers={filters.trimOutliers}
                       onOffChartCount={setOffChartCount}
                     />
                   </div>
@@ -642,7 +656,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                             onHover={handleHover}
                             onLeave={handleLeave}
                             onClick={handleClick}
-                            dimRange={brushRange}
+                            dimRange={filters.brushRange}
                           />
                         </div>
                       </div>
@@ -653,8 +667,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                         <div className="w-full">
                           <ExposureRangeBrush
                             rows={displayRows}
-                            range={brushRange}
-                            onRangeChange={setBrushRange}
+                            range={filters.brushRange}
+                            onRangeChange={(r) => setFilters((prev) => ({ ...prev, brushRange: r }))}
                           />
                         </div>
                       </div>
@@ -791,24 +805,24 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
             </div>
             <MetalBar variant="soft" className="mb-3" />
             <ExposureFocusedCard
-              rows={rows}
+              rows={filteredRows}
               focusedId={focusedId}
               highlightIndex={xKey}
               onDiscHover={handleHover}
               onDiscLeave={handleLeave}
               onDiscClick={handleClick}
-              dimRange={brushRange}
+              dimRange={filters.brushRange}
               focusedFamily={focusedFamily}
               availableFamilies={focusedAvailableFamilies}
-              activeFilterAxis={familyFilter?.axis ?? null}
-              onSetFilter={(axis, anchorRowId) => setFamilyFilter({ axis, anchorRowId })}
-              onClearFilter={() => setFamilyFilter(null)}
+              activeFilterAxis={filters.family?.axis ?? null}
+              onSetFilter={(axis, anchorRowId) => setFilters((prev) => ({ ...prev, family: { axis, anchorRowId } }))}
+              onClearFilter={() => setFilters((prev) => ({ ...prev, family: null }))}
               neighboursSlot={
                 focusedRow ? (
                   <div className="mt-3 border-t border-[color:var(--color-border)] pt-3">
                     <ExposureNeighboursPanel
                       anchor={focusedRow}
-                      candidates={rows}
+                      candidates={filteredRows}
                       onSelectNeighbour={(id) => {
                         setTransientFocusId(null);
                         setPinnedFocusId(id);
@@ -821,10 +835,10 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
           </section>
 
           {/* Clear brush shortcut */}
-          {brushRange != null && (
+          {filters.brushRange != null && (
             <section>
               <button
-                onClick={() => setBrushRange(null)}
+                onClick={() => setFilters((prev) => ({ ...prev, brushRange: null }))}
                 className="w-full text-center px-2 py-1.5 rounded-[5px] border border-[color:var(--color-border)] font-mono text-[10px] uppercase tracking-[0.2em] text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)] hover:text-[color:var(--color-ink)] transition-colors"
               >
                 Clear range filter
