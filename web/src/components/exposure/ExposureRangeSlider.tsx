@@ -33,6 +33,9 @@ function isLogScale(domain: { min: number; max: number }): boolean {
 function valueToFraction(
   v: number, domain: { min: number; max: number }, log: boolean,
 ): number {
+  // Degenerate domain (single-value data, e.g. after a tight filter)
+  // — both handles map to the start of the track instead of NaN.
+  if (domain.max === domain.min) return 0;
   if (log) {
     const lo = Math.log10(domain.min);
     const hi = Math.log10(domain.max);
@@ -44,6 +47,7 @@ function valueToFraction(
 function fractionToValue(
   f: number, domain: { min: number; max: number }, log: boolean,
 ): number {
+  if (domain.max === domain.min) return domain.min;
   const clamped = Math.min(1, Math.max(0, f));
   if (log) {
     const lo = Math.log10(domain.min);
