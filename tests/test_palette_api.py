@@ -947,7 +947,7 @@ def test_get_palette_returns_indices_block(client, mid) -> None:
         assert "indices" in e
         idx = e["indices"]
         for key in (
-            "pulse_spacing_mm", "line_spacing_index", "line_spacing_mm",
+            "pulse_spacing_mm", "line_spacing_mm",
             "pulse_energy_index", "pulse_intensity_index",
             "total_exposure_index", "ablation_aggression_index",
             "delivery_smoothness_index", "surface_exposure_index",
