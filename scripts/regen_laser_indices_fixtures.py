@@ -70,7 +70,7 @@ def main() -> None:
     out_path = Path("web/src/laser/__fixtures__/laser-indices-v3.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     rows = [_row(p) for p in _INPUT_GRID]
-    out_path.write_text(json.dumps(rows, indent=2))
+    out_path.write_text(json.dumps(rows, indent=2) + "\n")
     print(f"wrote {len(rows)} fixtures to {out_path}")
 
 
