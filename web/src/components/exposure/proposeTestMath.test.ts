@@ -459,6 +459,22 @@ describe("inverseSolve", () => {
     );
     expect(solved).toBeNull();
   });
+
+  it("samples anisotropic polygons (mixed-scale axes like TEi × PIi)", () => {
+    // Regression: this is the same polygon shape as the fillByInverseSolve
+    // happy-path test (TEi spans ~80 units, PIi spans ~0.045). Previously
+    // the raw-units min-distance threshold of ~0.28 exceeded the y-range,
+    // so zero points were ever accepted. With normalised distance the
+    // sampler should reliably fill N here.
+    const thin: Polygon = [[10, 0.0001], [90, 0.0001], [90, 0.045], [10, 0.045]];
+    for (let i = 0; i < 10; i++) {
+      const points = samplePolygonArea(thin, 16, []);
+      expect(points.length).toBeGreaterThanOrEqual(8);   // robust across seeds
+      for (const p of points) {
+        expect(pointInPolygon([p.x, p.y], thin)).toBe(true);
+      }
+    }
+  });
 });
 
 import { fillByInverseSolve } from "./proposeTestMath";
@@ -469,8 +485,10 @@ describe("fillByInverseSolve", () => {
   };
 
   it("returns ≤ N cells, all inside the polygon, with valid laser-range params", () => {
+    // PIi range clamped to the reachable subset: for varying (power, speed)
+    // at base freq=100/pw=200, max PIi is power/(freq*pw) = 100/20000 = 0.005.
     const polygon: Polygon = [
-      [10, 0.0001], [90, 0.0001], [90, 0.045], [10, 0.045],
+      [10, 0.0001], [90, 0.0001], [90, 0.0045], [10, 0.0045],
     ];
     const cells = fillByInverseSolve(
       base, ["power", "speed"], polygon,
@@ -492,25 +510,35 @@ describe("fillByInverseSolve", () => {
 
   it("avoids known points (existing palette entries inside polygon)", () => {
     const polygon: Polygon = [
-      [10, 0.0001], [90, 0.0001], [90, 0.045], [10, 0.045],
+      [10, 0.0001], [90, 0.0001], [90, 0.0045], [10, 0.0045],
     ];
-    const known = [{ x: 50, y: 0.022 }, { x: 30, y: 0.01 }];
+    const known = [{ x: 50, y: 0.0022 }, { x: 30, y: 0.001 }];
     const cells = fillByInverseSolve(
       base, ["power", "speed"], polygon,
       "total_exposure_index", "pulse_intensity_index",
       F2_LIMITS, 8, known,
     );
+    // Distance is checked NORMALISED by the polygon bbox — same metric
+    // the sampler uses internally — so the test is scale-invariant for
+    // anisotropic polygons. After the relaxation pass, threshold is
+    // MIN_DIST_FACTOR/sqrt(n+known) * 0.5 = 0.6/sqrt(10)*0.5 ≈ 0.095.
+    const w = 80;          // bbox width (90 - 10)
+    const h = 0.0044;      // bbox height (0.0045 - 0.0001)
     for (const c of cells) {
       for (const k of known) {
-        const d = Math.hypot(c.x - k.x, c.y - k.y);
-        expect(d).toBeGreaterThan(0.5);
+        const dxn = (c.x - k.x) / w;
+        const dyn = (c.y - k.y) / h;
+        const dn = Math.hypot(dxn, dyn);
+        // Relaxed pass threshold is 0.095; assert strictly > 0.09 with
+        // a 5 % safety margin.
+        expect(dn).toBeGreaterThan(0.09);
       }
     }
   });
 
   it("matches forward indices: each returned cell's params produce its (x, y)", () => {
     const polygon: Polygon = [
-      [10, 0.0001], [90, 0.0001], [90, 0.045], [10, 0.045],
+      [10, 0.0001], [90, 0.0001], [90, 0.0045], [10, 0.0045],
     ];
     const cells = fillByInverseSolve(
       base, ["power", "speed"], polygon,
