@@ -377,3 +377,104 @@ export function sampleByArcLength(
   }
   return out;
 }
+
+export const FILL_GRID_RESOLUTION = 32;
+
+export interface FillCell {
+  paramValues: Partial<Record<ParamKey, number>>;
+  x: number;
+  y: number;
+}
+
+export function fillByForwardGrid(
+  anchor: LaserParams,
+  varyParams: readonly [ParamKey, ParamKey],
+  polygon: Polygon,
+  xKey: IndexKey,
+  yKey: IndexKey,
+  laserLimits: LaserLimits,
+  n: number,
+): FillCell[] {
+  const [a, b] = varyParams;
+  const aRange = laserLimits[a];
+  const bRange = laserLimits[b];
+
+  const candidates: FillCell[] = [];
+  for (let i = 0; i < FILL_GRID_RESOLUTION; i++) {
+    const u = i / (FILL_GRID_RESOLUTION - 1);
+    const aValue = aRange.min + u * (aRange.max - aRange.min);
+    for (let j = 0; j < FILL_GRID_RESOLUTION; j++) {
+      const v = j / (FILL_GRID_RESOLUTION - 1);
+      const bValue = bRange.min + v * (bRange.max - bRange.min);
+      const params: LaserParams = { ...anchor, [a]: aValue, [b]: bValue };
+      let indices;
+      try {
+        indices = computeIndices(params);
+      } catch {
+        continue;
+      }
+      const x = indices[xKey] as number;
+      const y = indices[yKey] as number;
+      if (!pointInPolygon([x, y], polygon)) continue;
+      candidates.push({
+        paramValues: { [a]: aValue, [b]: bValue },
+        x, y,
+      });
+    }
+  }
+
+  if (candidates.length <= n) return candidates;
+
+  // Stratified picking: divide polygon bbox into ⌈√n⌉ × ⌈√n⌉ sub-cells.
+  // For each sub-cell, take the candidate closest to its centre. Fill any
+  // empty sub-cells from the remaining candidates in shuffled order.
+  const polyBox = polygonBox(polygon);
+  if (!polyBox) return candidates.slice(0, n);
+
+  const k = Math.ceil(Math.sqrt(n));
+  const cellW = (polyBox.maxX - polyBox.minX) / k;
+  const cellH = (polyBox.maxY - polyBox.minY) / k;
+
+  const subPicked: (FillCell | null)[][] = Array.from(
+    { length: k }, () => Array.from({ length: k }, () => null),
+  );
+  const used = new Set<number>();
+  for (let candIdx = 0; candIdx < candidates.length; candIdx++) {
+    const c = candidates[candIdx];
+    const ci = Math.min(k - 1, Math.floor((c.x - polyBox.minX) / cellW));
+    const cj = Math.min(k - 1, Math.floor((c.y - polyBox.minY) / cellH));
+    const cur = subPicked[ci][cj];
+    const cx = polyBox.minX + (ci + 0.5) * cellW;
+    const cy = polyBox.minY + (cj + 0.5) * cellH;
+    const distSq = (c.x - cx) ** 2 + (c.y - cy) ** 2;
+    if (cur === null) {
+      subPicked[ci][cj] = c;
+      used.add(candIdx);
+    } else {
+      const curDistSq = (cur.x - cx) ** 2 + (cur.y - cy) ** 2;
+      if (distSq < curDistSq) {
+        subPicked[ci][cj] = c;
+        used.add(candIdx);
+      }
+    }
+  }
+
+  const picked: FillCell[] = [];
+  for (let i = 0; i < k; i++) {
+    for (let j = 0; j < k; j++) {
+      const c = subPicked[i][j];
+      if (c !== null) picked.push(c);
+    }
+  }
+  // Top up to n from the unused pool.
+  if (picked.length < n) {
+    const pool: FillCell[] = [];
+    for (let i = 0; i < candidates.length; i++) {
+      if (!used.has(i)) pool.push(candidates[i]);
+    }
+    while (picked.length < n && pool.length > 0) {
+      picked.push(pool.shift()!);
+    }
+  }
+  return picked.slice(0, n);
+}

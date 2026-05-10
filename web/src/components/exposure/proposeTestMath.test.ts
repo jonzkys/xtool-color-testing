@@ -254,3 +254,39 @@ describe("pickModeAndParams", () => {
     }
   });
 });
+
+import { fillByForwardGrid } from "./proposeTestMath";
+
+describe("fillByForwardGrid", () => {
+  it("returns N cells, all inside the polygon", () => {
+    // Polygon spanning a region the (power, speed) grid can hit in
+    // (TEi, PIi). Pick generous bounds so the candidate count >= 16.
+    const polygon: Polygon = [[10, 0.0001], [90, 0.0001], [90, 0.045], [10, 0.045]];
+    const cells = fillByForwardGrid(
+      ANCHOR_PARAMS, ["power", "speed"], polygon,
+      "total_exposure_index", "pulse_intensity_index", F2_LIMITS, 16,
+    );
+    expect(cells.length).toBeGreaterThan(0);
+    expect(cells.length).toBeLessThanOrEqual(16);
+    for (const c of cells) {
+      expect(pointInPolygon([c.x, c.y], polygon)).toBe(true);
+      expect(c.paramValues.power).toBeDefined();
+      expect(c.paramValues.speed).toBeDefined();
+    }
+  });
+  it("clamps cell counts to laser-valid params", () => {
+    const polygon: Polygon = [[10, 0.0001], [90, 0.0001], [90, 0.045], [10, 0.045]];
+    const cells = fillByForwardGrid(
+      ANCHOR_PARAMS, ["power", "speed"], polygon,
+      "total_exposure_index", "pulse_intensity_index", F2_LIMITS, 8,
+    );
+    for (const c of cells) {
+      const pw = c.paramValues.power!;
+      const sp = c.paramValues.speed!;
+      expect(pw).toBeGreaterThanOrEqual(F2_LIMITS.power.min);
+      expect(pw).toBeLessThanOrEqual(F2_LIMITS.power.max);
+      expect(sp).toBeGreaterThanOrEqual(F2_LIMITS.speed.min);
+      expect(sp).toBeLessThanOrEqual(F2_LIMITS.speed.max);
+    }
+  });
+});
