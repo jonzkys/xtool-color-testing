@@ -568,6 +568,19 @@ function polygonArea(polygon: Polygon): number {
 export const SAMPLE_BUDGET_PER_POINT = 30;
 export const MIN_DIST_FACTOR = 0.6;
 
+/**
+ * Sample up to N points evenly distributed in a polygon, avoiding any
+ * supplied known points.
+ *
+ * Distance comparisons are NORMALISED by the polygon's bbox dimensions
+ * so the algorithm is invariant to the axes' raw scales. Without this,
+ * an anisotropic polygon (e.g. TEi-axis spans 80 units, PIi-axis spans
+ * 0.045 units) would have a min-distance threshold larger than its
+ * smaller dimension, and zero points would ever satisfy spacing.
+ *
+ * ``minDistOverride`` is interpreted as a normalised threshold in
+ * [0, 1] for consistency.
+ */
 export function samplePolygonArea(
   polygon: Polygon,
   n: number,
@@ -580,12 +593,18 @@ export function samplePolygonArea(
   const area = polygonArea(polygon);
   if (area === 0) return [];
 
-  const initialMinDist = minDistOverride ?? (
-    Math.sqrt(area / (n + knownPoints.length)) * MIN_DIST_FACTOR
-  );
-  const budget = SAMPLE_BUDGET_PER_POINT * n;
   // Capture into a local const so TypeScript narrows inside the closure.
   const bbox = box;
+  const w = Math.max(bbox.maxX - bbox.minX, 1e-12);
+  const h = Math.max(bbox.maxY - bbox.minY, 1e-12);
+
+  // Normalised threshold: scale-invariant across anisotropic polygons.
+  // Default is roughly the side length of a regular grid in [0,1]² with
+  // n + known cells, scaled by MIN_DIST_FACTOR.
+  const initialMinDist = minDistOverride ?? (
+    MIN_DIST_FACTOR / Math.sqrt(n + knownPoints.length)
+  );
+  const budget = SAMPLE_BUDGET_PER_POINT * n;
 
   function tryWith(minDist: number): Array<{ x: number; y: number }> {
     const accepted: Array<{ x: number; y: number }> = [];
@@ -593,16 +612,20 @@ export function samplePolygonArea(
     let attempts = 0;
     while (accepted.length < n && attempts < budget) {
       attempts++;
-      const x = bbox.minX + Math.random() * (bbox.maxX - bbox.minX);
-      const y = bbox.minY + Math.random() * (bbox.maxY - bbox.minY);
+      const x = bbox.minX + Math.random() * w;
+      const y = bbox.minY + Math.random() * h;
       if (!pointInPolygon([x, y], polygon)) continue;
       let ok = true;
       for (const k of knownPoints) {
-        if ((k.x - x) ** 2 + (k.y - y) ** 2 < minDistSq) { ok = false; break; }
+        const dxn = (k.x - x) / w;
+        const dyn = (k.y - y) / h;
+        if (dxn * dxn + dyn * dyn < minDistSq) { ok = false; break; }
       }
       if (!ok) continue;
       for (const p of accepted) {
-        if ((p.x - x) ** 2 + (p.y - y) ** 2 < minDistSq) { ok = false; break; }
+        const dxn = (p.x - x) / w;
+        const dyn = (p.y - y) / h;
+        if (dxn * dxn + dyn * dyn < minDistSq) { ok = false; break; }
       }
       if (!ok) continue;
       accepted.push({ x, y });
