@@ -378,6 +378,83 @@ export function sampleByArcLength(
   return out;
 }
 
+export function partialDerivative(
+  indexKey: IndexKey,
+  paramKey: ParamKey | "passes" | "pulse_width",
+  params: LaserParams,
+): number {
+  const { power, speed, frequency, density, passes, pulse_width } = params;
+
+  switch (indexKey) {
+    case "pulse_spacing_mm": {
+      // PSm = speed / (frequency * 1000)
+      switch (paramKey) {
+        case "speed":     return 1 / (frequency * 1000);
+        case "frequency": return -speed / (frequency * frequency * 1000);
+        default: return 0;
+      }
+    }
+    case "line_spacing_mm": {
+      // LSm = 10 / density
+      switch (paramKey) {
+        case "density": return -10 / (density * density);
+        default: return 0;
+      }
+    }
+    case "pulse_energy_index": {
+      // PEi = power / frequency
+      switch (paramKey) {
+        case "power":     return 1 / frequency;
+        case "frequency": return -power / (frequency * frequency);
+        default: return 0;
+      }
+    }
+    case "pulse_intensity_index": {
+      // PIi = power / (frequency * pulse_width)
+      switch (paramKey) {
+        case "power":       return 1 / (frequency * pulse_width);
+        case "frequency":   return -power / (frequency * frequency * pulse_width);
+        case "pulse_width": return -power / (frequency * pulse_width * pulse_width);
+        default: return 0;
+      }
+    }
+    case "total_exposure_index": {
+      // TEi = power * density * passes / speed
+      switch (paramKey) {
+        case "power":   return density * passes / speed;
+        case "density": return power * passes / speed;
+        case "passes":  return power * density / speed;
+        case "speed":   return -power * density * passes / (speed * speed);
+        default: return 0;
+      }
+    }
+    case "ablation_aggression_index": {
+      // AAi = power² * density * passes / (speed * frequency * pulse_width)
+      const denom = speed * frequency * pulse_width;
+      switch (paramKey) {
+        case "power":       return 2 * power * density * passes / denom;
+        case "density":     return power * power * passes / denom;
+        case "passes":      return power * power * density / denom;
+        case "speed":       return -power * power * density * passes / (speed * denom);
+        case "frequency":   return -power * power * density * passes / (frequency * denom);
+        case "pulse_width": return -power * power * density * passes / (pulse_width * denom);
+        default: return 0;
+      }
+    }
+    case "delivery_smoothness_index": {
+      // DSi = density * passes * frequency * pulse_width / speed
+      switch (paramKey) {
+        case "density":     return passes * frequency * pulse_width / speed;
+        case "passes":      return density * frequency * pulse_width / speed;
+        case "frequency":   return density * passes * pulse_width / speed;
+        case "pulse_width": return density * passes * frequency / speed;
+        case "speed":       return -density * passes * frequency * pulse_width / (speed * speed);
+        default: return 0;
+      }
+    }
+  }
+}
+
 export const FILL_GRID_RESOLUTION = 32;
 
 export interface FillCell {

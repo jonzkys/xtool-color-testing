@@ -255,7 +255,52 @@ describe("pickModeAndParams", () => {
   });
 });
 
-import { fillByForwardGrid } from "./proposeTestMath";
+import { fillByForwardGrid, partialDerivative } from "./proposeTestMath";
+import { computeIndices, type LaserParams } from "../../laser/laserIndices";
+
+const SAMPLE_PARAMS: LaserParams[] = [
+  { power: 14.6, speed: 1152, frequency: 100, density: 5000, passes: 1, pulse_width: 200 },
+  { power: 50,   speed: 4000, frequency: 200, density: 3000, passes: 2, pulse_width: 100 },
+  { power: 80,   speed: 8000, frequency: 400, density: 1500, passes: 4, pulse_width: 50  },
+];
+
+describe("partialDerivative", () => {
+  it("matches finite-difference numerical derivative within 1e-3 for every (idx, param) pair", () => {
+    const indexKeys = [
+      "pulse_spacing_mm", "line_spacing_mm",
+      "pulse_energy_index", "pulse_intensity_index",
+      "total_exposure_index", "ablation_aggression_index",
+      "delivery_smoothness_index",
+    ] as const;
+    const paramKeys = [
+      "power", "speed", "frequency", "density", "passes", "pulse_width",
+    ] as const;
+    for (const params of SAMPLE_PARAMS) {
+      for (const idxKey of indexKeys) {
+        for (const paramKey of paramKeys) {
+          const epsilon = Math.max(1, Math.abs(params[paramKey])) * 1e-5;
+          const plus = computeIndices({ ...params, [paramKey]: params[paramKey] + epsilon });
+          const minus = computeIndices({ ...params, [paramKey]: params[paramKey] - epsilon });
+          const numerical = (plus[idxKey] - minus[idxKey]) / (2 * epsilon);
+          const analytical = partialDerivative(idxKey, paramKey, params);
+          // Tolerate larger rel-error for indices that produce huge values
+          // (delivery_smoothness can reach ~1e5).
+          const tolerance = Math.max(1e-3, Math.abs(numerical) * 1e-4);
+          expect(Math.abs(analytical - numerical)).toBeLessThan(tolerance);
+        }
+      }
+    }
+  });
+
+  it("returns 0 when the index doesn't depend on the param", () => {
+    const params = SAMPLE_PARAMS[0];
+    expect(partialDerivative("pulse_spacing_mm", "power", params)).toBe(0);
+    expect(partialDerivative("pulse_spacing_mm", "density", params)).toBe(0);
+    expect(partialDerivative("line_spacing_mm", "speed", params)).toBe(0);
+    expect(partialDerivative("pulse_energy_index", "speed", params)).toBe(0);
+    expect(partialDerivative("pulse_energy_index", "pulse_width", params)).toBe(0);
+  });
+});
 
 describe("fillByForwardGrid", () => {
   it("returns N cells, all inside the polygon", () => {
