@@ -31,13 +31,15 @@ from ..capture_pipeline import (
 )
 from ..capture_sampling import sample_grid
 from ..palette import hex_to_lab
+from ..wb_anchor import pick_test_canonical
 from ..wb_correction import CorrectionOutcome
 
 # Versioning hook for the canonical-neutral RGB anchor that flat-field
-# correction is normalising every photo onto. Changing the canonical
-# values implies bumping this string so old vs new corrections are
-# distinguishable in stored result rows.
-_DEFAULT_CANONICAL_ID = "v1.steel-default.2026-05-07"
+# correction is normalising every photo onto. v2 derives the canonical
+# per-test from the brightest observed perimeter strip instead of the
+# legacy hardcoded (160, 160, 145). Bump on every behaviour change so
+# old vs new corrections are distinguishable in stored result rows.
+_DEFAULT_CANONICAL_ID = "v2.per-test-max.2026-05-10"
 
 # IDs of the three ArUco fiducials the layout places around the burn area.
 # Kept as a frozenset so missing-marker computation can be a pure set op.
@@ -122,7 +124,9 @@ class CaptureResult:
 
 def run_capture(*, image_bytes: bytes, test_id: int,
                 spec: dict[str, Any],
-                material: dict[str, Any] | None = None) -> CaptureResult:
+                material: dict[str, Any] | None = None,
+                prior_anchors_json: list[str | None] | None = None,
+                ) -> CaptureResult:
     try:
         img = decode_image_bytes(image_bytes)
     except Exception as e:
@@ -244,6 +248,11 @@ def run_capture(*, image_bytes: bytes, test_id: int,
              for ar in layout.arucos],
             px_per_mm=10.0,
         )
+        canonical_neutral = pick_test_canonical(
+            prior_anchors_json=prior_anchors_json or [],
+            candidate_edge_means=edge_means,
+            candidate_unburned=unburned_rgb,
+        )
         wb_outcome = apply_wb_correction_to_warped(
             warped,
             edge_means=edge_means,
@@ -252,7 +261,7 @@ def run_capture(*, image_bytes: bytes, test_id: int,
                 grid_origin_mm[0], grid_origin_mm[1],
                 grid_origin_mm[0] + grid_w, grid_origin_mm[1] + grid_h,
             ),
-            canonical_neutral=(160.0, 160.0, 145.0),
+            canonical_neutral=canonical_neutral,
             px_per_mm=10.0,
             unburned_rgb=unburned_rgb,
             canonical_id=_DEFAULT_CANONICAL_ID,
