@@ -356,6 +356,64 @@ describe("fillByForwardGrid", () => {
   });
 });
 
+import { samplePolygonArea } from "./proposeTestMath";
+
+describe("samplePolygonArea", () => {
+  const square: Polygon = [[0, 0], [10, 0], [10, 10], [0, 10]];
+
+  it("returns up to N points all inside the polygon", () => {
+    const points = samplePolygonArea(square, 16, []);
+    expect(points.length).toBeGreaterThan(0);
+    expect(points.length).toBeLessThanOrEqual(16);
+    for (const p of points) {
+      expect(pointInPolygon([p.x, p.y], square)).toBe(true);
+    }
+  });
+
+  it("avoids existing known points within minDist", () => {
+    const known = [{ x: 5, y: 5 }, { x: 2, y: 2 }];
+    const points = samplePolygonArea(square, 16, known);
+    for (const p of points) {
+      for (const k of known) {
+        const d = Math.hypot(p.x - k.x, p.y - k.y);
+        // minDist = sqrt(area / (n + known.length)) * 0.6 = sqrt(100/18) * 0.6 ≈ 1.41
+        expect(d).toBeGreaterThan(1.0);
+      }
+    }
+  });
+
+  it("respects min-distance between accepted points", () => {
+    const points = samplePolygonArea(square, 16, []);
+    for (let i = 0; i < points.length; i++) {
+      for (let j = i + 1; j < points.length; j++) {
+        const d = Math.hypot(points[i].x - points[j].x, points[i].y - points[j].y);
+        // After one threshold halving, minDist could be ~half, so be lenient.
+        expect(d).toBeGreaterThan(0.5);
+      }
+    }
+  });
+
+  it("relaxes threshold and returns < n when polygon too dense", () => {
+    const points = samplePolygonArea(square, 200, []);
+    expect(points.length).toBeGreaterThan(0);
+    expect(points.length).toBeLessThanOrEqual(200);
+    for (const p of points) {
+      expect(pointInPolygon([p.x, p.y], square)).toBe(true);
+    }
+  });
+
+  it("works with empty knownPoints and concave polygons", () => {
+    const concave: Polygon = [
+      [0, 0], [10, 0], [10, 10], [5, 5], [0, 10],
+    ];
+    const points = samplePolygonArea(concave, 8, []);
+    expect(points.length).toBeGreaterThan(0);
+    for (const p of points) {
+      expect(pointInPolygon([p.x, p.y], concave)).toBe(true);
+    }
+  });
+});
+
 describe("inverseSolve", () => {
   const base: LaserParams = {
     power: 14.6, speed: 1152, frequency: 100, density: 5000, passes: 1, pulse_width: 200,

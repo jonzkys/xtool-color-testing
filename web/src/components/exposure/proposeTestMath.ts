@@ -556,6 +556,68 @@ export function fillByForwardGrid(
   return picked.slice(0, n);
 }
 
+function polygonArea(polygon: Polygon): number {
+  if (polygon.length < 3) return 0;
+  let s = 0;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    s += (polygon[j][0] + polygon[i][0]) * (polygon[j][1] - polygon[i][1]);
+  }
+  return Math.abs(s) / 2;
+}
+
+export const SAMPLE_BUDGET_PER_POINT = 30;
+export const MIN_DIST_FACTOR = 0.6;
+
+export function samplePolygonArea(
+  polygon: Polygon,
+  n: number,
+  knownPoints: ReadonlyArray<{ x: number; y: number }>,
+  minDistOverride?: number,
+): Array<{ x: number; y: number }> {
+  if (polygon.length < 3 || n <= 0) return [];
+  const box = polygonBox(polygon);
+  if (!box) return [];
+  const area = polygonArea(polygon);
+  if (area === 0) return [];
+
+  const initialMinDist = minDistOverride ?? (
+    Math.sqrt(area / (n + knownPoints.length)) * MIN_DIST_FACTOR
+  );
+  const budget = SAMPLE_BUDGET_PER_POINT * n;
+  // Capture into a local const so TypeScript narrows inside the closure.
+  const bbox = box;
+
+  function tryWith(minDist: number): Array<{ x: number; y: number }> {
+    const accepted: Array<{ x: number; y: number }> = [];
+    const minDistSq = minDist * minDist;
+    let attempts = 0;
+    while (accepted.length < n && attempts < budget) {
+      attempts++;
+      const x = bbox.minX + Math.random() * (bbox.maxX - bbox.minX);
+      const y = bbox.minY + Math.random() * (bbox.maxY - bbox.minY);
+      if (!pointInPolygon([x, y], polygon)) continue;
+      let ok = true;
+      for (const k of knownPoints) {
+        if ((k.x - x) ** 2 + (k.y - y) ** 2 < minDistSq) { ok = false; break; }
+      }
+      if (!ok) continue;
+      for (const p of accepted) {
+        if ((p.x - x) ** 2 + (p.y - y) ** 2 < minDistSq) { ok = false; break; }
+      }
+      if (!ok) continue;
+      accepted.push({ x, y });
+    }
+    return accepted;
+  }
+
+  let result = tryWith(initialMinDist);
+  if (result.length < n) {
+    // Single relaxation pass with half the threshold.
+    result = tryWith(initialMinDist * 0.5);
+  }
+  return result;
+}
+
 const INVERSE_SOLVE_MAX_ITERS = 20;
 const INVERSE_SOLVE_RESIDUAL_EPS = 1e-6;
 const INVERSE_SOLVE_DET_EPS = 1e-12;
