@@ -1,4 +1,6 @@
 import * as React from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { hueDeg, chroma as chromaFn } from "../../color/math";
 import { niceBounds, niceTicks } from "../stabilityChartMath";
 import type { ChannelCol, ExposureRow, IndexRow } from "./exposureCorrelations";
@@ -15,6 +17,7 @@ import {
   ChannelCardBody,
   IndexCardBody,
 } from "./ExposureHelpCardBody";
+import { ExposureAxisPicker } from "./ExposureAxisPicker";
 
 export type ScaleKind = "linear" | "log";
 export type ScatterMode = "univariate" | "bivariate";
@@ -38,6 +41,14 @@ interface Props {
   trimOutliers?: boolean;
   /** Optional callback fired with the count of dots hidden by trimOutliers. */
   onOffChartCount?: (count: number) => void;
+  /** Optional: clicking the X label opens an axis picker that calls this. */
+  onXKeyChange?: (k: IndexRow) => void;
+  /** Optional: clicking the Y label opens an axis picker that calls this. */
+  onYKeyChange?: (k: ChannelCol | IndexRow) => void;
+  /** Optional: log/linear scale toggle for the X axis. */
+  onXScaleChange?: (s: ScaleKind) => void;
+  /** Optional: log/linear scale toggle for the Y axis. */
+  onYScaleChange?: (s: ScaleKind) => void;
 }
 
 function rowChannel(row: ExposureRow, key: ChannelCol): number {
@@ -96,6 +107,10 @@ export const ExposureScatter: React.FC<Props> = ({
   family,
   trimOutliers = false,
   onOffChartCount,
+  onXKeyChange,
+  onYKeyChange,
+  onXScaleChange,
+  onYScaleChange,
 }) => {
   const xs = rows.map((r) => rowIndex(r, xKey));
   const ys = rows.map((r) =>
@@ -179,6 +194,28 @@ export const ExposureScatter: React.FC<Props> = ({
     onOffChartCount?.(offChartCount);
   }, [offChartCount, onOffChartCount]);
 
+  // Picker state for click-to-open axis pickers
+  const xLabelRef = useRef<HTMLDivElement | null>(null);
+  const yLabelRef = useRef<HTMLDivElement | null>(null);
+  const [xPickerOpen, setXPickerOpen] = useState(false);
+  const [yPickerOpen, setYPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (!xPickerOpen && !yPickerOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (!(e.target instanceof Node)) return;
+      const t = e.target;
+      if (xLabelRef.current?.contains(t)) return;
+      if (yLabelRef.current?.contains(t)) return;
+      const tip = document.querySelector('[data-axis-picker]');
+      if (tip && tip.contains(t)) return;
+      setXPickerOpen(false);
+      setYPickerOpen(false);
+    };
+    window.addEventListener("mousedown", onMouseDown);
+    return () => window.removeEventListener("mousedown", onMouseDown);
+  }, [xPickerOpen, yPickerOpen]);
+
   // Top-line + formula resolution
   const xLabelTop = INDEX_PRETTY[xKey];
   const xLabelDisplay = xScale === "log" ? `LOG₁₀ ${xLabelTop}` : xLabelTop;
@@ -210,11 +247,22 @@ export const ExposureScatter: React.FC<Props> = ({
           Body={ChannelCardBody}
         >
           <div
-            className="flex items-center justify-center cursor-help"
+            ref={yLabelRef}
+            className={
+              "flex items-center justify-center " +
+              (onYKeyChange ? "cursor-pointer" : "cursor-help")
+            }
             style={{ gridColumn: 1, gridRow: 1, paddingRight: 10 }}
+            onClick={onYKeyChange ? (e) => {
+              e.stopPropagation();
+              setYPickerOpen(true);
+            } : undefined}
           >
             <div
-              className="font-mono uppercase tracking-[0.18em] text-[10px] font-semibold text-[color:var(--color-ink-subtle)]"
+              className={
+                "font-mono uppercase tracking-[0.18em] text-[10px] font-semibold text-[color:var(--color-ink-subtle)] " +
+                (onYKeyChange ? "border-b border-dotted border-[color:var(--color-ink-subtle)]" : "")
+              }
               style={{
                 writingMode: "vertical-rl" as React.CSSProperties["writingMode"],
                 transform: "rotate(180deg)",
@@ -231,11 +279,22 @@ export const ExposureScatter: React.FC<Props> = ({
           Body={IndexCardBody}
         >
           <div
-            className="flex items-center justify-center cursor-help"
+            ref={yLabelRef}
+            className={
+              "flex items-center justify-center " +
+              (onYKeyChange ? "cursor-pointer" : "cursor-help")
+            }
             style={{ gridColumn: 1, gridRow: 1, paddingRight: 10 }}
+            onClick={onYKeyChange ? (e) => {
+              e.stopPropagation();
+              setYPickerOpen(true);
+            } : undefined}
           >
             <div
-              className="font-mono uppercase tracking-[0.18em] text-[10px] font-semibold text-[color:var(--color-ink-subtle)]"
+              className={
+                "font-mono uppercase tracking-[0.18em] text-[10px] font-semibold text-[color:var(--color-ink-subtle)] " +
+                (onYKeyChange ? "border-b border-dotted border-[color:var(--color-ink-subtle)]" : "")
+              }
               style={{
                 writingMode: "vertical-rl" as React.CSSProperties["writingMode"],
                 transform: "rotate(180deg)",
@@ -477,10 +536,21 @@ export const ExposureScatter: React.FC<Props> = ({
       {/* (2, 2) — X axis label, two lines, centered horizontally */}
       <HelpTip help={xHelp} Body={IndexCardBody}>
         <div
-          className="flex flex-col items-center justify-center cursor-help"
+          ref={xLabelRef}
+          className={
+            "flex flex-col items-center justify-center " +
+            (onXKeyChange ? "cursor-pointer" : "cursor-help")
+          }
           style={{ gridColumn: 2, gridRow: 2, paddingTop: 4 }}
+          onClick={onXKeyChange ? (e) => {
+            e.stopPropagation();
+            setXPickerOpen(true);
+          } : undefined}
         >
-          <div className="font-mono uppercase tracking-[0.18em] text-[10px] font-semibold text-[color:var(--color-ink-subtle)] leading-tight">
+          <div className={
+            "font-mono uppercase tracking-[0.18em] text-[10px] font-semibold text-[color:var(--color-ink-subtle)] leading-tight " +
+            (onXKeyChange ? "border-b border-dotted border-[color:var(--color-ink-subtle)]" : "")
+          }>
             {xLabelDisplay}
           </div>
           <div className="font-mono text-[9px] text-[color:var(--color-ink-subtle)] opacity-70 leading-tight">
@@ -488,6 +558,66 @@ export const ExposureScatter: React.FC<Props> = ({
           </div>
         </div>
       </HelpTip>
+
+      {xPickerOpen && xLabelRef.current && onXKeyChange && typeof document !== "undefined" && createPortal(
+        <div
+          data-axis-picker
+          className="fixed z-[1000] rounded-[6px] border border-[color:var(--color-border-strong)] bg-[color:var(--color-surface-elevated)] shadow-lg"
+          style={(() => {
+            const a = xLabelRef.current!.getBoundingClientRect();
+            const margin = 8;
+            const w = 220, h = 280;
+            // X label is below the chart; prefer ABOVE so popover doesn't cover empty space.
+            let top = a.top - h - 6;
+            if (top < margin) top = a.bottom + 6;
+            let left = a.left + a.width / 2 - w / 2;
+            if (left < margin) left = margin;
+            if (left + w > window.innerWidth - margin) left = window.innerWidth - w - margin;
+            return { left, top };
+          })()}
+        >
+          <ExposureAxisPicker
+            axis="x"
+            mode={mode}
+            currentKey={xKey}
+            scale={xScale}
+            onKeyChange={(k) => onXKeyChange(k as IndexRow)}
+            onScaleChange={(s) => onXScaleChange?.(s)}
+            onClose={() => setXPickerOpen(false)}
+          />
+        </div>,
+        document.body,
+      )}
+      {yPickerOpen && yLabelRef.current && onYKeyChange && typeof document !== "undefined" && createPortal(
+        <div
+          data-axis-picker
+          className="fixed z-[1000] rounded-[6px] border border-[color:var(--color-border-strong)] bg-[color:var(--color-surface-elevated)] shadow-lg"
+          style={(() => {
+            const a = yLabelRef.current!.getBoundingClientRect();
+            const margin = 8;
+            const w = 220, h = 280;
+            // Y label is on the chart's left; prefer to the RIGHT of the label.
+            let left = a.right + 6;
+            if (left + w > window.innerWidth - margin) left = a.left - w - 6;
+            if (left < margin) left = margin;
+            let top = a.top + a.height / 2 - h / 2;
+            if (top < margin) top = margin;
+            if (top + h > window.innerHeight - margin) top = window.innerHeight - h - margin;
+            return { left, top };
+          })()}
+        >
+          <ExposureAxisPicker
+            axis="y"
+            mode={mode}
+            currentKey={yKey}
+            scale={yScale}
+            onKeyChange={(k) => onYKeyChange(k)}
+            onScaleChange={(s) => onYScaleChange?.(s)}
+            onClose={() => setYPickerOpen(false)}
+          />
+        </div>,
+        document.body,
+      )}
     </div>
   );
 };

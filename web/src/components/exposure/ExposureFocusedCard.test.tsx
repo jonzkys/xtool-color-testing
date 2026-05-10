@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 
 import { ExposureFocusedCard } from "./ExposureFocusedCard";
 import type { ExposureRow } from "./exposureCorrelations";
@@ -118,5 +118,52 @@ describe("ExposureFocusedCard", () => {
       />,
     );
     expect(screen.getByText(/clear \(power\)/i)).toBeInTheDocument();
+  });
+});
+
+describe("ExposureFocusedCard per-row filter buttons", () => {
+  it("clicking a recipe row's filter button calls onTogglePerParamFilter with (param, value)", () => {
+    const onToggle = vi.fn();
+    const rows = [row(1, "#a0522d")];
+    render(
+      <ExposureFocusedCard
+        rows={rows}
+        focusedId={1}
+        activeParamFilters={new Set()}
+        onTogglePerParamFilter={onToggle}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText(/filter to power/i));
+    expect(onToggle).toHaveBeenCalledWith("power", 65);
+  });
+
+  it("active param filter shows the row with data-active=true", () => {
+    const rows = [row(1, "#a0522d")];
+    const { container } = render(
+      <ExposureFocusedCard
+        rows={rows}
+        focusedId={1}
+        activeParamFilters={new Set(["power"] as const)}
+        onTogglePerParamFilter={() => undefined}
+      />,
+    );
+    const recipeRows = container.querySelectorAll('[data-role="recipe-row"]');
+    const powerRow = Array.from(recipeRows).find((r) =>
+      (r.textContent ?? "").toLowerCase().includes("power"),
+    );
+    expect(powerRow?.getAttribute("data-active")).toBe("true");
+  });
+
+  it("active filter button shows the clear-mode aria-label", () => {
+    const rows = [row(1, "#a0522d")];
+    render(
+      <ExposureFocusedCard
+        rows={rows}
+        focusedId={1}
+        activeParamFilters={new Set(["power"] as const)}
+        onTogglePerParamFilter={() => undefined}
+      />,
+    );
+    expect(screen.getByLabelText(/clear power filter/i)).toBeInTheDocument();
   });
 });
