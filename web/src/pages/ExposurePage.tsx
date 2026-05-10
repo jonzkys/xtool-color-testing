@@ -909,6 +909,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   curve={preview.curve?.map((p) => ({ x: p.x, y: p.y })) ?? null}
                   cells={preview.cells.map((c) => ({ x: c.x, y: c.y }))}
                   onPolygonVertexAdd={(p) => setPolygon((prev) => [...prev, p])}
+                  onPolygonVertexMove={(i, p) => setPolygon((prev) =>
+                    prev.map((v, idx) => (idx === i ? p : v)),
+                  )}
                   onPolygonClose={() => {
                     if (polygon.length >= 3) setProposeMode("panel");
                   }}
