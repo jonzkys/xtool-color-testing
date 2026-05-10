@@ -92,8 +92,10 @@ import {
   computeCurve,
   clipPolylineToPolygon,
   sampleByArcLength,
+  pickModeAndParams,
   type LaserLimits,
   type CurveSample,
+  type ParamKey,
 } from "./proposeTestMath";
 
 const F2_LIMITS: LaserLimits = {
@@ -195,5 +197,60 @@ describe("sampleByArcLength", () => {
     // paramValue should be 100 + 0.875 * (200 - 100) = 187.5.
     const mid = out[2];
     expect(mid.paramValue).toBeCloseTo(187.5, 4);
+  });
+});
+
+describe("pickModeAndParams", () => {
+  // Build an anchor row with params; reuse makeRow but attach params.
+  function anchorRow(): ExposureRow {
+    const r = makeRow(1, 0, 0);
+    r.params = ANCHOR_PARAMS;
+    return r;
+  }
+
+  it("prefers a single param that moves both axes (curve mode)", () => {
+    // Polygon spans most of the index space for total_exposure_index (0-65)
+    // and ablation_aggression_index (0-0.046), so power/speed/density all
+    // score well above CURVE_COVERAGE_THRESHOLD and curve mode is chosen.
+    const polygon: Polygon = [[0.1, 0.0001], [60, 0.0001], [60, 0.045], [0.1, 0.045]];
+    const out = pickModeAndParams(
+      anchorRow(), polygon, "total_exposure_index", "ablation_aggression_index",
+      F2_LIMITS,
+    );
+    expect(out.mode).toBe("curve");
+    if (out.mode === "curve") {
+      expect(["power", "speed", "density"]).toContain(out.varyParam);
+    }
+  });
+
+  it("returns a consistent ModeChoice for any polygon (fill or curve)", () => {
+    const polygon: Polygon = [[10, 0.0001], [90, 0.0001], [90, 0.05], [10, 0.05]];
+    const out = pickModeAndParams(
+      anchorRow(), polygon, "total_exposure_index", "pulse_intensity_index",
+      F2_LIMITS,
+    );
+    if (out.mode === "fill") {
+      expect(out.varyParams).toHaveLength(2);
+      const valid: ParamKey[] = ["power", "speed", "frequency", "density"];
+      expect(valid).toContain(out.varyParams[0]);
+      expect(valid).toContain(out.varyParams[1]);
+      expect(out.varyParams[0]).not.toBe(out.varyParams[1]);
+    } else {
+      const valid: ParamKey[] = ["power", "speed", "frequency", "density"];
+      expect(valid).toContain(out.varyParam);
+    }
+  });
+
+  it("falls back to fill mode with default params when anchor has no params", () => {
+    const r = makeRow(1, 0, 0);
+    // Deliberately don't set r.params.
+    const polygon: Polygon = [[0, 0], [10, 0], [10, 10], [0, 10]];
+    const out = pickModeAndParams(
+      r, polygon, "total_exposure_index", "pulse_intensity_index", F2_LIMITS,
+    );
+    expect(out.mode).toBe("fill");
+    if (out.mode === "fill") {
+      expect(out.varyParams).toEqual(["power", "speed"]);
+    }
   });
 });

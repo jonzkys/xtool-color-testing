@@ -252,6 +252,92 @@ export function clipPolylineToPolygon<T extends PolylinePoint>(
   return segments;
 }
 
+const TESTABLE_PARAMS: readonly ParamKey[] = ["power", "speed", "density", "frequency"];
+
+export type ModeChoice =
+  | { readonly mode: "curve"; readonly varyParam: ParamKey }
+  | { readonly mode: "fill"; readonly varyParams: readonly [ParamKey, ParamKey] };
+
+export const CURVE_COVERAGE_THRESHOLD = 0.4;
+
+interface BoundingBox { minX: number; maxX: number; minY: number; maxY: number; }
+
+function bbox(points: ReadonlyArray<{ x: number; y: number }>): BoundingBox | null {
+  if (points.length === 0) return null;
+  let minX = points[0].x;
+  let maxX = points[0].x;
+  let minY = points[0].y;
+  let maxY = points[0].y;
+  for (const p of points) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, maxX, minY, maxY };
+}
+
+function polygonBox(polygon: Polygon): BoundingBox | null {
+  return bbox(polygon.map(([x, y]) => ({ x, y })));
+}
+
+function paramScore(
+  anchor: LaserParams,
+  varyParam: ParamKey,
+  polygon: Polygon,
+  xKey: IndexKey,
+  yKey: IndexKey,
+  laserLimits: LaserLimits,
+): { score: number; xSpread: number; ySpread: number } {
+  const curve = computeCurve(anchor, varyParam, xKey, yKey, laserLimits);
+  const segments = clipPolylineToPolygon(curve, polygon);
+  const flat = segments.flat();
+  const polyBox = polygonBox(polygon);
+  if (flat.length === 0 || !polyBox) return { score: 0, xSpread: 0, ySpread: 0 };
+  const segBox = bbox(flat);
+  if (!segBox) return { score: 0, xSpread: 0, ySpread: 0 };
+  const polyW = Math.max(polyBox.maxX - polyBox.minX, 1e-12);
+  const polyH = Math.max(polyBox.maxY - polyBox.minY, 1e-12);
+  const xSpread = (segBox.maxX - segBox.minX) / polyW;
+  const ySpread = (segBox.maxY - segBox.minY) / polyH;
+  return { score: Math.min(xSpread, ySpread), xSpread, ySpread };
+}
+
+export function pickModeAndParams(
+  anchor: ExposureRow,
+  polygon: Polygon,
+  xKey: IndexKey,
+  yKey: IndexKey,
+  laserLimits: LaserLimits,
+): ModeChoice {
+  if (!anchor.params) {
+    return { mode: "fill", varyParams: ["power", "speed"] };
+  }
+  const anchorParams = anchor.params as unknown as LaserParams;
+
+  // Score each testable param. Tie-break order: power, speed, density, frequency.
+  const scores = TESTABLE_PARAMS.map((p) => ({
+    param: p,
+    ...paramScore(anchorParams, p, polygon, xKey, yKey, laserLimits),
+  }));
+
+  const best = scores.reduce((a, b) => (b.score > a.score ? b : a));
+  if (best.score >= CURVE_COVERAGE_THRESHOLD) {
+    return { mode: "curve", varyParam: best.param };
+  }
+
+  // Fill mode: pick the two params with highest x-spread + y-spread that
+  // are different. Sort each by spread; greedily pick non-duplicate.
+  const byX = [...scores].sort((a, b) => b.xSpread - a.xSpread);
+  const byY = [...scores].sort((a, b) => b.ySpread - a.ySpread);
+  const p1 = byX[0].param;
+  let p2 = byY[0].param;
+  if (p1 === p2) {
+    p2 = byY.find((s) => s.param !== p1)?.param ?? "speed";
+  }
+  return { mode: "fill", varyParams: [p1, p2] };
+}
+
 export function sampleByArcLength(
   segment: readonly CurveSample[],
   n: number,
