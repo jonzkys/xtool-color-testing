@@ -1056,6 +1056,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               onParamOverrideChange={(key, value) => {
                 setParamOverrides((prev) => ({ ...prev, [key]: value }));
               }}
+              hasParamOverrides={Object.keys(paramOverrides).length > 0}
+              onResetParams={() => setParamOverrides({})}
               rangeReadout={rangeReadout}
               canCreate={anchor !== null && preview.cells.length > 0}
               helperText={

@@ -37,6 +37,10 @@ interface Props {
   onCellCountChange: (n: number) => void;
   paramRows: ReadonlyArray<ParamRow>;
   onParamOverrideChange: (param: ParamKey | "passes" | "pulse_width", value: number) => void;
+  /** True when at least one param has been edited from the anchor's value. */
+  hasParamOverrides: boolean;
+  /** Clears every override → editable rows snap back to the anchor's values. */
+  onResetParams: () => void;
   rangeReadout: ReadonlyArray<RangeReadout>;
   canCreate: boolean;
   helperText: string | null;
@@ -66,6 +70,7 @@ function formatValue(v: number, unit: string): string {
 export const ExposureProposeRail: React.FC<Props> = ({
   anchor, entriesInsidePolygon, mode, onModeChange, cellCount, onCellCountChange,
   paramRows, onParamOverrideChange,
+  hasParamOverrides, onResetParams,
   rangeReadout, canCreate, helperText, onCreate, onCancel,
 }) => {
   const isFill = mode.mode === "fill";
@@ -177,8 +182,27 @@ export const ExposureProposeRail: React.FC<Props> = ({
       </section>
 
       <section data-role="propose-params-editor">
-        <div className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)] mb-2">
-          Params
+        <div className="flex items-center justify-between mb-2">
+          <div className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)]">
+            Params
+          </div>
+          <button
+            type="button"
+            disabled={!hasParamOverrides}
+            onClick={onResetParams}
+            data-role="propose-params-reset"
+            className={
+              "px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.16em] rounded-sm border " +
+              (hasParamOverrides
+                ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)] cursor-pointer hover:bg-[color:var(--color-primary)]/10"
+                : "border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)] cursor-not-allowed opacity-50")
+            }
+            title={hasParamOverrides
+              ? "Reset all params to the anchor's values"
+              : "No edits to reset"}
+          >
+            ↺ reset
+          </button>
         </div>
         <div className="flex flex-col gap-1.5">
           {paramRows.map((row) => (

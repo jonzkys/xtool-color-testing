@@ -41,6 +41,8 @@ function defaultProps() {
     onCellCountChange: vi.fn(),
     paramRows: DEFAULT_PARAM_ROWS,
     onParamOverrideChange: vi.fn(),
+    hasParamOverrides: false,
+    onResetParams: vi.fn(),
     rangeReadout: [],
     canCreate: true,
     helperText: null,
@@ -98,5 +100,27 @@ describe("ExposureProposeRail editor", () => {
     const btn = screen.getByRole("button", { name: /create test/i });
     expect((btn as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/Polygon contains no entries/i)).toBeTruthy();
+  });
+
+  it("disables the reset button when no overrides exist", () => {
+    const { container } = render(<ExposureProposeRail {...defaultProps()} />);
+    const reset = container.querySelector('[data-role="propose-params-reset"]') as HTMLButtonElement;
+    expect(reset).toBeTruthy();
+    expect(reset.disabled).toBe(true);
+  });
+
+  it("enables reset and calls onResetParams on click when overrides exist", () => {
+    const onResetParams = vi.fn();
+    const { container } = render(
+      <ExposureProposeRail
+        {...defaultProps()}
+        hasParamOverrides={true}
+        onResetParams={onResetParams}
+      />,
+    );
+    const reset = container.querySelector('[data-role="propose-params-reset"]') as HTMLButtonElement;
+    expect(reset.disabled).toBe(false);
+    fireEvent.click(reset);
+    expect(onResetParams).toHaveBeenCalledTimes(1);
   });
 });
