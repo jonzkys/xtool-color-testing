@@ -67,6 +67,9 @@ interface Props {
   onPolygonClose?: () => void;
   /** Called when the user cancels drawing (Esc). */
   onPolygonCancel?: () => void;
+  /** Called continuously while a polygon vertex is being dragged (after
+   *  the polygon has closed). */
+  onPolygonVertexMove?: (vertexIndex: number, newPoint: readonly [number, number]) => void;
 }
 
 function rowChannel(row: ExposureRow, key: ChannelCol): number {
@@ -136,6 +139,7 @@ export const ExposureScatter: React.FC<Props> = ({
   onPolygonVertexAdd,
   onPolygonClose,
   onPolygonCancel,
+  onPolygonVertexMove,
 }) => {
   const xs = rows.map((r) => rowIndex(r, xKey));
   const ys = rows.map((r) =>
@@ -558,7 +562,9 @@ export const ExposureScatter: React.FC<Props> = ({
             <ExposurePolygon
               polygon={polygon}
               toSvg={toSvg}
+              fromSvg={fromSvg}
               drawing={!!polygonDrawing}
+              onVertexMove={onPolygonVertexMove}
             />
           )}
           {(curve || (cells && cells.length > 0)) && (

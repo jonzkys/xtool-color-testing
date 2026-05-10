@@ -75,7 +75,7 @@ export function findAnchor(
   return best;
 }
 
-import { computeIndices, type LaserParams } from "../../laser/laserIndices";
+import { computeIndices, type LaserParams, type LaserIndices } from "../../laser/laserIndices";
 
 export type ParamKey = "power" | "speed" | "frequency" | "density";
 
@@ -378,6 +378,83 @@ export function sampleByArcLength(
   return out;
 }
 
+export function partialDerivative(
+  indexKey: IndexKey,
+  paramKey: ParamKey | "passes" | "pulse_width",
+  params: LaserParams,
+): number {
+  const { power, speed, frequency, density, passes, pulse_width } = params;
+
+  switch (indexKey) {
+    case "pulse_spacing_mm": {
+      // PSm = speed / (frequency * 1000)
+      switch (paramKey) {
+        case "speed":     return 1 / (frequency * 1000);
+        case "frequency": return -speed / (frequency * frequency * 1000);
+        default: return 0;
+      }
+    }
+    case "line_spacing_mm": {
+      // LSm = 10 / density
+      switch (paramKey) {
+        case "density": return -10 / (density * density);
+        default: return 0;
+      }
+    }
+    case "pulse_energy_index": {
+      // PEi = power / frequency
+      switch (paramKey) {
+        case "power":     return 1 / frequency;
+        case "frequency": return -power / (frequency * frequency);
+        default: return 0;
+      }
+    }
+    case "pulse_intensity_index": {
+      // PIi = power / (frequency * pulse_width)
+      switch (paramKey) {
+        case "power":       return 1 / (frequency * pulse_width);
+        case "frequency":   return -power / (frequency * frequency * pulse_width);
+        case "pulse_width": return -power / (frequency * pulse_width * pulse_width);
+        default: return 0;
+      }
+    }
+    case "total_exposure_index": {
+      // TEi = power * density * passes / speed
+      switch (paramKey) {
+        case "power":   return density * passes / speed;
+        case "density": return power * passes / speed;
+        case "passes":  return power * density / speed;
+        case "speed":   return -power * density * passes / (speed * speed);
+        default: return 0;
+      }
+    }
+    case "ablation_aggression_index": {
+      // AAi = power² * density * passes / (speed * frequency * pulse_width)
+      const denom = speed * frequency * pulse_width;
+      switch (paramKey) {
+        case "power":       return 2 * power * density * passes / denom;
+        case "density":     return power * power * passes / denom;
+        case "passes":      return power * power * density / denom;
+        case "speed":       return -power * power * density * passes / (speed * denom);
+        case "frequency":   return -power * power * density * passes / (frequency * denom);
+        case "pulse_width": return -power * power * density * passes / (pulse_width * denom);
+        default: return 0;
+      }
+    }
+    case "delivery_smoothness_index": {
+      // DSi = density * passes * frequency * pulse_width / speed
+      switch (paramKey) {
+        case "density":     return passes * frequency * pulse_width / speed;
+        case "passes":      return density * frequency * pulse_width / speed;
+        case "frequency":   return density * passes * pulse_width / speed;
+        case "pulse_width": return density * passes * frequency / speed;
+        case "speed":       return -density * passes * frequency * pulse_width / (speed * speed);
+        default: return 0;
+      }
+    }
+  }
+}
+
 export const FILL_GRID_RESOLUTION = 32;
 
 export interface FillCell {
@@ -477,4 +554,147 @@ export function fillByForwardGrid(
     }
   }
   return picked.slice(0, n);
+}
+
+function polygonArea(polygon: Polygon): number {
+  if (polygon.length < 3) return 0;
+  let s = 0;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    s += (polygon[j][0] + polygon[i][0]) * (polygon[j][1] - polygon[i][1]);
+  }
+  return Math.abs(s) / 2;
+}
+
+export const SAMPLE_BUDGET_PER_POINT = 30;
+export const MIN_DIST_FACTOR = 0.6;
+
+export function samplePolygonArea(
+  polygon: Polygon,
+  n: number,
+  knownPoints: ReadonlyArray<{ x: number; y: number }>,
+  minDistOverride?: number,
+): Array<{ x: number; y: number }> {
+  if (polygon.length < 3 || n <= 0) return [];
+  const box = polygonBox(polygon);
+  if (!box) return [];
+  const area = polygonArea(polygon);
+  if (area === 0) return [];
+
+  const initialMinDist = minDistOverride ?? (
+    Math.sqrt(area / (n + knownPoints.length)) * MIN_DIST_FACTOR
+  );
+  const budget = SAMPLE_BUDGET_PER_POINT * n;
+  // Capture into a local const so TypeScript narrows inside the closure.
+  const bbox = box;
+
+  function tryWith(minDist: number): Array<{ x: number; y: number }> {
+    const accepted: Array<{ x: number; y: number }> = [];
+    const minDistSq = minDist * minDist;
+    let attempts = 0;
+    while (accepted.length < n && attempts < budget) {
+      attempts++;
+      const x = bbox.minX + Math.random() * (bbox.maxX - bbox.minX);
+      const y = bbox.minY + Math.random() * (bbox.maxY - bbox.minY);
+      if (!pointInPolygon([x, y], polygon)) continue;
+      let ok = true;
+      for (const k of knownPoints) {
+        if ((k.x - x) ** 2 + (k.y - y) ** 2 < minDistSq) { ok = false; break; }
+      }
+      if (!ok) continue;
+      for (const p of accepted) {
+        if ((p.x - x) ** 2 + (p.y - y) ** 2 < minDistSq) { ok = false; break; }
+      }
+      if (!ok) continue;
+      accepted.push({ x, y });
+    }
+    return accepted;
+  }
+
+  let result = tryWith(initialMinDist);
+  if (result.length < n) {
+    // Single relaxation pass with half the threshold.
+    result = tryWith(initialMinDist * 0.5);
+  }
+  return result;
+}
+
+export const INVERSE_SOLVE_MAX_ITERS = 20;
+const INVERSE_SOLVE_RESIDUAL_EPS = 1e-6;
+const INVERSE_SOLVE_DET_EPS = 1e-12;
+
+export function inverseSolve(
+  target: { x: number; y: number },
+  varyParams: readonly [ParamKey, ParamKey],
+  baseParams: LaserParams,
+  xKey: IndexKey,
+  yKey: IndexKey,
+  laserLimits: LaserLimits,
+): LaserParams | null {
+  const [p1, p2] = varyParams;
+  const params: LaserParams = { ...baseParams };
+
+  for (let iter = 0; iter < INVERSE_SOLVE_MAX_ITERS; iter++) {
+    let current: LaserIndices;
+    try {
+      current = computeIndices(params);
+    } catch {
+      return null;
+    }
+    const rx = (current[xKey] as number) - target.x;
+    const ry = (current[yKey] as number) - target.y;
+    if (Math.abs(rx) < INVERSE_SOLVE_RESIDUAL_EPS && Math.abs(ry) < INVERSE_SOLVE_RESIDUAL_EPS) {
+      return params;
+    }
+
+    const j00 = partialDerivative(xKey, p1, params);
+    const j01 = partialDerivative(xKey, p2, params);
+    const j10 = partialDerivative(yKey, p1, params);
+    const j11 = partialDerivative(yKey, p2, params);
+    const det = j00 * j11 - j01 * j10;
+    if (Math.abs(det) < INVERSE_SOLVE_DET_EPS) {
+      return null;
+    }
+
+    const dp1 = (j11 * rx - j01 * ry) / det;
+    const dp2 = (-j10 * rx + j00 * ry) / det;
+    params[p1] -= dp1;
+    params[p2] -= dp2;
+
+    if (params[p1] < laserLimits[p1].min || params[p1] > laserLimits[p1].max) return null;
+    if (params[p2] < laserLimits[p2].min || params[p2] > laserLimits[p2].max) return null;
+  }
+  return null;
+}
+
+export function fillByInverseSolve(
+  baseParams: LaserParams,
+  varyParams: readonly [ParamKey, ParamKey],
+  polygon: Polygon,
+  xKey: IndexKey,
+  yKey: IndexKey,
+  laserLimits: LaserLimits,
+  n: number,
+  knownPoints: ReadonlyArray<{ x: number; y: number }>,
+): FillCell[] {
+  const targets = samplePolygonArea(polygon, n, knownPoints);
+  const [p1, p2] = varyParams;
+  const out: FillCell[] = [];
+
+  for (const t of targets) {
+    const solved = inverseSolve(t, varyParams, baseParams, xKey, yKey, laserLimits);
+    if (solved === null) continue;
+
+    let verify: LaserIndices;
+    try {
+      verify = computeIndices(solved);
+    } catch {
+      continue;
+    }
+    out.push({
+      paramValues: { [p1]: solved[p1], [p2]: solved[p2] },
+      x: verify[xKey] as number,
+      y: verify[yKey] as number,
+    });
+  }
+  return out;
 }

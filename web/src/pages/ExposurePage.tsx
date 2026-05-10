@@ -44,11 +44,15 @@ import { ExposureToolbar } from "../components/exposure/ExposureToolbar";
 import { useFiltersUrlSync } from "../components/exposure/exposureFiltersUrl";
 import {
   findAnchor, pickModeAndParams, computeCurve, clipPolylineToPolygon,
-  sampleByArcLength, fillByForwardGrid,
+  sampleByArcLength, fillByInverseSolve, pointInPolygon,
   type Polygon, type ParamKey, type ModeChoice, type LaserLimits,
   type CurveSample, type FillCell,
 } from "../components/exposure/proposeTestMath";
-import { ExposureProposeRail, type RangeReadout } from "../components/exposure/ExposureProposeRail";
+import {
+  ExposureProposeRail,
+  type RangeReadout,
+  type ParamRow,
+} from "../components/exposure/ExposureProposeRail";
 import type { LaserParams } from "../laser/laserIndices";
 import { HelpTip } from "../components/HelpTip";
 import {
@@ -114,6 +118,79 @@ const PROPOSE_PARAM_LABELS: Record<ParamKey, { name: string; unit: string }> = {
   frequency: { name: "FREQ",    unit: "kHz" },
   density:   { name: "DENSITY", unit: "lpc" },
 };
+
+// ── PARAMS editor (rail) — module-scope domain table ─────────────────────
+type ParamRowKey = "power" | "speed" | "frequency" | "density" | "passes" | "pulse_width";
+
+const ALLOWED_PULSE_WIDTHS = [2, 4, 8, 30, 60, 80, 100, 200] as const;
+
+const PARAM_DOMAIN: Record<ParamRowKey, {
+  min: number; max: number; step: number; unit: string; presets?: readonly number[];
+}> = {
+  power:       { min: 1,  max: 100,   step: 1,  unit: "%" },
+  speed:       { min: 2,  max: 15000, step: 1,  unit: "mm/s" },
+  frequency:   { min: 60, max: 500,   step: 1,  unit: "kHz" },
+  density:     { min: 1,  max: 5000,  step: 1,  unit: "lpc" },
+  passes:      { min: 1,  max: 99,    step: 1,  unit: "" },
+  pulse_width: { min: 2,  max: 200,   step: 1,  unit: "ns", presets: ALLOWED_PULSE_WIDTHS },
+};
+
+function buildParamRows(
+  base: LaserParams | null,
+  effective: ModeChoice | null,
+  cells: ReadonlyArray<CurveSample | FillCell>,
+): ParamRow[] {
+  if (!base) return [];
+  const variedSet = new Set<string>(
+    effective
+      ? effective.mode === "curve"
+        ? [effective.varyParam]
+        : effective.varyParams
+      : [],
+  );
+  return (Object.keys(PARAM_DOMAIN) as ParamRowKey[]).map((key): ParamRow => {
+    const domain = PARAM_DOMAIN[key];
+    const anchorValue = base[key as keyof LaserParams] as number;
+    if (variedSet.has(key)) {
+      const values = cells
+        .map((c): number | null => {
+          const fill = c as FillCell;
+          if (fill.paramValues && key in fill.paramValues) {
+            return (fill.paramValues as Record<string, number>)[key];
+          }
+          const curve = c as CurveSample;
+          if (
+            curve.paramValue !== undefined &&
+            effective?.mode === "curve" &&
+            effective.varyParam === key
+          ) {
+            return curve.paramValue;
+          }
+          return null;
+        })
+        .filter((v): v is number => typeof v === "number");
+      const minV = values.length ? Math.min(...values) : anchorValue;
+      const maxV = values.length ? Math.max(...values) : anchorValue;
+      return {
+        key,
+        kind: "locked",
+        resolved: { min: minV, max: maxV },
+        anchorValue,
+        unit: domain.unit,
+      };
+    }
+    return {
+      key,
+      kind: "editable",
+      value: anchorValue,
+      min: domain.min,
+      max: domain.max,
+      step: domain.step,
+      unit: domain.unit,
+      presets: domain.presets,
+    };
+  });
+}
 
 function setsEqual<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
   if (a.size !== b.size) return false;
@@ -392,6 +469,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const [polygon, setPolygon] = useState<Polygon>([]);
   const [proposeOverride, setProposeOverride] = useState<ModeChoice | null>(null);
   const [cellCount, setCellCount] = useState(16);
+  const [paramOverrides, setParamOverrides] = useState<Partial<Record<ParamRowKey, number>>>({});
   const { registry, machineId } = useCurrentMachine();
 
   // ── propose-test derivations ──────────────────────────────────────────
@@ -413,26 +491,54 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
 
   const effective: ModeChoice | null = proposeOverride ?? smartDefault;
 
+  // Anchor's raw params merged with the user's PARAMS-editor overrides.
+  // Both the curve solver and inverse fill consume this — editing a non-
+  // varied param rotates the curve / shifts the fill region live.
+  const effectiveBaseParams = useMemo<LaserParams | null>(() => {
+    if (!anchor || !anchor.params) return null;
+    const base = anchor.params as unknown as LaserParams;
+    return { ...base, ...paramOverrides } as LaserParams;
+  }, [anchor, paramOverrides]);
+
+  // Palette entries currently inside the polygon — count is shown in the
+  // rail; coords feed fillByInverseSolve so new cells avoid existing ones.
+  const entriesInsidePolygonCoords = useMemo<readonly { x: number; y: number }[]>(() => {
+    if (polygon.length < 3) return [];
+    return displayRows
+      .filter((r) => pointInPolygon(
+        [r.indices[xKey] as number, r.indices[yKeyForMath] as number],
+        polygon,
+      ))
+      .map((r) => ({
+        x: r.indices[xKey] as number,
+        y: r.indices[yKeyForMath] as number,
+      }));
+  }, [polygon, displayRows, xKey, yKeyForMath]);
+
   const preview = useMemo<{
     curve: ReadonlyArray<CurveSample> | null;
     cells: ReadonlyArray<CurveSample | FillCell>;
   }>(() => {
-    if (!effective || !anchor || !anchor.params) return { curve: null, cells: [] };
-    const anchorParams = anchor.params as unknown as LaserParams;
+    if (!effective || !effectiveBaseParams) return { curve: null, cells: [] };
     if (effective.mode === "curve") {
-      const curve = computeCurve(anchorParams, effective.varyParam, xKey, yKeyForMath, F2_MOPA_LIMITS);
+      const curve = computeCurve(effectiveBaseParams, effective.varyParam, xKey, yKeyForMath, F2_MOPA_LIMITS);
       const segments = clipPolylineToPolygon(curve, polygon);
       const flat = segments.flat();
       if (flat.length === 0) return { curve, cells: [] };
       const sampled = sampleByArcLength(flat, cellCount);
       return { curve, cells: sampled };
     }
-    const cells = fillByForwardGrid(
-      anchorParams, effective.varyParams, polygon, xKey, yKeyForMath,
-      F2_MOPA_LIMITS, cellCount,
+    const cells = fillByInverseSolve(
+      effectiveBaseParams, effective.varyParams, polygon, xKey, yKeyForMath,
+      F2_MOPA_LIMITS, cellCount, entriesInsidePolygonCoords,
     );
     return { curve: null, cells };
-  }, [effective, anchor, polygon, xKey, yKeyForMath, cellCount]);
+  }, [effective, effectiveBaseParams, polygon, xKey, yKeyForMath, cellCount, entriesInsidePolygonCoords]);
+
+  const paramRows = useMemo(
+    () => buildParamRows(effectiveBaseParams, effective, preview.cells),
+    [effectiveBaseParams, effective, preview.cells],
+  );
 
   const rangeReadout: RangeReadout[] = useMemo(() => {
     if (!effective || preview.cells.length === 0) return [];
@@ -463,6 +569,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     setProposeMode("off");
     setPolygon([]);
     setProposeOverride(null);
+    setParamOverrides({});
   }, [xKey, yKeyBi, mode, materialId]);
 
   const handleTogglePerParamFilter = useCallback(
@@ -522,6 +629,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     setProposeMode("off");
     setPolygon([]);
     setProposeOverride(null);
+    setParamOverrides({});
   }, []);
 
   const handleToggleProposeMode = useCallback(() => {
@@ -529,6 +637,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       setProposeMode("drawing");
       setPolygon([]);
       setProposeOverride(null);
+      setParamOverrides({});
     } else {
       closeProposeWizard();
     }
@@ -537,7 +646,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const handleCreateTest = useCallback(async () => {
     if (!anchor || !anchor.params || preview.cells.length === 0 || !effective) return;
     if (materialId === null) return;
-    const baseParamsAnchor = anchor.params as unknown as LaserParams;
+    if (!effectiveBaseParams) return;
+    const baseParamsAnchor = effectiveBaseParams;
 
     // Build per-cell parameter overrides — a curve mode varies one
     // param along arc-length; a fill samples two params at once.
@@ -621,7 +731,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       // the failure path is the dev console + Sentry.
       console.error("Create test failed:", e);
     }
-  }, [anchor, preview.cells, effective, materialId, registry, machineId]);
+  }, [anchor, preview.cells, effective, effectiveBaseParams, materialId, registry, machineId]);
 
   // ── render ─────────────────────────────────────────────────────────────
 
@@ -752,11 +862,25 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               >
                 {proposeMode === "drawing" && (
                   <div
-                    className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] bg-[color:var(--color-primary)] text-white rounded-sm shadow-md pointer-events-none"
+                    className={
+                      "absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-white rounded-sm shadow-md " +
+                      (polygon.length >= 3
+                        ? "bg-[color:var(--color-primary)] cursor-pointer"
+                        : "bg-[color:var(--color-primary)]/70 pointer-events-none")
+                    }
+                    onClick={polygon.length >= 3
+                      ? (e) => {
+                          e.stopPropagation();
+                          setProposeMode("panel");
+                        }
+                      : undefined}
+                    role={polygon.length >= 3 ? "button" : undefined}
                   >
-                    {polygon.length < 3
-                      ? `Click vertices · ${3 - polygon.length} more · then ENTER or double-click to close · ESC cancels`
-                      : `${polygon.length} vertices · ENTER or double-click to close · ESC cancels`}
+                    {polygon.length === 0
+                      ? "Click vertices · ENTER or double-click to close · ESC cancels"
+                      : polygon.length < 3
+                        ? `Click ${3 - polygon.length} more vertices · ESC cancels`
+                        : `✓ Click here to finish · ENTER or double-click also works · ESC cancels`}
                   </div>
                 )}
                 <ExposureScatter
@@ -785,6 +909,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   curve={preview.curve?.map((p) => ({ x: p.x, y: p.y })) ?? null}
                   cells={preview.cells.map((c) => ({ x: c.x, y: c.y }))}
                   onPolygonVertexAdd={(p) => setPolygon((prev) => [...prev, p])}
+                  onPolygonVertexMove={(i, p) => setPolygon((prev) =>
+                    prev.map((v, idx) => (idx === i ? p : v)),
+                  )}
                   onPolygonClose={() => {
                     if (polygon.length >= 3) setProposeMode("panel");
                   }}
@@ -923,10 +1050,17 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
           {proposeMode === "panel" ? (
             <ExposureProposeRail
               anchor={anchor}
+              entriesInsidePolygon={entriesInsidePolygonCoords.length}
               mode={effective ?? { mode: "curve", varyParam: "power" }}
               onModeChange={setProposeOverride}
               cellCount={cellCount}
               onCellCountChange={setCellCount}
+              paramRows={paramRows}
+              onParamOverrideChange={(key, value) => {
+                setParamOverrides((prev) => ({ ...prev, [key]: value }));
+              }}
+              hasParamOverrides={Object.keys(paramOverrides).length > 0}
+              onResetParams={() => setParamOverrides({})}
               rangeReadout={rangeReadout}
               canCreate={anchor !== null && preview.cells.length > 0}
               helperText={
