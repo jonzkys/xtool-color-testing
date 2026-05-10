@@ -207,6 +207,15 @@ export interface TestRecord {
    *  test_id. Server-side computation; defaults to false on older
    *  API responses that don't carry the field. */
   ingested?: boolean;
+  /** For kind=validation tests, the test whose harvested palette is
+   *  being validated. Auto-set by the backend when validation cells
+   *  are persisted. NULL on sweep tests or when the source cells span
+   *  multiple tests. */
+  source_test_id?: number | null;
+  /** Fork lineage. Set when a test is copied/iterated from another. */
+  parent_test_id?: number | null;
+  /** Short campaign/grouping label (≤64 chars). */
+  tag?: string | null;
 }
 
 export interface ValidationCell {
@@ -310,6 +319,11 @@ export interface PaletteEntry {
   validated_lab?: number[] | null;
   validated_run_count?: number | null;
   validated_residual_de?: number | null;
+  /** For entries produced by ingesting cross-material validation
+   *  results, the original entry the validation was run against.
+   *  NULL on sweep entries and on validation entries whose source has
+   *  been deleted. */
+  derived_from_entry_id?: number | null;
   /** Derived: this entry has been used as a target in a validation
    *  test that has at least one non-excluded result — i.e. the user
    *  has tried this colour at least once. Distinct from

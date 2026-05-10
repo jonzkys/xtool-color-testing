@@ -10,6 +10,10 @@ vi.mock("../api/library", () => ({
   ]),
 }));
 
+vi.mock("../api/tests", () => ({
+  listTests: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("../api/palette", () => ({
   listPaletteEntries: vi.fn().mockResolvedValue([
     {

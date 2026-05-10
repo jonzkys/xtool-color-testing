@@ -2,6 +2,7 @@ import * as React from "react";
 import type { ExposureRow, IndexRow } from "./exposureCorrelations";
 import { ExposureChromaDisc } from "./ExposureChromaDisc";
 import type { FamilyMember, VaryingAxis } from "./recipeFamilies";
+import { type FilterableParam, FILTERABLE_PARAMS } from "./exposureFilters";
 
 interface Props {
   rows: readonly ExposureRow[];
@@ -27,6 +28,10 @@ interface Props {
   onClearFilter?: () => void;
   /** Optional slot rendered below the family-filter section when focused. */
   neighboursSlot?: React.ReactNode;
+  /** Which params currently have an exact-match filter active. */
+  activeParamFilters?: ReadonlySet<FilterableParam>;
+  /** Toggle an exact-match range filter on a param at the given value. */
+  onTogglePerParamFilter?: (param: FilterableParam, value: number) => void;
 }
 
 const INDEX_LABELS: Record<IndexRow, string> = {
@@ -80,6 +85,8 @@ export const ExposureFocusedCard: React.FC<Props> = ({
   onSetFilter,
   onClearFilter,
   neighboursSlot,
+  activeParamFilters,
+  onTogglePerParamFilter,
 }) => {
   const focused = focusedId == null ? null : rows.find((r) => r.id === focusedId) ?? null;
 
@@ -139,18 +146,53 @@ export const ExposureFocusedCard: React.FC<Props> = ({
               {PARAM_FIELDS.map((field) => {
                 const v = focused.params?.[field.key];
                 if (v == null) return null;
+                const param = field.key as FilterableParam;
+                const isFilterableParam = (FILTERABLE_PARAMS as readonly string[]).includes(field.key);
+                const isActive = isFilterableParam && (activeParamFilters?.has(param) ?? false);
+                const numericValue = typeof v === "number" ? v : null;
                 return (
                   <div
                     key={field.key}
-                    className="flex justify-between items-baseline font-mono text-[11.5px]"
+                    data-role="recipe-row"
+                    data-active={isActive ? "true" : "false"}
+                    className={
+                      "flex justify-between items-baseline font-mono text-[11.5px] px-1 py-0.5 rounded-sm " +
+                      (isActive ? "bg-[color:var(--color-surface-elevated)]" : "")
+                    }
                   >
                     <span className="text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)]">
                       {field.label}
                     </span>
-                    <span className="tabular-nums text-[color:var(--color-ink)]">
-                      {String(v)}
-                      {field.suffix ?? ""}
-                    </span>
+                    <div className="flex items-baseline gap-2">
+                      <span className="tabular-nums text-[color:var(--color-ink)]">
+                        {String(v)}
+                        {field.suffix ?? ""}
+                      </span>
+                      {isFilterableParam && onTogglePerParamFilter && numericValue != null && (
+                        <button
+                          type="button"
+                          aria-label={
+                            isActive
+                              ? `Clear ${field.label.toLowerCase()} filter`
+                              : `Filter to ${field.label.toLowerCase()} = ${numericValue}`
+                          }
+                          onClick={() => onTogglePerParamFilter(param, numericValue)}
+                          title={
+                            isActive
+                              ? `Clear ${field.label.toLowerCase()} filter`
+                              : `Filter to ${field.label.toLowerCase()} = ${numericValue}${field.suffix ?? ""}`
+                          }
+                          className={
+                            "font-mono text-[9px] px-1 py-0 rounded-sm border transition-colors " +
+                            (isActive
+                              ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
+                              : "border-transparent text-[color:var(--color-ink-subtle)] hover:border-[color:var(--color-primary)] hover:text-[color:var(--color-primary)]")
+                          }
+                        >
+                          {isActive ? "✓" : "⚲"}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
