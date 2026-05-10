@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Beaker, Lock, Plus } from "lucide-react";
 import type { Material, Preset } from "../library";
 import type { BaseParams, ParamName, TestRecord, TestSpec } from "../types";
@@ -54,6 +54,30 @@ export function TestsPage() {
   useEffect(() => {
     refresh();
   }, [materialId, status]); // eslint-disable-line
+
+  const newTestId = useMemo(() => {
+    const hash = location.hash;
+    const queryIdx = hash.indexOf("?");
+    if (queryIdx < 0) return null;
+    const params = new URLSearchParams(hash.slice(queryIdx + 1));
+    const v = params.get("new");
+    return v ? Number(v) : null;
+  }, []);
+
+  useEffect(() => {
+    if (newTestId == null) return;
+    const el = document.querySelector<HTMLElement>(`[data-test-id="${newTestId}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("ring-2", "ring-[color:var(--color-primary)]");
+    const t = setTimeout(() => {
+      el.classList.remove("ring-2", "ring-[color:var(--color-primary)]");
+      // Strip the param so a refresh doesn't re-highlight.
+      const cleanHash = location.hash.split("?")[0];
+      history.replaceState(null, "", cleanHash);
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [newTestId, tests]);
 
   async function onNew(kind: "sweep" | "validation" = "sweep") {
     if (materials.length === 0) {
@@ -322,6 +346,7 @@ function TestCard({
   return (
     <a
       href={formatRoute({ name: "test-detail", id: test.id })}
+      data-test-id={test.id}
       className={cn(
         "group relative rounded-[12px] border overflow-hidden no-underline",
         "flex flex-col h-full",
