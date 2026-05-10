@@ -255,7 +255,7 @@ describe("pickModeAndParams", () => {
   });
 });
 
-import { fillByForwardGrid, partialDerivative } from "./proposeTestMath";
+import { fillByForwardGrid, partialDerivative, inverseSolve } from "./proposeTestMath";
 import { computeIndices, type LaserParams } from "../../laser/laserIndices";
 
 const SAMPLE_PARAMS: LaserParams[] = [
@@ -353,5 +353,52 @@ describe("fillByForwardGrid", () => {
     for (const c of cells) {
       expect(pointInPolygon([c.x, c.y], polygon)).toBe(true);
     }
+  });
+});
+
+describe("inverseSolve", () => {
+  const base: LaserParams = {
+    power: 14.6, speed: 1152, frequency: 100, density: 5000, passes: 1, pulse_width: 200,
+  };
+
+  it("converges to params that produce a reachable target (TEi × PIi varying power+speed)", () => {
+    const target = computeIndices({ ...base, power: 25, speed: 800 });
+    const solved = inverseSolve(
+      { x: target.total_exposure_index, y: target.pulse_intensity_index },
+      ["power", "speed"], base,
+      "total_exposure_index", "pulse_intensity_index",
+      F2_LIMITS,
+    );
+    expect(solved).not.toBeNull();
+    if (solved !== null) {
+      const verify = computeIndices(solved);
+      expect(verify.total_exposure_index).toBeCloseTo(target.total_exposure_index, 4);
+      expect(verify.pulse_intensity_index).toBeCloseTo(target.pulse_intensity_index, 6);
+      expect(solved.power).toBeCloseTo(25, 1);
+      expect(solved.speed).toBeCloseTo(800, 0);
+    }
+  });
+
+  it("returns null on a degenerate axis pair (varied params don't span both axes)", () => {
+    // For (PSm, LSm) varying (power, frequency): LSm depends only on
+    // density. Power doesn't move EITHER axis. Pair is degenerate.
+    const solved = inverseSolve(
+      { x: 0.005, y: 0.002 },
+      ["power", "frequency"], base,
+      "pulse_spacing_mm", "line_spacing_mm",
+      F2_LIMITS,
+    );
+    expect(solved).toBeNull();
+  });
+
+  it("returns null on a target that requires params outside laser limits", () => {
+    // Way too high TEi would need speed below laser min.
+    const solved = inverseSolve(
+      { x: 1e6, y: 1e-3 },
+      ["power", "speed"], base,
+      "total_exposure_index", "pulse_intensity_index",
+      F2_LIMITS,
+    );
+    expect(solved).toBeNull();
   });
 });

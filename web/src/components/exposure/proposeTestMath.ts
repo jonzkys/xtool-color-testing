@@ -75,7 +75,7 @@ export function findAnchor(
   return best;
 }
 
-import { computeIndices, type LaserParams } from "../../laser/laserIndices";
+import { computeIndices, type LaserParams, type LaserIndices } from "../../laser/laserIndices";
 
 export type ParamKey = "power" | "speed" | "frequency" | "density";
 
@@ -554,4 +554,52 @@ export function fillByForwardGrid(
     }
   }
   return picked.slice(0, n);
+}
+
+const INVERSE_SOLVE_MAX_ITERS = 20;
+const INVERSE_SOLVE_RESIDUAL_EPS = 1e-6;
+const INVERSE_SOLVE_DET_EPS = 1e-12;
+
+export function inverseSolve(
+  target: { x: number; y: number },
+  varyParams: readonly [ParamKey, ParamKey],
+  baseParams: LaserParams,
+  xKey: IndexKey,
+  yKey: IndexKey,
+  laserLimits: LaserLimits,
+): LaserParams | null {
+  const [p1, p2] = varyParams;
+  const params: LaserParams = { ...baseParams };
+
+  for (let iter = 0; iter < INVERSE_SOLVE_MAX_ITERS; iter++) {
+    let current: LaserIndices;
+    try {
+      current = computeIndices(params);
+    } catch {
+      return null;
+    }
+    const rx = (current[xKey] as number) - target.x;
+    const ry = (current[yKey] as number) - target.y;
+    if (Math.abs(rx) < INVERSE_SOLVE_RESIDUAL_EPS && Math.abs(ry) < INVERSE_SOLVE_RESIDUAL_EPS) {
+      return params;
+    }
+
+    const j00 = partialDerivative(xKey, p1, params);
+    const j01 = partialDerivative(xKey, p2, params);
+    const j10 = partialDerivative(yKey, p1, params);
+    const j11 = partialDerivative(yKey, p2, params);
+    const det = j00 * j11 - j01 * j10;
+    if (Math.abs(det) < INVERSE_SOLVE_DET_EPS) {
+      return null;
+    }
+
+    const dp1 = (j11 * rx - j01 * ry) / det;
+    const dp2 = (-j10 * rx + j00 * ry) / det;
+    params[p1] -= dp1;
+    params[p2] -= dp2;
+
+    if (params[p1] < laserLimits[p1].min || params[p1] > laserLimits[p1].max) return null;
+    if (params[p2] < laserLimits[p2].min || params[p2] > laserLimits[p2].max) return null;
+  }
+  return null;
 }
