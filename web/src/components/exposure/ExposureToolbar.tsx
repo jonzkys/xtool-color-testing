@@ -22,6 +22,9 @@ interface Props {
   filtersOpen: boolean;
   onToggleFilters: () => void;
   activeFilterCount: number;
+  proposeOpen: boolean;
+  onToggleProposeMode: () => void;
+  proposeAvailable: boolean;   // false in univariate mode → chip disabled
 }
 
 const INDEX_PRETTY: Record<IndexRow, string> = {
@@ -131,6 +134,7 @@ export function ExposureToolbar({
   xKey, yKey, xScale, yScale,
   onXKeyChange, onYKeyChange, onXScaleChange, onYScaleChange,
   filtersOpen, onToggleFilters, activeFilterCount,
+  proposeOpen, onToggleProposeMode, proposeAvailable,
 }: Props) {
   const yPretty = mode === "univariate"
     ? CHANNEL_PRETTY[yKey as ChannelCol]
@@ -198,6 +202,24 @@ export function ExposureToolbar({
         }
       >
         ⚙ FILTERS{activeFilterCount > 0 ? ` · ${activeFilterCount}` : ""}
+      </button>
+
+      <button
+        type="button"
+        disabled={!proposeAvailable}
+        onClick={onToggleProposeMode}
+        title={proposeAvailable ? undefined : "Propose Test is bivariate-only"}
+        aria-pressed={proposeOpen}
+        className={
+          "ml-1 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+          (!proposeAvailable
+            ? "border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)] opacity-50 cursor-not-allowed"
+            : proposeOpen
+              ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
+              : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+        }
+      >
+        ◇ PROPOSE TEST
       </button>
     </div>
   );

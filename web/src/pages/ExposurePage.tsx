@@ -355,6 +355,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   // ── filter panel open/closed (toggled by toolbar Filters button) ──────
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  // ── propose-test panel open/closed ────────────────────────────────────
+  const [proposeOpen, setProposeOpen] = useState(false);
+
   const handleTogglePerParamFilter = useCallback(
     (param: FilterableParam, value: number) => {
       setFilters((prev) => {
@@ -455,6 +458,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
         filtersOpen={filtersOpen}
         onToggleFilters={() => setFiltersOpen((v) => !v)}
         activeFilterCount={countActiveFilters(filters)}
+        proposeOpen={proposeOpen}
+        onToggleProposeMode={() => setProposeOpen((v) => !v)}
+        proposeAvailable={mode === "bivariate"}
       />
 
       {/* ── PILL BAR (active filter chips) ────────────────────────────── */}
