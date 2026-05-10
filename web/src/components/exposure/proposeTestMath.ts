@@ -74,3 +74,220 @@ export function findAnchor(
   }
   return best;
 }
+
+import { computeIndices, type LaserParams } from "../../laser/laserIndices";
+
+export type ParamKey = "power" | "speed" | "frequency" | "density";
+
+export interface ParamRange {
+  min: number;
+  max: number;
+  step: number;
+}
+
+export type LaserLimits = Record<ParamKey, ParamRange>;
+
+export interface CurveSample {
+  paramValue: number;
+  x: number;
+  y: number;
+}
+
+export const CURVE_SAMPLE_COUNT = 200;
+
+export function computeCurve(
+  anchor: LaserParams,
+  varyParam: ParamKey,
+  xKey: IndexKey,
+  yKey: IndexKey,
+  laserLimits: LaserLimits,
+): CurveSample[] {
+  const range = laserLimits[varyParam];
+  const out: CurveSample[] = [];
+  for (let i = 0; i < CURVE_SAMPLE_COUNT; i++) {
+    const t = i / (CURVE_SAMPLE_COUNT - 1);
+    const value = range.min + t * (range.max - range.min);
+    const params: LaserParams = { ...anchor, [varyParam]: value };
+    let indices;
+    try {
+      indices = computeIndices(params);
+    } catch {
+      // Skip points where the formula throws (e.g. zero denominators).
+      continue;
+    }
+    out.push({
+      paramValue: value,
+      x: indices[xKey] as number,
+      y: indices[yKey] as number,
+    });
+  }
+  return out;
+}
+
+interface XY { readonly x: number; readonly y: number; }
+
+function lineIntersectsSegment(
+  p1: XY, p2: XY, q1: XY, q2: XY,
+): XY | null {
+  const dx1 = p2.x - p1.x;
+  const dy1 = p2.y - p1.y;
+  const dx2 = q2.x - q1.x;
+  const dy2 = q2.y - q1.y;
+  const denom = dx1 * dy2 - dy1 * dx2;
+  if (Math.abs(denom) < 1e-12) return null;
+  const dx3 = q1.x - p1.x;
+  const dy3 = q1.y - p1.y;
+  const t = (dx3 * dy2 - dy3 * dx2) / denom;
+  const u = (dx3 * dy1 - dy3 * dx1) / denom;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+  return { x: p1.x + t * dx1, y: p1.y + t * dy1 };
+}
+
+function intersectionsWithPolygon(p1: XY, p2: XY, polygon: Polygon): XY[] {
+  const out: XY[] = [];
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const q1 = { x: polygon[j][0], y: polygon[j][1] };
+    const q2 = { x: polygon[i][0], y: polygon[i][1] };
+    const hit = lineIntersectsSegment(p1, p2, q1, q2);
+    if (hit !== null) out.push(hit);
+  }
+  // Sort along the segment p1→p2 by parameter so callers get them in
+  // walked order.
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq > 0) {
+    out.sort((a, b) => {
+      const ta = ((a.x - p1.x) * dx + (a.y - p1.y) * dy) / lenSq;
+      const tb = ((b.x - p1.x) * dx + (b.y - p1.y) * dy) / lenSq;
+      return ta - tb;
+    });
+  }
+  return out;
+}
+
+interface PolylinePoint { readonly x: number; readonly y: number; readonly paramValue?: number; }
+
+function interpolateAlong<T extends PolylinePoint>(a: T, b: T, ratio: number): T {
+  const x = a.x + ratio * (b.x - a.x);
+  const y = a.y + ratio * (b.y - a.y);
+  if (a.paramValue !== undefined && b.paramValue !== undefined) {
+    return {
+      ...a,
+      x, y,
+      paramValue: a.paramValue + ratio * (b.paramValue - a.paramValue),
+    } as T;
+  }
+  return { ...a, x, y } as T;
+}
+
+function ratioOnSegment(p1: XY, p2: XY, q: XY): number {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return 0;
+  return ((q.x - p1.x) * dx + (q.y - p1.y) * dy) / lenSq;
+}
+
+export function clipPolylineToPolygon<T extends PolylinePoint>(
+  polyline: readonly T[],
+  polygon: Polygon,
+): T[][] {
+  if (polyline.length < 2 || polygon.length < 3) return [];
+  const segments: T[][] = [];
+  let current: T[] = [];
+
+  function pushCurrent(): void {
+    if (current.length >= 2) segments.push(current);
+    current = [];
+  }
+
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const a = polyline[i];
+    const b = polyline[i + 1];
+    const aIn = pointInPolygon([a.x, a.y], polygon);
+    const bIn = pointInPolygon([b.x, b.y], polygon);
+    const hits = intersectionsWithPolygon(
+      { x: a.x, y: a.y }, { x: b.x, y: b.y }, polygon,
+    );
+
+    if (aIn && bIn) {
+      // Both endpoints inside — keep the start vertex (last segment will
+      // duplicate b).
+      if (current.length === 0) current.push(a);
+      current.push(b);
+    } else if (aIn && !bIn) {
+      // Exits polygon — interpolate to the boundary intersection.
+      if (current.length === 0) current.push(a);
+      const hit = hits[0];
+      if (hit) current.push(interpolateAlong(a, b, ratioOnSegment(
+        { x: a.x, y: a.y }, { x: b.x, y: b.y }, hit,
+      )));
+      pushCurrent();
+    } else if (!aIn && bIn) {
+      // Enters polygon — start fresh from the boundary intersection.
+      pushCurrent();
+      const hit = hits[hits.length - 1];
+      if (hit) current.push(interpolateAlong(a, b, ratioOnSegment(
+        { x: a.x, y: a.y }, { x: b.x, y: b.y }, hit,
+      )));
+      current.push(b);
+    } else if (hits.length >= 2) {
+      // Crosses through (in-out): take the first two intersections as a
+      // sub-segment.
+      pushCurrent();
+      const r1 = ratioOnSegment(
+        { x: a.x, y: a.y }, { x: b.x, y: b.y }, hits[0],
+      );
+      const r2 = ratioOnSegment(
+        { x: a.x, y: a.y }, { x: b.x, y: b.y }, hits[1],
+      );
+      current.push(interpolateAlong(a, b, r1));
+      current.push(interpolateAlong(a, b, r2));
+      pushCurrent();
+    }
+  }
+
+  pushCurrent();
+  return segments;
+}
+
+export function sampleByArcLength(
+  segment: readonly CurveSample[],
+  n: number,
+): CurveSample[] {
+  if (segment.length < 2 || n < 2) {
+    return segment.length > 0 ? [segment[0]] : [];
+  }
+
+  const cum: number[] = [0];
+  for (let i = 1; i < segment.length; i++) {
+    const dx = segment[i].x - segment[i - 1].x;
+    const dy = segment[i].y - segment[i - 1].y;
+    cum.push(cum[i - 1] + Math.hypot(dx, dy));
+  }
+  const total = cum[cum.length - 1];
+
+  if (total === 0) return [segment[0]];
+
+  const out: CurveSample[] = [];
+  for (let i = 0; i < n; i++) {
+    const target = (i / (n - 1)) * total;
+    let lo = 0;
+    let hi = cum.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >>> 1;
+      if (cum[mid] <= target) lo = mid; else hi = mid;
+    }
+    const a = segment[lo];
+    const b = segment[hi];
+    const segLen = cum[hi] - cum[lo];
+    const t = segLen === 0 ? 0 : (target - cum[lo]) / segLen;
+    out.push({
+      x: a.x + t * (b.x - a.x),
+      y: a.y + t * (b.y - a.y),
+      paramValue: a.paramValue + t * (b.paramValue - a.paramValue),
+    });
+  }
+  return out;
+}

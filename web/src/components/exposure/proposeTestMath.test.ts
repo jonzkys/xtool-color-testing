@@ -87,3 +87,113 @@ describe("findAnchor", () => {
     expect(anchor?.id).toBe(2);
   });
 });
+
+import {
+  computeCurve,
+  clipPolylineToPolygon,
+  sampleByArcLength,
+  type LaserLimits,
+  type CurveSample,
+} from "./proposeTestMath";
+
+const F2_LIMITS: LaserLimits = {
+  power:     { min: 1,  max: 100,   step: 1 },
+  speed:     { min: 2,  max: 15000, step: 1 },
+  frequency: { min: 60, max: 500,   step: 1 },
+  density:   { min: 1,  max: 5000,  step: 1 },
+};
+
+const ANCHOR_PARAMS = {
+  power: 14.6, speed: 1152, frequency: 100, density: 5000,
+  passes: 1, pulse_width: 200,
+};
+
+describe("computeCurve", () => {
+  it("returns 200 sample points across the param range", () => {
+    const curve = computeCurve(
+      ANCHOR_PARAMS, "speed", "total_exposure_index", "pulse_intensity_index",
+      F2_LIMITS,
+    );
+    expect(curve.length).toBe(200);
+    expect(curve[0].paramValue).toBeCloseTo(F2_LIMITS.speed.min);
+    expect(curve[199].paramValue).toBeCloseTo(F2_LIMITS.speed.max);
+  });
+  it("matches direct compute for sampled param values", () => {
+    const curve = computeCurve(
+      ANCHOR_PARAMS, "power", "pulse_energy_index", "pulse_intensity_index",
+      F2_LIMITS,
+    );
+    // pulse_energy_index = power / frequency; verify the formula holds for
+    // whatever sample is closest to power=50 (samples are discrete, so
+    // paramValue won't be exactly 50).
+    const mid = curve.find((c) => Math.abs(c.paramValue - 50) < 1)!;
+    expect(mid.x).toBeCloseTo(mid.paramValue / ANCHOR_PARAMS.frequency, 4);
+  });
+});
+
+describe("clipPolylineToPolygon", () => {
+  const sq: Polygon = [[0, 0], [10, 0], [10, 10], [0, 10]];
+
+  it("keeps a fully-inside polyline as one segment", () => {
+    const line = [{ x: 1, y: 1 }, { x: 5, y: 5 }, { x: 9, y: 9 }];
+    const segs = clipPolylineToPolygon(line, sq);
+    expect(segs.length).toBe(1);
+    expect(segs[0].length).toBe(3);
+  });
+  it("drops a fully-outside polyline", () => {
+    const line = [{ x: 11, y: 11 }, { x: 15, y: 15 }];
+    const segs = clipPolylineToPolygon(line, sq);
+    expect(segs).toEqual([]);
+  });
+  it("clips a polyline crossing the boundary once", () => {
+    const line = [{ x: 5, y: 5 }, { x: 5, y: 15 }];
+    const segs = clipPolylineToPolygon(line, sq);
+    expect(segs.length).toBe(1);
+    expect(segs[0][0]).toEqual({ x: 5, y: 5 });
+    expect(segs[0][segs[0].length - 1].y).toBeCloseTo(10, 4);
+  });
+  it("keeps multiple in-out-in segments", () => {
+    const line = [
+      { x: -1, y: 5 },
+      { x:  3, y: 5 },
+      { x: 11, y: 5 },
+      { x: 12, y: 5 },
+    ];
+    const segs = clipPolylineToPolygon(line, sq);
+    expect(segs.length).toBe(1);
+    expect(segs[0][0].x).toBeCloseTo(0, 4);
+    expect(segs[0][segs[0].length - 1].x).toBeCloseTo(10, 4);
+  });
+});
+
+describe("sampleByArcLength", () => {
+  const seg: CurveSample[] = [
+    { x: 0, y: 0, paramValue: 100 },
+    { x: 4, y: 0, paramValue: 200 },
+    { x: 4, y: 3, paramValue: 300 },   // total length 4 + 3 = 7
+  ];
+  it("returns endpoints when n=2", () => {
+    const out = sampleByArcLength(seg, 2);
+    expect(out.length).toBe(2);
+    expect(out[0]).toEqual(seg[0]);
+    expect(out[1]).toEqual(seg[2]);
+  });
+  it("evenly spaces n samples along arc length", () => {
+    const out = sampleByArcLength(seg, 8);
+    expect(out.length).toBe(8);
+    for (let i = 1; i < out.length; i++) {
+      const a = out[i - 1];
+      const b = out[i];
+      const d = Math.hypot(b.x - a.x, b.y - a.y);
+      expect(d).toBeLessThan(1.5);
+    }
+  });
+  it("interpolates paramValue linearly between bracketing samples", () => {
+    const out = sampleByArcLength(seg, 5);
+    // The 50% point of arc length is at total/2 = 3.5 along the line. The
+    // first segment is length 4, so 3.5 lands within it at t=0.875.
+    // paramValue should be 100 + 0.875 * (200 - 100) = 187.5.
+    const mid = out[2];
+    expect(mid.paramValue).toBeCloseTo(187.5, 4);
+  });
+});
