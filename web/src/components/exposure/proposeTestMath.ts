@@ -427,7 +427,7 @@ export function fillByForwardGrid(
 
   // Stratified picking: divide polygon bbox into ⌈√n⌉ × ⌈√n⌉ sub-cells.
   // For each sub-cell, take the candidate closest to its centre. Fill any
-  // empty sub-cells from the remaining candidates in shuffled order.
+  // empty sub-cells from the remaining candidates in candidate order.
   const polyBox = polygonBox(polygon);
   if (!polyBox) return candidates.slice(0, n);
 
@@ -435,7 +435,8 @@ export function fillByForwardGrid(
   const cellW = (polyBox.maxX - polyBox.minX) / k;
   const cellH = (polyBox.maxY - polyBox.minY) / k;
 
-  const subPicked: (FillCell | null)[][] = Array.from(
+  // Each sub-cell stores the *index* of the picked candidate (or null).
+  const subPicked: (number | null)[][] = Array.from(
     { length: k }, () => Array.from({ length: k }, () => null),
   );
   const used = new Set<number>();
@@ -443,17 +444,20 @@ export function fillByForwardGrid(
     const c = candidates[candIdx];
     const ci = Math.min(k - 1, Math.floor((c.x - polyBox.minX) / cellW));
     const cj = Math.min(k - 1, Math.floor((c.y - polyBox.minY) / cellH));
-    const cur = subPicked[ci][cj];
+    const curIdx = subPicked[ci][cj];
     const cx = polyBox.minX + (ci + 0.5) * cellW;
     const cy = polyBox.minY + (cj + 0.5) * cellH;
     const distSq = (c.x - cx) ** 2 + (c.y - cy) ** 2;
-    if (cur === null) {
-      subPicked[ci][cj] = c;
+    if (curIdx === null) {
+      subPicked[ci][cj] = candIdx;
       used.add(candIdx);
     } else {
+      const cur = candidates[curIdx];
       const curDistSq = (cur.x - cx) ** 2 + (cur.y - cy) ** 2;
       if (distSq < curDistSq) {
-        subPicked[ci][cj] = c;
+        // Evict the old winner back to the pool.
+        used.delete(curIdx);
+        subPicked[ci][cj] = candIdx;
         used.add(candIdx);
       }
     }
@@ -462,18 +466,14 @@ export function fillByForwardGrid(
   const picked: FillCell[] = [];
   for (let i = 0; i < k; i++) {
     for (let j = 0; j < k; j++) {
-      const c = subPicked[i][j];
-      if (c !== null) picked.push(c);
+      const idx = subPicked[i][j];
+      if (idx !== null) picked.push(candidates[idx]);
     }
   }
-  // Top up to n from the unused pool.
+  // Top up to n from the unused pool, in candidate order.
   if (picked.length < n) {
-    const pool: FillCell[] = [];
-    for (let i = 0; i < candidates.length; i++) {
-      if (!used.has(i)) pool.push(candidates[i]);
-    }
-    while (picked.length < n && pool.length > 0) {
-      picked.push(pool.shift()!);
+    for (let i = 0; i < candidates.length && picked.length < n; i++) {
+      if (!used.has(i)) picked.push(candidates[i]);
     }
   }
   return picked.slice(0, n);

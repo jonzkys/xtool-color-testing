@@ -289,4 +289,24 @@ describe("fillByForwardGrid", () => {
       expect(sp).toBeLessThanOrEqual(F2_LIMITS.speed.max);
     }
   });
+  it("returns up to N cells when grid is sparse (top-up pool sourced from evicted)", () => {
+    // Construct a polygon so small relative to the cell width that
+    // many grid candidates collapse into the same sub-cell, leaving
+    // most sub-cells empty. The bug scenario: evicted candidates in
+    // a populated sub-cell would be silently discarded; with the fix,
+    // they're available to fill empty sub-cells (until the pool runs
+    // out, in which case the function returns < n).
+    const polygon: Polygon = [[10, 0.0001], [90, 0.0001], [90, 0.045], [10, 0.045]];
+    const cells = fillByForwardGrid(
+      ANCHOR_PARAMS, ["power", "speed"], polygon,
+      "total_exposure_index", "pulse_intensity_index", F2_LIMITS, 50,
+    );
+    // Sanity: at least 2 distinct (x, y) pairs (i.e. picks ARE coming
+    // from non-degenerate top-up). All cells must be inside polygon.
+    const distinct = new Set(cells.map((c) => `${c.x.toFixed(6)},${c.y.toFixed(6)}`));
+    expect(distinct.size).toBe(cells.length);
+    for (const c of cells) {
+      expect(pointInPolygon([c.x, c.y], polygon)).toBe(true);
+    }
+  });
 });
