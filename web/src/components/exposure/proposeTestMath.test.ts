@@ -460,3 +460,83 @@ describe("inverseSolve", () => {
     expect(solved).toBeNull();
   });
 });
+
+import { fillByInverseSolve } from "./proposeTestMath";
+
+describe("fillByInverseSolve", () => {
+  const base: LaserParams = {
+    power: 14.6, speed: 1152, frequency: 100, density: 5000, passes: 1, pulse_width: 200,
+  };
+
+  it("returns ≤ N cells, all inside the polygon, with valid laser-range params", () => {
+    const polygon: Polygon = [
+      [10, 0.0001], [90, 0.0001], [90, 0.045], [10, 0.045],
+    ];
+    const cells = fillByInverseSolve(
+      base, ["power", "speed"], polygon,
+      "total_exposure_index", "pulse_intensity_index",
+      F2_LIMITS, 16, [],
+    );
+    expect(cells.length).toBeGreaterThan(0);
+    expect(cells.length).toBeLessThanOrEqual(16);
+    for (const c of cells) {
+      expect(pointInPolygon([c.x, c.y], polygon)).toBe(true);
+      const pw = c.paramValues.power!;
+      const sp = c.paramValues.speed!;
+      expect(pw).toBeGreaterThanOrEqual(F2_LIMITS.power.min);
+      expect(pw).toBeLessThanOrEqual(F2_LIMITS.power.max);
+      expect(sp).toBeGreaterThanOrEqual(F2_LIMITS.speed.min);
+      expect(sp).toBeLessThanOrEqual(F2_LIMITS.speed.max);
+    }
+  });
+
+  it("avoids known points (existing palette entries inside polygon)", () => {
+    const polygon: Polygon = [
+      [10, 0.0001], [90, 0.0001], [90, 0.045], [10, 0.045],
+    ];
+    const known = [{ x: 50, y: 0.022 }, { x: 30, y: 0.01 }];
+    const cells = fillByInverseSolve(
+      base, ["power", "speed"], polygon,
+      "total_exposure_index", "pulse_intensity_index",
+      F2_LIMITS, 8, known,
+    );
+    for (const c of cells) {
+      for (const k of known) {
+        const d = Math.hypot(c.x - k.x, c.y - k.y);
+        expect(d).toBeGreaterThan(0.5);
+      }
+    }
+  });
+
+  it("matches forward indices: each returned cell's params produce its (x, y)", () => {
+    const polygon: Polygon = [
+      [10, 0.0001], [90, 0.0001], [90, 0.045], [10, 0.045],
+    ];
+    const cells = fillByInverseSolve(
+      base, ["power", "speed"], polygon,
+      "total_exposure_index", "pulse_intensity_index",
+      F2_LIMITS, 8, [],
+    );
+    for (const c of cells) {
+      const verify = computeIndices({
+        ...base,
+        power: c.paramValues.power!,
+        speed: c.paramValues.speed!,
+      });
+      expect(verify.total_exposure_index).toBeCloseTo(c.x, 4);
+      expect(verify.pulse_intensity_index).toBeCloseTo(c.y, 6);
+    }
+  });
+
+  it("returns empty for a degenerate axis pair", () => {
+    // (PSm, LSm) varying (power, frequency) — neither power nor freq
+    // moves LSm (which depends only on density).
+    const polygon: Polygon = [[0.001, 0.001], [0.05, 0.001], [0.05, 0.05], [0.001, 0.05]];
+    const cells = fillByInverseSolve(
+      base, ["power", "frequency"], polygon,
+      "pulse_spacing_mm", "line_spacing_mm",
+      F2_LIMITS, 8, [],
+    );
+    expect(cells.length).toBe(0);
+  });
+});

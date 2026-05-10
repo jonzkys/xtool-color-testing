@@ -618,7 +618,7 @@ export function samplePolygonArea(
   return result;
 }
 
-const INVERSE_SOLVE_MAX_ITERS = 20;
+export const INVERSE_SOLVE_MAX_ITERS = 20;
 const INVERSE_SOLVE_RESIDUAL_EPS = 1e-6;
 const INVERSE_SOLVE_DET_EPS = 1e-12;
 
@@ -664,4 +664,37 @@ export function inverseSolve(
     if (params[p2] < laserLimits[p2].min || params[p2] > laserLimits[p2].max) return null;
   }
   return null;
+}
+
+export function fillByInverseSolve(
+  baseParams: LaserParams,
+  varyParams: readonly [ParamKey, ParamKey],
+  polygon: Polygon,
+  xKey: IndexKey,
+  yKey: IndexKey,
+  laserLimits: LaserLimits,
+  n: number,
+  knownPoints: ReadonlyArray<{ x: number; y: number }>,
+): FillCell[] {
+  const targets = samplePolygonArea(polygon, n, knownPoints);
+  const [p1, p2] = varyParams;
+  const out: FillCell[] = [];
+
+  for (const t of targets) {
+    const solved = inverseSolve(t, varyParams, baseParams, xKey, yKey, laserLimits);
+    if (solved === null) continue;
+
+    let verify: LaserIndices;
+    try {
+      verify = computeIndices(solved);
+    } catch {
+      continue;
+    }
+    out.push({
+      paramValues: { [p1]: solved[p1], [p2]: solved[p2] },
+      x: verify[xKey] as number,
+      y: verify[yKey] as number,
+    });
+  }
+  return out;
 }
