@@ -747,9 +747,18 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
             <>
               {/* Scatter — hero */}
               <div
-                className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-[var(--shadow-card)] p-4"
+                className="relative rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-[var(--shadow-card)] p-4"
                 onClick={handleBackgroundClear}
               >
+                {proposeMode === "drawing" && (
+                  <div
+                    className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] bg-[color:var(--color-primary)] text-white rounded-sm shadow-md pointer-events-none"
+                  >
+                    {polygon.length < 3
+                      ? `Click vertices · ${3 - polygon.length} more · then ENTER or double-click to close · ESC cancels`
+                      : `${polygon.length} vertices · ENTER or double-click to close · ESC cancels`}
+                  </div>
+                )}
                 <ExposureScatter
                   rows={displayRows}
                   mode={mode}
@@ -908,7 +917,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
 
         {/* ── RIGHT RAIL ────────────────────────────────────────────────── */}
         <aside
-          style={{ width: 240 }}
+          style={{ width: proposeMode === "panel" ? 300 : 240 }}
           className="shrink-0 flex flex-col gap-4 border-l border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-4 overflow-y-auto"
         >
           {proposeMode === "panel" ? (
@@ -925,7 +934,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   ? "Polygon contains no entries"
                   : preview.cells.length === 0
                     ? "Couldn't fit any cells — try a different param or redraw"
-                    : null
+                    : preview.cells.length < cellCount
+                      ? `Only ${preview.cells.length} of ${cellCount} cells fit — region too small for the chosen params`
+                      : null
               }
               onCreate={handleCreateTest}
               onCancel={closeProposeWizard}

@@ -22,6 +22,15 @@ interface Props {
   onCancel: () => void;
 }
 
+function formatRange(v: number): string {
+  // Round integers to 0dp, fractional values to 2dp. Avoids 16-digit
+  // float artefacts in the rail's range readout.
+  if (Number.isInteger(v)) return v.toString();
+  if (Math.abs(v) >= 100) return v.toFixed(0);
+  if (Math.abs(v) >= 10) return v.toFixed(1);
+  return v.toFixed(2);
+}
+
 const PARAM_LABEL: Record<ParamKey, string> = {
   power: "POWER",
   speed: "SPEED",
@@ -71,9 +80,8 @@ export const ExposureProposeRail: React.FC<Props> = ({
       : mode.varyParams.includes(p);
 
   return (
-    <aside
-      style={{ width: 300 }}
-      className="shrink-0 flex flex-col gap-3 border-l border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-4 overflow-y-auto"
+    <div
+      className="flex flex-col gap-3 h-full"
       data-role="propose-rail"
     >
       <div className="flex items-center justify-between">
@@ -187,7 +195,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
         ) : (
           rangeReadout.map((r) => (
             <div key={r.paramName} className="font-mono text-[11px] text-[color:var(--color-ink)]">
-              {`${r.paramName} · ${r.min} → ${r.max} ${r.unit}`}
+              {`${r.paramName} · ${formatRange(r.min)} → ${formatRange(r.max)} ${r.unit}`}
             </div>
           ))
         )}
@@ -221,7 +229,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
       >
         Cancel
       </button>
-    </aside>
+    </div>
   );
 };
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Beaker, Lock, Plus } from "lucide-react";
 import type { Material, Preset } from "../library";
 import type { BaseParams, ParamName, TestRecord, TestSpec } from "../types";
@@ -55,29 +55,31 @@ export function TestsPage() {
     refresh();
   }, [materialId, status]); // eslint-disable-line
 
-  const newTestId = useMemo(() => {
-    const hash = location.hash;
+  const [highlightedTestId, setHighlightedTestId] = useState<number | null>(null);
+
+  // Read the ?new=<id> hash param once on mount (deferred via effect so
+  // StrictMode's double-invoke of lazy state initialisers doesn't matter).
+  useEffect(() => {
+    const hash = window.location.hash;
     const queryIdx = hash.indexOf("?");
-    if (queryIdx < 0) return null;
+    if (queryIdx < 0) return;
     const params = new URLSearchParams(hash.slice(queryIdx + 1));
     const v = params.get("new");
-    return v ? Number(v) : null;
+    if (v) setHighlightedTestId(Number(v));
   }, []);
 
   useEffect(() => {
-    if (newTestId == null) return;
-    const el = document.querySelector<HTMLElement>(`[data-test-id="${newTestId}"]`);
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    el.classList.add("ring-2", "ring-[color:var(--color-primary)]");
+    if (highlightedTestId == null) return;
+    if (!tests.some((t) => t.id === highlightedTestId)) return;
+    const el = document.querySelector<HTMLElement>(`[data-test-id="${highlightedTestId}"]`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
     const t = setTimeout(() => {
-      el.classList.remove("ring-2", "ring-[color:var(--color-primary)]");
-      // Strip the param so a refresh doesn't re-highlight.
+      setHighlightedTestId(null);
       const cleanHash = location.hash.split("?")[0];
       history.replaceState(null, "", cleanHash);
-    }, 2000);
+    }, 2500);
     return () => clearTimeout(t);
-  }, [newTestId, tests]);
+  }, [highlightedTestId, tests]);
 
   async function onNew(kind: "sweep" | "validation" = "sweep") {
     if (materials.length === 0) {
@@ -210,6 +212,7 @@ export function TestsPage() {
                       materials.find((m) => m.id === t.material_id)?.name ??
                       "?"
                     }
+                    highlighted={t.id === highlightedTestId}
                   />
                 ))}
               </div>
@@ -333,9 +336,11 @@ function KindOption({
 function TestCard({
   test,
   materialName,
+  highlighted,
 }: {
   test: TestRecord;
   materialName: string;
+  highlighted?: boolean;
 }) {
   const spec = test.spec;
   const statusVariant = STATUS_VARIANTS[test.status] ?? "neutral";
@@ -347,6 +352,11 @@ function TestCard({
     <a
       href={formatRoute({ name: "test-detail", id: test.id })}
       data-test-id={test.id}
+      style={highlighted ? {
+        outline: "3px solid #f97316",
+        outlineOffset: "2px",
+        borderRadius: "12px",
+      } : undefined}
       className={cn(
         "group relative rounded-[12px] border overflow-hidden no-underline",
         "flex flex-col h-full",
