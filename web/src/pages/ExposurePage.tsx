@@ -923,10 +923,13 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
           {proposeMode === "panel" ? (
             <ExposureProposeRail
               anchor={anchor}
+              entriesInsidePolygon={0}
               mode={effective ?? { mode: "curve", varyParam: "power" }}
               onModeChange={setProposeOverride}
               cellCount={cellCount}
               onCellCountChange={setCellCount}
+              paramRows={[]}
+              onParamOverrideChange={() => {}}
               rangeReadout={rangeReadout}
               canCreate={anchor !== null && preview.cells.length > 0}
               helperText={

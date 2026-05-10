@@ -9,12 +9,34 @@ interface RangeReadout {
   unit: string;
 }
 
+export type ParamRow =
+  | {
+      key: ParamKey | "passes" | "pulse_width";
+      kind: "editable";
+      value: number;
+      min: number;
+      max: number;
+      step: number;
+      unit: string;
+      presets?: readonly number[];
+    }
+  | {
+      key: ParamKey | "passes" | "pulse_width";
+      kind: "locked";
+      resolved: { min: number; max: number };
+      anchorValue: number;
+      unit: string;
+    };
+
 interface Props {
   anchor: ExposureRow | null;
+  entriesInsidePolygon: number;
   mode: ModeChoice;
   onModeChange: (next: ModeChoice) => void;
   cellCount: number;
   onCellCountChange: (n: number) => void;
+  paramRows: ReadonlyArray<ParamRow>;
+  onParamOverrideChange: (param: ParamKey | "passes" | "pulse_width", value: number) => void;
   rangeReadout: ReadonlyArray<RangeReadout>;
   canCreate: boolean;
   helperText: string | null;
@@ -22,24 +44,28 @@ interface Props {
   onCancel: () => void;
 }
 
-function formatRange(v: number): string {
-  // Round integers to 0dp, fractional values to 2dp. Avoids 16-digit
-  // float artefacts in the rail's range readout.
-  if (Number.isInteger(v)) return v.toString();
-  if (Math.abs(v) >= 100) return v.toFixed(0);
-  if (Math.abs(v) >= 10) return v.toFixed(1);
-  return v.toFixed(2);
-}
-
-const PARAM_LABEL: Record<ParamKey, string> = {
+const PARAM_LABEL: Record<string, string> = {
   power: "POWER",
   speed: "SPEED",
   frequency: "FREQ",
   density: "DENSITY",
+  passes: "PASSES",
+  pulse_width: "PULSE W",
 };
 
+function formatValue(v: number, unit: string): string {
+  // Round integers to 0dp, fractional to 2dp, large numbers to 0dp.
+  const u = unit ? ` ${unit}` : "";
+  if (Math.abs(v) >= 1000) return `${Math.round(v)}${u}`;
+  if (Math.abs(v) >= 100) return `${v.toFixed(0)}${u}`;
+  if (Math.abs(v) >= 10) return `${v.toFixed(1)}${u}`;
+  if (Number.isInteger(v)) return `${v}${u}`;
+  return `${v.toFixed(2)}${u}`;
+}
+
 export const ExposureProposeRail: React.FC<Props> = ({
-  anchor, mode, onModeChange, cellCount, onCellCountChange,
+  anchor, entriesInsidePolygon, mode, onModeChange, cellCount, onCellCountChange,
+  paramRows, onParamOverrideChange,
   rangeReadout, canCreate, helperText, onCreate, onCancel,
 }) => {
   const isFill = mode.mode === "fill";
@@ -61,29 +87,17 @@ export const ExposureProposeRail: React.FC<Props> = ({
       onModeChange({ mode: "curve", varyParam: param });
     } else {
       const [a, b] = mode.varyParams;
-      // Multi-select clamp to 2: clicking a selected chip when both slots
-      // are filled deselects it (mode becomes curve with the OTHER chip).
-      // Clicking an unselected chip swaps in for the second slot.
-      if (param === a) {
-        onModeChange({ mode: "curve", varyParam: b });
-      } else if (param === b) {
-        onModeChange({ mode: "curve", varyParam: a });
-      } else {
-        onModeChange({ mode: "fill", varyParams: [a, param] });
-      }
+      if (param === a) onModeChange({ mode: "curve", varyParam: b });
+      else if (param === b) onModeChange({ mode: "curve", varyParam: a });
+      else onModeChange({ mode: "fill", varyParams: [a, param] });
     }
   };
 
   const isChipSelected = (p: ParamKey) =>
-    mode.mode === "curve"
-      ? mode.varyParam === p
-      : mode.varyParams.includes(p);
+    mode.mode === "curve" ? mode.varyParam === p : mode.varyParams.includes(p);
 
   return (
-    <div
-      className="flex flex-col gap-3 h-full"
-      data-role="propose-rail"
-    >
+    <div className="flex flex-col gap-3 h-full" data-role="propose-rail">
       <div className="flex items-center justify-between">
         <div className="font-mono text-[10px] uppercase tracking-[0.18em] font-semibold text-[color:var(--color-primary)]">
           Propose Test
@@ -128,9 +142,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
               {anchor.hex}
             </div>
             <div className="font-mono text-[10px] text-[color:var(--color-ink-muted)] mt-1">
-              {Object.entries(anchor.params ?? {})
-                .map(([k, v]) => `${k.slice(0, 1).toUpperCase()} ${v}`)
-                .join("  ")}
+              {entriesInsidePolygon} entries inside polygon
             </div>
           </>
         ) : (
@@ -160,6 +172,62 @@ export const ExposureProposeRail: React.FC<Props> = ({
             >
               {PARAM_LABEL[p]}
             </button>
+          ))}
+        </div>
+      </section>
+
+      <section data-role="propose-params-editor">
+        <div className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)] mb-2">
+          Params
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {paramRows.map((row) => (
+            <div key={row.key} className="flex items-center gap-2" data-row={row.key}>
+              <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[68px] flex-none">
+                {PARAM_LABEL[row.key as string]}
+              </div>
+              {row.kind === "editable" ? (
+                <>
+                  <input
+                    type="range"
+                    min={row.min}
+                    max={row.max}
+                    step={row.step}
+                    value={row.value}
+                    onChange={(e) => {
+                      const raw = Number(e.target.value);
+                      const snapped = row.presets
+                        ? row.presets.reduce((a, b) =>
+                            Math.abs(b - raw) < Math.abs(a - raw) ? b : a,
+                          )
+                        : raw;
+                      onParamOverrideChange(row.key, snapped);
+                    }}
+                    aria-label={`${PARAM_LABEL[row.key as string]} value`}
+                    className="flex-1"
+                  />
+                  <div className="font-mono text-[10px] text-[color:var(--color-ink)] tabular-nums w-[80px] flex-none text-right">
+                    {formatValue(row.value, row.unit)}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div
+                    aria-disabled="true"
+                    className="flex-1 h-1.5 rounded-full bg-[color:var(--color-border)] relative overflow-hidden"
+                    title={`Locked — varied param. Range ${row.resolved.min}..${row.resolved.max}`}
+                  >
+                    <div
+                      className="absolute top-0 bottom-0 bg-[color:var(--color-primary)]/40"
+                      style={{ left: "0%", right: "0%" }}
+                    />
+                  </div>
+                  <div className="font-mono text-[10px] text-[color:var(--color-primary)] tabular-nums w-[120px] flex-none text-right">
+                    {formatValue(row.resolved.min, row.unit)} → {formatValue(row.resolved.max, row.unit)}
+                  </div>
+                </>
+              )}
+            </div>
           ))}
         </div>
       </section>
@@ -195,7 +263,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
         ) : (
           rangeReadout.map((r) => (
             <div key={r.paramName} className="font-mono text-[11px] text-[color:var(--color-ink)]">
-              {`${r.paramName} · ${formatRange(r.min)} → ${formatRange(r.max)} ${r.unit}`}
+              {`${r.paramName} · ${formatValue(r.min, "")} → ${formatValue(r.max, "")} ${r.unit}`}
             </div>
           ))
         )}
