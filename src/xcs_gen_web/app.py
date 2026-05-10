@@ -1360,6 +1360,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             wb=r.get("wb"),
         )
 
+    def _collect_prior_anchors(
+        test_id: int, *, owner_id: int, exclude_result_id: int | None = None,
+    ) -> list[str | None]:
+        """Pull every prior result's stored ``wb_anchor_rgb_json`` for a
+        test so :func:`run_capture` can pick a per-test canonical from
+        the brightest observed strip. Excludes a specific result id
+        when reingesting/previewing/inspecting that same row, otherwise
+        the row's own anchor would appear in the prior list AND the
+        current edges, double-counting it (harmless but wasteful)."""
+        rows = r_repo.list_by_test(
+            test_id, owner_id=owner_id, include_excluded=False,
+        )
+        return [
+            row.get("wb_anchor_rgb_json")
+            for row in rows
+            if exclude_result_id is None or row["id"] != exclude_result_id
+        ]
+
     def _persist_wb_outcome(
         result_id: int, outcome, *, owner_id: int,
     ) -> None:
@@ -1458,6 +1476,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             cap_result = capture_service.run_capture(
                 image_bytes=data, test_id=tid, spec=spec,
                 material=material,
+                prior_anchors_json=_collect_prior_anchors(
+                    tid, owner_id=user_id,
+                ),
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -1527,6 +1548,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 image_bytes=data, test_id=r["test_id"],
                 spec=capture_service.effective_spec(t),
                 material=material,
+                prior_anchors_json=_collect_prior_anchors(
+                    r["test_id"], owner_id=user_id,
+                    exclude_result_id=rid,
+                ),
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -1589,6 +1614,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 image_bytes=data, test_id=r["test_id"],
                 spec={**capture_service.effective_spec(t), "sample_aggregator": aggregator},
                 material=material,
+                prior_anchors_json=_collect_prior_anchors(
+                    r["test_id"], owner_id=user_id,
+                    exclude_result_id=rid,
+                ),
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -1636,6 +1665,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             cap_result = capture_service.run_capture(
                 image_bytes=data, test_id=r["test_id"], spec=eff_spec,
                 material=material,
+                prior_anchors_json=_collect_prior_anchors(
+                    r["test_id"], owner_id=user_id,
+                    exclude_result_id=rid,
+                ),
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
