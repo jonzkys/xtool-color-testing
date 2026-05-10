@@ -219,7 +219,7 @@ export function ExposureToolbar({
               : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
         }
       >
-        ◇ PROPOSE TEST
+        {proposeOpen ? "× CANCEL" : "◇ PROPOSE TEST"}
       </button>
     </div>
   );
