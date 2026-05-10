@@ -18,6 +18,10 @@ import {
   IndexCardBody,
 } from "./ExposureHelpCardBody";
 import { ExposureAxisPicker } from "./ExposureAxisPicker";
+import { ExposurePolygon } from "./ExposurePolygon";
+import { ExposurePolygonDraw } from "./ExposurePolygonDraw";
+import { ExposureCellsPreview } from "./ExposureCellsPreview";
+import type { Polygon } from "./proposeTestMath";
 
 export type ScaleKind = "linear" | "log";
 export type ScatterMode = "univariate" | "bivariate";
@@ -49,6 +53,20 @@ interface Props {
   onXScaleChange?: (s: ScaleKind) => void;
   /** Optional: log/linear scale toggle for the Y axis. */
   onYScaleChange?: (s: ScaleKind) => void;
+  /** Optional: PROPOSE TEST polygon overlay (closed or in-progress). */
+  polygon?: Polygon | null;
+  /** When true, render the click-capture rect and dim dot pointer events. */
+  polygonDrawing?: boolean;
+  /** Optional: dashed curve preview (curve mode). */
+  curve?: ReadonlyArray<{ x: number; y: number }> | null;
+  /** Optional: N proposed cell markers. */
+  cells?: ReadonlyArray<{ x: number; y: number }> | null;
+  /** Called on each click while drawing — adds a vertex in index-space. */
+  onPolygonVertexAdd?: (point: readonly [number, number]) => void;
+  /** Called when the user closes the polygon (double-click or Enter). */
+  onPolygonClose?: () => void;
+  /** Called when the user cancels drawing (Esc). */
+  onPolygonCancel?: () => void;
 }
 
 function rowChannel(row: ExposureRow, key: ChannelCol): number {
@@ -111,6 +129,13 @@ export const ExposureScatter: React.FC<Props> = ({
   onYKeyChange,
   onXScaleChange,
   onYScaleChange,
+  polygon,
+  polygonDrawing,
+  curve,
+  cells,
+  onPolygonVertexAdd,
+  onPolygonClose,
+  onPolygonCancel,
 }) => {
   const xs = rows.map((r) => rowIndex(r, xKey));
   const ys = rows.map((r) =>
@@ -150,6 +175,18 @@ export const ExposureScatter: React.FC<Props> = ({
   const py = (v: number) => {
     const t = ((yScale === "log" ? Math.log10(v) : v) - yMin) / (yMax - yMin || 1);
     return H - PADB - t * (H - PADT - PADB);
+  };
+
+  // PROPOSE TEST projection helpers — pair with px/py for the inverse direction.
+  const toSvg = (x: number, y: number): readonly [number, number] => [px(x), py(y)];
+  const fromSvg = (sx: number, sy: number): readonly [number, number] => {
+    const tX = (sx - PADL) / (W - PADL - PADR || 1);
+    const xVal = xMin + tX * (xMax - xMin);
+    const x = xScale === "log" ? Math.pow(10, xVal) : xVal;
+    const tY = (H - PADB - sy) / (H - PADT - PADB || 1);
+    const yVal = yMin + tY * (yMax - yMin);
+    const y = yScale === "log" ? Math.pow(10, yVal) : yVal;
+    return [x, y];
   };
 
   const fit =
@@ -461,7 +498,10 @@ export const ExposureScatter: React.FC<Props> = ({
             />
           )}
 
-          {/* Dots — focused last so it sits on top of the cloud */}
+          {/* Dots — focused last so it sits on top of the cloud.
+              While the propose-test polygon is being drawn, dots become
+              non-interactive so the click-capture rect takes precedence. */}
+          <g pointerEvents={polygonDrawing ? "none" : undefined}>
           {rows
             .map((row, i) => ({ row, isFocused: row.id === focusedId, i }))
             .sort((a, b) => Number(a.isFocused) - Number(b.isFocused))
@@ -511,6 +551,34 @@ export const ExposureScatter: React.FC<Props> = ({
                 </g>
               );
             })}
+          </g>
+
+          {/* PROPOSE TEST overlays — sit above dots, below axis labels. */}
+          {polygon && polygon.length >= 2 && (
+            <ExposurePolygon
+              polygon={polygon}
+              toSvg={toSvg}
+              drawing={!!polygonDrawing}
+            />
+          )}
+          {(curve || (cells && cells.length > 0)) && (
+            <ExposureCellsPreview
+              curve={curve}
+              cells={cells ?? []}
+              toSvg={toSvg}
+            />
+          )}
+          {polygonDrawing && onPolygonVertexAdd && onPolygonClose && onPolygonCancel && (
+            <ExposurePolygonDraw
+              width={W}
+              height={H}
+              fromSvg={fromSvg}
+              vertices={polygon ?? []}
+              onVertexAdd={onPolygonVertexAdd}
+              onClose={onPolygonClose}
+              onCancel={onPolygonCancel}
+            />
+          )}
 
           {/* Plot border — drawn last so it sits over gridlines */}
           <line

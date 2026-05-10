@@ -22,6 +22,8 @@ const STD_PROPS = {
   onXScaleChange: NOOP, onYScaleChange: NOOP,
   filtersOpen: false, onToggleFilters: NOOP,
   activeFilterCount: 0,
+  proposeOpen: false, onToggleProposeMode: NOOP,
+  proposeAvailable: true,
 };
 
 describe("ExposureToolbar", () => {

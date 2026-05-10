@@ -2,9 +2,12 @@ import * as React from "react";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { listMaterials } from "../api/library";
 import { listPaletteEntries } from "../api/palette";
-import { listTests } from "../api/tests";
+import { listTests, createTest } from "../api/tests";
+import { patchValidationCells } from "../api/validationCells";
+import { getValidationProfile, useCurrentMachine } from "../state/machine";
+import { defaultBaseParams, defaultSpec } from "../defaults";
 import type { Material } from "../library";
-import type { PaletteEntry } from "../types";
+import type { BaseParams, ParamName, PaletteEntry, TestSpec } from "../types";
 import {
   ExposureScatter,
   type ScaleKind,
@@ -39,6 +42,14 @@ import { ExposureFilterPills, type ClearKey } from "../components/exposure/Expos
 import { ExposureFocusedIndices } from "../components/exposure/ExposureFocusedIndices";
 import { ExposureToolbar } from "../components/exposure/ExposureToolbar";
 import { useFiltersUrlSync } from "../components/exposure/exposureFiltersUrl";
+import {
+  findAnchor, pickModeAndParams, computeCurve, clipPolylineToPolygon,
+  sampleByArcLength, fillByForwardGrid,
+  type Polygon, type ParamKey, type ModeChoice, type LaserLimits,
+  type CurveSample, type FillCell,
+} from "../components/exposure/proposeTestMath";
+import { ExposureProposeRail, type RangeReadout } from "../components/exposure/ExposureProposeRail";
+import type { LaserParams } from "../laser/laserIndices";
 import { HelpTip } from "../components/HelpTip";
 import {
   EXPOSURE_INDEX_HELP,
@@ -85,6 +96,23 @@ const RAW_PARAM_LABELS: Record<RawParamRow, string> = {
   density: "DEN",
   passes: "PSS",
   pulse_width: "PWD",
+};
+
+// TODO: pull these from `state/machine.ts` per-machine when v2 ships
+//       additional laser profiles. For v1 we hardcode the F2 MOPA
+//       COLOR_ENGRAVE limits — the only profile this codebase targets.
+const F2_MOPA_LIMITS: LaserLimits = {
+  power:     { min: 1,  max: 100,   step: 1 },
+  speed:     { min: 2,  max: 15000, step: 1 },
+  frequency: { min: 60, max: 500,   step: 1 },
+  density:   { min: 1,  max: 5000,  step: 1 },
+};
+
+const PROPOSE_PARAM_LABELS: Record<ParamKey, { name: string; unit: string }> = {
+  power:     { name: "POWER",   unit: "%" },
+  speed:     { name: "SPEED",   unit: "mm/s" },
+  frequency: { name: "FREQ",    unit: "kHz" },
+  density:   { name: "DENSITY", unit: "lpc" },
 };
 
 function setsEqual<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
@@ -355,6 +383,88 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   // ── filter panel open/closed (toggled by toolbar Filters button) ──────
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  // ── propose-test wizard state ─────────────────────────────────────────
+  // off      — chip dormant, no overlays
+  // drawing  — user is clicking polygon vertices on the scatter
+  // panel    — polygon closed; right rail shows the wizard
+  type ProposeMode = "off" | "drawing" | "panel";
+  const [proposeMode, setProposeMode] = useState<ProposeMode>("off");
+  const [polygon, setPolygon] = useState<Polygon>([]);
+  const [proposeOverride, setProposeOverride] = useState<ModeChoice | null>(null);
+  const [cellCount, setCellCount] = useState(16);
+  const { registry, machineId } = useCurrentMachine();
+
+  // ── propose-test derivations ──────────────────────────────────────────
+  // The math helpers want IndexKey for both axes — only valid in
+  // bivariate mode where yKey is an IndexRow. Cast is safe because the
+  // PROPOSE TEST chip is gated on `mode === "bivariate"` and the reset
+  // effect below clears polygon state when the user flips to univariate.
+  const yKeyForMath = (mode === "bivariate" ? yKeyBi : xKey);
+
+  const anchor = useMemo(
+    () => (proposeMode === "off" ? null : findAnchor(polygon, displayRows, xKey, yKeyForMath)),
+    [proposeMode, polygon, displayRows, xKey, yKeyForMath],
+  );
+
+  const smartDefault = useMemo(() => {
+    if (!anchor) return null;
+    return pickModeAndParams(anchor, polygon, xKey, yKeyForMath, F2_MOPA_LIMITS);
+  }, [anchor, polygon, xKey, yKeyForMath]);
+
+  const effective: ModeChoice | null = proposeOverride ?? smartDefault;
+
+  const preview = useMemo<{
+    curve: ReadonlyArray<CurveSample> | null;
+    cells: ReadonlyArray<CurveSample | FillCell>;
+  }>(() => {
+    if (!effective || !anchor || !anchor.params) return { curve: null, cells: [] };
+    const anchorParams = anchor.params as unknown as LaserParams;
+    if (effective.mode === "curve") {
+      const curve = computeCurve(anchorParams, effective.varyParam, xKey, yKeyForMath, F2_MOPA_LIMITS);
+      const segments = clipPolylineToPolygon(curve, polygon);
+      const flat = segments.flat();
+      if (flat.length === 0) return { curve, cells: [] };
+      const sampled = sampleByArcLength(flat, cellCount);
+      return { curve, cells: sampled };
+    }
+    const cells = fillByForwardGrid(
+      anchorParams, effective.varyParams, polygon, xKey, yKeyForMath,
+      F2_MOPA_LIMITS, cellCount,
+    );
+    return { curve: null, cells };
+  }, [effective, anchor, polygon, xKey, yKeyForMath, cellCount]);
+
+  const rangeReadout: RangeReadout[] = useMemo(() => {
+    if (!effective || preview.cells.length === 0) return [];
+    const params: ParamKey[] = effective.mode === "curve"
+      ? [effective.varyParam]
+      : [...effective.varyParams];
+    return params.map((p) => {
+      const values = preview.cells
+        .map((c) => {
+          if (effective.mode === "curve") return (c as CurveSample).paramValue;
+          return (c as FillCell).paramValues[p] ?? Number.NaN;
+        })
+        .filter(Number.isFinite);
+      const label = PROPOSE_PARAM_LABELS[p];
+      return {
+        paramName: label.name,
+        min: values.length ? Math.min(...values) : Number.NaN,
+        max: values.length ? Math.max(...values) : Number.NaN,
+        unit: label.unit,
+      };
+    });
+  }, [effective, preview.cells]);
+
+  // Clear the wizard whenever the data scope or axes change — the
+  // polygon was drawn against a specific xKey/yKey/mode/material, so
+  // it'd be misleading to keep showing it once any of those flip.
+  useEffect(() => {
+    setProposeMode("off");
+    setPolygon([]);
+    setProposeOverride(null);
+  }, [xKey, yKeyBi, mode, materialId]);
+
   const handleTogglePerParamFilter = useCallback(
     (param: FilterableParam, value: number) => {
       setFilters((prev) => {
@@ -408,6 +518,111 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     });
   }, []);
 
+  const closeProposeWizard = useCallback(() => {
+    setProposeMode("off");
+    setPolygon([]);
+    setProposeOverride(null);
+  }, []);
+
+  const handleToggleProposeMode = useCallback(() => {
+    if (proposeMode === "off") {
+      setProposeMode("drawing");
+      setPolygon([]);
+      setProposeOverride(null);
+    } else {
+      closeProposeWizard();
+    }
+  }, [proposeMode, closeProposeWizard]);
+
+  const handleCreateTest = useCallback(async () => {
+    if (!anchor || !anchor.params || preview.cells.length === 0 || !effective) return;
+    if (materialId === null) return;
+    const baseParamsAnchor = anchor.params as unknown as LaserParams;
+
+    // Build per-cell parameter overrides — a curve mode varies one
+    // param along arc-length; a fill samples two params at once.
+    const validationCells = preview.cells.map((c, i) => {
+      const cellParams: Record<string, number> = effective.mode === "curve"
+        ? { [effective.varyParam]: (c as CurveSample).paramValue }
+        : { ...(c as FillCell).paramValues } as Record<string, number>;
+      return { params: cellParams, index: i };
+    });
+
+    const primaryVaryParam: ParamKey = effective.mode === "curve"
+      ? effective.varyParam
+      : effective.varyParams[0];
+    const primaryValues = validationCells
+      .map((vc) => vc.params[primaryVaryParam])
+      .filter((v): v is number => Number.isFinite(v));
+    if (primaryValues.length === 0) return;
+
+    // Resolve a profile so the new test's base_params clamp into the
+    // active machine/mode — same shape TestsPage uses for hand-rolled
+    // validation tests.
+    const machineModeId = machineId === "F2Ultra" ? "color_engrave" : "engrave";
+    const profile = getValidationProfile(registry, machineId, machineModeId) ?? undefined;
+    const seedSpec: TestSpec = defaultSpec(profile);
+    const seedBase = defaultBaseParams(profile);
+    const baseParams: BaseParams = {
+      ...seedBase,
+      power: baseParamsAnchor.power,
+      speed: baseParamsAnchor.speed,
+      frequency: baseParamsAnchor.frequency,
+      density: baseParamsAnchor.density,
+      passes: baseParamsAnchor.passes,
+      pulse_width: baseParamsAnchor.pulse_width,
+      mode: machineModeId,
+    };
+
+    const spec: TestSpec = {
+      ...seedSpec,
+      x_param: primaryVaryParam as ParamName,
+      x_min: Math.min(...primaryValues),
+      x_max: Math.max(...primaryValues),
+      x_steps: 1,
+      y_param: null,
+      y_min: null,
+      y_max: null,
+      y_steps: null,
+      rows: 1,
+      width_mm: 100,
+      height_mm: 8,
+      hide_axis_labels: true,
+      cells_per_row: validationCells.length,
+      base_params: baseParams,
+    };
+
+    const labelParam = effective.mode === "curve"
+      ? effective.varyParam
+      : effective.varyParams.join("+");
+    const name = `Propose · ${labelParam} · ${anchor.hex}`;
+
+    try {
+      const created = await createTest({
+        name,
+        material_id: materialId,
+        spec,
+        machine_id: machineId,
+        kind: "validation",
+      });
+      // Persist the per-cell parameter overrides; the burn ordering is
+      // the cells' arc-length order (curve) or stratified pick order
+      // (fill) — not L*-sorted, so the visual preview matches the burn.
+      await patchValidationCells(created.id, validationCells.map((vc, i) => ({
+        cell_index: i,
+        palette_entry_id: null,
+        expected_hex: anchor.hex,
+        expected_lab: anchor.lab as unknown as number[],
+        params: vc.params,
+      })));
+      window.location.hash = `#/tests?new=${created.id}`;
+    } catch (e) {
+      // Surface this on a helperText slot in the rail in v2; for v1
+      // the failure path is the dev console + Sentry.
+      console.error("Create test failed:", e);
+    }
+  }, [anchor, preview.cells, effective, materialId, registry, machineId]);
+
   // ── render ─────────────────────────────────────────────────────────────
 
   const currentMaterialName = materials.find((m) => m.id === materialId)?.name;
@@ -455,6 +670,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
         filtersOpen={filtersOpen}
         onToggleFilters={() => setFiltersOpen((v) => !v)}
         activeFilterCount={countActiveFilters(filters)}
+        proposeOpen={proposeMode !== "off"}
+        onToggleProposeMode={handleToggleProposeMode}
+        proposeAvailable={mode === "bivariate"}
       />
 
       {/* ── PILL BAR (active filter chips) ────────────────────────────── */}
@@ -529,9 +747,18 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
             <>
               {/* Scatter — hero */}
               <div
-                className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-[var(--shadow-card)] p-4"
+                className="relative rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-[var(--shadow-card)] p-4"
                 onClick={handleBackgroundClear}
               >
+                {proposeMode === "drawing" && (
+                  <div
+                    className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] bg-[color:var(--color-primary)] text-white rounded-sm shadow-md pointer-events-none"
+                  >
+                    {polygon.length < 3
+                      ? `Click vertices · ${3 - polygon.length} more · then ENTER or double-click to close · ESC cancels`
+                      : `${polygon.length} vertices · ENTER or double-click to close · ESC cancels`}
+                  </div>
+                )}
                 <ExposureScatter
                   rows={displayRows}
                   mode={mode}
@@ -553,6 +780,15 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   }}
                   onXScaleChange={setXScale}
                   onYScaleChange={setYScale}
+                  polygon={polygon}
+                  polygonDrawing={proposeMode === "drawing"}
+                  curve={preview.curve?.map((p) => ({ x: p.x, y: p.y })) ?? null}
+                  cells={preview.cells.map((c) => ({ x: c.x, y: c.y }))}
+                  onPolygonVertexAdd={(p) => setPolygon((prev) => [...prev, p])}
+                  onPolygonClose={() => {
+                    if (polygon.length >= 3) setProposeMode("panel");
+                  }}
+                  onPolygonCancel={closeProposeWizard}
                 />
               </div>
 
@@ -681,9 +917,32 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
 
         {/* ── RIGHT RAIL ────────────────────────────────────────────────── */}
         <aside
-          style={{ width: 240 }}
+          style={{ width: proposeMode === "panel" ? 300 : 240 }}
           className="shrink-0 flex flex-col gap-4 border-l border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-4 overflow-y-auto"
         >
+          {proposeMode === "panel" ? (
+            <ExposureProposeRail
+              anchor={anchor}
+              mode={effective ?? { mode: "curve", varyParam: "power" }}
+              onModeChange={setProposeOverride}
+              cellCount={cellCount}
+              onCellCountChange={setCellCount}
+              rangeReadout={rangeReadout}
+              canCreate={anchor !== null && preview.cells.length > 0}
+              helperText={
+                anchor === null
+                  ? "Polygon contains no entries"
+                  : preview.cells.length === 0
+                    ? "Couldn't fit any cells — try a different param or redraw"
+                    : preview.cells.length < cellCount
+                      ? `Only ${preview.cells.length} of ${cellCount} cells fit — region too small for the chosen params`
+                      : null
+              }
+              onCreate={handleCreateTest}
+              onCancel={closeProposeWizard}
+            />
+          ) : (
+            <>
           <section>
             <RailHeading>Stats</RailHeading>
             <MetalBar variant="soft" className="mb-3" />
@@ -781,6 +1040,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
             <MetalBar variant="soft" className="mb-3" />
             <ExposureFocusedIndices row={focusedRow} />
           </section>
+            </>
+          )}
         </aside>
       </div>
     </div>
