@@ -165,7 +165,13 @@ function buildParamRows(
   );
   return (Object.keys(PARAM_DOMAIN) as ParamRowKey[]).map((key): ParamRow => {
     const domain = PARAM_DOMAIN[key];
-    const anchorValue = base[key as keyof LaserParams] as number;
+    const rawAnchor = base[key as keyof LaserParams] as number | undefined;
+    // Older / sparse palette entries may be missing one of the six
+    // recipe fields; fall back to the domain's minimum so downstream
+    // formatters don't crash on undefined.
+    const anchorValue = (typeof rawAnchor === "number" && Number.isFinite(rawAnchor))
+      ? rawAnchor
+      : domain.min;
     if (variedSet.has(key)) {
       const values = cells
         .map((c): number | null => {

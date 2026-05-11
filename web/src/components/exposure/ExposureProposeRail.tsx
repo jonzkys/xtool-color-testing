@@ -102,7 +102,8 @@ const PARAM_LABEL: Record<string, string> = {
   pulse_width: "PULSE W",
 };
 
-function formatValue(v: number, unit: string): string {
+function formatValue(v: number | null | undefined, unit: string): string {
+  if (v == null || !Number.isFinite(v)) return "—";
   // Round integers to 0dp, fractional to 2dp, large numbers to 0dp.
   const u = unit ? ` ${unit}` : "";
   if (Math.abs(v) >= 1000) return `${Math.round(v)}${u}`;
