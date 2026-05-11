@@ -62,13 +62,23 @@ function fmt(n: number | null | undefined): string {
   return n.toPrecision(4);
 }
 
-const PARAM_FIELDS: { key: string; label: string; suffix?: string }[] = [
+const PARAM_FIELDS: {
+  key: string;
+  label: string;
+  suffix?: string;
+  /** Optional renderer for non-numeric values (booleans, enums). */
+  format?: (v: number | string | boolean) => string;
+}[] = [
   { key: "power", label: "Power", suffix: " %" },
   { key: "speed", label: "Speed", suffix: " mm/s" },
   { key: "frequency", label: "Frequency", suffix: " kHz" },
   { key: "density", label: "Density" },
   { key: "passes", label: "Passes" },
   { key: "pulse_width", label: "Pulse width", suffix: " ns" },
+  { key: "scan_angle", label: "Scan angle", suffix: "°" },
+  { key: "crosshatch", label: "Crosshatch", format: (v) => (v ? "yes" : "no") },
+  { key: "angle_mode", label: "Angle mode", format: (v) => String(v).toLowerCase() },
+  { key: "unidirectional", label: "Unidirectional", format: (v) => (v ? "yes" : "no") },
 ];
 
 export const ExposureFocusedCard: React.FC<Props> = ({
@@ -165,8 +175,8 @@ export const ExposureFocusedCard: React.FC<Props> = ({
                     </span>
                     <div className="flex items-baseline gap-2">
                       <span className="tabular-nums text-[color:var(--color-ink)]">
-                        {String(v)}
-                        {field.suffix ?? ""}
+                        {field.format ? field.format(v as number | string | boolean) : String(v)}
+                        {field.format ? "" : field.suffix ?? ""}
                       </span>
                       {isFilterableParam && onTogglePerParamFilter && numericValue != null && (
                         <button

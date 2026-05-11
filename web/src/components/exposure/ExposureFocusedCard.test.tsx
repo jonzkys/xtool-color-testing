@@ -119,6 +119,36 @@ describe("ExposureFocusedCard", () => {
     );
     expect(screen.getByText(/clear \(power\)/i)).toBeInTheDocument();
   });
+
+  it("renders crosshatch / scan_angle / angle_mode / unidirectional rows when present in params", () => {
+    const r = row(1, "#a0522d");
+    r.params = {
+      ...r.params,
+      scan_angle: 45,
+      crosshatch: true,
+      angle_mode: "incremental",
+      unidirectional: false,
+    };
+    render(<ExposureFocusedCard rows={[r]} focusedId={1} />);
+    expect(screen.getByText(/scan angle/i)).toBeInTheDocument();
+    expect(screen.getByText(/45°/)).toBeInTheDocument();
+    expect(screen.getByText(/crosshatch/i)).toBeInTheDocument();
+    expect(screen.getByText(/^yes$/i)).toBeInTheDocument();           // crosshatch=true
+    expect(screen.getByText(/angle mode/i)).toBeInTheDocument();
+    expect(screen.getByText(/^incremental$/i)).toBeInTheDocument();
+    expect(screen.getByText(/unidirectional/i)).toBeInTheDocument();
+    expect(screen.getByText(/^no$/i)).toBeInTheDocument();             // unidirectional=false
+  });
+
+  it("hides burn-setting rows that are null/undefined in params (legacy entries)", () => {
+    // Default row has only the 6 numeric params — no scan_angle / crosshatch / etc.
+    const r = row(1, "#a0522d");
+    render(<ExposureFocusedCard rows={[r]} focusedId={1} />);
+    expect(screen.queryByText(/scan angle/i)).toBeNull();
+    expect(screen.queryByText(/crosshatch/i)).toBeNull();
+    expect(screen.queryByText(/angle mode/i)).toBeNull();
+    expect(screen.queryByText(/unidirectional/i)).toBeNull();
+  });
 });
 
 describe("ExposureFocusedCard per-row filter buttons", () => {
