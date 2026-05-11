@@ -1,4 +1,4 @@
-import { chroma, hueDeg, type Lab } from "../color/math";
+import { chroma, circularStatsDeg, hueDeg, type Lab } from "../color/math";
 import type { ValidationCell } from "../types";
 import {
   computeComputedXValue,
@@ -131,17 +131,35 @@ export function perCellRange(
       }
       count = ys.length;
       if (ys.length > 0) {
-        let lo = Infinity;
-        let hi = -Infinity;
-        let sum = 0;
-        for (const y of ys) {
-          if (y < lo) lo = y;
-          if (y > hi) hi = y;
-          sum += y;
+        // Hue is cyclic: a run pair straddling the seam (e.g. [+179,
+        // -179]) is *visually identical*, but arithmetic mean/min/max
+        // would report mean=0 and a bar that spans the whole axis.
+        // Route hue-cyclic metrics through circular statistics; every
+        // other metric uses straight arithmetic.
+        const cyclic = metric === "delta_hue" || metric === "measured_hue";
+        if (cyclic) {
+          const stats = circularStatsDeg(
+            ys,
+            metric === "delta_hue",  // signed for Δ, unsigned [0,360) for raw hue
+          );
+          if (stats) {
+            mean = stats.mean;
+            min = stats.min;
+            max = stats.max;
+          }
+        } else {
+          let lo = Infinity;
+          let hi = -Infinity;
+          let sum = 0;
+          for (const y of ys) {
+            if (y < lo) lo = y;
+            if (y > hi) hi = y;
+            sum += y;
+          }
+          min = lo;
+          max = hi;
+          mean = sum / ys.length;
         }
-        min = lo;
-        max = hi;
-        mean = sum / ys.length;
       }
     }
 
