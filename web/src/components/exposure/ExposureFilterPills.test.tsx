@@ -9,27 +9,31 @@ describe("ExposureFilterPills", () => {
       <ExposureFilterPills
         filters={DEFAULT_FILTERS}
         entryCount={42}
-        onClearOne={() => undefined}
+        onChange={() => undefined}
         onClearAll={() => undefined}
       />,
     );
     expect(container.firstChild).toBeNull();
   });
 
-  it("renders one pill per active param range", () => {
+  it("renders one pill per clause across params", () => {
     const f: ActiveFilters = {
       ...DEFAULT_FILTERS,
-      paramRanges: {
-        power: { min: 10, max: 40 },
-        density: { min: 100, max: null },
+      paramClauses: {
+        power: [
+          { kind: "range", value: 10, valueHi: 40 },
+          { kind: "neq", value: 50 },
+        ],
+        density: [{ kind: "gte", value: 100 }],
       },
     };
     render(
       <ExposureFilterPills filters={f} entryCount={10}
-        onClearOne={() => undefined} onClearAll={() => undefined} />,
+        onChange={() => undefined} onClearAll={() => undefined} />,
     );
     expect(screen.getByText(/POWER 10–40/)).toBeInTheDocument();
-    expect(screen.getByText(/DENSITY ≥100/)).toBeInTheDocument();
+    expect(screen.getByText(/POWER ≠ 50/)).toBeInTheDocument();
+    expect(screen.getByText(/DENSITY ≥ 100/)).toBeInTheDocument();
   });
 
   it("renders test pill with lineage suffix", () => {
@@ -39,35 +43,35 @@ describe("ExposureFilterPills", () => {
     };
     render(
       <ExposureFilterPills filters={f} entryCount={1}
-        onClearOne={() => undefined} onClearAll={() => undefined} />,
+        onChange={() => undefined} onClearAll={() => undefined} />,
     );
     expect(screen.getByText(/TEST #42 \(\+source\)/)).toBeInTheDocument();
   });
 
   it("renders entry count and Clear all link", () => {
-    const f: ActiveFilters = {
-      ...DEFAULT_FILTERS, validatedOnly: true,
-    };
+    const f: ActiveFilters = { ...DEFAULT_FILTERS, validatedOnly: true };
     render(
       <ExposureFilterPills filters={f} entryCount={42}
-        onClearOne={() => undefined} onClearAll={() => undefined} />,
+        onChange={() => undefined} onClearAll={() => undefined} />,
     );
     expect(screen.getByText(/42 entries/)).toBeInTheDocument();
     expect(screen.getByText(/Clear all/)).toBeInTheDocument();
   });
 
-  it("clicking the x on a pill calls onClearOne with the dimension key", () => {
-    const onClearOne = vi.fn();
+  it("clicking the x on a clause pill removes that clause via onChange", () => {
+    const onChange = vi.fn();
     const f: ActiveFilters = {
       ...DEFAULT_FILTERS,
-      paramRanges: { power: { min: 10, max: 40 } },
+      paramClauses: { power: [{ kind: "eq", value: 14.6 }] },
     };
     render(
       <ExposureFilterPills filters={f} entryCount={1}
-        onClearOne={onClearOne} onClearAll={() => undefined} />,
+        onChange={onChange} onClearAll={() => undefined} />,
     );
-    fireEvent.click(screen.getByLabelText(/clear power/i));
-    expect(onClearOne).toHaveBeenCalledWith("range:power");
+    fireEvent.click(screen.getByLabelText(/clear clause:power:0/i));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const next: ActiveFilters = onChange.mock.calls[0][0];
+    expect(next.paramClauses.power).toBeUndefined();
   });
 
   it("clicking Clear all calls onClearAll", () => {
@@ -75,7 +79,7 @@ describe("ExposureFilterPills", () => {
     const f: ActiveFilters = { ...DEFAULT_FILTERS, validatedOnly: true };
     render(
       <ExposureFilterPills filters={f} entryCount={1}
-        onClearOne={() => undefined} onClearAll={onClearAll} />,
+        onChange={() => undefined} onClearAll={onClearAll} />,
     );
     fireEvent.click(screen.getByText(/Clear all/));
     expect(onClearAll).toHaveBeenCalled();
@@ -85,7 +89,7 @@ describe("ExposureFilterPills", () => {
     const f: ActiveFilters = { ...DEFAULT_FILTERS, trimOutliers: false };
     const { container } = render(
       <ExposureFilterPills filters={f} entryCount={1}
-        onClearOne={() => undefined} onClearAll={() => undefined} />,
+        onChange={() => undefined} onClearAll={() => undefined} />,
     );
     expect(container.firstChild).toBeNull();
   });

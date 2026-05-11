@@ -160,11 +160,11 @@ describe("ExposureFocusedCard per-row filter buttons", () => {
       <ExposureFocusedCard
         rows={rows}
         focusedId={1}
-        activeParamFilters={new Set()}
+        hasParamValueFilter={() => false}
         onTogglePerParamFilter={onToggle}
       />,
     );
-    fireEvent.click(screen.getByLabelText(/filter to power/i));
+    fireEvent.click(screen.getByLabelText(/filter scatter to power/i));
     expect(onToggle).toHaveBeenCalledWith("power", 65);
   });
 
@@ -174,7 +174,7 @@ describe("ExposureFocusedCard per-row filter buttons", () => {
       <ExposureFocusedCard
         rows={rows}
         focusedId={1}
-        activeParamFilters={new Set(["power"] as const)}
+        hasParamValueFilter={(p) => p === "power"}
         onTogglePerParamFilter={() => undefined}
       />,
     );
@@ -191,10 +191,10 @@ describe("ExposureFocusedCard per-row filter buttons", () => {
       <ExposureFocusedCard
         rows={rows}
         focusedId={1}
-        activeParamFilters={new Set(["power"] as const)}
+        hasParamValueFilter={(p) => p === "power"}
         onTogglePerParamFilter={() => undefined}
       />,
     );
-    expect(screen.getByLabelText(/clear power filter/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/remove power = .* filter/i)).toBeInTheDocument();
   });
 });

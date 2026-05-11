@@ -24,6 +24,7 @@ import {
   Textarea,
   Toolbar,
 } from "../ui";
+import { ExposureFilterStackConcept } from "../components/exposure/ExposureFilterStackConcept";
 
 /**
  * Dev-only route showing every primitive in every state.
@@ -254,6 +255,21 @@ export function StyleguidePage() {
               action={<Button variant="primary">+ New test</Button>}
             />
           </Card>
+        </Section>
+
+        <Section title="Exposure page — three-column layout concept">
+          <p className="text-[13px] text-[color:var(--color-ink-muted)] mb-3 max-w-[60ch]">
+            Static preview of the redesigned Exposure page. Left rail
+            holds the Filter Stack (clause chips, per-param MRU,
+            inline add editor, burn settings, tests). Middle column
+            is the scatter chart. Right rail holds Focus, Recipe,
+            Indices, Neighbours, Stats, Correlations, and Overlays.
+            Both rails cap to viewport height and scroll internally
+            if needed. Mockup only — no data wiring.
+          </p>
+          <div className="bg-[color:var(--color-bg)] rounded-sm">
+            <ExposureFilterStackConcept />
+          </div>
         </Section>
       </div>
     </PageContainer>

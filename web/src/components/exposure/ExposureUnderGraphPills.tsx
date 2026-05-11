@@ -107,16 +107,6 @@ export function ExposureUnderGraphPills({
           ⌖ trim 1/99%
         </button>
 
-        {f.brushRange && (
-          <button
-            type="button"
-            onClick={() => onChange({ ...f, brushRange: null })}
-            title="Clear brush range"
-            className="whitespace-nowrap px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border border-[color:var(--color-primary)] text-[color:var(--color-primary)] bg-[color:var(--color-surface-elevated)] hover:bg-[color:var(--color-surface)]"
-          >
-            ⌗ brush {f.brushRange[0]}–{f.brushRange[1]} ×
-          </button>
-        )}
       </div>
     </div>
   );

@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 import {
   DEFAULT_FILTERS, FILTERABLE_PARAMS,
-  type ActiveFilters, type FilterableParam, type ParamRange,
-  type SourceKind,
+  type ActiveFilters, type ClauseKind, type FilterableParam,
+  type ParamClause, type SourceKind,
 } from "./exposureFilters";
 
 const PARAM_KEY: Record<FilterableParam, string> = {
@@ -15,20 +15,31 @@ const KEY_PARAM: Record<string, FilterableParam> = Object.fromEntries(
   Object.entries(PARAM_KEY).map(([k, v]) => [v, k as FilterableParam])
 ) as Record<string, FilterableParam>;
 
-function encodeRange(r: ParamRange): string | null {
-  if (r.min == null && r.max == null) return null;
-  return `${r.min ?? ""}..${r.max ?? ""}`;
+const ALLOWED_OPS: ReadonlySet<ClauseKind> = new Set<ClauseKind>([
+  "eq", "neq", "lt", "lte", "gt", "gte", "range",
+]);
+
+function encodeClause(c: ParamClause): string {
+  if (c.kind === "range") return `range:${c.value}..${c.valueHi ?? c.value}`;
+  return `${c.kind}:${c.value}`;
 }
 
-function decodeRange(s: string): ParamRange | null {
-  const m = s.match(/^(-?\d*\.?\d*)\.\.(-?\d*\.?\d*)$/);
+function decodeClause(s: string): ParamClause | null {
+  const m = s.match(/^([a-z]+):(.+)$/);
   if (!m) return null;
-  const min = m[1] === "" ? null : Number(m[1]);
-  const max = m[2] === "" ? null : Number(m[2]);
-  if ((min != null && !Number.isFinite(min)) ||
-      (max != null && !Number.isFinite(max))) return null;
-  if (min == null && max == null) return null;
-  return { min, max };
+  const kind = m[1] as ClauseKind;
+  if (!ALLOWED_OPS.has(kind)) return null;
+  if (kind === "range") {
+    const rm = m[2].match(/^(-?\d*\.?\d*)\.\.(-?\d*\.?\d*)$/);
+    if (!rm) return null;
+    const value = Number(rm[1]);
+    const valueHi = Number(rm[2]);
+    if (!Number.isFinite(value) || !Number.isFinite(valueHi)) return null;
+    return { kind, value, valueHi };
+  }
+  const v = Number(m[2]);
+  if (!Number.isFinite(v)) return null;
+  return { kind, value: v };
 }
 
 const ALL_SOURCES = new Set<SourceKind>(["averaged", "single_result", "manual"]);
@@ -42,12 +53,10 @@ function setsEqual<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
 export function encodeFilters(f: ActiveFilters): string {
   const parts: string[] = [];
 
-  // Param ranges
   for (const k of FILTERABLE_PARAMS) {
-    const r = f.paramRanges[k];
-    if (!r) continue;
-    const encoded = encodeRange(r);
-    if (encoded) parts.push(`${PARAM_KEY[k]}=${encoded}`);
+    const clauses = f.paramClauses[k];
+    if (!clauses || clauses.length === 0) continue;
+    parts.push(`${PARAM_KEY[k]}=${clauses.map(encodeClause).join(",")}`);
   }
 
   if (!setsEqual(f.sources, ALL_SOURCES)) {
@@ -61,9 +70,9 @@ export function encodeFilters(f: ActiveFilters): string {
     parts.push(`lin=${[...f.testLineage].join(",")}`);
   }
   if (f.testKind !== "all") parts.push(`kind=${f.testKind}`);
-  if (f.brushRange) {
-    parts.push(`brush=${f.brushRange[0]}..${f.brushRange[1]}`);
-  }
+  if (f.crosshatch !== "any") parts.push(`xh=${f.crosshatch}`);
+  if (f.unidirectional !== "any") parts.push(`uni=${f.unidirectional}`);
+  if (f.angleMode !== "any") parts.push(`am=${f.angleMode}`);
   if (!f.trimOutliers) parts.push("trim=0");
 
   return parts.join("&");
@@ -76,13 +85,17 @@ export function decodeFilters(query: string): ActiveFilters {
     sources: new Set(DEFAULT_FILTERS.sources),
     testIds: new Set(),
     testLineage: new Set(),
-    paramRanges: {},
+    paramClauses: {},
   };
+  const mutableClauses: Partial<Record<FilterableParam, ParamClause[]>> = {};
 
   for (const [key, value] of params.entries()) {
     if (key in KEY_PARAM) {
-      const r = decodeRange(value);
-      if (r) (out.paramRanges as Record<FilterableParam, ParamRange>)[KEY_PARAM[key]] = r;
+      const param = KEY_PARAM[key];
+      const clauses = value.split(",")
+        .map(decodeClause)
+        .filter((c): c is ParamClause => c !== null);
+      if (clauses.length > 0) mutableClauses[param] = clauses;
       continue;
     }
     if (key === "src") {
@@ -98,7 +111,6 @@ export function decodeFilters(query: string): ActiveFilters {
       continue;
     }
     if (key === "test") {
-      // Accept both new comma-list format and legacy single-id format.
       const ids = value.split(",")
         .map((s) => Number(s.trim()))
         .filter((n) => Number.isFinite(n) && n > 0);
@@ -118,10 +130,17 @@ export function decodeFilters(query: string): ActiveFilters {
       }
       continue;
     }
-    if (key === "brush") {
-      const r = decodeRange(value);
-      if (r && r.min != null && r.max != null) {
-        out.brushRange = [r.min, r.max];
+    if (key === "xh") {
+      if (value === "any" || value === "yes" || value === "no") out.crosshatch = value;
+      continue;
+    }
+    if (key === "uni") {
+      if (value === "any" || value === "yes" || value === "no") out.unidirectional = value;
+      continue;
+    }
+    if (key === "am") {
+      if (value === "any" || value === "fixed" || value === "incremental") {
+        out.angleMode = value;
       }
       continue;
     }
@@ -129,9 +148,8 @@ export function decodeFilters(query: string): ActiveFilters {
       out.trimOutliers = value !== "0";
       continue;
     }
-    // unknown keys: silently ignored
   }
-
+  out.paramClauses = mutableClauses;
   return out;
 }
 
@@ -145,7 +163,6 @@ export function useFiltersUrlSync(
 ): void {
   const initialised = useRef(false);
 
-  // Read once on mount.
   useEffect(() => {
     const hash = window.location.hash || "";
     const qIdx = hash.indexOf("?");
@@ -154,11 +171,9 @@ export function useFiltersUrlSync(
       setState(decoded);
     }
     initialised.current = true;
-    // We deliberately ignore setState's identity below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Write on every state change after mount.
   useEffect(() => {
     if (!initialised.current) return;
     const encoded = encodeFilters(state);
