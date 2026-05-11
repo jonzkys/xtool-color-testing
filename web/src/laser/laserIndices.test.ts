@@ -1,16 +1,17 @@
 import { describe, expect, it } from "vitest";
-import fixtures from "./__fixtures__/laser-indices-v3.json";
+import fixtures from "./__fixtures__/laser-indices-v4.json";
 import { computeIndices, type LaserParams } from "./laserIndices";
 
 interface Fixture {
-  input: LaserParams;
+  input: LaserParams & { crosshatch: boolean };
   expected: Record<string, number>;
 }
 
 describe("computeIndices (TS port of compute_indices v4)", () => {
   it("matches the Python source-of-truth fixtures", () => {
     for (const f of fixtures as Fixture[]) {
-      const got = computeIndices(f.input);
+      const { crosshatch, ...laserParams } = f.input;
+      const got = computeIndices(laserParams, { crosshatch });
       for (const [k, expected] of Object.entries(f.expected)) {
         if (k === "formula_version") {
           expect(got[k as keyof typeof got]).toBe(expected);
