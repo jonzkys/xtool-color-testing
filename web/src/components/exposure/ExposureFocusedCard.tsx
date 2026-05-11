@@ -1,5 +1,5 @@
 import * as React from "react";
-import type { ExposureRow, IndexRow } from "./exposureCorrelations";
+import type { ExposureRow } from "./exposureCorrelations";
 import { ExposureChromaDisc } from "./ExposureChromaDisc";
 import type { FamilyMember, VaryingAxis } from "./recipeFamilies";
 import { type FilterableParam, FILTERABLE_PARAMS } from "./exposureFilters";
@@ -7,9 +7,6 @@ import { type FilterableParam, FILTERABLE_PARAMS } from "./exposureFilters";
 interface Props {
   rows: readonly ExposureRow[];
   focusedId: number | null;
-  /** The current X axis — emphasised in the indices readout so the
-   *  user sees at a glance what the scatter is comparing. */
-  highlightIndex?: IndexRow;
   onDiscHover?: (id: number) => void;
   onDiscLeave?: () => void;
   onDiscClick?: (id: number) => void;
@@ -34,34 +31,6 @@ interface Props {
   onTogglePerParamFilter?: (param: FilterableParam, value: number) => void;
 }
 
-const INDEX_LABELS: Record<IndexRow, string> = {
-  total_exposure_index: "TOTAL_EXPOSURE",
-  ablation_aggression_index: "AGGRESSION",
-  delivery_smoothness_index: "SMOOTHNESS",
-  pulse_intensity_index: "PULSE_INTENSITY",
-  pulse_energy_index: "PULSE_ENERGY",
-  pulse_spacing_mm: "PULSE_SPACING_MM",
-  line_spacing_mm: "LINE_SPACING (mm)",
-};
-
-const INDEX_ORDER: IndexRow[] = [
-  "total_exposure_index",
-  "ablation_aggression_index",
-  "delivery_smoothness_index",
-  "pulse_intensity_index",
-  "pulse_energy_index",
-  "pulse_spacing_mm",
-  "line_spacing_mm",
-];
-
-function fmt(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  const abs = Math.abs(n);
-  if (abs === 0) return "0";
-  if (abs < 1e-3 || abs >= 1e5) return n.toExponential(2);
-  return n.toPrecision(4);
-}
-
 const PARAM_FIELDS: {
   key: string;
   label: string;
@@ -84,7 +53,6 @@ const PARAM_FIELDS: {
 export const ExposureFocusedCard: React.FC<Props> = ({
   rows,
   focusedId,
-  highlightIndex,
   onDiscHover,
   onDiscLeave,
   onDiscClick,
@@ -256,53 +224,6 @@ export const ExposureFocusedCard: React.FC<Props> = ({
           )}
 
           {focused && neighboursSlot}
-
-          <div className="border-t border-[color:var(--color-border)] pt-3">
-            <div className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold mb-2">
-              Indices
-            </div>
-            <div className="flex flex-col gap-1">
-              {INDEX_ORDER.map((key) => {
-                const isHighlighted = key === highlightIndex;
-                const v =
-                  key === "pulse_spacing_mm"
-                    ? focused.indices.pulse_spacing_mm
-                    : (focused.indices[key] as number | null);
-                return (
-                  <div
-                    key={key}
-                    className={[
-                      "flex justify-between items-baseline font-mono text-[11.5px] rounded-[3px] -mx-1 px-1 py-0.5",
-                      isHighlighted
-                        ? "bg-[color:var(--color-primary-tint)]"
-                        : "",
-                    ].join(" ")}
-                  >
-                    <span
-                      className={[
-                        "text-[10px] uppercase tracking-[0.16em]",
-                        isHighlighted
-                          ? "text-[color:var(--color-primary)] font-semibold"
-                          : "text-[color:var(--color-ink-subtle)]",
-                      ].join(" ")}
-                    >
-                      {INDEX_LABELS[key]}
-                    </span>
-                    <span
-                      className={[
-                        "tabular-nums",
-                        isHighlighted
-                          ? "text-[color:var(--color-primary)] font-semibold"
-                          : "text-[color:var(--color-ink)]",
-                      ].join(" ")}
-                    >
-                      {fmt(v as number | null)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
         </>
       )}
     </div>

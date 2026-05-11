@@ -20,15 +20,8 @@ const STD_PROPS = {
   xScale: "log" as const, yScale: "log" as const,
   onXKeyChange: NOOP, onYKeyChange: NOOP,
   onXScaleChange: NOOP, onYScaleChange: NOOP,
-  filtersOpen: false, onToggleFilters: NOOP,
-  activeFilterCount: 0,
   proposeOpen: false, onToggleProposeMode: NOOP,
   proposeAvailable: true,
-  colourField: false, onToggleColourField: NOOP,
-  colourFieldAvailable: true,
-  contours: false, onToggleContours: NOOP,
-  contoursAvailable: true,
-  fadeDots: false, onToggleFadeDots: NOOP,
 };
 
 describe("ExposureToolbar", () => {
@@ -64,21 +57,6 @@ describe("ExposureToolbar", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
-  it("FILTERS button shows the active count when > 0", () => {
-    render(<ExposureToolbar {...STD_PROPS} activeFilterCount={3} />);
-    expect(screen.getByText(/FILTERS · 3/i)).toBeInTheDocument();
-  });
-
-  it("FILTERS button hides the count when 0", () => {
-    render(<ExposureToolbar {...STD_PROPS} activeFilterCount={0} />);
-    expect(screen.queryByText(/FILTERS · 0/i)).toBeNull();
-    expect(screen.getByText(/FILTERS/i)).toBeInTheDocument();
-  });
-
-  it("clicking FILTERS calls onToggleFilters", () => {
-    const onToggleFilters = vi.fn();
-    render(<ExposureToolbar {...STD_PROPS} onToggleFilters={onToggleFilters} />);
-    fireEvent.click(screen.getByText(/FILTERS/i));
-    expect(onToggleFilters).toHaveBeenCalled();
-  });
+  // Filters + overlays moved out of the toolbar in 2026-05 — they're
+  // now tabs in the right rail (ExposureRailTabs).
 });
