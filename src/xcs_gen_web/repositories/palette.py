@@ -68,8 +68,18 @@ def _processing_params_from_palette_dict(d: dict[str, Any]) -> ProcessingParams:
 def _compute_index_values(params: dict[str, Any]) -> dict[str, Any]:
     """Return the dict of laser-index columns + metadata for a
     palette_entries row, computed from a params_json-shaped dict.
+
+    Reads ``crosshatch`` (boolean) from the dict if present and threads
+    it to ``compute_indices`` so v4's effective-passes doubling applies.
+    Legacy entries that lack the key default to ``False``; any of those
+    that were actually burned with crosshatch=True will need a
+    JOIN-based recompute pass (follow-up) to correct.
     """
-    indices = compute_indices(_processing_params_from_palette_dict(params))
+    crosshatch = bool(params.get("crosshatch", False))
+    indices = compute_indices(
+        _processing_params_from_palette_dict(params),
+        crosshatch=crosshatch,
+    )
     return {
         "pulse_spacing_mm": indices.pulse_spacing_mm,
         "line_spacing_mm": indices.line_spacing_mm,

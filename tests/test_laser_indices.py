@@ -67,8 +67,8 @@ def test_zero_pulse_width_raises_value_error_naming_field() -> None:
         compute_indices(p)
 
 
-def test_formula_version_is_three() -> None:
-    assert INDICES_FORMULA_VERSION == 3
+def test_formula_version_is_four() -> None:
+    assert INDICES_FORMULA_VERSION == 4
 
 
 def test_immutable_dataclass() -> None:
@@ -124,7 +124,7 @@ def test_compute_indices_returns_line_spacing_mm():
     # line_spacing_mm = 10 / density (cm → mm; lines/cm → mm/line)
     assert out.line_spacing_mm == 10 / 5000
     assert out.density_model == "lpc"
-    assert out.formula_version == 3
+    assert out.formula_version == INDICES_FORMULA_VERSION
 
 
 def test_compute_indices_defaults_density_model_to_lpc():
@@ -147,3 +147,54 @@ def test_laser_indices_dataclass_has_no_line_spacing_index():
     fields = {f.name for f in dataclasses.fields(LaserIndices)}
     assert "line_spacing_index" not in fields
     assert "line_spacing_mm" in fields
+
+
+# ---------------------------------------------------------------------------
+# v4 crosshatch tests
+# ---------------------------------------------------------------------------
+
+def _pp(**kwargs):
+    base = dict(
+        power=14.6, speed=1152, mopa_frequency=100, density=5000,
+        pulse_width=200, repeat=1,
+    )
+    base.update(kwargs)
+    return ProcessingParams(**base)
+
+
+def test_crosshatch_doubles_total_exposure_index():
+    a = compute_indices(_pp())
+    b = compute_indices(_pp(), crosshatch=True)
+    assert b.total_exposure_index == pytest.approx(a.total_exposure_index * 2)
+
+
+def test_crosshatch_doubles_ablation_aggression_index():
+    a = compute_indices(_pp())
+    b = compute_indices(_pp(), crosshatch=True)
+    assert b.ablation_aggression_index == pytest.approx(a.ablation_aggression_index * 2)
+
+
+def test_crosshatch_doubles_delivery_smoothness_index():
+    a = compute_indices(_pp())
+    b = compute_indices(_pp(), crosshatch=True)
+    assert b.delivery_smoothness_index == pytest.approx(a.delivery_smoothness_index * 2)
+
+
+def test_crosshatch_leaves_per_pulse_indices_unchanged():
+    a = compute_indices(_pp())
+    b = compute_indices(_pp(), crosshatch=True)
+    assert b.pulse_spacing_mm == pytest.approx(a.pulse_spacing_mm)
+    assert b.line_spacing_mm == pytest.approx(a.line_spacing_mm)
+    assert b.pulse_energy_index == pytest.approx(a.pulse_energy_index)
+    assert b.pulse_intensity_index == pytest.approx(a.pulse_intensity_index)
+
+
+def test_crosshatch_default_false_matches_no_kwarg():
+    a = compute_indices(_pp())
+    b = compute_indices(_pp(), crosshatch=False)
+    assert a == b
+
+
+def test_formula_version_in_result():
+    indices = compute_indices(_pp())
+    assert indices.formula_version == 4

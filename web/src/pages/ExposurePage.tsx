@@ -2,7 +2,7 @@ import * as React from "react";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { listMaterials } from "../api/library";
 import { listPaletteEntries } from "../api/palette";
-import { listTests, createTest } from "../api/tests";
+import { listTests, createTest, getTest } from "../api/tests";
 import { patchValidationCells } from "../api/validationCells";
 import { getValidationProfile, useCurrentMachine } from "../state/machine";
 import { defaultBaseParams, defaultSpec } from "../defaults";
@@ -52,6 +52,7 @@ import {
   ExposureProposeRail,
   type RangeReadout,
   type ParamRow,
+  type BurnSettings,
 } from "../components/exposure/ExposureProposeRail";
 import type { LaserParams } from "../laser/laserIndices";
 import { HelpTip } from "../components/HelpTip";
@@ -117,6 +118,16 @@ const PROPOSE_PARAM_LABELS: Record<ParamKey, { name: string; unit: string }> = {
   speed:     { name: "SPEED",   unit: "mm/s" },
   frequency: { name: "FREQ",    unit: "kHz" },
   density:   { name: "DENSITY", unit: "lpc" },
+};
+
+// Conservative fallback when the anchor has no source test (or fetch
+// fails). Matches the defaults the backend stamps onto fresh validation
+// tests. User overrides + source-test inheritance layer on top.
+const STATIC_BURN_DEFAULTS: BurnSettings = {
+  scan_angle: 90,
+  crosshatch: false,
+  angle_mode: "fixed",
+  unidirectional: false,
 };
 
 // ── PARAMS editor (rail) — module-scope domain table ─────────────────────
@@ -470,6 +481,22 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const [proposeOverride, setProposeOverride] = useState<ModeChoice | null>(null);
   const [cellCount, setCellCount] = useState(16);
   const [paramOverrides, setParamOverrides] = useState<Partial<Record<ParamRowKey, number>>>({});
+
+  // ── propose-test BURN SETTINGS state ──────────────────────────────────
+  // Three-layer cascade like paramOverrides:
+  //   static defaults  ◀  source-test defaults  ◀  user overrides
+  // sourceBurnDefaults is populated by fetching anchor.test_id's source
+  // test on anchor change; burnOverrides captures rail edits. The
+  // effective settings flow into the preview memo's crosshatch arg and
+  // into handleCreateTest's spec.
+  const [sourceBurnDefaults, setSourceBurnDefaults] = useState<Partial<BurnSettings>>({});
+  const [burnOverrides, setBurnOverrides] = useState<Partial<BurnSettings>>({});
+  const effectiveBurnSettings: BurnSettings = useMemo(() => ({
+    ...STATIC_BURN_DEFAULTS,
+    ...sourceBurnDefaults,
+    ...burnOverrides,
+  }), [sourceBurnDefaults, burnOverrides]);
+
   const { registry, machineId } = useCurrentMachine();
 
   // ── propose-test derivations ──────────────────────────────────────────
@@ -500,6 +527,34 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     return { ...base, ...paramOverrides } as LaserParams;
   }, [anchor, paramOverrides]);
 
+  // Fetch the anchor's source test so the BURN SETTINGS section can
+  // inherit its scan_angle / crosshatch / angle_mode / unidirectional as
+  // starting defaults. The user's burnOverrides still win — this just
+  // moves the baseline closer to "what generated the anchor sample" so
+  // the predicted indices match the burn the user is iterating from.
+  useEffect(() => {
+    const testId = anchor?.test_id;
+    if (testId == null) {
+      setSourceBurnDefaults({});
+      return;
+    }
+    let cancelled = false;
+    getTest(testId).then((t) => {
+      if (cancelled) return;
+      const sBase = t.spec.base_params;
+      setSourceBurnDefaults({
+        scan_angle: typeof sBase?.scan_angle === "number" ? sBase.scan_angle : STATIC_BURN_DEFAULTS.scan_angle,
+        crosshatch: !!t.spec.crosshatch,
+        angle_mode: (t.spec.angle_mode === "incremental" ? "incremental" : "fixed") as BurnSettings["angle_mode"],
+        unidirectional: !!t.spec.unidirectional,
+      });
+    }).catch(() => {
+      // Network/auth failure — leave defaults empty (= static fallbacks apply).
+      if (!cancelled) setSourceBurnDefaults({});
+    });
+    return () => { cancelled = true; };
+  }, [anchor?.test_id]);
+
   // Palette entries currently inside the polygon — count is shown in the
   // rail; coords feed fillByInverseSolve so new cells avoid existing ones.
   const entriesInsidePolygonCoords = useMemo<readonly { x: number; y: number }[]>(() => {
@@ -521,7 +576,10 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   }>(() => {
     if (!effective || !effectiveBaseParams) return { curve: null, cells: [] };
     if (effective.mode === "curve") {
-      const curve = computeCurve(effectiveBaseParams, effective.varyParam, xKey, yKeyForMath, F2_MOPA_LIMITS);
+      const curve = computeCurve(
+        effectiveBaseParams, effective.varyParam, xKey, yKeyForMath,
+        F2_MOPA_LIMITS, effectiveBurnSettings.crosshatch,
+      );
       const segments = clipPolylineToPolygon(curve, polygon);
       const flat = segments.flat();
       if (flat.length === 0) return { curve, cells: [] };
@@ -531,9 +589,10 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     const cells = fillByInverseSolve(
       effectiveBaseParams, effective.varyParams, polygon, xKey, yKeyForMath,
       F2_MOPA_LIMITS, cellCount, entriesInsidePolygonCoords,
+      effectiveBurnSettings.crosshatch,
     );
     return { curve: null, cells };
-  }, [effective, effectiveBaseParams, polygon, xKey, yKeyForMath, cellCount, entriesInsidePolygonCoords]);
+  }, [effective, effectiveBaseParams, polygon, xKey, yKeyForMath, cellCount, entriesInsidePolygonCoords, effectiveBurnSettings.crosshatch]);
 
   const paramRows = useMemo(
     () => buildParamRows(effectiveBaseParams, effective, preview.cells),
@@ -570,6 +629,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     setPolygon([]);
     setProposeOverride(null);
     setParamOverrides({});
+    setBurnOverrides({});
+    setSourceBurnDefaults({});
   }, [xKey, yKeyBi, mode, materialId]);
 
   const handleTogglePerParamFilter = useCallback(
@@ -630,6 +691,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     setPolygon([]);
     setProposeOverride(null);
     setParamOverrides({});
+    setBurnOverrides({});
+    setSourceBurnDefaults({});
   }, []);
 
   const handleToggleProposeMode = useCallback(() => {
@@ -638,6 +701,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       setPolygon([]);
       setProposeOverride(null);
       setParamOverrides({});
+      setBurnOverrides({});
+      setSourceBurnDefaults({});
     } else {
       closeProposeWizard();
     }
@@ -681,6 +746,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       density: baseParamsAnchor.density,
       passes: baseParamsAnchor.passes,
       pulse_width: baseParamsAnchor.pulse_width,
+      scan_angle: effectiveBurnSettings.scan_angle,
       mode: machineModeId,
     };
 
@@ -699,6 +765,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       height_mm: 8,
       hide_axis_labels: true,
       cells_per_row: validationCells.length,
+      crosshatch: effectiveBurnSettings.crosshatch,
+      angle_mode: effectiveBurnSettings.angle_mode,
+      unidirectional: effectiveBurnSettings.unidirectional,
       base_params: baseParams,
     };
 
@@ -731,7 +800,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       // the failure path is the dev console + Sentry.
       console.error("Create test failed:", e);
     }
-  }, [anchor, preview.cells, effective, effectiveBaseParams, materialId, registry, machineId]);
+  }, [anchor, preview.cells, effective, effectiveBaseParams, effectiveBurnSettings, materialId, registry, machineId]);
 
   // ── render ─────────────────────────────────────────────────────────────
 
@@ -1059,8 +1128,18 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               onParamOverrideChange={(key, value) => {
                 setParamOverrides((prev) => ({ ...prev, [key]: value }));
               }}
-              hasParamOverrides={Object.keys(paramOverrides).length > 0}
-              onResetParams={() => setParamOverrides({})}
+              hasParamOverrides={
+                Object.keys(paramOverrides).length > 0
+                || Object.keys(burnOverrides).length > 0
+              }
+              onResetParams={() => {
+                setParamOverrides({});
+                setBurnOverrides({});
+              }}
+              burnSettings={effectiveBurnSettings}
+              onBurnSettingChange={(key, value) => {
+                setBurnOverrides((prev) => ({ ...prev, [key]: value }));
+              }}
               rangeReadout={rangeReadout}
               canCreate={anchor !== null && preview.cells.length > 0}
               helperText={

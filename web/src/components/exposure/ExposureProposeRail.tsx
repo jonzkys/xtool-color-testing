@@ -9,6 +9,21 @@ interface RangeReadout {
   unit: string;
 }
 
+export interface BurnSettings {
+  /** Starting scan angle in degrees. 90 = vertical scan (default). */
+  scan_angle: number;
+  /** When true, each pass burns a perpendicular companion stroke
+   *  (doubling delivered energy per cell). v4's compute_indices
+   *  factors this in for TEi/AAi/DSi. */
+  crosshatch: boolean;
+  /** Multi-pass angle behaviour. "fixed" = all passes same angle;
+   *  "incremental" = XCS rotates angle between passes. */
+  angle_mode: "fixed" | "incremental";
+  /** When true, the bitmap-scan mode is oneWay (unidirectional);
+   *  otherwise zMode (bi-directional zigzag, default). */
+  unidirectional: boolean;
+}
+
 export type ParamRow =
   | {
       key: ParamKey | "passes" | "pulse_width";
@@ -41,6 +56,9 @@ interface Props {
   hasParamOverrides: boolean;
   /** Clears every override → editable rows snap back to the anchor's values. */
   onResetParams: () => void;
+  /** Burn settings — non-laser-index params written to the test spec. */
+  burnSettings: BurnSettings;
+  onBurnSettingChange: <K extends keyof BurnSettings>(key: K, value: BurnSettings[K]) => void;
   rangeReadout: ReadonlyArray<RangeReadout>;
   canCreate: boolean;
   helperText: string | null;
@@ -71,6 +89,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
   anchor, entriesInsidePolygon, mode, onModeChange, cellCount, onCellCountChange,
   paramRows, onParamOverrideChange,
   hasParamOverrides, onResetParams,
+  burnSettings, onBurnSettingChange,
   rangeReadout, canCreate, helperText, onCreate, onCancel,
 }) => {
   const isFill = mode.mode === "fill";
@@ -253,6 +272,78 @@ export const ExposureProposeRail: React.FC<Props> = ({
               )}
             </div>
           ))}
+        </div>
+      </section>
+
+      <section data-role="propose-burn-settings">
+        <div className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)] mb-2">
+          Burn settings
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2" data-row="scan_angle">
+            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[68px] flex-none">
+              SCAN ANGLE
+            </div>
+            <input
+              type="range"
+              min={0} max={360} step={1}
+              value={burnSettings.scan_angle}
+              onChange={(e) => onBurnSettingChange("scan_angle", Number(e.target.value))}
+              aria-label="Scan angle"
+              className="flex-1"
+            />
+            <div className="font-mono text-[10px] text-[color:var(--color-ink)] tabular-nums w-[60px] flex-none text-right">
+              {burnSettings.scan_angle}°
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 cursor-pointer" data-row="crosshatch">
+            <input
+              type="checkbox"
+              checked={burnSettings.crosshatch}
+              onChange={(e) => onBurnSettingChange("crosshatch", e.target.checked)}
+              aria-label="Crosshatch"
+            />
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)]">
+              Crosshatch
+            </span>
+          </label>
+
+          <div className="flex items-center gap-2" data-row="angle_mode">
+            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[68px] flex-none">
+              ANGLE MODE
+            </div>
+            <div className="flex gap-1 flex-1">
+              {(["fixed", "incremental"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={burnSettings.angle_mode === m}
+                  onClick={() => onBurnSettingChange("angle_mode", m)}
+                  className={
+                    "flex-1 px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] rounded-sm border " +
+                    (burnSettings.angle_mode === m
+                      ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
+                      : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+                  }
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 cursor-pointer" data-row="unidirectional">
+            <input
+              type="checkbox"
+              checked={burnSettings.unidirectional}
+              onChange={(e) => onBurnSettingChange("unidirectional", e.target.checked)}
+              aria-label="Unidirectional"
+            />
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)]">
+              Unidirectional
+            </span>
+          </label>
         </div>
       </section>
 

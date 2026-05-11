@@ -980,3 +980,69 @@ def test_palette_entry_dict_has_no_line_spacing_index(fresh_db):
     assert "line_spacing_index" not in e["indices"]
     assert "line_spacing_mm" in e["indices"]
     assert e["indices"]["line_spacing_mm"] == pytest.approx(10 / 100)
+
+
+# ───── _compute_index_values crosshatch threading ─────────────────────
+
+
+_BASE_PARAMS = {
+    "power": 14.6,
+    "speed": 1152,
+    "frequency": 100,
+    "density": 5000,
+    "passes": 1,
+    "pulse_width": 200,
+}
+
+
+def test_compute_index_values_default_no_crosshatch():
+    from xcs_gen_web.repositories.palette import _compute_index_values
+    values = _compute_index_values(_BASE_PARAMS)
+    assert values["indices_formula_version"] == 4
+
+
+def test_compute_index_values_doubles_TEi_when_crosshatch_true():
+    from xcs_gen_web.repositories.palette import _compute_index_values
+    no_xh = _compute_index_values(_BASE_PARAMS)
+    with_xh = _compute_index_values({**_BASE_PARAMS, "crosshatch": True})
+    assert with_xh["total_exposure_index"] == pytest.approx(
+        no_xh["total_exposure_index"] * 2,
+    )
+
+
+def test_compute_index_values_doubles_AAi_when_crosshatch_true():
+    from xcs_gen_web.repositories.palette import _compute_index_values
+    no_xh = _compute_index_values(_BASE_PARAMS)
+    with_xh = _compute_index_values({**_BASE_PARAMS, "crosshatch": True})
+    assert with_xh["ablation_aggression_index"] == pytest.approx(
+        no_xh["ablation_aggression_index"] * 2,
+    )
+
+
+def test_compute_index_values_doubles_DSi_when_crosshatch_true():
+    from xcs_gen_web.repositories.palette import _compute_index_values
+    no_xh = _compute_index_values(_BASE_PARAMS)
+    with_xh = _compute_index_values({**_BASE_PARAMS, "crosshatch": True})
+    assert with_xh["delivery_smoothness_index"] == pytest.approx(
+        no_xh["delivery_smoothness_index"] * 2,
+    )
+
+
+def test_compute_index_values_leaves_per_pulse_indices_unchanged():
+    from xcs_gen_web.repositories.palette import _compute_index_values
+    no_xh = _compute_index_values(_BASE_PARAMS)
+    with_xh = _compute_index_values({**_BASE_PARAMS, "crosshatch": True})
+    for k in [
+        "pulse_spacing_mm",
+        "line_spacing_mm",
+        "pulse_energy_index",
+        "pulse_intensity_index",
+    ]:
+        assert with_xh[k] == pytest.approx(no_xh[k])
+
+
+def test_compute_index_values_treats_missing_crosshatch_as_false():
+    from xcs_gen_web.repositories.palette import _compute_index_values
+    values_explicit = _compute_index_values({**_BASE_PARAMS, "crosshatch": False})
+    values_missing = _compute_index_values(_BASE_PARAMS)   # no key at all
+    assert values_explicit == values_missing

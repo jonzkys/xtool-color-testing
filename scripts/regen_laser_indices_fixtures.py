@@ -1,4 +1,4 @@
-"""Regenerate web/src/laser/__fixtures__/laser-indices-v3.json from the
+"""Regenerate web/src/laser/__fixtures__/laser-indices-v4.json from the
 Python compute_indices source of truth. Run after any change to the
 formulas. The TS port test reads this file and asserts byte-identical
 floats (within 1e-6) for each entry.
@@ -13,31 +13,45 @@ from xcs_gen.laser_indices import compute_indices
 from xcs_gen.model import ProcessingParams
 
 
-_INPUT_GRID: list[dict[str, float]] = [
+# 12 crosshatch=False rows reproducing v3's parity coverage, plus
+# 5 crosshatch=True rows asserting the v4 doubling on TEi/AAi/DSi.
+_INPUT_GRID: list[dict[str, object]] = [
     {"power": 14.6, "speed": 1152, "frequency": 100, "density": 5000,
-     "pulse_width": 200, "passes": 1},
+     "pulse_width": 200, "passes": 1, "crosshatch": False},
     {"power": 30.0, "speed": 800,  "frequency": 60,  "density": 1000,
-     "pulse_width": 200, "passes": 2},
+     "pulse_width": 200, "passes": 2, "crosshatch": False},
     {"power": 50.0, "speed": 4000, "frequency": 200, "density": 3000,
-     "pulse_width": 100, "passes": 1},
+     "pulse_width": 100, "passes": 1, "crosshatch": False},
     {"power": 1.0,  "speed": 100,  "frequency": 60,  "density": 100,
-     "pulse_width": 100, "passes": 1},
+     "pulse_width": 100, "passes": 1, "crosshatch": False},
     {"power": 100.0,"speed": 15000,"frequency": 500, "density": 5000,
-     "pulse_width": 200, "passes": 99},
+     "pulse_width": 200, "passes": 99, "crosshatch": False},
     {"power": 25.5, "speed": 1500, "frequency": 150, "density": 2000,
-     "pulse_width": 50,  "passes": 3},
+     "pulse_width": 50,  "passes": 3, "crosshatch": False},
     {"power": 75.0, "speed": 6000, "frequency": 300, "density": 800,
-     "pulse_width": 80,  "passes": 5},
+     "pulse_width": 80,  "passes": 5, "crosshatch": False},
     {"power": 12.0, "speed": 250,  "frequency": 80,  "density": 4500,
-     "pulse_width": 200, "passes": 1},
+     "pulse_width": 200, "passes": 1, "crosshatch": False},
     {"power": 60.0, "speed": 2400, "frequency": 250, "density": 1500,
-     "pulse_width": 30,  "passes": 4},
+     "pulse_width": 30,  "passes": 4, "crosshatch": False},
     {"power": 8.5,  "speed": 600,  "frequency": 70,  "density": 3500,
-     "pulse_width": 200, "passes": 2},
+     "pulse_width": 200, "passes": 2, "crosshatch": False},
     {"power": 1.0,  "speed": 2,    "frequency": 60,  "density": 1,
-     "pulse_width": 30,  "passes": 1},
+     "pulse_width": 30,  "passes": 1, "crosshatch": False},
     {"power": 100.0,"speed": 15000,"frequency": 500, "density": 5000,
-     "pulse_width": 200, "passes": 1},
+     "pulse_width": 200, "passes": 1, "crosshatch": False},
+    # v4 crosshatch coverage — duplicates of selected non-crosshatch
+    # rows above with the flag on.
+    {"power": 14.6, "speed": 1152, "frequency": 100, "density": 5000,
+     "pulse_width": 200, "passes": 1, "crosshatch": True},
+    {"power": 30.0, "speed": 800,  "frequency": 60,  "density": 1000,
+     "pulse_width": 200, "passes": 2, "crosshatch": True},
+    {"power": 50.0, "speed": 4000, "frequency": 200, "density": 3000,
+     "pulse_width": 100, "passes": 1, "crosshatch": True},
+    {"power": 25.5, "speed": 1500, "frequency": 150, "density": 2000,
+     "pulse_width": 50,  "passes": 3, "crosshatch": True},
+    {"power": 60.0, "speed": 2400, "frequency": 250, "density": 1500,
+     "pulse_width": 30,  "passes": 4, "crosshatch": True},
 ]
 
 
@@ -50,9 +64,15 @@ def _row(params: dict) -> dict:
         pulse_width=int(params["pulse_width"]),
         repeat=int(params["passes"]),
     )
-    indices = compute_indices(pp)
+    crosshatch = bool(params.get("crosshatch", False))
+    indices = compute_indices(pp, crosshatch=crosshatch)
     return {
-        "input": params,
+        "input": {
+            "power": params["power"], "speed": params["speed"],
+            "frequency": params["frequency"], "density": params["density"],
+            "pulse_width": params["pulse_width"], "passes": params["passes"],
+            "crosshatch": crosshatch,
+        },
         "expected": {
             "pulse_spacing_mm": indices.pulse_spacing_mm,
             "line_spacing_mm": indices.line_spacing_mm,
@@ -67,7 +87,7 @@ def _row(params: dict) -> dict:
 
 
 def main() -> None:
-    out_path = Path("web/src/laser/__fixtures__/laser-indices-v3.json")
+    out_path = Path("web/src/laser/__fixtures__/laser-indices-v4.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     rows = [_row(p) for p in _INPUT_GRID]
     out_path.write_text(json.dumps(rows, indent=2) + "\n")

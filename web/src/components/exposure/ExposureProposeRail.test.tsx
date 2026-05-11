@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ExposureProposeRail, type ParamRow } from "./ExposureProposeRail";
+import { ExposureProposeRail, type ParamRow, type BurnSettings } from "./ExposureProposeRail";
 import type { ExposureRow } from "./exposureCorrelations";
 
 const ANCHOR: ExposureRow = {
@@ -31,6 +31,13 @@ const DEFAULT_PARAM_ROWS: ParamRow[] = [
     presets: [2, 4, 8, 30, 60, 80, 100, 200] },
 ];
 
+const DEFAULT_BURN_SETTINGS: BurnSettings = {
+  scan_angle: 90,
+  crosshatch: false,
+  angle_mode: "fixed",
+  unidirectional: false,
+};
+
 function defaultProps() {
   return {
     anchor: ANCHOR,
@@ -43,6 +50,8 @@ function defaultProps() {
     onParamOverrideChange: vi.fn(),
     hasParamOverrides: false,
     onResetParams: vi.fn(),
+    burnSettings: DEFAULT_BURN_SETTINGS,
+    onBurnSettingChange: vi.fn(),
     rangeReadout: [],
     canCreate: true,
     helperText: null,
@@ -122,5 +131,59 @@ describe("ExposureProposeRail editor", () => {
     expect(reset.disabled).toBe(false);
     fireEvent.click(reset);
     expect(onResetParams).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ExposureProposeRail burn settings", () => {
+  it("renders all four burn-setting controls", () => {
+    const { container } = render(<ExposureProposeRail {...defaultProps()} />);
+    const section = container.querySelector('[data-role="propose-burn-settings"]');
+    expect(section).toBeTruthy();
+    expect(section!.querySelector('[data-row="scan_angle"]')).toBeTruthy();
+    expect(section!.querySelector('[data-row="crosshatch"]')).toBeTruthy();
+    expect(section!.querySelector('[data-row="angle_mode"]')).toBeTruthy();
+    expect(section!.querySelector('[data-row="unidirectional"]')).toBeTruthy();
+  });
+
+  it("calls onBurnSettingChange when crosshatch toggles", () => {
+    const onBurnSettingChange = vi.fn();
+    render(<ExposureProposeRail {...defaultProps()} onBurnSettingChange={onBurnSettingChange} />);
+    const cb = screen.getByLabelText(/Crosshatch/) as HTMLInputElement;
+    fireEvent.click(cb);
+    expect(onBurnSettingChange).toHaveBeenCalledWith("crosshatch", true);
+  });
+
+  it("calls onBurnSettingChange when scan_angle slider moves", () => {
+    const onBurnSettingChange = vi.fn();
+    render(<ExposureProposeRail {...defaultProps()} onBurnSettingChange={onBurnSettingChange} />);
+    const slider = screen.getByLabelText(/Scan angle/);
+    fireEvent.change(slider, { target: { value: "135" } });
+    expect(onBurnSettingChange).toHaveBeenCalledWith("scan_angle", 135);
+  });
+
+  it("calls onBurnSettingChange when angle_mode segmented toggles", () => {
+    const onBurnSettingChange = vi.fn();
+    const { container } = render(<ExposureProposeRail {...defaultProps()} onBurnSettingChange={onBurnSettingChange} />);
+    const incremental = container.querySelector('[data-row="angle_mode"] button[aria-pressed="false"]') as HTMLButtonElement;
+    fireEvent.click(incremental);
+    expect(onBurnSettingChange).toHaveBeenCalledWith("angle_mode", "incremental");
+  });
+
+  it("calls onBurnSettingChange when unidirectional toggles", () => {
+    const onBurnSettingChange = vi.fn();
+    render(<ExposureProposeRail {...defaultProps()} onBurnSettingChange={onBurnSettingChange} />);
+    const cb = screen.getByLabelText(/Unidirectional/) as HTMLInputElement;
+    fireEvent.click(cb);
+    expect(onBurnSettingChange).toHaveBeenCalledWith("unidirectional", true);
+  });
+
+  it("shows the current angle_mode as aria-pressed", () => {
+    const { container } = render(
+      <ExposureProposeRail {...defaultProps()} burnSettings={{ ...DEFAULT_BURN_SETTINGS, angle_mode: "incremental" }} />,
+    );
+    const fixed = container.querySelector('[data-row="angle_mode"] button:nth-of-type(1)');
+    const inc = container.querySelector('[data-row="angle_mode"] button:nth-of-type(2)');
+    expect(fixed?.getAttribute("aria-pressed")).toBe("false");
+    expect(inc?.getAttribute("aria-pressed")).toBe("true");
   });
 });
