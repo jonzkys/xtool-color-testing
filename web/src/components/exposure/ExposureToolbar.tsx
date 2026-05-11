@@ -19,6 +19,11 @@ interface Props {
   onYKeyChange: (k: ChannelCol | IndexRow) => void;
   onXScaleChange: (s: ScaleKind) => void;
   onYScaleChange: (s: ScaleKind) => void;
+  /** Optional hover preview hooks — let the parent override the
+   *  chart's xKey / yKey while the user is hovering options in the
+   *  picker popover, without committing the change. Null clears. */
+  onXKeyPreview?: (k: IndexRow | ChannelCol | null) => void;
+  onYKeyPreview?: (k: IndexRow | ChannelCol | null) => void;
   proposeOpen: boolean;
   onToggleProposeMode: () => void;
   proposeAvailable: boolean;   // false in univariate mode → chip disabled
@@ -66,11 +71,13 @@ interface AxisPillProps {
   pretty: string;
   onKeyChange: (k: IndexRow | ChannelCol) => void;
   onScaleChange: (s: ScaleKind) => void;
+  /** Optional hover preview — forwarded to the picker. */
+  onKeyPreview?: (k: IndexRow | ChannelCol | null) => void;
 }
 
 function AxisPill({
   axis, mode, currentKey, scale, pretty,
-  onKeyChange, onScaleChange,
+  onKeyChange, onScaleChange, onKeyPreview,
 }: AxisPillProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement | null>(null);
@@ -117,7 +124,11 @@ function AxisPill({
             scale={scale}
             onKeyChange={onKeyChange}
             onScaleChange={onScaleChange}
-            onClose={() => setOpen(false)}
+            onClose={() => {
+              setOpen(false);
+              onKeyPreview?.(null);
+            }}
+            onKeyPreview={onKeyPreview}
           />
         </div>,
         document.body,
@@ -131,6 +142,7 @@ export function ExposureToolbar({
   mode, onModeChange,
   xKey, yKey, xScale, yScale,
   onXKeyChange, onYKeyChange, onXScaleChange, onYScaleChange,
+  onXKeyPreview, onYKeyPreview,
   proposeOpen, onToggleProposeMode, proposeAvailable,
 }: Props) {
   const yPretty = mode === "univariate"
@@ -179,12 +191,14 @@ export function ExposureToolbar({
         currentKey={xKey} scale={xScale} pretty={INDEX_SHORT[xKey]}
         onKeyChange={(k) => onXKeyChange(k as IndexRow)}
         onScaleChange={onXScaleChange}
+        onKeyPreview={onXKeyPreview}
       />
       <AxisPill
         axis="y" mode={mode}
         currentKey={yKey} scale={yScale} pretty={yPretty}
         onKeyChange={onYKeyChange}
         onScaleChange={onYScaleChange}
+        onKeyPreview={onYKeyPreview}
       />
 
       <button
