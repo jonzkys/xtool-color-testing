@@ -26,6 +26,9 @@ const STD_PROPS = {
   proposeAvailable: true,
   colourField: false, onToggleColourField: NOOP,
   colourFieldAvailable: true,
+  contours: false, onToggleContours: NOOP,
+  contoursAvailable: true,
+  fadeDots: false, onToggleFadeDots: NOOP,
 };
 
 describe("ExposureToolbar", () => {

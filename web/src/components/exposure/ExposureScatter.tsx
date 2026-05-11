@@ -22,6 +22,7 @@ import { ExposurePolygon } from "./ExposurePolygon";
 import { ExposurePolygonDraw } from "./ExposurePolygonDraw";
 import { ExposureCellsPreview } from "./ExposureCellsPreview";
 import { ExposureColourField, type ColourFieldPoint } from "./ExposureColourField";
+import { ExposureContours, type ContourPoint } from "./ExposureContours";
 import type { Polygon } from "./proposeTestMath";
 
 export type ScaleKind = "linear" | "log";
@@ -92,6 +93,12 @@ interface Props {
    *  palette dots. Useful for spotting "colour windows" on materials
    *  like SS where dose isn't monotonic in colour. */
   showColourField?: boolean;
+  /** When true (and bivariate mode), render iso-L* contours over the
+   *  scatter so brightness topology is visible at a glance. */
+  showContours?: boolean;
+  /** When true, render dots at reduced opacity so the colour field /
+   *  contours read clearly without dot-cloud interference. */
+  fadeDots?: boolean;
 }
 
 function rowChannel(row: ExposureRow, key: ChannelCol): number {
@@ -165,6 +172,8 @@ export const ExposureScatter: React.FC<Props> = ({
   viewport,
   onViewportChange,
   showColourField = false,
+  showContours = false,
+  fadeDots = false,
 }) => {
   const xs = rows.map((r) => rowIndex(r, xKey));
   const ys = rows.map((r) =>
@@ -250,6 +259,22 @@ export const ExposureScatter: React.FC<Props> = ({
   // px/py depend on xMin/xMax/yMin/yMax/xScale/yScale — listing those.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showColourField, mode, rows, xKey, yKey, xMin, xMax, yMin, yMax, xScale, yScale]);
+
+  // Iso-contour points: same projection, value = L* (Lab lightness).
+  // Future channel pickers can swap in row.lab[1]/lab[2] etc.
+  const contourPoints = React.useMemo<ContourPoint[]>(() => {
+    if (!showContours || mode !== "bivariate") return [];
+    const out: ContourPoint[] = [];
+    for (const row of rows) {
+      const x = rowIndex(row, xKey);
+      const y = rowIndex(row, yKey as IndexRow);
+      const v = row.lab[0];  // L*
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(v)) continue;
+      out.push({ sx: px(x), sy: py(y), value: v });
+    }
+    return out;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showContours, mode, rows, xKey, yKey, xMin, xMax, yMin, yMax, xScale, yScale]);
 
   const isInDimRange = (row: ExposureRow): boolean => {
     if (!dimRange) return true;
@@ -708,10 +733,25 @@ export const ExposureScatter: React.FC<Props> = ({
             />
           )}
 
+          {/* Iso-L* contours (bivariate only, above colour field but
+              below dots so labels can still read clearly). */}
+          {showContours && mode === "bivariate" && contourPoints.length > 0 && (
+            <ExposureContours
+              points={contourPoints}
+              plotRect={{ x0: PADL, y0: PADT, x1: W - PADR, y1: H - PADB }}
+              valueLabel="L*"
+            />
+          )}
+
           {/* Dots — focused last so it sits on top of the cloud.
               While the propose-test polygon is being drawn, dots become
-              non-interactive so the click-capture rect takes precedence. */}
-          <g pointerEvents={polygonDrawing ? "none" : undefined}>
+              non-interactive so the click-capture rect takes precedence.
+              Fade-dots dims the whole layer so overlay viz (colour
+              field / contours) can read without dot-cloud interference. */}
+          <g
+            pointerEvents={polygonDrawing ? "none" : undefined}
+            opacity={fadeDots ? 0.28 : 1}
+          >
           {rows
             .map((row, i) => ({ row, isFocused: row.id === focusedId, i }))
             .sort((a, b) => Number(a.isFocused) - Number(b.isFocused))

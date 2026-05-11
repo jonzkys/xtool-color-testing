@@ -28,6 +28,11 @@ interface Props {
   colourField: boolean;
   onToggleColourField: () => void;
   colourFieldAvailable: boolean;   // false in univariate mode → chip disabled
+  contours: boolean;
+  onToggleContours: () => void;
+  contoursAvailable: boolean;      // false in univariate mode → chip disabled
+  fadeDots: boolean;
+  onToggleFadeDots: () => void;
 }
 
 const INDEX_PRETTY: Record<IndexRow, string> = {
@@ -139,6 +144,8 @@ export function ExposureToolbar({
   filtersOpen, onToggleFilters, activeFilterCount,
   proposeOpen, onToggleProposeMode, proposeAvailable,
   colourField, onToggleColourField, colourFieldAvailable,
+  contours, onToggleContours, contoursAvailable,
+  fadeDots, onToggleFadeDots,
 }: Props) {
   const yPretty = mode === "univariate"
     ? CHANNEL_PRETTY[yKey as ChannelCol]
@@ -212,6 +219,41 @@ export function ExposureToolbar({
         }
       >
         ▦ COLOUR FIELD
+      </button>
+
+      <button
+        type="button"
+        disabled={!contoursAvailable}
+        onClick={onToggleContours}
+        aria-pressed={contours}
+        title={contoursAvailable
+          ? "Overlay L* (brightness) contour lines"
+          : "Contours are bivariate-only"}
+        className={
+          "ml-1 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+          (!contoursAvailable
+            ? "border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)] opacity-50 cursor-not-allowed"
+            : contours
+              ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
+              : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:border-[color:var(--color-primary)]")
+        }
+      >
+        ◷ CONTOURS
+      </button>
+
+      <button
+        type="button"
+        onClick={onToggleFadeDots}
+        aria-pressed={fadeDots}
+        title="Fade the palette dots so overlay viz reads clearly"
+        className={
+          "ml-1 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+          (fadeDots
+            ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
+            : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:border-[color:var(--color-primary)]")
+        }
+      >
+        ◯ FADE DOTS
       </button>
 
       <button
