@@ -1041,7 +1041,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
         {/* ── RIGHT RAIL ────────────────────────────────────────────────── */}
         <aside
           style={{ width: proposeMode === "panel" ? 300 : 280 }}
-          className="shrink-0 flex flex-col gap-4 border-l border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-4 overflow-y-auto"
+          className="shrink-0 flex flex-col gap-4 border-l border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-4 overflow-y-auto overflow-x-hidden min-w-0"
         >
           {proposeMode === "panel" ? (
             <ExposureProposeRail

@@ -225,8 +225,8 @@ export const ExposureProposeRail: React.FC<Props> = ({
         </div>
         <div className="flex flex-col gap-1.5">
           {paramRows.map((row) => (
-            <div key={row.key} className="flex items-center gap-2" data-row={row.key}>
-              <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[68px] flex-none">
+            <div key={row.key} className="flex items-center gap-2 min-w-0" data-row={row.key}>
+              <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[60px] flex-none truncate">
                 {PARAM_LABEL[row.key as string]}
               </div>
               {row.kind === "editable" ? (
@@ -247,9 +247,9 @@ export const ExposureProposeRail: React.FC<Props> = ({
                       onParamOverrideChange(row.key, snapped);
                     }}
                     aria-label={`${PARAM_LABEL[row.key as string]} value`}
-                    className="flex-1"
+                    className="flex-1 min-w-0"
                   />
-                  <div className="font-mono text-[10px] text-[color:var(--color-ink)] tabular-nums w-[80px] flex-none text-right">
+                  <div className="font-mono text-[10px] text-[color:var(--color-ink)] tabular-nums w-[64px] flex-none text-right truncate">
                     {formatValue(row.value, row.unit)}
                   </div>
                 </>
@@ -257,7 +257,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
                 <>
                   <div
                     aria-disabled="true"
-                    className="flex-1 h-1.5 rounded-full bg-[color:var(--color-border)] relative overflow-hidden"
+                    className="flex-1 min-w-0 h-1.5 rounded-full bg-[color:var(--color-border)] relative overflow-hidden"
                     title={`Locked — varied param. Range ${row.resolved.min}..${row.resolved.max}`}
                   >
                     <div
@@ -265,8 +265,11 @@ export const ExposureProposeRail: React.FC<Props> = ({
                       style={{ left: "0%", right: "0%" }}
                     />
                   </div>
-                  <div className="font-mono text-[10px] text-[color:var(--color-primary)] tabular-nums w-[120px] flex-none text-right">
-                    {formatValue(row.resolved.min, row.unit)} → {formatValue(row.resolved.max, row.unit)}
+                  <div
+                    className="font-mono text-[10px] text-[color:var(--color-primary)] tabular-nums w-[96px] flex-none text-right truncate"
+                    title={`${formatValue(row.resolved.min, row.unit)} → ${formatValue(row.resolved.max, row.unit)}`}
+                  >
+                    {formatValue(row.resolved.min, row.unit)}→{formatValue(row.resolved.max, row.unit)}
                   </div>
                 </>
               )}
@@ -280,8 +283,8 @@ export const ExposureProposeRail: React.FC<Props> = ({
           Burn settings
         </div>
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-center gap-2" data-row="scan_angle">
-            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[68px] flex-none">
+          <div className="flex items-center gap-2 min-w-0" data-row="scan_angle">
+            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[60px] flex-none truncate">
               SCAN ANGLE
             </div>
             <input
@@ -290,9 +293,9 @@ export const ExposureProposeRail: React.FC<Props> = ({
               value={burnSettings.scan_angle}
               onChange={(e) => onBurnSettingChange("scan_angle", Number(e.target.value))}
               aria-label="Scan angle"
-              className="flex-1"
+              className="flex-1 min-w-0"
             />
-            <div className="font-mono text-[10px] text-[color:var(--color-ink)] tabular-nums w-[60px] flex-none text-right">
+            <div className="font-mono text-[10px] text-[color:var(--color-ink)] tabular-nums w-[44px] flex-none text-right">
               {burnSettings.scan_angle}°
             </div>
           </div>
@@ -309,25 +312,29 @@ export const ExposureProposeRail: React.FC<Props> = ({
             </span>
           </label>
 
-          <div className="flex items-center gap-2" data-row="angle_mode">
-            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[68px] flex-none">
+          <div className="flex items-center gap-2 min-w-0" data-row="angle_mode">
+            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[60px] flex-none truncate">
               ANGLE MODE
             </div>
-            <div className="flex gap-1 flex-1">
-              {(["fixed", "incremental"] as const).map((m) => (
+            <div className="flex gap-1 flex-1 min-w-0">
+              {([
+                { v: "fixed" as const, label: "fixed" },
+                { v: "incremental" as const, label: "incr" },
+              ]).map(({ v: m, label }) => (
                 <button
                   key={m}
                   type="button"
                   aria-pressed={burnSettings.angle_mode === m}
                   onClick={() => onBurnSettingChange("angle_mode", m)}
+                  title={m}
                   className={
-                    "flex-1 px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] rounded-sm border " +
+                    "flex-1 min-w-0 px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] rounded-sm border truncate " +
                     (burnSettings.angle_mode === m
                       ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
                       : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
                   }
                 >
-                  {m}
+                  {label}
                 </button>
               ))}
             </div>
