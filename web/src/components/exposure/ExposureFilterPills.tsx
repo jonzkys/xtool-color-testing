@@ -1,18 +1,13 @@
 import {
   DEFAULT_FILTERS, FILTERABLE_PARAMS,
+  formatClause, removeClauseAt,
   type ActiveFilters, type FilterableParam,
 } from "./exposureFilters";
-
-export type ClearKey =
-  | "sources" | "validated" | "testIds" | "testKind"
-  | "family" | "brush"
-  | "crosshatch" | "unidirectional" | "angleMode"
-  | `range:${FilterableParam}`;
 
 interface Props {
   filters: ActiveFilters;
   entryCount: number;
-  onClearOne: (key: ClearKey) => void;
+  onChange: (next: ActiveFilters) => void;
   onClearAll: () => void;
 }
 
@@ -22,13 +17,6 @@ const PARAM_LABEL: Record<FilterableParam, string> = {
   scan_angle: "SCAN ANGLE",
 };
 
-function fmtRange(min: number | null, max: number | null): string {
-  if (min != null && max != null) return `${min}–${max}`;
-  if (min != null) return `≥${min}`;
-  if (max != null) return `≤${max}`;
-  return "";
-}
-
 function setsEqual<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
   if (a.size !== b.size) return false;
   for (const v of a) if (!b.has(v)) return false;
@@ -36,29 +24,26 @@ function setsEqual<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
 }
 
 function isDefault(f: ActiveFilters): boolean {
-  // trimOutliers is not pillable, so we ignore it for "default" check.
   return (
     setsEqual(f.sources, DEFAULT_FILTERS.sources) &&
     !f.validatedOnly &&
-    f.brushRange == null &&
     f.family == null &&
     f.testIds.size === 0 &&
     f.testKind === "all" &&
     f.crosshatch === "any" &&
     f.unidirectional === "any" &&
     f.angleMode === "any" &&
-    Object.values(f.paramRanges).every((r) => !r ||
-      (r.min == null && r.max == null))
+    Object.values(f.paramClauses).every((cs) => !cs || cs.length === 0)
   );
 }
 
-interface PillProps {
+function Pill({
+  text, ariaLabel, onClear,
+}: {
   text: string;
   ariaLabel: string;
   onClear: () => void;
-}
-
-function Pill({ text, ariaLabel, onClear }: PillProps) {
+}) {
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm border border-[color:var(--color-primary)] bg-[color:var(--color-surface-elevated)] font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-primary)]">
       {text}
@@ -75,35 +60,40 @@ function Pill({ text, ariaLabel, onClear }: PillProps) {
 }
 
 export function ExposureFilterPills({
-  filters: f, entryCount, onClearOne, onClearAll,
+  filters: f, entryCount, onChange, onClearAll,
 }: Props) {
   if (isDefault(f)) return null;
 
-  const pills: { text: string; key: string; clear: () => void }[] = [];
+  const items: { text: string; key: string; clear: () => void }[] = [];
 
   if (!setsEqual(f.sources, DEFAULT_FILTERS.sources)) {
-    pills.push({
+    items.push({
       text: `SOURCE: ${[...f.sources].join(", ")}`,
       key: "sources",
-      clear: () => onClearOne("sources"),
+      clear: () => onChange({ ...f, sources: new Set(DEFAULT_FILTERS.sources) }),
     });
   }
   if (f.validatedOnly) {
-    pills.push({
+    items.push({
       text: "VALIDATED ONLY",
       key: "validated",
-      clear: () => onClearOne("validated"),
+      clear: () => onChange({ ...f, validatedOnly: false }),
     });
   }
+
+  // Per-clause pills — one per clause, so multi-clause filters stay legible.
   for (const k of FILTERABLE_PARAMS) {
-    const r = f.paramRanges[k];
-    if (!r || (r.min == null && r.max == null)) continue;
-    pills.push({
-      text: `${PARAM_LABEL[k]} ${fmtRange(r.min, r.max)}`,
-      key: `range:${k}`,
-      clear: () => onClearOne(`range:${k}`),
+    const clauses = f.paramClauses[k];
+    if (!clauses) continue;
+    clauses.forEach((c, i) => {
+      items.push({
+        text: `${PARAM_LABEL[k]} ${formatClause(c)}`,
+        key: `clause:${k}:${i}`,
+        clear: () => onChange(removeClauseAt(f, k, i)),
+      });
     });
   }
+
   if (f.testIds.size > 0) {
     const lineage: string[] = [];
     if (f.testLineage.has("source")) lineage.push("source");
@@ -113,64 +103,54 @@ export function ExposureFilterPills({
     const text = ids.length === 1
       ? `TEST #${ids[0]}${suffix}`
       : `TESTS ${ids.map((n) => `#${n}`).join(",")}${suffix}`;
-    pills.push({
+    items.push({
       text,
       key: "testIds",
-      clear: () => onClearOne("testIds"),
+      clear: () => onChange({
+        ...f, testIds: new Set(), testLineage: new Set(),
+      }),
     });
   }
   if (f.testKind !== "all") {
-    pills.push({
+    items.push({
       text: f.testKind.toUpperCase(),
       key: "testKind",
-      clear: () => onClearOne("testKind"),
+      clear: () => onChange({ ...f, testKind: "all" }),
     });
   }
   if (f.family) {
-    pills.push({
+    items.push({
       text: `FAMILY: ${f.family.axis} sweep`,
       key: "family",
-      clear: () => onClearOne("family"),
-    });
-  }
-  if (f.brushRange) {
-    pills.push({
-      text: `EXPOSURE ${f.brushRange[0]}–${f.brushRange[1]}`,
-      key: "brush",
-      clear: () => onClearOne("brush"),
+      clear: () => onChange({ ...f, family: null }),
     });
   }
   if (f.crosshatch !== "any") {
-    pills.push({
+    items.push({
       text: `CROSSHATCH: ${f.crosshatch.toUpperCase()}`,
       key: "crosshatch",
-      clear: () => onClearOne("crosshatch"),
+      clear: () => onChange({ ...f, crosshatch: "any" }),
     });
   }
   if (f.unidirectional !== "any") {
-    pills.push({
+    items.push({
       text: `UNIDIRECTIONAL: ${f.unidirectional.toUpperCase()}`,
       key: "unidirectional",
-      clear: () => onClearOne("unidirectional"),
+      clear: () => onChange({ ...f, unidirectional: "any" }),
     });
   }
   if (f.angleMode !== "any") {
-    pills.push({
+    items.push({
       text: `ANGLE MODE: ${f.angleMode.toUpperCase()}`,
       key: "angleMode",
-      clear: () => onClearOne("angleMode"),
+      clear: () => onChange({ ...f, angleMode: "any" }),
     });
   }
 
   return (
     <div className="flex items-center gap-2 flex-wrap py-1.5 px-1">
-      {pills.map((p) => (
-        <Pill
-          key={p.key}
-          text={p.text}
-          ariaLabel={`clear ${p.key.replace("range:", "")}`}
-          onClear={p.clear}
-        />
+      {items.map((p) => (
+        <Pill key={p.key} text={p.text} ariaLabel={`clear ${p.key}`} onClear={p.clear} />
       ))}
       <span className="ml-auto inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)]">
         <span>{entryCount} entries</span>

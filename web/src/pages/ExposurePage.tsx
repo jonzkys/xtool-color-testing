@@ -30,20 +30,17 @@ import {
 import { pearson, spearman, logLinearRegression } from "../components/exposure/exposureMath";
 import { buildFamilies, type FamilyMember } from "../components/exposure/recipeFamilies";
 import {
-  applyFilters, dataRanges, DEFAULT_FILTERS,
-  FILTERABLE_PARAMS,
+  applyFilters, DEFAULT_FILTERS, FILTERABLE_PARAMS,
+  hasEqClause, toggleEqClause, addClause,
   type ActiveFilters,
   type FilterableParam,
+  type ParamClause,
   type TestSummary,
 } from "../components/exposure/exposureFilters";
-import { ExposureFilterPanel } from "../components/exposure/ExposureFilterPanel";
-import { ExposureFilterPills, type ClearKey } from "../components/exposure/ExposureFilterPills";
+import { ExposureFilterStack } from "../components/exposure/ExposureFilterStack";
+import { ExposureFilterPills } from "../components/exposure/ExposureFilterPills";
 import { ExposureFocusedIndices } from "../components/exposure/ExposureFocusedIndices";
-import {
-  ExposureRailTabs,
-  type ExposureRailTabId,
-  useRailTabUrlSync,
-} from "../components/exposure/ExposureRailTabs";
+import { bumpMru } from "../components/exposure/exposureParamMru";
 import { ExposureUnderGraphPills } from "../components/exposure/ExposureUnderGraphPills";
 import { ExposureToolbar } from "../components/exposure/ExposureToolbar";
 import { useFiltersUrlSync } from "../components/exposure/exposureFiltersUrl";
@@ -209,38 +206,6 @@ function buildParamRows(
   });
 }
 
-function setsEqual<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
-  if (a.size !== b.size) return false;
-  for (const v of a) if (!b.has(v)) return false;
-  return true;
-}
-
-function activeParamFilterKeys(filters: ActiveFilters): ReadonlySet<FilterableParam> {
-  const out = new Set<FilterableParam>();
-  for (const k of FILTERABLE_PARAMS) {
-    const r = filters.paramRanges[k];
-    if (r && (r.min != null || r.max != null)) out.add(k);
-  }
-  return out;
-}
-
-function countActiveFilters(filters: ActiveFilters): number {
-  let n = 0;
-  if (!setsEqual(filters.sources, DEFAULT_FILTERS.sources)) n++;
-  if (filters.validatedOnly) n++;
-  if (filters.testIds.size > 0) n++;
-  if (filters.testKind !== "all") n++;
-  if (filters.family) n++;
-  if (filters.brushRange) n++;
-  if (filters.crosshatch !== "any") n++;
-  if (filters.unidirectional !== "any") n++;
-  if (filters.angleMode !== "any") n++;
-  for (const k of FILTERABLE_PARAMS) {
-    const r = filters.paramRanges[k];
-    if (r && (r.min != null || r.max != null)) n++;
-  }
-  return n;
-}
 
 // ── component ──────────────────────────────────────────────────────────────
 
@@ -269,7 +234,6 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const [colourField, setColourField] = useState<boolean>(false);
   const [contours, setContours] = useState<boolean>(false);
   const [fadeDots, setFadeDots] = useState<boolean>(false);
-  const [showCrosshair, setShowCrosshair] = useState<boolean>(false);
   const [cropMode, setCropMode] = useState<boolean>(false);
 
   // Reset zoom whenever the user changes WHICH axes are on the chart or
@@ -404,8 +368,6 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     [rows, filters, testsById],
   );
 
-  // ranges derived from unfiltered rows so sliders span full data extent
-  const ranges = useMemo(() => dataRanges(rows), [rows]);
 
   // focusedRow looks up from filteredRows
   const focusedRow = focusedId == null ? null : filteredRows.find((r) => r.id === focusedId) ?? null;
@@ -503,8 +465,6 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   // ── right-rail active tab (synced to the URL hash query). The four
   //    tabs collect what used to be stacked sections — Info, Filters,
   //    Stats, Color — into a single focused view. ──────────────────────
-  const [railTab, setRailTab] = useState<ExposureRailTabId>("info");
-  useRailTabUrlSync(railTab, setRailTab);
 
   // ── propose-test wizard state ─────────────────────────────────────────
   // off      — chip dormant, no overlays
@@ -670,59 +630,42 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
 
   const handleTogglePerParamFilter = useCallback(
     (param: FilterableParam, value: number) => {
-      setFilters((prev) => {
-        const r = prev.paramRanges[param];
-        const exact = r != null && r.min === value && r.max === value;
-        if (exact) {
-          const next = { ...prev.paramRanges };
-          delete next[param];
-          return { ...prev, paramRanges: next };
-        }
-        return {
-          ...prev,
-          paramRanges: { ...prev.paramRanges, [param]: { min: value, max: value } },
-        };
-      });
+      setFilters((prev) => toggleEqClause(prev, param, value));
+      bumpMru(machineId, materialId, param, value);
     },
-    [],
+    [machineId, materialId],
   );
 
   const handleFilterFromNeighbour = useCallback(
     (row: ExposureRow) => {
       setFilters((prev) => {
-        const next = { ...prev.paramRanges };
+        let next = prev;
         for (const k of FILTERABLE_PARAMS) {
           const v = row.params?.[k];
-          if (typeof v === "number" && Number.isFinite(v)) {
-            next[k] = { min: v, max: v };
-          }
+          if (typeof v !== "number" || !Number.isFinite(v)) continue;
+          // Replace any existing clauses for the param with a single eq.
+          const clauseList: ParamClause[] = [{ kind: "eq", value: v }];
+          next = {
+            ...next,
+            paramClauses: { ...next.paramClauses, [k]: clauseList },
+          };
+          bumpMru(machineId, materialId, k, v);
         }
-        return { ...prev, paramRanges: next };
+        return next;
       });
     },
-    [],
+    [machineId, materialId],
   );
 
-  const handleClearOne = useCallback((key: ClearKey) => {
-    setFilters((prev) => {
-      if (key === "sources") return { ...prev, sources: DEFAULT_FILTERS.sources };
-      if (key === "validated") return { ...prev, validatedOnly: false };
-      if (key === "testIds") return { ...prev, testIds: new Set(), testLineage: new Set() };
-      if (key === "testKind") return { ...prev, testKind: "all" };
-      if (key === "family") return { ...prev, family: null };
-      if (key === "brush") return { ...prev, brushRange: null };
-      if (key === "crosshatch") return { ...prev, crosshatch: "any" };
-      if (key === "unidirectional") return { ...prev, unidirectional: "any" };
-      if (key === "angleMode") return { ...prev, angleMode: "any" };
-      if (key.startsWith("range:")) {
-        const k = key.slice("range:".length) as FilterableParam;
-        const next = { ...prev.paramRanges };
-        delete next[k];
-        return { ...prev, paramRanges: next };
-      }
-      return prev;
-    });
-  }, []);
+  const hasParamValueFilter = useCallback(
+    (param: FilterableParam, value: number) =>
+      hasEqClause(filters, param, value),
+    [filters],
+  );
+
+  // Suppress unused-import warning for addClause — held for future
+  // direct-add paths (e.g. drag-to-filter on the chart).
+  void addClause;
 
   const closeProposeWizard = useCallback(() => {
     setProposeMode("off");
@@ -896,13 +839,31 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
         <ExposureFilterPills
           filters={filters}
           entryCount={displayRows.length}
-          onClearOne={handleClearOne}
+          onChange={setFilters}
           onClearAll={() => setFilters(DEFAULT_FILTERS)}
         />
       </div>
 
       {/* ── BODY ──────────────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 flex overflow-hidden gap-4 px-4 py-4">
+
+        {/* ── LEFT RAIL — Filter Stack ─────────────────────────────────── */}
+        {!rowsLoading && !rowsError && filteredRows.length > 0 && proposeMode !== "panel" && (
+          <aside
+            style={{ width: 300 }}
+            className="shrink-0 flex flex-col gap-4 border-r border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-4 overflow-y-auto overflow-x-hidden"
+          >
+            <ExposureFilterStack
+              filters={filters}
+              onChange={setFilters}
+              tests={tests}
+              machineId={machineId}
+              materialId={materialId}
+              entryCount={displayRows.length}
+              totalCount={rows.length}
+            />
+          </aside>
+        )}
 
         {/* ── MAIN COLUMN ───────────────────────────────────────────────── */}
         <main className="flex-1 min-w-0 flex flex-col gap-3 overflow-y-auto">
@@ -1010,7 +971,6 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   onHover={handleHover}
                   onLeave={handleLeave}
                   onClick={handleClick}
-                  dimRange={filters.brushRange}
                   family={focusedFamily ?? undefined}
                   trimOutliers={filters.trimOutliers}
                   onXKeyChange={setXKey}
@@ -1037,7 +997,6 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   showColourField={colourField}
                   showContours={contours}
                   fadeDots={fadeDots}
-                  showCrosshair={showCrosshair}
                   cropMode={cropMode}
                   onCropModeChange={setCropMode}
                 />
@@ -1123,245 +1082,194 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               onCancel={closeProposeWizard}
             />
           ) : (
-            <ExposureRailTabs
-              active={railTab}
-              onActiveChange={setRailTab}
-              tabs={[
-                {
-                  id: "info",
-                  label: "Info",
-                  body: (
-                    <>
-                      <section>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <RailHeading>
-                            {pinnedFocusId != null ? "Pinned" : "Focused"}
-                          </RailHeading>
-                          {focusedId != null && (
-                            <button
-                              type="button"
-                              onClick={handleBackgroundClear}
-                              className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-ink-muted)] transition-colors"
-                              title={pinnedFocusId != null ? "Unpin" : "Clear hover"}
-                            >
-                              clear
-                            </button>
-                          )}
-                        </div>
-                        <MetalBar variant="soft" className="mb-3" />
-                        <ExposureFocusedCard
-                          rows={displayRows}
-                          focusedId={focusedId}
-                          onDiscHover={handleHover}
-                          onDiscLeave={handleLeave}
-                          onDiscClick={handleClick}
-                          dimRange={filters.brushRange}
-                          focusedFamily={focusedFamily}
-                          availableFamilies={focusedAvailableFamilies}
-                          activeFilterAxis={filters.family?.axis ?? null}
-                          onSetFilter={(axis, anchorRowId) =>
-                            setFilters((prev) => ({ ...prev, family: { axis, anchorRowId } }))}
-                          onClearFilter={() =>
-                            setFilters((prev) => ({ ...prev, family: null }))}
-                          activeParamFilters={activeParamFilterKeys(filters)}
-                          onTogglePerParamFilter={handleTogglePerParamFilter}
-                        />
-                      </section>
-                      <section>
-                        <RailHeading>Indices</RailHeading>
-                        <MetalBar variant="soft" className="mb-3" />
-                        <ExposureFocusedIndices row={focusedRow} />
-                      </section>
-                    </>
-                  ),
-                },
-                {
-                  id: "filters",
-                  label: "Filters",
-                  badge: countActiveFilters(filters),
-                  body: (
-                    <ExposureFilterPanel
-                      filters={filters}
-                      onChange={setFilters}
-                      tests={tests}
-                      dataRanges={ranges}
-                    />
-                  ),
-                },
-                {
-                  id: "stats",
-                  label: "Stats",
-                  body: (
-                    <section>
-                      {/* Hero r = */}
-                      <div className="flex flex-col gap-0.5 mb-3">
-                        <span className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold">
-                          Pearson r
-                        </span>
-                        <span
-                          className="font-mono text-[28px] leading-none tabular-nums text-[color:var(--color-primary)] font-semibold"
-                          title="Linear correlation between X and Y, computed on log-X if log scale is on"
-                        >
-                          {fmtR(stats.pearsonR)}
-                        </span>
-                      </div>
-                      {/* Sub-stats */}
-                      <div className="grid grid-cols-2 gap-y-2 gap-x-3 font-mono">
-                        <SubStat label="Spearman ρ" value={fmtR(stats.spearmanRho)} />
-                        <SubStat label="R² (log·lin)" value={fmtR2(stats.fit.r2)} />
-                        <SubStat
-                          label="Slope"
-                          value={Number.isFinite(stats.fit.slope) ? stats.fit.slope.toFixed(3) : "—"}
-                        />
-                        <SubStat label="n" value={String(stats.fit.n)} />
-                      </div>
-                      {mode === "bivariate" && (
-                        <p className="font-mono text-[10px] italic text-[color:var(--color-ink-subtle)] leading-relaxed mt-3">
-                          No Y outcome — bivariate r is between two indices, not a fit quality.
-                        </p>
-                      )}
-                    </section>
-                  ),
-                },
-                {
-                  id: "color",
-                  label: "Color",
-                  body: (
-                    <>
-                      <section>
-                        <RailHeading>Neighbours</RailHeading>
-                        <MetalBar variant="soft" className="mb-3" />
-                        {focusedRow ? (
-                          <ExposureNeighboursPanel
-                            anchor={focusedRow}
-                            candidates={displayRows}
-                            onSelectNeighbour={(id) => {
-                              setTransientFocusId(null);
-                              setPinnedFocusId(id);
-                            }}
-                            onFilterFromNeighbour={handleFilterFromNeighbour}
-                          />
-                        ) : (
-                          <p className="font-mono text-[10px] italic text-[color:var(--color-ink-subtle)]">
-                            Focus an entry to see its neighbours.
-                          </p>
-                        )}
-                      </section>
-                      <section>
-                        <RailHeading>Scatter overlays</RailHeading>
-                        <MetalBar variant="soft" className="mb-3" />
-                        <p className="font-mono text-[10px] text-[color:var(--color-ink-muted)] mb-3 leading-relaxed">
-                          Layers that paint colour-window topology on top of
-                          the dots. Bivariate-only for the field and contours.
-                        </p>
-                        <div className="flex flex-col gap-2">
-                          <OverlayToggle
-                            label="▦  Colour field"
-                            help="Inverse-distance-weighted blend of the 12 nearest dots' measured hex values."
-                            checked={colourField}
-                            onToggle={() => setColourField((v) => !v)}
-                            disabled={mode !== "bivariate"}
-                            disabledReason="Bivariate mode only"
-                          />
-                          <OverlayToggle
-                            label="◷  Contours · L*"
-                            help="Marching-squares iso-L* lines over a kNN-interpolated grid."
-                            checked={contours}
-                            onToggle={() => setContours((v) => !v)}
-                            disabled={mode !== "bivariate"}
-                            disabledReason="Bivariate mode only"
-                          />
-                          <OverlayToggle
-                            label="◯  Fade dots"
-                            help="Drops palette dots to ~28% so the overlays above read clearly."
-                            checked={fadeDots}
-                            onToggle={() => setFadeDots((v) => !v)}
-                          />
-                          <OverlayToggle
-                            label="✛  Focus crosshair"
-                            help="Dashed lines crossing the chart through the focused dot. Helps line up values against the axes."
-                            checked={showCrosshair}
-                            onToggle={() => setShowCrosshair((v) => !v)}
-                          />
-                        </div>
-                      </section>
-                    </>
-                  ),
-                },
-              ]}
-            />
-          )}
+            <>
+              {/* Focus + Recipe */}
+              <section>
+                <div className="flex items-center justify-between mb-1.5">
+                  <RailHeading>
+                    {pinnedFocusId != null ? "Pinned" : "Focus"}
+                  </RailHeading>
+                  {focusedId != null && (
+                    <button
+                      type="button"
+                      onClick={handleBackgroundClear}
+                      className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-ink-muted)] transition-colors"
+                      title={pinnedFocusId != null ? "Unpin" : "Clear hover"}
+                    >
+                      clear
+                    </button>
+                  )}
+                </div>
+                <MetalBar variant="soft" className="mb-3" />
+                <ExposureFocusedCard
+                  rows={displayRows}
+                  focusedId={focusedId}
+                  focusedFamily={focusedFamily}
+                  availableFamilies={focusedAvailableFamilies}
+                  activeFilterAxis={filters.family?.axis ?? null}
+                  onSetFilter={(axis, anchorRowId) =>
+                    setFilters((prev) => ({ ...prev, family: { axis, anchorRowId } }))}
+                  onClearFilter={() =>
+                    setFilters((prev) => ({ ...prev, family: null }))}
+                  hasParamValueFilter={hasParamValueFilter}
+                  onTogglePerParamFilter={handleTogglePerParamFilter}
+                />
+              </section>
 
-          {/* Correlations matrix — pinned beneath the rail tabs so it's
-              always visible regardless of which tab is active. */}
-          {!rowsLoading && !rowsError && filteredRows.length > 0 && proposeMode !== "panel" && (
-            <section className="shrink-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] p-3">
-              <PanelLabel title="Correlations" subtitle="|r| heatmap" />
-              <div className="flex gap-1 mb-2">
-                <button
-                  type="button"
-                  onClick={() => setMatrixSource("indices")}
-                  className={
-                    "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
-                    (matrixSource === "indices"
-                      ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
-                      : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
-                  }
-                >
-                  Indices
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMatrixSource("raw")}
-                  className={
-                    "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
-                    (matrixSource === "raw"
-                      ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
-                      : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
-                  }
-                >
-                  Raw params
-                </button>
-              </div>
-              {matrixSource === "indices" ? (
-                <ExposureCorrelationMatrix<IndexRow>
-                  matrix={correlationMatrix}
-                  rowKeys={INDEX_ROWS}
-                  rowLabels={INDEX_LABELS_MATRIX}
-                  selectedRowKey={xKey}
-                  selectedChannel={mode === "univariate" ? yKeyUni : "L"}
-                  onSelect={(idx, ch) => {
-                    setXKey(idx);
-                    if (mode === "univariate") setYKeyUni(ch);
-                  }}
-                  renderRowLabel={(rowKey, label) => (
-                    <HelpTip
-                      help={EXPOSURE_INDEX_HELP[rowKey]}
-                      Body={IndexCardBody}
-                    >
-                      <span className="cursor-help">{label}</span>
-                    </HelpTip>
-                  )}
-                />
-              ) : (
-                <ExposureCorrelationMatrix<RawParamRow>
-                  matrix={correlationMatrix}
-                  rowKeys={RAW_PARAM_ROWS}
-                  rowLabels={RAW_PARAM_LABELS}
-                  selectedRowKey={null}
-                  selectedChannel={null}
-                  onSelect={null}
-                  renderRowLabel={(rowKey, label) => (
-                    <HelpTip
-                      help={EXPOSURE_RAW_PARAM_HELP[rowKey]}
-                      Body={RawParamCardBody}
-                    >
-                      <span className="cursor-help">{label}</span>
-                    </HelpTip>
-                  )}
-                />
-              )}
-            </section>
+              {/* Indices */}
+              <section>
+                <RailHeading>Indices</RailHeading>
+                <MetalBar variant="soft" className="mb-3" />
+                <ExposureFocusedIndices row={focusedRow} />
+              </section>
+
+              {/* Neighbours */}
+              <section>
+                <RailHeading>Neighbours</RailHeading>
+                <MetalBar variant="soft" className="mb-3" />
+                {focusedRow ? (
+                  <ExposureNeighboursPanel
+                    anchor={focusedRow}
+                    candidates={displayRows}
+                    onSelectNeighbour={(id) => {
+                      setTransientFocusId(null);
+                      setPinnedFocusId(id);
+                    }}
+                    onFilterFromNeighbour={handleFilterFromNeighbour}
+                  />
+                ) : (
+                  <p className="font-mono text-[10px] italic text-[color:var(--color-ink-subtle)]">
+                    Focus an entry to see its neighbours.
+                  </p>
+                )}
+              </section>
+
+              {/* Stats */}
+              <section>
+                <RailHeading>Stats</RailHeading>
+                <MetalBar variant="soft" className="mb-3" />
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold">
+                    Pearson r
+                  </span>
+                  <span
+                    className="font-mono text-[24px] leading-none tabular-nums text-[color:var(--color-primary)] font-semibold"
+                    title="Linear correlation between X and Y"
+                  >
+                    {fmtR(stats.pearsonR)}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-y-1.5 gap-x-3 font-mono mt-2">
+                  <SubStat label="Spearman ρ" value={fmtR(stats.spearmanRho)} />
+                  <SubStat label="R²" value={fmtR2(stats.fit.r2)} />
+                  <SubStat
+                    label="Slope"
+                    value={Number.isFinite(stats.fit.slope) ? stats.fit.slope.toFixed(3) : "—"}
+                  />
+                  <SubStat label="n" value={String(stats.fit.n)} />
+                </div>
+              </section>
+
+              {/* Correlations */}
+              <section>
+                <RailHeading>Correlations</RailHeading>
+                <MetalBar variant="soft" className="mb-3" />
+                <div className="flex gap-1 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setMatrixSource("indices")}
+                    className={
+                      "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+                      (matrixSource === "indices"
+                        ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
+                        : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+                    }
+                  >
+                    Indices
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMatrixSource("raw")}
+                    className={
+                      "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+                      (matrixSource === "raw"
+                        ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
+                        : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+                    }
+                  >
+                    Raw params
+                  </button>
+                </div>
+                {matrixSource === "indices" ? (
+                  <ExposureCorrelationMatrix<IndexRow>
+                    matrix={correlationMatrix}
+                    rowKeys={INDEX_ROWS}
+                    rowLabels={INDEX_LABELS_MATRIX}
+                    selectedRowKey={xKey}
+                    selectedChannel={mode === "univariate" ? yKeyUni : "L"}
+                    onSelect={(idx, ch) => {
+                      setXKey(idx);
+                      if (mode === "univariate") setYKeyUni(ch);
+                    }}
+                    renderRowLabel={(rowKey, label) => (
+                      <HelpTip
+                        help={EXPOSURE_INDEX_HELP[rowKey]}
+                        Body={IndexCardBody}
+                      >
+                        <span className="cursor-help">{label}</span>
+                      </HelpTip>
+                    )}
+                  />
+                ) : (
+                  <ExposureCorrelationMatrix<RawParamRow>
+                    matrix={correlationMatrix}
+                    rowKeys={RAW_PARAM_ROWS}
+                    rowLabels={RAW_PARAM_LABELS}
+                    selectedRowKey={null}
+                    selectedChannel={null}
+                    onSelect={null}
+                    renderRowLabel={(rowKey, label) => (
+                      <HelpTip
+                        help={EXPOSURE_RAW_PARAM_HELP[rowKey]}
+                        Body={RawParamCardBody}
+                      >
+                        <span className="cursor-help">{label}</span>
+                      </HelpTip>
+                    )}
+                  />
+                )}
+              </section>
+
+              {/* Overlays */}
+              <section>
+                <RailHeading>Scatter overlays</RailHeading>
+                <MetalBar variant="soft" className="mb-3" />
+                <div className="flex flex-col gap-2">
+                  <OverlayToggle
+                    label="▦  Colour field"
+                    help="Inverse-distance-weighted blend of the 12 nearest dots' measured hex values."
+                    checked={colourField}
+                    onToggle={() => setColourField((v) => !v)}
+                    disabled={mode !== "bivariate"}
+                    disabledReason="Bivariate mode only"
+                  />
+                  <OverlayToggle
+                    label="◷  Contours · L*"
+                    help="Marching-squares iso-L* lines over a kNN-interpolated grid."
+                    checked={contours}
+                    onToggle={() => setContours((v) => !v)}
+                    disabled={mode !== "bivariate"}
+                    disabledReason="Bivariate mode only"
+                  />
+                  <OverlayToggle
+                    label="◯  Fade dots"
+                    help="Drops palette dots to ~28% so the overlays above read clearly."
+                    checked={fadeDots}
+                    onToggle={() => setFadeDots((v) => !v)}
+                  />
+                </div>
+              </section>
+            </>
           )}
         </aside>
       </div>
@@ -1443,19 +1351,3 @@ function OverlayToggle({
   );
 }
 
-/* ── Main-column panel label ───────────────────────────────────────────── */
-
-function PanelLabel({ title, subtitle }: { title: string; subtitle?: string }) {
-  return (
-    <div className="flex items-baseline gap-2 mb-2.5">
-      <span className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold">
-        {title}
-      </span>
-      {subtitle && (
-        <span className="font-mono text-[10px] text-[color:var(--color-ink-subtle)] truncate">
-          {subtitle}
-        </span>
-      )}
-    </div>
-  );
-}

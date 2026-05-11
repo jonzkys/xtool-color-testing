@@ -106,9 +106,6 @@ interface Props {
   /** Called when crop mode should turn itself off (drag complete, Esc,
    *  or a plain-click without dragging). */
   onCropModeChange?: (active: boolean) => void;
-  /** When true, render the dashed focus-crosshair lines through the
-   *  focused dot. Opt-in via the Color tab; off by default. */
-  showCrosshair?: boolean;
 }
 
 function rowChannel(row: ExposureRow, key: ChannelCol): number {
@@ -187,7 +184,6 @@ export const ExposureScatter: React.FC<Props> = ({
   fadeDots = false,
   cropMode = false,
   onCropModeChange,
-  showCrosshair = false,
 }) => {
   const xs = rows.map((r) => rowIndex(r, xKey));
   const ys = rows.map((r) =>
@@ -738,48 +734,6 @@ export const ExposureScatter: React.FC<Props> = ({
               opacity={0.9}
             />
           )}
-
-          {/* Focus crosshair — off by default, opt-in via the Color tab. */}
-          {showCrosshair && focusedId != null && (() => {
-            const focused = rows.find((r) => r.id === focusedId);
-            if (!focused) return null;
-            const fx = rowIndex(focused, xKey);
-            const fy =
-              mode === "univariate"
-                ? rowChannel(focused, yKey as ChannelCol)
-                : rowIndex(focused, yKey as IndexRow);
-            if (!Number.isFinite(fx) || !Number.isFinite(fy)) return null;
-            // Don't render crosshair for out-of-clamp focused entries.
-            if (trimOutliers) {
-              const xCheck = xScale === "log" ? Math.log10(Math.max(1e-9, fx)) : fx;
-              const yCheck = yScale === "log" ? Math.log10(Math.max(1e-9, fy)) : fy;
-              if (xCheck < xMin || xCheck > xMax || yCheck < yMin || yCheck > yMax) return null;
-            }
-            return (
-              <g aria-hidden="true">
-                <line
-                  x1={PADL}
-                  x2={W - PADR}
-                  y1={py(fy)}
-                  y2={py(fy)}
-                  stroke="var(--color-primary)"
-                  strokeWidth={0.6}
-                  strokeDasharray="3 3"
-                  opacity={0.6}
-                />
-                <line
-                  x1={px(fx)}
-                  x2={px(fx)}
-                  y1={PADT}
-                  y2={H - PADB}
-                  stroke="var(--color-primary)"
-                  strokeWidth={0.6}
-                  strokeDasharray="3 3"
-                  opacity={0.6}
-                />
-              </g>
-            );
-          })()}
 
           {/* Family trace — rendered behind the dots */}
           {family && family.length >= 2 && (

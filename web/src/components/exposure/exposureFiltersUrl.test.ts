@@ -13,16 +13,27 @@ describe("encodeFilters", () => {
     expect(encodeFilters(DEFAULT_FILTERS)).toBe("");
   });
 
-  it("encodes a single param range as p=10..40", () => {
+  it("encodes a single eq clause as p=eq:14.6", () => {
     const f: ActiveFilters = { ...DEFAULT_FILTERS,
-      paramRanges: { power: { min: 10, max: 40 } } };
-    expect(encodeFilters(f)).toBe("p=10..40");
+      paramClauses: { power: [{ kind: "eq", value: 14.6 }] } };
+    expect(encodeFilters(f)).toBe("p=eq:14.6");
   });
 
-  it("encodes half-open ranges", () => {
+  it("encodes a range clause as p=range:10..40", () => {
     const f: ActiveFilters = { ...DEFAULT_FILTERS,
-      paramRanges: { density: { min: 100, max: null } } };
-    expect(encodeFilters(f)).toBe("d=100..");
+      paramClauses: { power: [{ kind: "range", value: 10, valueHi: 40 }] } };
+    expect(encodeFilters(f)).toBe("p=range:10..40");
+  });
+
+  it("encodes multiple clauses with commas", () => {
+    const f: ActiveFilters = { ...DEFAULT_FILTERS,
+      paramClauses: {
+        power: [
+          { kind: "eq", value: 14.6 },
+          { kind: "lt", value: 20 },
+        ],
+      } };
+    expect(encodeFilters(f)).toBe("p=eq:14.6,lt:20");
   });
 
   it("encodes test ids + lineage + kind", () => {
@@ -41,6 +52,15 @@ describe("encodeFilters", () => {
     expect(encodeFilters(f)).toContain("test=1,5,42");
   });
 
+  it("encodes burn-setting tri-states", () => {
+    const f: ActiveFilters = { ...DEFAULT_FILTERS,
+      crosshatch: "yes", unidirectional: "no", angleMode: "incremental" };
+    const q = encodeFilters(f);
+    expect(q).toContain("xh=yes");
+    expect(q).toContain("uni=no");
+    expect(q).toContain("am=incremental");
+  });
+
   it("omits sources when all three are checked (default)", () => {
     expect(encodeFilters(DEFAULT_FILTERS)).not.toContain("src=");
   });
@@ -55,13 +75,19 @@ describe("encodeFilters", () => {
 describe("round-trip", () => {
   for (const [name, f] of [
     ["default", DEFAULT_FILTERS],
+    ["eq power", { ...DEFAULT_FILTERS,
+      paramClauses: { power: [{ kind: "eq", value: 14.6 }] } }],
     ["range power", { ...DEFAULT_FILTERS,
-      paramRanges: { power: { min: 10, max: 40 } } }],
-    ["multi-param ranges", { ...DEFAULT_FILTERS,
-      paramRanges: {
-        power: { min: 10, max: 40 },
-        density: { min: 100, max: null },
-        speed: { min: null, max: 1000 },
+      paramClauses: { power: [{ kind: "range", value: 10, valueHi: 40 }] } }],
+    ["multi-clause power (eq + lt)", { ...DEFAULT_FILTERS,
+      paramClauses: { power: [
+        { kind: "eq", value: 14.6 }, { kind: "lt", value: 20 },
+      ] } }],
+    ["multi-param clauses", { ...DEFAULT_FILTERS,
+      paramClauses: {
+        power: [{ kind: "range", value: 10, valueHi: 40 }],
+        density: [{ kind: "gte", value: 100 }],
+        speed: [{ kind: "lte", value: 1000 }],
       } }],
     ["test + lineage + kind", { ...DEFAULT_FILTERS,
       testIds: new Set([42]), testLineage: new Set(["source"]),
@@ -71,8 +97,8 @@ describe("round-trip", () => {
     ["sources subset + validated", { ...DEFAULT_FILTERS,
       sources: new Set(["averaged", "manual"]),
       validatedOnly: true }],
-    ["brush", { ...DEFAULT_FILTERS,
-      brushRange: [1.2, 18] }],
+    ["burn settings", { ...DEFAULT_FILTERS,
+      crosshatch: "yes", unidirectional: "no", angleMode: "fixed" }],
     ["trimOutliers off", { ...DEFAULT_FILTERS, trimOutliers: false }],
   ] as Array<[string, ActiveFilters]>) {
     it(`round-trips ${name}`, () => {
@@ -84,13 +110,13 @@ describe("round-trip", () => {
 
 describe("decodeFilters - liberal parsing", () => {
   it("ignores unknown keys", () => {
-    expect(decodeFilters("foo=bar&p=10..40")).toEqual({
+    expect(decodeFilters("foo=bar&p=eq:14.6")).toEqual({
       ...DEFAULT_FILTERS,
-      paramRanges: { power: { min: 10, max: 40 } },
+      paramClauses: { power: [{ kind: "eq", value: 14.6 }] },
     });
   });
 
-  it("malformed range falls back to no constraint", () => {
+  it("malformed clause falls back to no constraint", () => {
     expect(decodeFilters("p=garbage")).toEqual(DEFAULT_FILTERS);
   });
 

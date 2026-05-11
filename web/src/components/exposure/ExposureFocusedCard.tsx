@@ -1,18 +1,12 @@
 import * as React from "react";
+import { ListFilterPlus } from "lucide-react";
 import type { ExposureRow } from "./exposureCorrelations";
-import { ExposureChromaDisc } from "./ExposureChromaDisc";
 import type { FamilyMember, VaryingAxis } from "./recipeFamilies";
 import { type FilterableParam, FILTERABLE_PARAMS } from "./exposureFilters";
 
 interface Props {
   rows: readonly ExposureRow[];
   focusedId: number | null;
-  onDiscHover?: (id: number) => void;
-  onDiscLeave?: () => void;
-  onDiscClick?: (id: number) => void;
-  /** Optional: mirrors ExposurePage's exposure brush so the disc
-   *  fades out-of-range entries in lockstep with the scatter. */
-  dimRange?: readonly [number, number] | null;
   /** Optional: the recipe family the focused entry belongs to. */
   focusedFamily?: readonly FamilyMember[] | null;
   /** All families the focused entry belongs to (one per varying axis). */
@@ -25,9 +19,10 @@ interface Props {
   onClearFilter?: () => void;
   /** Optional slot rendered below the family-filter section when focused. */
   neighboursSlot?: React.ReactNode;
-  /** Which params currently have an exact-match filter active. */
-  activeParamFilters?: ReadonlySet<FilterableParam>;
-  /** Toggle an exact-match range filter on a param at the given value. */
+  /** Returns true when an `eq` clause for (param, value) is already
+   *  in the active filter set. Drives the apply-filter button state. */
+  hasParamValueFilter?: (param: FilterableParam, value: number) => boolean;
+  /** Toggle an eq clause for (param, value). */
   onTogglePerParamFilter?: (param: FilterableParam, value: number) => void;
 }
 
@@ -53,37 +48,19 @@ const PARAM_FIELDS: {
 export const ExposureFocusedCard: React.FC<Props> = ({
   rows,
   focusedId,
-  onDiscHover,
-  onDiscLeave,
-  onDiscClick,
-  dimRange,
   focusedFamily,
   availableFamilies,
   activeFilterAxis,
   onSetFilter,
   onClearFilter,
   neighboursSlot,
-  activeParamFilters,
+  hasParamValueFilter,
   onTogglePerParamFilter,
 }) => {
   const focused = focusedId == null ? null : rows.find((r) => r.id === focusedId) ?? null;
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Disc — always visible. The card stays readable when nothing
-          is focused so the rail doesn't collapse to a tiny stub. */}
-      <div className="flex justify-center">
-        <ExposureChromaDisc
-          rows={rows}
-          focusedId={focusedId}
-          size={150}
-          onHover={onDiscHover}
-          onLeave={onDiscLeave}
-          onClick={onDiscClick}
-          dimRange={dimRange}
-        />
-      </div>
-
       {/* Swatch — only when focused. */}
       {focused && (
         <div className="flex items-center gap-2">
@@ -126,8 +103,10 @@ export const ExposureFocusedCard: React.FC<Props> = ({
                 if (v == null) return null;
                 const param = field.key as FilterableParam;
                 const isFilterableParam = (FILTERABLE_PARAMS as readonly string[]).includes(field.key);
-                const isActive = isFilterableParam && (activeParamFilters?.has(param) ?? false);
                 const numericValue = typeof v === "number" ? v : null;
+                const isActive =
+                  isFilterableParam && numericValue != null &&
+                  (hasParamValueFilter?.(param, numericValue) ?? false);
                 return (
                   <div
                     key={field.key}
@@ -149,25 +128,26 @@ export const ExposureFocusedCard: React.FC<Props> = ({
                       {isFilterableParam && onTogglePerParamFilter && numericValue != null && (
                         <button
                           type="button"
+                          aria-pressed={isActive}
                           aria-label={
                             isActive
-                              ? `Clear ${field.label.toLowerCase()} filter`
-                              : `Filter to ${field.label.toLowerCase()} = ${numericValue}`
+                              ? `Remove ${field.label.toLowerCase()} = ${numericValue} filter`
+                              : `Filter scatter to ${field.label.toLowerCase()} = ${numericValue}`
                           }
                           onClick={() => onTogglePerParamFilter(param, numericValue)}
                           title={
                             isActive
-                              ? `Clear ${field.label.toLowerCase()} filter`
-                              : `Filter to ${field.label.toLowerCase()} = ${numericValue}${field.suffix ?? ""}`
+                              ? `Filtering scatter to ${field.label.toLowerCase()} = ${numericValue}${field.suffix ?? ""} — click to remove`
+                              : `Filter scatter to ${field.label.toLowerCase()} = ${numericValue}${field.suffix ?? ""}`
                           }
                           className={
-                            "font-mono text-[9px] px-1 py-0 rounded-sm border transition-colors " +
+                            "h-[20px] w-[20px] grid place-items-center rounded-sm transition-colors " +
                             (isActive
-                              ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
-                              : "border-transparent text-[color:var(--color-ink-subtle)] hover:border-[color:var(--color-primary)] hover:text-[color:var(--color-primary)]")
+                              ? "bg-[color:var(--color-primary)] text-white"
+                              : "text-[color:var(--color-ink-subtle)] hover:bg-[color:var(--color-primary-tint)] hover:text-[color:var(--color-primary)]")
                           }
                         >
-                          {isActive ? "✓" : "⚲"}
+                          <ListFilterPlus className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
                         </button>
                       )}
                     </div>

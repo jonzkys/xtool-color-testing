@@ -80,7 +80,7 @@ describe("applyFilters", () => {
       entry({ id: 3, params: { ...entry({id:3}).params, power: 90 } }),
     ];
     const f: ActiveFilters = { ...DEFAULT_FILTERS,
-      paramRanges: { power: { min: 30, max: 70 } } };
+      paramClauses: { power: [{ kind: "range", value: 30, valueHi: 70 }] } };
     expect(applyFilters(rows, f, TESTS).map(r => r.id)).toEqual([2]);
   });
 
@@ -90,7 +90,7 @@ describe("applyFilters", () => {
       entry({ id: 2, params: { ...entry({id:2}).params, power: 50 } }),
     ];
     const f: ActiveFilters = { ...DEFAULT_FILTERS,
-      paramRanges: { power: { min: 30, max: 70 } } };
+      paramClauses: { power: [{ kind: "range", value: 30, valueHi: 70 }] } };
     expect(applyFilters(rows, f, TESTS).map(r => r.id)).toEqual([2]);
   });
 
