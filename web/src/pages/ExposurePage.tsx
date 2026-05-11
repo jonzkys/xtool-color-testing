@@ -116,6 +116,18 @@ const F2_MOPA_LIMITS: LaserLimits = {
   density:   { min: 1,  max: 5000,  step: 1 },
 };
 
+/** Snap a free-precision value to the controller's step + clamp to
+ *  [min, max]. The inverse solver in proposeTestMath returns floats
+ *  like 249.87 kHz; the machine accepts integer kHz, so we snap
+ *  before persisting cell.params. */
+function snapToLimits(v: number, range: { min: number; max: number; step: number }): number {
+  const snapped = Math.round(v / range.step) * range.step;
+  const clamped = Math.min(range.max, Math.max(range.min, snapped));
+  // Use toFixed to avoid float dust like 249.9999999999 when step is 1.
+  const decimals = Math.max(0, -Math.floor(Math.log10(range.step)));
+  return Number(clamped.toFixed(decimals));
+}
+
 const PROPOSE_PARAM_LABELS: Record<ParamKey, { name: string; unit: string }> = {
   power:     { name: "POWER",   unit: "%" },
   speed:     { name: "SPEED",   unit: "mm/s" },
@@ -697,10 +709,21 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
 
     // Build per-cell parameter overrides — a curve mode varies one
     // param along arc-length; a fill samples two params at once.
+    //
+    // Snap every solved value to the controller's step before persisting.
+    // The inverse-solver returns floats (e.g. freq=249.87 kHz, speed=2073.72
+    // mm/s); the laser only accepts the stepped values, so the burn
+    // would round these anyway — better to round now so the saved
+    // recipe matches what actually gets burned.
     const validationCells = preview.cells.map((c, i) => {
-      const cellParams: Record<string, number> = effective.mode === "curve"
+      const raw: Record<string, number> = effective.mode === "curve"
         ? { [effective.varyParam]: (c as CurveSample).paramValue }
         : { ...(c as FillCell).paramValues } as Record<string, number>;
+      const cellParams: Record<string, number> = {};
+      for (const [k, v] of Object.entries(raw)) {
+        const limit = (F2_MOPA_LIMITS as Record<string, { min: number; max: number; step: number } | undefined>)[k];
+        cellParams[k] = limit ? snapToLimits(v, limit) : v;
+      }
       return { params: cellParams, index: i };
     });
 

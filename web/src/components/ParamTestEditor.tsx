@@ -14,6 +14,7 @@ import {
 import { DynamicParamForm } from "./dynamic-form/DynamicParamForm";
 import { useCurrentMachine, getValidationProfile } from "../state/machine";
 import { ValidationPaletteTab } from "./ValidationPaletteTab";
+import { ExposureRecipesTab } from "./exposure/ExposureRecipesTab";
 import { AnnotationParamsSection } from "./AnnotationParamsSection";
 
 function defaultAggregatorFor(cell_shape: string): SampleAggregator {
@@ -58,7 +59,7 @@ function sweptByCaption(
   return null;
 }
 
-export type ParamTestEditorTab = "test" | "sweep" | "palette" | "base" | "registration";
+export type ParamTestEditorTab = "test" | "sweep" | "palette" | "recipes" | "base" | "registration";
 
 interface Props {
   spec: TestSpec;
@@ -718,6 +719,13 @@ export function ParamTestEditor({
           onSourceMaterialChange={(next) =>
             updateSpec({ source_material_id: next ?? undefined })
           }
+        />
+      )}
+
+      {tab === "recipes" && (
+        <ExposureRecipesTab
+          baseParams={t.base_params}
+          validationCells={validationCells}
         />
       )}
 
