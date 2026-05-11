@@ -21,6 +21,7 @@ import { ExposureAxisPicker } from "./ExposureAxisPicker";
 import { ExposurePolygon } from "./ExposurePolygon";
 import { ExposurePolygonDraw } from "./ExposurePolygonDraw";
 import { ExposureCellsPreview } from "./ExposureCellsPreview";
+import { ExposureColourField, type ColourFieldPoint } from "./ExposureColourField";
 import type { Polygon } from "./proposeTestMath";
 
 export type ScaleKind = "linear" | "log";
@@ -86,6 +87,11 @@ interface Props {
   viewport?: ScatterViewport | null;
   /** Called when the user changes the viewport via wheel/drag/box-zoom. */
   onViewportChange?: (next: ScatterViewport | null) => void;
+  /** When true (and bivariate mode), render a hex-tinted backdrop
+   *  showing the local measured-colour field interpolated from nearby
+   *  palette dots. Useful for spotting "colour windows" on materials
+   *  like SS where dose isn't monotonic in colour. */
+  showColourField?: boolean;
 }
 
 function rowChannel(row: ExposureRow, key: ChannelCol): number {
@@ -158,6 +164,7 @@ export const ExposureScatter: React.FC<Props> = ({
   onPolygonVertexMove,
   viewport,
   onViewportChange,
+  showColourField = false,
 }) => {
   const xs = rows.map((r) => rowIndex(r, xKey));
   const ys = rows.map((r) =>
@@ -225,6 +232,24 @@ export const ExposureScatter: React.FC<Props> = ({
 
   const xTicks = niceTicks(xMin, xMax, 5);
   const yTicks = niceTicks(yMin, yMax, 5);
+
+  // Colour-field backdrop: project every finite row into SVG space and
+  // hand it to ExposureColourField. Bivariate-only — in univariate
+  // mode the Y axis is a Lab channel and the dots' hex values are the
+  // direct readout, not a "what colour did this recipe make" lookup.
+  const colourFieldPoints = React.useMemo<ColourFieldPoint[]>(() => {
+    if (!showColourField || mode !== "bivariate") return [];
+    const out: ColourFieldPoint[] = [];
+    for (const row of rows) {
+      const x = rowIndex(row, xKey);
+      const y = rowIndex(row, yKey as IndexRow);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      out.push({ sx: px(x), sy: py(y), hex: row.hex });
+    }
+    return out;
+  // px/py depend on xMin/xMax/yMin/yMax/xScale/yScale — listing those.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showColourField, mode, rows, xKey, yKey, xMin, xMax, yMin, yMax, xScale, yScale]);
 
   const isInDimRange = (row: ExposureRow): boolean => {
     if (!dimRange) return true;
@@ -672,6 +697,14 @@ export const ExposureScatter: React.FC<Props> = ({
                   return [px(x), py(y)] as const;
                 })
                 .filter((p): p is readonly [number, number] => p !== null)}
+            />
+          )}
+
+          {/* Colour-field backdrop (bivariate only, behind dots). */}
+          {showColourField && mode === "bivariate" && colourFieldPoints.length > 0 && (
+            <ExposureColourField
+              points={colourFieldPoints}
+              plotRect={{ x0: PADL, y0: PADT, x1: W - PADR, y1: H - PADB }}
             />
           )}
 

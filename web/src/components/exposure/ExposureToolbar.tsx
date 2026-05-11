@@ -25,6 +25,9 @@ interface Props {
   proposeOpen: boolean;
   onToggleProposeMode: () => void;
   proposeAvailable: boolean;   // false in univariate mode → chip disabled
+  colourField: boolean;
+  onToggleColourField: () => void;
+  colourFieldAvailable: boolean;   // false in univariate mode → chip disabled
 }
 
 const INDEX_PRETTY: Record<IndexRow, string> = {
@@ -135,6 +138,7 @@ export function ExposureToolbar({
   onXKeyChange, onYKeyChange, onXScaleChange, onYScaleChange,
   filtersOpen, onToggleFilters, activeFilterCount,
   proposeOpen, onToggleProposeMode, proposeAvailable,
+  colourField, onToggleColourField, colourFieldAvailable,
 }: Props) {
   const yPretty = mode === "univariate"
     ? CHANNEL_PRETTY[yKey as ChannelCol]
@@ -192,9 +196,29 @@ export function ExposureToolbar({
 
       <button
         type="button"
+        disabled={!colourFieldAvailable}
+        onClick={onToggleColourField}
+        aria-pressed={colourField}
+        title={colourFieldAvailable
+          ? "Tint the chart background with the local measured colour"
+          : "Colour field is bivariate-only"}
+        className={
+          "ml-auto px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+          (!colourFieldAvailable
+            ? "border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)] opacity-50 cursor-not-allowed"
+            : colourField
+              ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
+              : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:border-[color:var(--color-primary)]")
+        }
+      >
+        ▦ COLOUR FIELD
+      </button>
+
+      <button
+        type="button"
         onClick={onToggleFilters}
         className={
-          "ml-auto px-3 py-1 font-mono text-[10.5px] uppercase tracking-[0.16em] " +
+          "ml-1 px-3 py-1 font-mono text-[10.5px] uppercase tracking-[0.16em] " +
           "rounded-sm border transition-colors " +
           (filtersOpen || activeFilterCount > 0
             ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)] bg-[color:var(--color-surface-elevated)]"

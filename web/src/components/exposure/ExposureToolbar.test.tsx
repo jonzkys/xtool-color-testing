@@ -24,6 +24,8 @@ const STD_PROPS = {
   activeFilterCount: 0,
   proposeOpen: false, onToggleProposeMode: NOOP,
   proposeAvailable: true,
+  colourField: false, onToggleColourField: NOOP,
+  colourFieldAvailable: true,
 };
 
 describe("ExposureToolbar", () => {

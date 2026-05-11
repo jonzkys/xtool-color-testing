@@ -255,6 +255,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const [xScale, setXScale] = useState<ScaleKind>("log");
   const [yScale, setYScale] = useState<ScaleKind>("log");
   const [viewport, setViewport] = useState<ScatterViewport | null>(null);
+  const [colourField, setColourField] = useState<boolean>(false);
 
   // Reset zoom whenever the user changes WHICH axes are on the chart or
   // their scale. The viewport stores bounds in scale-space, so they have
@@ -867,6 +868,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
         proposeOpen={proposeMode !== "off"}
         onToggleProposeMode={handleToggleProposeMode}
         proposeAvailable={mode === "bivariate"}
+        colourField={colourField}
+        onToggleColourField={() => setColourField((v) => !v)}
+        colourFieldAvailable={mode === "bivariate"}
       />
 
       {/* ── PILL BAR (active filter chips) ────────────────────────────── */}
@@ -1002,6 +1006,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   onPolygonCancel={closeProposeWizard}
                   viewport={viewport}
                   onViewportChange={setViewport}
+                  showColourField={colourField}
                 />
               </div>
 
