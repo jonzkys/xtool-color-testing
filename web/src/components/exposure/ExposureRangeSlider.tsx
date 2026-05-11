@@ -150,12 +150,15 @@ export function ExposureRangeSlider({ param, domain, value, onChange }: Props) {
   const unit = PARAM_UNIT[param];
   return (
     <div
-      className="flex flex-col gap-1.5"
+      className="flex flex-col gap-1"
       data-log-scale={log ? "true" : "false"}
     >
-      <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em]">
-        <span className="font-semibold text-[color:var(--color-ink-subtle)]">
-          {PARAM_LABEL[param]}{unit ? ` (${unit})` : ""}
+      <div className="flex items-center justify-between font-mono text-[9.5px] uppercase tracking-[0.14em] min-w-0">
+        <span
+          className="font-semibold text-[color:var(--color-ink-subtle)] truncate"
+          title={`${PARAM_LABEL[param]} (data range ${fmt(domain.min)}–${fmt(domain.max)})`}
+        >
+          {PARAM_LABEL[param]}{unit ? ` ${unit}` : ""}
         </span>
         <button
           type="button"
@@ -201,9 +204,6 @@ export function ExposureRangeSlider({ param, domain, value, onChange }: Props) {
         />
       </div>
 
-      <div className="font-mono text-[9px] text-[color:var(--color-ink-subtle)]">
-        data: {fmt(domain.min)}–{fmt(domain.max)}
-      </div>
     </div>
   );
 }

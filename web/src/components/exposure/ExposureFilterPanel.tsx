@@ -1,3 +1,4 @@
+import * as React from "react";
 import {
   DEFAULT_FILTERS, FILTERABLE_PARAMS,
   type ActiveFilters, type AngleModeFilter, type FilterableParam,
@@ -29,62 +30,98 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export function ExposureFilterPanel({
   filters: f, onChange, tests, dataRanges,
 }: Props) {
-  const setSources = (next: ReadonlySet<SourceKind>) =>
-    onChange({ ...f, sources: next });
   const setRange = (k: FilterableParam, r: { min: number | null; max: number | null } | undefined) =>
     onChange({ ...f, paramRanges: { ...f.paramRanges, [k]: r } });
 
+  const [testSearch, setTestSearch] = React.useState("");
+  const [moreOpen, setMoreOpen] = React.useState(false);
+
+  const visibleTests = React.useMemo(() => {
+    const q = testSearch.trim().toLowerCase();
+    if (!q) return tests;
+    return tests.filter((t) =>
+      t.name.toLowerCase().includes(q) || String(t.id).includes(q),
+    );
+  }, [tests, testSearch]);
+
+  const toggleTest = (id: number) => {
+    const next = new Set(f.testIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    onChange({ ...f, testIds: next });
+  };
+
   return (
     <div className="flex flex-col gap-4">
-      <Section title="Source / validated">
-        <div className="flex flex-col gap-1">
-          {SOURCE_OPTIONS.map((s) => (
-            <label key={s} className="flex items-center gap-2 font-mono text-[10.5px]">
-              <input
-                type="checkbox"
-                checked={f.sources.has(s)}
-                onChange={(e) => {
-                  const next = new Set(f.sources);
-                  if (e.target.checked) next.add(s); else next.delete(s);
-                  setSources(next);
-                }}
-              />
-              {s}
-            </label>
-          ))}
-          <label className="flex items-center gap-2 font-mono text-[10.5px]">
-            <input
-              type="checkbox"
-              checked={f.validatedOnly}
-              onChange={(e) =>
-                onChange({ ...f, validatedOnly: e.target.checked })}
-              aria-label="validated only"
-            />
-            validated only
-          </label>
-        </div>
-      </Section>
-
-      <Section title="Test">
-        <select
-          className="font-mono text-[10.5px] px-1 py-1 rounded-sm border border-[color:var(--color-border)] bg-[color:var(--color-surface)]"
-          value={f.testId ?? ""}
-          onChange={(e) => {
-            const v = e.target.value === "" ? null : Number(e.target.value);
-            onChange({ ...f, testId: v, testLineage: new Set() });
-          }}
+      <Section
+        title={
+          f.testIds.size > 0
+            ? `Tests · ${f.testIds.size}/${tests.length} in`
+            : `Tests · all (${tests.length})`
+        }
+      >
+        <input
+          type="search"
+          placeholder="search…"
+          value={testSearch}
+          onChange={(e) => setTestSearch(e.target.value)}
+          className="font-mono text-[10.5px] px-2 py-1 rounded-sm border border-[color:var(--color-border)] bg-[color:var(--color-surface)] focus:outline-none focus:border-[color:var(--color-primary)]"
+        />
+        <div
+          className="flex flex-col gap-0.5 max-h-[180px] overflow-y-auto pr-1"
+          role="listbox"
+          aria-multiselectable="true"
         >
-          <option value="">— all —</option>
-          {tests.map((t) => (
-            <option key={t.id} value={t.id}>
-              #{t.id} · {t.name} · {t.kind}
-            </option>
-          ))}
-        </select>
-        {f.testId != null && (
-          <div className="flex flex-col gap-1 pl-2">
+          {visibleTests.length === 0 && (
+            <span className="font-mono text-[9.5px] italic text-[color:var(--color-ink-subtle)] px-1">
+              no match
+            </span>
+          )}
+          {visibleTests.map((t) => {
+            const checked = f.testIds.has(t.id);
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="option"
+                aria-selected={checked}
+                onClick={() => toggleTest(t.id)}
+                className={
+                  "flex items-center gap-2 px-1 py-1 rounded-sm text-left font-mono text-[10.5px] transition-colors " +
+                  (checked
+                    ? "bg-[color:var(--color-primary-tint)] text-[color:var(--color-primary)]"
+                    : "text-[color:var(--color-ink)] hover:bg-[color:var(--color-surface-elevated)]")
+                }
+              >
+                <span
+                  aria-hidden
+                  className={
+                    "inline-block w-3 h-3 flex-none rounded-sm border " +
+                    (checked
+                      ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)]"
+                      : "border-[color:var(--color-border-strong)] bg-[color:var(--color-surface)]")
+                  }
+                >
+                  {checked && (
+                    <svg viewBox="0 0 10 10" className="w-3 h-3">
+                      <path d="M2 5.5l2 2 4-4.5" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </span>
+                <span className="tabular-nums text-[color:var(--color-ink-subtle)] flex-none">
+                  #{t.id}
+                </span>
+                <span className="flex-1 truncate" title={t.name}>{t.name}</span>
+                <span className="text-[9px] uppercase tracking-[0.12em] text-[color:var(--color-ink-subtle)] flex-none">
+                  {t.kind === "validation" ? "val" : "swp"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {f.testIds.size > 0 && (
+          <div className="flex gap-1 flex-wrap pl-1">
             {(["source", "parent"] as const).map((tag) => (
-              <label key={tag} className="flex items-center gap-2 font-mono text-[10.5px]">
+              <label key={tag} className="flex items-center gap-1 font-mono text-[9.5px] uppercase tracking-[0.1em] text-[color:var(--color-ink-muted)]">
                 <input
                   type="checkbox"
                   checked={f.testLineage.has(tag)}
@@ -94,7 +131,7 @@ export function ExposureFilterPanel({
                     onChange({ ...f, testLineage: next });
                   }}
                 />
-                + {tag} test
+                +{tag}
               </label>
             ))}
           </div>
@@ -124,7 +161,9 @@ export function ExposureFilterPanel({
       </Section>
 
       <Section title="Ranges">
-        <div className="flex flex-col gap-3">
+        {/* Two-column grid halves the vertical footprint vs. the prior
+            stack. Each slider auto-fits the cell width. */}
+        <div className="grid grid-cols-2 gap-x-2 gap-y-2">
           {FILTERABLE_PARAMS.map((k) => {
             const dr = dataRanges[k];
             if (!dr) return null;
@@ -163,48 +202,91 @@ export function ExposureFilterPanel({
         </div>
       </Section>
 
-      <Section title="Recipe family">
-        {f.family ? (
-          <div className="flex items-center gap-2 font-mono text-[10.5px]">
-            <span>{f.family.axis} sweep</span>
-            <button
-              type="button"
-              onClick={() => onChange({ ...f, family: null })}
-              className="ml-auto text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-primary)]"
-            >
-              clear
-            </button>
+      {/* "More" disclosure — niche filters most users don't touch. */}
+      <section className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={() => setMoreOpen((v) => !v)}
+          aria-expanded={moreOpen}
+          className="flex items-center justify-between gap-2 font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold hover:text-[color:var(--color-ink-muted)]"
+        >
+          <span>More</span>
+          <span aria-hidden>{moreOpen ? "▴" : "▾"}</span>
+        </button>
+        <div className="h-[1px] bg-[color:var(--color-border)]" />
+        {moreOpen && (
+          <div className="flex flex-col gap-3">
+            <div>
+              <h4 className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] mb-1">Source</h4>
+              <div className="flex flex-col gap-0.5 pl-1">
+                {SOURCE_OPTIONS.map((s) => (
+                  <label key={s} className="flex items-center gap-2 font-mono text-[10px]">
+                    <input
+                      type="checkbox"
+                      checked={f.sources.has(s)}
+                      onChange={(e) => {
+                        const next = new Set(f.sources);
+                        if (e.target.checked) next.add(s); else next.delete(s);
+                        onChange({ ...f, sources: next });
+                      }}
+                    />
+                    {s}
+                  </label>
+                ))}
+                <label className="flex items-center gap-2 font-mono text-[10px]">
+                  <input
+                    type="checkbox"
+                    checked={f.validatedOnly}
+                    onChange={(e) =>
+                      onChange({ ...f, validatedOnly: e.target.checked })}
+                    aria-label="validated only"
+                  />
+                  validated only
+                </label>
+              </div>
+            </div>
+            <div>
+              <h4 className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] mb-1">Outliers</h4>
+              <label className="flex items-center gap-2 font-mono text-[10px]">
+                <input
+                  type="checkbox"
+                  checked={f.trimOutliers}
+                  onChange={(e) =>
+                    onChange({ ...f, trimOutliers: e.target.checked })}
+                />
+                trim 1%/99%
+              </label>
+              {f.brushRange && (
+                <div className="flex items-center gap-2 font-mono text-[10px] mt-1">
+                  <span>brush: {f.brushRange[0]}–{f.brushRange[1]}</span>
+                  <button
+                    type="button"
+                    onClick={() => onChange({ ...f, brushRange: null })}
+                    className="ml-auto text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-primary)]"
+                  >
+                    clear
+                  </button>
+                </div>
+              )}
+            </div>
+            {f.family && (
+              <div>
+                <h4 className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] mb-1">Recipe family</h4>
+                <div className="flex items-center gap-2 font-mono text-[10px]">
+                  <span>{f.family.axis} sweep</span>
+                  <button
+                    type="button"
+                    onClick={() => onChange({ ...f, family: null })}
+                    className="ml-auto text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-primary)]"
+                  >
+                    clear
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-        ) : (
-          <p className="font-mono text-[9.5px] italic text-[color:var(--color-ink-subtle)]">
-            Set from the focused card.
-          </p>
         )}
-      </Section>
-
-      <Section title="Outliers / brush">
-        <label className="flex items-center gap-2 font-mono text-[10.5px]">
-          <input
-            type="checkbox"
-            checked={f.trimOutliers}
-            onChange={(e) =>
-              onChange({ ...f, trimOutliers: e.target.checked })}
-          />
-          trim 1%/99%
-        </label>
-        {f.brushRange ? (
-          <div className="flex items-center gap-2 font-mono text-[10px]">
-            <span>brush: {f.brushRange[0]}–{f.brushRange[1]}</span>
-            <button
-              type="button"
-              onClick={() => onChange({ ...f, brushRange: null })}
-              className="ml-auto text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-primary)]"
-            >
-              clear
-            </button>
-          </div>
-        ) : null}
-      </Section>
+      </section>
 
       <button
         type="button"

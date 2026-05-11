@@ -13,7 +13,7 @@ const TESTS: TestSummary[] = [
 ];
 
 describe("ExposureFilterPanel", () => {
-  it("renders the six section headings", () => {
+  it("renders the primary section headings (Tests / Ranges / Burn settings / More)", () => {
     render(
       <ExposureFilterPanel
         filters={DEFAULT_FILTERS}
@@ -27,11 +27,10 @@ describe("ExposureFilterPanel", () => {
         }}
       />,
     );
-    expect(screen.getByText(/source/i)).toBeInTheDocument();
-    expect(screen.getByText(/test/i)).toBeInTheDocument();
+    expect(screen.getByText(/tests/i)).toBeInTheDocument();
     expect(screen.getByText(/range/i)).toBeInTheDocument();
-    expect(screen.getByText(/family/i)).toBeInTheDocument();
-    expect(screen.getByText(/outliers/i)).toBeInTheDocument();
+    expect(screen.getByText(/burn settings/i)).toBeInTheDocument();
+    expect(screen.getByText(/^more$/i)).toBeInTheDocument();
     expect(screen.getByText(/clear all/i)).toBeInTheDocument();
   });
 
@@ -49,7 +48,7 @@ describe("ExposureFilterPanel", () => {
     expect(onChange).toHaveBeenCalledWith(DEFAULT_FILTERS);
   });
 
-  it("toggling validated only calls onChange with validatedOnly=true", () => {
+  it("toggling validated only (under More) calls onChange with validatedOnly=true", () => {
     const onChange = vi.fn();
     render(
       <ExposureFilterPanel filters={DEFAULT_FILTERS} onChange={onChange}
@@ -58,9 +57,28 @@ describe("ExposureFilterPanel", () => {
           pulse_width: null, density: null, passes: null, scan_angle: null,
         }} />,
     );
+    // Open the "More" disclosure first — Source/Validated lives there now.
+    fireEvent.click(screen.getByText(/^more$/i));
     fireEvent.click(screen.getByLabelText(/validated only/i));
     expect(onChange).toHaveBeenCalledWith({
       ...DEFAULT_FILTERS, validatedOnly: true,
     });
+  });
+
+  it("toggling a test chip adds it to testIds", () => {
+    const onChange = vi.fn();
+    render(
+      <ExposureFilterPanel filters={DEFAULT_FILTERS} onChange={onChange}
+        tests={TESTS} dataRanges={{
+          power: null, speed: null, frequency: null,
+          pulse_width: null, density: null, passes: null, scan_angle: null,
+        }} />,
+    );
+    // Click the first test row (test id 10 from TESTS fixture)
+    const row = screen.getByText(/sweep-A/i).closest('button')!;
+    fireEvent.click(row);
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      testIds: new Set([10]),
+    }));
   });
 });

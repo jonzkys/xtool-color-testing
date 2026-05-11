@@ -54,7 +54,9 @@ export function encodeFilters(f: ActiveFilters): string {
     parts.push(`src=${[...f.sources].join(",")}`);
   }
   if (f.validatedOnly) parts.push("val=1");
-  if (f.testId != null) parts.push(`test=${f.testId}`);
+  if (f.testIds.size > 0) {
+    parts.push(`test=${[...f.testIds].sort((a, b) => a - b).join(",")}`);
+  }
   if (f.testLineage.size > 0) {
     parts.push(`lin=${[...f.testLineage].join(",")}`);
   }
@@ -72,6 +74,7 @@ export function decodeFilters(query: string): ActiveFilters {
   const out: ActiveFilters = {
     ...DEFAULT_FILTERS,
     sources: new Set(DEFAULT_FILTERS.sources),
+    testIds: new Set(),
     testLineage: new Set(),
     paramRanges: {},
   };
@@ -95,8 +98,11 @@ export function decodeFilters(query: string): ActiveFilters {
       continue;
     }
     if (key === "test") {
-      const n = Number(value);
-      if (Number.isFinite(n) && n > 0) out.testId = n;
+      // Accept both new comma-list format and legacy single-id format.
+      const ids = value.split(",")
+        .map((s) => Number(s.trim()))
+        .filter((n) => Number.isFinite(n) && n > 0);
+      if (ids.length > 0) out.testIds = new Set(ids);
       continue;
     }
     if (key === "lin") {

@@ -34,7 +34,7 @@ describe("ExposureFilterPills", () => {
 
   it("renders test pill with lineage suffix", () => {
     const f: ActiveFilters = {
-      ...DEFAULT_FILTERS, testId: 42,
+      ...DEFAULT_FILTERS, testIds: new Set([42]),
       testLineage: new Set(["source"]),
     };
     render(

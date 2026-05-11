@@ -29,8 +29,11 @@ export interface ActiveFilters {
   trimOutliers: boolean;
   brushRange: readonly [number, number] | null;
   family: { axis: VaryingAxis; anchorRowId: number } | null;
-  testId: number | null;
-  /** Single-step lineage extensions — not transitive. */
+  /** Multi-select test ids. Empty = no test filter. Each selected id
+   *  is independently extended by `testLineage` (single-step). */
+  testIds: ReadonlySet<number>;
+  /** Single-step lineage extensions applied to each selected test —
+   *  not transitive. */
   testLineage: ReadonlySet<"source" | "parent">;
   testKind: "sweep" | "validation" | "all";
   paramRanges: Partial<Record<FilterableParam, ParamRange>>;
@@ -46,7 +49,7 @@ export const DEFAULT_FILTERS: ActiveFilters = {
   trimOutliers: true,
   brushRange: null,
   family: null,
-  testId: null,
+  testIds: new Set(),
   testLineage: new Set(),
   testKind: "all",
   paramRanges: {},
@@ -110,9 +113,15 @@ export function applyFilters(
   f: ActiveFilters,
   testsById: ReadonlyMap<number, TestSummary>,
 ): ExposureRow[] {
-  const acceptedTestIds = f.testId == null
+  const acceptedTestIds = f.testIds.size === 0
     ? null
-    : lineageTestIds(f.testId, f.testLineage, testsById);
+    : (() => {
+        const acc = new Set<number>();
+        for (const id of f.testIds) {
+          for (const v of lineageTestIds(id, f.testLineage, testsById)) acc.add(v);
+        }
+        return acc as ReadonlySet<number>;
+      })();
 
   const out: ExposureRow[] = [];
   for (const e of rows) {
