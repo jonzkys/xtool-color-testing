@@ -1061,6 +1061,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               }}
               hasParamOverrides={Object.keys(paramOverrides).length > 0}
               onResetParams={() => setParamOverrides({})}
+              burnSettings={{ scan_angle: 90, crosshatch: false, angle_mode: "fixed", unidirectional: false }}
+              onBurnSettingChange={() => {}}
               rangeReadout={rangeReadout}
               canCreate={anchor !== null && preview.cells.length > 0}
               helperText={
