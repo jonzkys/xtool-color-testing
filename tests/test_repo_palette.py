@@ -727,7 +727,8 @@ def test_insert_bulk_populates_indices(fresh_db) -> None:
     assert idx["line_spacing_mm"] == pytest.approx(10 / 100)
     assert idx["pulse_energy_index"] == pytest.approx(50 / 65)
     assert idx["pulse_intensity_index"] == pytest.approx(50 / (65 * 200))
-    assert idx["total_exposure_index"] == pytest.approx(50 * 100 * 1 / 1000)
+    # v5: TEi = power × freq × density × passes / speed (defaults: freq=65)
+    assert idx["total_exposure_index"] == pytest.approx(50 * 65 * 100 * 1 / 1000)
     assert idx["formula_version"] == INDICES_FORMULA_VERSION
     assert idx["density_model"] == "lpc"
     assert idx["power_model"] == "controller_percent"
@@ -748,7 +749,8 @@ def test_create_manual_populates_indices(fresh_db) -> None:
         notes="manual",
     )
     idx = out["indices"]
-    assert idx["total_exposure_index"] == pytest.approx(40 * 200 * 2 / 800)
+    # v5: TEi = power × freq × density × passes / speed
+    assert idx["total_exposure_index"] == pytest.approx(40 * 60 * 200 * 2 / 800)
     assert idx["formula_version"] == INDICES_FORMULA_VERSION
 
 
@@ -866,7 +868,8 @@ def test_recompute_indices_updates_stale_rows(palette_db) -> None:
             select(palette_entries).where(palette_entries.c.id == eid),
         ).one()
     assert row.indices_formula_version == INDICES_FORMULA_VERSION
-    assert row.total_exposure_index == pytest.approx(50 * 100 * 1 / 1000)
+    # v5: TEi = power × freq × density × passes / speed
+    assert row.total_exposure_index == pytest.approx(50 * 65 * 100 * 1 / 1000)
 
 
 def test_recompute_indices_skips_rows_already_at_current_version(
@@ -998,7 +1001,7 @@ _BASE_PARAMS = {
 def test_compute_index_values_default_no_crosshatch():
     from xcs_gen_web.repositories.palette import _compute_index_values
     values = _compute_index_values(_BASE_PARAMS)
-    assert values["indices_formula_version"] == 4
+    assert values["indices_formula_version"] == 5
 
 
 def test_compute_index_values_doubles_TEi_when_crosshatch_true():

@@ -423,36 +423,38 @@ export function partialDerivative(
       }
     }
     case "total_exposure_index": {
-      // TEi = power * density * effPasses / speed
+      // v5: TEi = power * frequency * density * effPasses / speed
       switch (paramKey) {
-        case "power":   return density * effPasses / speed;
-        case "density": return power * effPasses / speed;
-        case "passes":  return power * density * xh / speed;
-        case "speed":   return -power * density * effPasses / (speed * speed);
+        case "power":     return frequency * density * effPasses / speed;
+        case "frequency": return power * density * effPasses / speed;
+        case "density":   return power * frequency * effPasses / speed;
+        case "passes":    return power * frequency * density * xh / speed;
+        case "speed":     return -power * frequency * density * effPasses / (speed * speed);
         default: return 0;
       }
     }
     case "ablation_aggression_index": {
-      // AAi = power² * density * effPasses / (speed * frequency * pulse_width)
-      const denom = speed * frequency * pulse_width;
+      // v5: AAi = TEi × PIi = power² * density * effPasses / (speed * pulse_width)
+      // (frequency cancels: TEi gains a freq factor and PIi has 1/freq)
+      const denom = speed * pulse_width;
       switch (paramKey) {
         case "power":       return 2 * power * density * effPasses / denom;
         case "density":     return power * power * effPasses / denom;
         case "passes":      return power * power * density * xh / denom;
         case "speed":       return -power * power * density * effPasses / (speed * denom);
-        case "frequency":   return -power * power * density * effPasses / (frequency * denom);
         case "pulse_width": return -power * power * density * effPasses / (pulse_width * denom);
         default: return 0;
       }
     }
     case "delivery_smoothness_index": {
-      // DSi = density * effPasses * frequency * pulse_width / speed
+      // v5: DSi = TEi / PIi = frequency² * density * effPasses * pulse_width / speed
+      // (power cancels: TEi has a `power` factor and PIi has `1/power`)
       switch (paramKey) {
-        case "density":     return effPasses * frequency * pulse_width / speed;
-        case "passes":      return density * xh * frequency * pulse_width / speed;
-        case "frequency":   return density * effPasses * pulse_width / speed;
-        case "pulse_width": return density * effPasses * frequency / speed;
-        case "speed":       return -density * effPasses * frequency * pulse_width / (speed * speed);
+        case "frequency":   return 2 * frequency * density * effPasses * pulse_width / speed;
+        case "density":     return frequency * frequency * effPasses * pulse_width / speed;
+        case "passes":      return frequency * frequency * density * xh * pulse_width / speed;
+        case "pulse_width": return frequency * frequency * density * effPasses / speed;
+        case "speed":       return -frequency * frequency * density * effPasses * pulse_width / (speed * speed);
         default: return 0;
       }
     }

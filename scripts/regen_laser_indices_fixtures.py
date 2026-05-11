@@ -1,4 +1,4 @@
-"""Regenerate web/src/laser/__fixtures__/laser-indices-v4.json from the
+"""Regenerate web/src/laser/__fixtures__/laser-indices-v5.json from the
 Python compute_indices source of truth. Run after any change to the
 formulas. The TS port test reads this file and asserts byte-identical
 floats (within 1e-6) for each entry.
@@ -87,7 +87,7 @@ def _row(params: dict) -> dict:
 
 
 def main() -> None:
-    out_path = Path("web/src/laser/__fixtures__/laser-indices-v4.json")
+    out_path = Path("web/src/laser/__fixtures__/laser-indices-v5.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     rows = [_row(p) for p in _INPUT_GRID]
     out_path.write_text(json.dumps(rows, indent=2) + "\n")

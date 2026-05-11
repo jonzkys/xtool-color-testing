@@ -5,7 +5,7 @@ Reference values are hand-computed from the formulas in the spec:
 - line_spacing_mm       = 10 / density  (lines/cm → mm/line)
 - pulse_energy_index    = power_percent / mopa_frequency_khz
 - pulse_intensity_index = power_percent / (mopa_frequency_khz * pulse_width_ns)
-- total_exposure_index  = power_percent * density * repeat / speed
+- total_exposure_index  = power_percent * mopa_frequency_khz * density * repeat / speed
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def test_defaults_match_hand_computation() -> None:
     assert indices.line_spacing_mm == pytest.approx(10 / 100)
     assert indices.pulse_energy_index == pytest.approx(50 / 65)
     assert indices.pulse_intensity_index == pytest.approx(50 / (65 * 200))
-    assert indices.total_exposure_index == pytest.approx(50 * 100 * 1 / 1000)
+    assert indices.total_exposure_index == pytest.approx(50 * 65 * 100 * 1 / 1000)
     assert indices.formula_version == INDICES_FORMULA_VERSION
     assert indices.density_model == "lpc"
     assert indices.power_model == "controller_percent"
@@ -39,7 +39,8 @@ def test_defaults_match_hand_computation() -> None:
 def test_stainless_high_density_case() -> None:
     p = ProcessingParams(speed=400, density=2566, repeat=2)
     indices = compute_indices(p)
-    assert indices.total_exposure_index == pytest.approx(50 * 2566 * 2 / 400)
+    # power=50, freq=65 (defaults), density=2566, repeat=2, speed=400
+    assert indices.total_exposure_index == pytest.approx(50 * 65 * 2566 * 2 / 400)
     assert indices.line_spacing_mm == pytest.approx(10 / 2566)
 
 
@@ -67,8 +68,8 @@ def test_zero_pulse_width_raises_value_error_naming_field() -> None:
         compute_indices(p)
 
 
-def test_formula_version_is_four() -> None:
-    assert INDICES_FORMULA_VERSION == 4
+def test_formula_version_is_five() -> None:
+    assert INDICES_FORMULA_VERSION == 5
 
 
 def test_immutable_dataclass() -> None:
@@ -197,4 +198,4 @@ def test_crosshatch_default_false_matches_no_kwarg():
 
 def test_formula_version_in_result():
     indices = compute_indices(_pp())
-    assert indices.formula_version == 4
+    assert indices.formula_version == 5
