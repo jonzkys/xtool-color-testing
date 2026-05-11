@@ -13,6 +13,10 @@ interface Props {
   onKeyChange: (k: IndexRow | ChannelCol) => void;
   onScaleChange: (s: ScaleKind) => void;
   onClose: () => void;
+  /** Optional: called while the cursor hovers a non-active option, so
+   *  the chart can preview the axis without the user committing.
+   *  Called with `null` when the cursor leaves the option list. */
+  onKeyPreview?: (k: IndexRow | ChannelCol | null) => void;
 }
 
 const INDEX_LABELS: Record<IndexRow, string> = {
@@ -35,7 +39,7 @@ const CHANNEL_LABELS: Record<ChannelCol, string> = {
 
 export function ExposureAxisPicker({
   axis, mode, currentKey, scale,
-  onKeyChange, onScaleChange, onClose,
+  onKeyChange, onScaleChange, onClose, onKeyPreview,
 }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -60,14 +64,25 @@ export function ExposureAxisPicker({
       <div className="text-[10px] uppercase tracking-[0.18em] font-semibold text-[color:var(--color-ink-subtle)] mb-1">
         {axis.toUpperCase()} AXIS
       </div>
-      <div className="flex flex-col gap-0.5">
+      <div
+        className="flex flex-col gap-0.5"
+        onMouseLeave={() => onKeyPreview?.(null)}
+      >
         {options.map((opt) => {
           const active = opt.key === currentKey;
           return (
             <button
               key={opt.key}
               type="button"
-              onClick={() => onKeyChange(opt.key as IndexRow | ChannelCol)}
+              onClick={() => {
+                onKeyPreview?.(null);  // commit; clear any preview override
+                onKeyChange(opt.key as IndexRow | ChannelCol);
+              }}
+              onMouseEnter={() => {
+                // Don't preview the active option — it would no-op the
+                // override. Preview only foreign options.
+                if (!active) onKeyPreview?.(opt.key as IndexRow | ChannelCol);
+              }}
               className={
                 "text-left px-2 py-1 text-[10.5px] rounded-sm transition-colors " +
                 (active

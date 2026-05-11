@@ -259,6 +259,12 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const [yKeyBi, setYKeyBi] = useState<IndexRow>("pulse_intensity_index");
   const [xScale, setXScale] = useState<ScaleKind>("log");
   const [yScale, setYScale] = useState<ScaleKind>("log");
+  // Hover-preview overrides — set while the user is hovering an option
+  // in the X/Y axis pickers, cleared on commit or mouseleave. When set
+  // the scatter renders with the preview key in place of the committed
+  // xKey/yKey, so the user sees the impact live.
+  const [previewXKey, setPreviewXKey] = useState<IndexRow | null>(null);
+  const [previewYKey, setPreviewYKey] = useState<ChannelCol | IndexRow | null>(null);
   const [viewport, setViewport] = useState<ScatterViewport | null>(null);
   const [colourField, setColourField] = useState<boolean>(false);
   const [contours, setContours] = useState<boolean>(false);
@@ -306,6 +312,10 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
 
   // ── derived ─────────────────────────────────────────────────────────────
   const yKey: ChannelCol | IndexRow = mode === "univariate" ? yKeyUni : yKeyBi;
+  // Effective keys passed to the scatter. The hover preview wins until
+  // the user commits a click or moves out of the picker.
+  const effectiveXKey: IndexRow = previewXKey ?? xKey;
+  const effectiveYKey: ChannelCol | IndexRow = previewYKey ?? yKey;
 
   // ── fetch: materials on mount ──────────────────────────────────────────
   useEffect(() => {
@@ -872,6 +882,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
         }}
         onXScaleChange={setXScale}
         onYScaleChange={setYScale}
+        onXKeyPreview={(k) => setPreviewXKey(k as IndexRow | null)}
+        onYKeyPreview={setPreviewYKey}
         proposeOpen={proposeMode !== "off"}
         onToggleProposeMode={handleToggleProposeMode}
         proposeAvailable={mode === "bivariate"}
@@ -978,8 +990,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                 <ExposureScatter
                   rows={displayRows}
                   mode={mode}
-                  xKey={xKey}
-                  yKey={yKey}
+                  xKey={effectiveXKey}
+                  yKey={effectiveYKey}
                   xScale={xScale}
                   yScale={yScale}
                   focusedId={focusedId}
