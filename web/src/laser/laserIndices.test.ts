@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import fixtures from "./__fixtures__/laser-indices-v5.json";
+import fixtures from "./__fixtures__/laser-indices-v6.json";
 import { computeIndices, type LaserParams } from "./laserIndices";
 
 interface Fixture {
@@ -7,7 +7,7 @@ interface Fixture {
   expected: Record<string, number>;
 }
 
-describe("computeIndices (TS port of compute_indices v5)", () => {
+describe("computeIndices (TS port of compute_indices v6)", () => {
   it("matches the Python source-of-truth fixtures", () => {
     for (const f of fixtures as Fixture[]) {
       const { crosshatch, ...laserParams } = f.input;
@@ -80,7 +80,7 @@ describe("computeIndices crosshatch", () => {
     expect(a).toEqual(b);
   });
 
-  it("reports formula_version = 5", () => {
-    expect(computeIndices(base).formula_version).toBe(5);
+  it("reports formula_version = 6", () => {
+    expect(computeIndices(base).formula_version).toBe(6);
   });
 });

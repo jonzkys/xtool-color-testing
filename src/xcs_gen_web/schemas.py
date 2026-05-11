@@ -396,6 +396,7 @@ class LaserIndicesResponse(BaseModel):
     total_exposure_index: float
     ablation_aggression_index: float
     delivery_smoothness_index: float
+    duty_cycle_index: float | None
     formula_version: int
     density_model: Literal["lpc", "opaque"] = "lpc"
     power_model: str

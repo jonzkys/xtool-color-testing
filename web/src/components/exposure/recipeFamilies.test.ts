@@ -21,6 +21,7 @@ function row(
       total_exposure_index: 100,
       ablation_aggression_index: 0.3,
       delivery_smoothness_index: 33000,
+      duty_cycle_index: 22.2,
       formula_version: 2,
       density_model: "opaque",
       power_model: "controller_percent",

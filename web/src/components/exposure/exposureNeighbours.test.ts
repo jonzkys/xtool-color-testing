@@ -20,6 +20,7 @@ function row(
       total_exposure_index: exposure,
       ablation_aggression_index: exposure * intensity,
       delivery_smoothness_index: exposure / intensity,
+      duty_cycle_index: 22.2,
       formula_version: 2,
       density_model: "opaque",
       power_model: "controller_percent",

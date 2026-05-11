@@ -17,7 +17,8 @@
       "total_exposure_index": 6336.805555555556,
       "ablation_aggression_index": 4.625868055555555,
       "delivery_smoothness_index": 8680555.555555556,
-      "formula_version": 5
+      "duty_cycle_index": 2.0,
+      "formula_version": 6
     }
   },
   {
@@ -38,7 +39,8 @@
       "total_exposure_index": 4500.0,
       "ablation_aggression_index": 11.25,
       "delivery_smoothness_index": 1800000.0,
-      "formula_version": 5
+      "duty_cycle_index": 1.2,
+      "formula_version": 6
     }
   },
   {
@@ -59,7 +61,8 @@
       "total_exposure_index": 7500.0,
       "ablation_aggression_index": 18.75,
       "delivery_smoothness_index": 3000000.0,
-      "formula_version": 5
+      "duty_cycle_index": 2.0,
+      "formula_version": 6
     }
   },
   {
@@ -80,7 +83,8 @@
       "total_exposure_index": 60.0,
       "ablation_aggression_index": 0.01,
       "delivery_smoothness_index": 360000.0,
-      "formula_version": 5
+      "duty_cycle_index": 0.6,
+      "formula_version": 6
     }
   },
   {
@@ -101,7 +105,8 @@
       "total_exposure_index": 1650000.0,
       "ablation_aggression_index": 1650.0,
       "delivery_smoothness_index": 1650000000.0,
-      "formula_version": 5
+      "duty_cycle_index": 10.0,
+      "formula_version": 6
     }
   },
   {
@@ -122,7 +127,8 @@
       "total_exposure_index": 15300.0,
       "ablation_aggression_index": 52.019999999999996,
       "delivery_smoothness_index": 4500000.0,
-      "formula_version": 5
+      "duty_cycle_index": 0.75,
+      "formula_version": 6
     }
   },
   {
@@ -143,7 +149,8 @@
       "total_exposure_index": 15000.0,
       "ablation_aggression_index": 46.875,
       "delivery_smoothness_index": 4800000.0,
-      "formula_version": 5
+      "duty_cycle_index": 2.4,
+      "formula_version": 6
     }
   },
   {
@@ -164,7 +171,8 @@
       "total_exposure_index": 17280.0,
       "ablation_aggression_index": 12.96,
       "delivery_smoothness_index": 23040000.0,
-      "formula_version": 5
+      "duty_cycle_index": 1.6,
+      "formula_version": 6
     }
   },
   {
@@ -185,7 +193,8 @@
       "total_exposure_index": 37500.0,
       "ablation_aggression_index": 300.0,
       "delivery_smoothness_index": 4687500.0,
-      "formula_version": 5
+      "duty_cycle_index": 0.75,
+      "formula_version": 6
     }
   },
   {
@@ -206,7 +215,8 @@
       "total_exposure_index": 6941.666666666667,
       "ablation_aggression_index": 4.214583333333334,
       "delivery_smoothness_index": 11433333.333333334,
-      "formula_version": 5
+      "duty_cycle_index": 1.4,
+      "formula_version": 6
     }
   },
   {
@@ -227,7 +237,8 @@
       "total_exposure_index": 30.0,
       "ablation_aggression_index": 0.016666666666666666,
       "delivery_smoothness_index": 54000.0,
-      "formula_version": 5
+      "duty_cycle_index": 0.18,
+      "formula_version": 6
     }
   },
   {
@@ -248,7 +259,8 @@
       "total_exposure_index": 16666.666666666668,
       "ablation_aggression_index": 16.666666666666668,
       "delivery_smoothness_index": 16666666.666666668,
-      "formula_version": 5
+      "duty_cycle_index": 10.0,
+      "formula_version": 6
     }
   },
   {
@@ -269,7 +281,8 @@
       "total_exposure_index": 12673.611111111111,
       "ablation_aggression_index": 9.25173611111111,
       "delivery_smoothness_index": 17361111.111111112,
-      "formula_version": 5
+      "duty_cycle_index": 2.0,
+      "formula_version": 6
     }
   },
   {
@@ -290,7 +303,8 @@
       "total_exposure_index": 9000.0,
       "ablation_aggression_index": 22.5,
       "delivery_smoothness_index": 3600000.0,
-      "formula_version": 5
+      "duty_cycle_index": 1.2,
+      "formula_version": 6
     }
   },
   {
@@ -311,7 +325,8 @@
       "total_exposure_index": 15000.0,
       "ablation_aggression_index": 37.5,
       "delivery_smoothness_index": 6000000.0,
-      "formula_version": 5
+      "duty_cycle_index": 2.0,
+      "formula_version": 6
     }
   },
   {
@@ -332,7 +347,8 @@
       "total_exposure_index": 30600.0,
       "ablation_aggression_index": 104.03999999999999,
       "delivery_smoothness_index": 9000000.0,
-      "formula_version": 5
+      "duty_cycle_index": 0.75,
+      "formula_version": 6
     }
   },
   {
@@ -353,7 +369,8 @@
       "total_exposure_index": 75000.0,
       "ablation_aggression_index": 600.0,
       "delivery_smoothness_index": 9375000.0,
-      "formula_version": 5
+      "duty_cycle_index": 0.75,
+      "formula_version": 6
     }
   }
 ]

@@ -76,7 +76,7 @@ export const EXPOSURE_INDEX_HELP: Record<IndexRow, ExposureIndexHelp> = {
       "Energy delivered per pulse — controller power divided by repetition rate.",
     formula: "power ÷ frequency",
     inputs: [
-      { name: "power", unit: "% controller setting" },
+      { name: "power", unit: "% slider (linear)" },
       { name: "frequency", unit: "kHz" },
     ],
     guide:
@@ -90,7 +90,7 @@ export const EXPOSURE_INDEX_HELP: Record<IndexRow, ExposureIndexHelp> = {
       "Peak intensity of a pulse — energy concentrated by the pulse-width compression.",
     formula: "power ÷ (frequency × pulse_width)",
     inputs: [
-      { name: "power", unit: "% controller setting" },
+      { name: "power", unit: "% slider (linear)" },
       { name: "frequency", unit: "kHz" },
       { name: "pulse_width", unit: "ns" },
     ],
@@ -105,7 +105,7 @@ export const EXPOSURE_INDEX_HELP: Record<IndexRow, ExposureIndexHelp> = {
       "Cumulative energy delivered per unit area across the burn.",
     formula: "power × density × passes ÷ speed",
     inputs: [
-      { name: "power", unit: "% controller setting" },
+      { name: "power", unit: "% slider (linear)" },
       { name: "density", unit: "lines/cm" },
       { name: "passes", unit: "count" },
       { name: "speed", unit: "mm/s" },
@@ -122,7 +122,7 @@ export const EXPOSURE_INDEX_HELP: Record<IndexRow, ExposureIndexHelp> = {
     formula:
       "(power × density × passes ÷ speed) × (power ÷ (frequency × pulse_width))",
     inputs: [
-      { name: "power", unit: "% controller setting" },
+      { name: "power", unit: "% slider (linear)" },
       { name: "density", unit: "lines/cm" },
       { name: "passes", unit: "count" },
       { name: "speed", unit: "mm/s" },
@@ -141,7 +141,7 @@ export const EXPOSURE_INDEX_HELP: Record<IndexRow, ExposureIndexHelp> = {
     formula:
       "(power × density × passes ÷ speed) ÷ (power ÷ (frequency × pulse_width))",
     inputs: [
-      { name: "power", unit: "% controller setting" },
+      { name: "power", unit: "% slider (linear)" },
       { name: "density", unit: "lines/cm" },
       { name: "passes", unit: "count" },
       { name: "speed", unit: "mm/s" },
@@ -151,6 +151,20 @@ export const EXPOSURE_INDEX_HELP: Record<IndexRow, ExposureIndexHelp> = {
     guide:
       "Power cancels out, so this captures delivery pattern alone — same dose, smoother or spikier. High smoothness tends toward thermal/diffusion-driven colours; low smoothness toward ablation-driven ones.",
     schematic: "combination",
+  },
+  duty_cycle_index: {
+    heading: "Duty cycle",
+    unit: "%",
+    definition:
+      "Fraction of each pulse period the laser is actually on. A physical ratio that depends only on frequency and pulse width — not on the power slider.",
+    formula: "frequency × pulse_width ÷ 10000",
+    inputs: [
+      { name: "frequency", unit: "kHz" },
+      { name: "pulse_width", unit: "ns" },
+    ],
+    guide:
+      "The lever that converts average power to peak power. Two recipes at the same slider-% can deliver wildly different peak intensities if their duty cycles differ — low duty (sparse, sharp pulses) ablates; high duty (dense, gentle pulses) heats. Plot against ΔE to spot regimes where shrinking the duty cycle, not the slider, is what's actually buying the colour change.",
+    schematic: "pulse_shape",
   },
 };
 
@@ -197,9 +211,9 @@ export const EXPOSURE_CHANNEL_HELP: Record<ChannelCol, ExposureChannelHelp> = {
 export const EXPOSURE_RAW_PARAM_HELP: Record<RawParamRow, ExposureRawParamHelp> = {
   power: {
     heading: "Power",
-    unit: "% controller setting",
+    unit: "% slider",
     definition:
-      "Controller power percentage. Maps to wall-plug watts in an opaque, model-specific way.",
+      "Verified linear with the slider — written verbatim into G-code as the per-move S value on a 0–1000 scale (S = power × 10). The slider-to-watts conversion is still machine-specific and depends on head model, optics, and material — so use this as a relative axis, not an absolute one.",
   },
   speed: {
     heading: "Speed",
@@ -215,7 +229,7 @@ export const EXPOSURE_RAW_PARAM_HELP: Record<RawParamRow, ExposureRawParamHelp> 
     heading: "Density",
     unit: "lines/cm",
     definition:
-      "Number of laser scan lines per centimetre. Stepped controller value (e.g. 10–200 for the STANDARD profile).",
+      "Number of laser scan lines per centimetre. Stepped controller value (e.g. 10–200 for the STANDARD profile). Matches the xTool app's \"Lines per cm\" slider 1:1.",
   },
   passes: {
     heading: "Passes",

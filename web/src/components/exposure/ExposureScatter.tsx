@@ -131,6 +131,7 @@ const INDEX_PRETTY: Record<IndexRow, string> = {
   total_exposure_index: "TOTAL EXPOSURE IDX",
   ablation_aggression_index: "ABLATION AGGRESSION IDX",
   delivery_smoothness_index: "DELIVERY SMOOTHNESS IDX",
+  duty_cycle_index: "DUTY CYCLE (%)",
 };
 
 const CHANNEL_PRETTY: Record<ChannelCol, string> = {

@@ -1,11 +1,15 @@
 /**
- * Frontend port of xcs_gen.laser_indices.compute_indices (formula v5).
+ * Frontend port of xcs_gen.laser_indices.compute_indices (formula v6).
  *
  * Field-naming bridge: BaseParams (web schema) uses `passes` and
  * `pulse_width`; ProcessingParams (xcs_gen domain) uses `repeat` and
  * `pw`. This port operates on the BaseParams shape — its inputs are
  * `power, speed, frequency, density, passes, pulse_width` — and the
  * formulas use those names internally.
+ *
+ * v6 change vs. v5: new `duty_cycle_index` = `frequency × pulse_width
+ * ÷ 10000`, expressed as a percentage 0–100 (= laser-on time ÷ pulse
+ * period). Pure (freq, pw) function — independent of power calibration.
  *
  * v5 change vs. v4: `total_exposure_index` now factors `frequency`
  * linearly — `power * freq * density * effectivePasses / speed`. On
@@ -36,7 +40,8 @@ export interface LaserIndices {
   total_exposure_index: number;
   ablation_aggression_index: number;
   delivery_smoothness_index: number;
-  formula_version: 5;
+  duty_cycle_index: number;
+  formula_version: 6;
 }
 
 export interface ComputeIndicesOptions {
@@ -45,7 +50,7 @@ export interface ComputeIndicesOptions {
   crosshatch?: boolean;
 }
 
-export const INDICES_FORMULA_VERSION = 5 as const;
+export const INDICES_FORMULA_VERSION = 6 as const;
 
 export function computeIndices(
   params: LaserParams,
@@ -68,6 +73,9 @@ export function computeIndices(
     (power * frequency * density * effectivePasses) / speed;
   const ablation_aggression_index = total_exposure_index * pulse_intensity_index;
   const delivery_smoothness_index = total_exposure_index / pulse_intensity_index;
+  // freq is kHz, pw is ns; product is dimensionless × 1e-6.
+  // Multiply by 100 to express as a percentage 0–100.
+  const duty_cycle_index = (frequency * pulse_width) / 10_000;
 
   return {
     pulse_spacing_mm,
@@ -77,6 +85,7 @@ export function computeIndices(
     total_exposure_index,
     ablation_aggression_index,
     delivery_smoothness_index,
+    duty_cycle_index,
     formula_version: INDICES_FORMULA_VERSION,
   };
 }

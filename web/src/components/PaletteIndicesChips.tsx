@@ -12,6 +12,11 @@ export interface LaserIndices {
   total_exposure_index: number;
   ablation_aggression_index: number;
   delivery_smoothness_index: number;
+  /** Laser-on time as a percentage of the pulse period
+   *  (= frequency_kHz × pulse_width_ns / 10000). Pure (freq, pw)
+   *  function — independent of power calibration. Added in formula
+   *  version 6. Legacy rows backfilled by migration 0026. */
+  duty_cycle_index: number;
   /** @deprecated alias for total_exposure_index — will go away
    *  with the next formula-version bump. New code should not read it. */
   surface_exposure_index?: number;
@@ -54,6 +59,7 @@ const CHIP_INDEX_KEY: Record<string, IndexRow | null> = {
   "Total exposure": "total_exposure_index",
   "Ablation aggression": "ablation_aggression_index",
   "Delivery smoothness": "delivery_smoothness_index",
+  "Duty cycle": "duty_cycle_index",
 };
 
 const HelpfulChip: React.FC<ChipProps> = (props) => {
@@ -117,6 +123,11 @@ export const PaletteIndicesChips: React.FC<{ indices: LaserIndices }> = ({
           label="Delivery smoothness"
           value={fmtNum(indices.delivery_smoothness_index)}
           bar={logBar(indices.delivery_smoothness_index, 1e2, 1e7)}
+        />
+        <HelpfulChip
+          label="Duty cycle"
+          value={`${fmtNum(indices.duty_cycle_index)}%`}
+          bar={Math.max(0, Math.min(1, indices.duty_cycle_index / 100))}
         />
       </div>
       <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-[color:var(--color-ink-subtle)]">

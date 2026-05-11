@@ -11,6 +11,7 @@ function row(id: number, hex: string): ExposureRow {
       pulse_energy_index: 0, pulse_intensity_index: 0,
       total_exposure_index: 0, ablation_aggression_index: 0,
       delivery_smoothness_index: 0,
+      duty_cycle_index: 22.2,
       formula_version: 3, density_model: "lpc",
       power_model: "controller_percent",
     },

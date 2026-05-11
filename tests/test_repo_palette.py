@@ -1001,7 +1001,8 @@ _BASE_PARAMS = {
 def test_compute_index_values_default_no_crosshatch():
     from xcs_gen_web.repositories.palette import _compute_index_values
     values = _compute_index_values(_BASE_PARAMS)
-    assert values["indices_formula_version"] == 5
+    assert values["indices_formula_version"] == 6
+    assert "duty_cycle_index" in values
 
 
 def test_compute_index_values_doubles_TEi_when_crosshatch_true():

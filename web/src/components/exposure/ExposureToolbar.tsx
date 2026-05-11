@@ -38,6 +38,7 @@ const INDEX_SHORT: Record<IndexRow, string> = {
   total_exposure_index: "TEx",
   ablation_aggression_index: "AAg",
   delivery_smoothness_index: "DSm",
+  duty_cycle_index: "Duty",
 };
 
 const CHANNEL_PRETTY: Record<ChannelCol, string> = {

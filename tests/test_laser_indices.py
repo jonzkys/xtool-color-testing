@@ -31,6 +31,7 @@ def test_defaults_match_hand_computation() -> None:
     assert indices.pulse_energy_index == pytest.approx(50 / 65)
     assert indices.pulse_intensity_index == pytest.approx(50 / (65 * 200))
     assert indices.total_exposure_index == pytest.approx(50 * 65 * 100 * 1 / 1000)
+    assert indices.duty_cycle_index == pytest.approx(65 * 200 / 10_000)
     assert indices.formula_version == INDICES_FORMULA_VERSION
     assert indices.density_model == "lpc"
     assert indices.power_model == "controller_percent"
@@ -68,8 +69,8 @@ def test_zero_pulse_width_raises_value_error_naming_field() -> None:
         compute_indices(p)
 
 
-def test_formula_version_is_five() -> None:
-    assert INDICES_FORMULA_VERSION == 5
+def test_formula_version_is_six() -> None:
+    assert INDICES_FORMULA_VERSION == 6
 
 
 def test_immutable_dataclass() -> None:
@@ -87,6 +88,7 @@ def test_finite_values_for_all_indices() -> None:
         "pulse_energy_index",
         "pulse_intensity_index",
         "total_exposure_index",
+        "duty_cycle_index",
     ):
         v = getattr(indices, name)
         assert math.isfinite(v), f"{name} is not finite: {v}"
@@ -198,4 +200,41 @@ def test_crosshatch_default_false_matches_no_kwarg():
 
 def test_formula_version_in_result():
     indices = compute_indices(_pp())
-    assert indices.formula_version == 5
+    assert indices.formula_version == 6
+
+
+# ---------------------------------------------------------------------------
+# v6 duty_cycle_index tests
+# ---------------------------------------------------------------------------
+
+def test_duty_cycle_index_matches_g_code_observation():
+    """xTool F2 Ultra G-code at 444 kHz × 500 ns → duty ≈ 22.2%
+    (cross-checked against the per-move S values, which clamp at 100%
+    of the slider). The index expresses this as a 0–100 percentage."""
+    p = ProcessingParams(mopa_frequency=444, pulse_width=500)
+    indices = compute_indices(p)
+    assert indices.duty_cycle_index == pytest.approx(22.2)
+
+
+def test_duty_cycle_index_zero_pulse_width_raises_before_compute():
+    """The existing pulse_width=0 guard fires before duty_cycle would,
+    so the user gets a clear field name in the error."""
+    p = ProcessingParams(pulse_width=0)
+    with pytest.raises(ValueError, match="pulse_width"):
+        compute_indices(p)
+
+
+def test_duty_cycle_index_independent_of_power_and_speed():
+    """Duty cycle is a pure function of (freq, pulse_width). Changing
+    power, speed, density, or passes must leave it unchanged."""
+    base = compute_indices(_pp()).duty_cycle_index
+    assert compute_indices(_pp(power=99)).duty_cycle_index == pytest.approx(base)
+    assert compute_indices(_pp(speed=99)).duty_cycle_index == pytest.approx(base)
+    assert compute_indices(_pp(density=999)).duty_cycle_index == pytest.approx(base)
+    assert compute_indices(_pp(repeat=9)).duty_cycle_index == pytest.approx(base)
+
+
+def test_duty_cycle_index_unchanged_by_crosshatch():
+    a = compute_indices(_pp()).duty_cycle_index
+    b = compute_indices(_pp(), crosshatch=True).duty_cycle_index
+    assert a == pytest.approx(b)

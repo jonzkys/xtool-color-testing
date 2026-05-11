@@ -44,7 +44,7 @@ export function ExposureRailTabs({ tabs, active, onActiveChange }: Props) {
               aria-selected={isActive}
               onClick={() => onActiveChange(t.id)}
               className={
-                "relative flex-1 min-w-0 px-0 py-1 font-mono text-[9.5px] uppercase tracking-[0.05em] truncate transition-colors " +
+                "relative flex-1 min-w-0 px-1 py-1 font-mono text-[8.5px] uppercase tracking-[0.05em] truncate transition-colors " +
                 (isActive
                   ? "bg-[color:var(--color-primary)] text-white"
                   : "bg-[color:var(--color-surface)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-ink)] hover:bg-[color:var(--color-surface-elevated)]")

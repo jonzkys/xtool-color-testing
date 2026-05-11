@@ -12,6 +12,7 @@ const INDEX_ROW_LABELS: Record<IndexRow, string> = {
   total_exposure_index: "TEx",
   ablation_aggression_index: "AAg",
   delivery_smoothness_index: "DSm",
+  duty_cycle_index: "Duty",
 };
 
 const COL_LABELS: Record<ChannelCol, string> = {
@@ -31,9 +32,10 @@ describe("ExposureCorrelationMatrix", () => {
     [-0.84, 0.40, 0.30, 0.40, 0.50],
     [0.30, 0.35, 0.25, 0.45, 0.55],
     [0.12, 0.18, 0.22, 0.28, 0.35],
+    [0.14, 0.16, 0.19, 0.21, 0.24],
   ];
 
-  it("renders 7 row labels and 5 column labels", () => {
+  it("renders 8 row labels and 5 column labels", () => {
     const { container } = render(
       <ExposureCorrelationMatrix<IndexRow>
         matrix={matrix}
@@ -44,7 +46,7 @@ describe("ExposureCorrelationMatrix", () => {
         onSelect={() => undefined}
       />,
     );
-    expect(container.querySelectorAll('[data-role="row-label"]').length).toBe(7);
+    expect(container.querySelectorAll('[data-role="row-label"]').length).toBe(8);
     expect(container.querySelectorAll('[data-role="col-label"]').length).toBe(5);
   });
 
@@ -60,8 +62,8 @@ describe("ExposureCorrelationMatrix", () => {
       />,
     );
     const labels = container.querySelectorAll('[data-role="cell-value"]');
-    // 35 cells, all with |r| >= 0.1 in this fixture.
-    expect(labels.length).toBe(35);
+    // 40 cells, all with |r| >= 0.1 in this fixture.
+    expect(labels.length).toBe(40);
     // Strongest negative value renders as "84"; sign comes from the
     // SignBadge rendered separately.
     const texts = Array.from(labels).map((n) => n.textContent);
@@ -98,7 +100,7 @@ describe("ExposureCorrelationMatrix", () => {
       />,
     );
     const cells = container.querySelectorAll('[data-role="matrix-cell"]');
-    expect(cells.length).toBe(35);
+    expect(cells.length).toBe(40);
     // In read-only mode cells are divs not buttons
     const buttons = container.querySelectorAll('button[data-role="matrix-cell"]');
     expect(buttons.length).toBe(0);
@@ -137,7 +139,7 @@ describe("ExposureCorrelationMatrix", () => {
         }}
       />,
     );
-    expect(rendered).toHaveLength(7);
+    expect(rendered).toHaveLength(8);
     expect(rendered.map((r) => r.rowKey)).toEqual([...INDEX_ROWS]);
   });
 });

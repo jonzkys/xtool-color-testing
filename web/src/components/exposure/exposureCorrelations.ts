@@ -29,6 +29,7 @@ export const INDEX_ROWS = [
   "total_exposure_index",
   "ablation_aggression_index",
   "delivery_smoothness_index",
+  "duty_cycle_index",
 ] as const satisfies readonly (keyof LaserIndices)[];
 export type IndexRow = (typeof INDEX_ROWS)[number];
 

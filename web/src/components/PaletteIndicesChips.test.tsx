@@ -11,6 +11,7 @@ const indices = {
   total_exposure_index: 5.0,
   ablation_aggression_index: 0.01923,
   delivery_smoothness_index: 1300.0,
+  duty_cycle_index: 22.2,
   formula_version: 2,
   density_model: "opaque",
   power_model: "controller_percent",
