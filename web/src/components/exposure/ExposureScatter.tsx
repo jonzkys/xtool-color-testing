@@ -402,47 +402,72 @@ export const ExposureScatter: React.FC<Props> = ({
     return () => el.removeEventListener("wheel", onWheel);
   }, [clientToSvg, svgPointToData, xMin, xMax, yMin, yMax, onViewportChange]);
 
-  // Cmd/Ctrl+drag = box zoom; Shift+drag = pan. Both gated on the
-  // modifier so they don't fight polygon-vertex clicks.
+  // Drag gestures on the scatter:
+  //   plain drag       → pan (unless we're in polygon-draw mode, where
+  //                      the click-capture rect owns the gesture)
+  //   shift + drag     → pan (alias; preserves the originally documented
+  //                      gesture for muscle-memory users)
+  //   cmd/ctrl + drag  → box-zoom into the rectangle
+  //
+  // Click priority: we don't preventDefault at mousedown. We only flip
+  // into "dragging" once the cursor has moved > MOVE_THRESHOLD pixels;
+  // before that the browser is free to fire a normal click on whatever
+  // the mousedown landed on (dots, polygon vertices, etc.). This means
+  // a stationary mousedown-mouseup over a dot still focuses it.
+  const MOVE_THRESHOLD = 4;
   const handlePlotMouseDown: React.MouseEventHandler<SVGSVGElement> = (e) => {
     if (!onViewportChange) return;
-    if (!(e.metaKey || e.ctrlKey || e.shiftKey)) return;
+    // In polygon-draw mode, plain clicks add vertices. Modified drags
+    // (cmd/ctrl/shift) still pan/zoom so users can recompose the view
+    // while drawing, but plain drags belong to the polygon tool.
+    const wantsModified = e.metaKey || e.ctrlKey || e.shiftKey;
+    if (polygonDrawing && !wantsModified) return;
+    if (e.button !== 0) return;
     const pt = clientToSvg(e.clientX, e.clientY);
     if (!pt || !isInsidePlot(pt[0], pt[1])) return;
-    e.preventDefault();
-    e.stopPropagation();
     const [sx0, sy0] = pt;
-    const isPan = e.shiftKey && !(e.metaKey || e.ctrlKey);
+    const isBoxZoom = (e.metaKey || e.ctrlKey) && !e.shiftKey;
     const startBounds = { xMin, xMax, yMin, yMax };
-    if (!isPan) setBoxZoom({ sx0, sy0, sx1: sx0, sy1: sy0 });
+    let dragging = false;
 
     const onMove = (ev: MouseEvent) => {
       const p = clientToSvg(ev.clientX, ev.clientY);
       if (!p) return;
-      if (isPan) {
+      const dx = p[0] - sx0;
+      const dy = p[1] - sy0;
+      if (!dragging) {
+        if (Math.hypot(dx, dy) < MOVE_THRESHOLD) return;
+        dragging = true;
+        if (isBoxZoom) setBoxZoom({ sx0, sy0, sx1: p[0], sy1: p[1] });
+        // Suppress the about-to-fire click on the parent SVG once we've
+        // committed to a drag — without this, a quick pan can register
+        // as a click on an underlying dot.
+        ev.preventDefault();
+      }
+      if (isBoxZoom) {
+        setBoxZoom({ sx0, sy0, sx1: p[0], sy1: p[1] });
+      } else {
         // Pan: translate bounds by the inverse of the cursor delta.
-        const dxData = ((p[0] - sx0) / (W - PADL - PADR)) * (startBounds.xMax - startBounds.xMin);
-        const dyData = ((p[1] - sy0) / (H - PADT - PADB)) * (startBounds.yMax - startBounds.yMin);
+        const dxData = (dx / (W - PADL - PADR)) * (startBounds.xMax - startBounds.xMin);
+        const dyData = (dy / (H - PADT - PADB)) * (startBounds.yMax - startBounds.yMin);
         onViewportChange({
           xMin: startBounds.xMin - dxData,
           xMax: startBounds.xMax - dxData,
           yMin: startBounds.yMin + dyData,  // SVG y is inverted vs. data y
           yMax: startBounds.yMax + dyData,
         });
-      } else {
-        setBoxZoom({ sx0, sy0, sx1: p[0], sy1: p[1] });
       }
     };
     const onUp = (ev: MouseEvent) => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
-      if (isPan) return;
+      if (!dragging) return;  // a click, not a drag — let it through
+      if (!isBoxZoom) return;
       const p = clientToSvg(ev.clientX, ev.clientY) ?? [sx0, sy0];
       const dx = Math.abs(p[0] - sx0);
       const dy = Math.abs(p[1] - sy0);
       setBoxZoom(null);
-      // Treat tiny drags as clicks (no-op).
-      if (dx < 4 || dy < 4) return;
+      if (dx < MOVE_THRESHOLD || dy < MOVE_THRESHOLD) return;
       const [ax, ay] = svgPointToData(sx0, sy0);
       const [bx, by] = svgPointToData(p[0], p[1]);
       onViewportChange({
@@ -577,7 +602,11 @@ export const ExposureScatter: React.FC<Props> = ({
             onViewportChange(null);
           }}
           style={{
-            cursor: boxZoom ? "crosshair" : undefined,
+            cursor: boxZoom
+              ? "crosshair"
+              : polygonDrawing
+                ? undefined
+                : "grab",
           }}
         >
           {/* Plot frame */}
