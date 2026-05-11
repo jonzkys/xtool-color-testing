@@ -75,6 +75,38 @@ describe("perCellRange — Δ-axis", () => {
   });
 });
 
+describe("perCellRange — delta_from_mean", () => {
+  it("produces finite per-cell stats by computing the per-cell mean Lab", () => {
+    // delta_from_mean needs the per-cell mean Lab as a 5th arg to
+    // computeYValue. Before the fix this returned NaN for every run
+    // and the spectrum's chart was empty by default for validation
+    // tests (whose default Y is delta_from_mean).
+    const cells = [makeCell(0, [50, 30, 0])];
+    const series = [
+      makeSeries(1, "r1", [{ idx: 0, lab: [50, 30, 0] }]),     // matches mean → small Δ
+      makeSeries(2, "r2", [{ idx: 0, lab: [55, 30, 0] }]),     // 5 from mean
+      makeSeries(3, "r3", [{ idx: 0, lab: [45, 30, 0] }]),     // 5 from mean
+    ];
+    const out = perCellRange(cells, series, "delta_from_mean");
+    expect(out).toHaveLength(1);
+    // All three runs produce finite ΔE76-from-mean values; mean ≠ 0.
+    expect(out[0].count).toBe(3);
+    expect(out[0].min).not.toBeNull();
+    expect(out[0].max).not.toBeNull();
+    expect(Number.isFinite(out[0].mean!)).toBe(true);
+  });
+
+  it("returns nulls when delta_from_mean has only one run (mean undefined)", () => {
+    const cells = [makeCell(0, [50, 30, 0])];
+    const series = [makeSeries(1, "r1", [{ idx: 0, lab: [50, 30, 0] }])];
+    const out = perCellRange(cells, series, "delta_from_mean");
+    expect(out[0].count).toBe(0);
+    expect(out[0].min).toBeNull();
+    expect(out[0].max).toBeNull();
+    expect(out[0].mean).toBeNull();
+  });
+});
+
 describe("perCellRange — computed metric", () => {
   it("collapses CAMERA σ to a single dot per cell (min == max == mean)", () => {
     const cells = [makeCell(0, [50, 0, 0])];

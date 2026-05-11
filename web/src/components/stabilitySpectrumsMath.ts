@@ -124,9 +124,19 @@ export function perCellRange(
       }
     } else {
       // Per-run metric — gather one value per run and compute min/max/mean.
+      // `delta_from_mean` needs the per-cell mean Lab as a 5th arg to
+      // computeYValue; without it every run returns NaN and the
+      // spectrum's chart shows an empty default for this very common
+      // validation-test Y axis. Compute it once per cell.
+      let meanLab: Lab | null = null;
+      if (metric === "delta_from_mean" && labs.length >= 2) {
+        let sl = 0, sa = 0, sb = 0;
+        for (const lab of labs) { sl += lab[0]; sa += lab[1]; sb += lab[2]; }
+        meanLab = [sl / labs.length, sa / labs.length, sb / labs.length];
+      }
       const ys: number[] = [];
       for (const lab of labs) {
-        const y = computeYValue(metric, expected, lab, sigma);
+        const y = computeYValue(metric, expected, lab, sigma, meanLab);
         if (Number.isFinite(y)) ys.push(y);
       }
       count = ys.length;
