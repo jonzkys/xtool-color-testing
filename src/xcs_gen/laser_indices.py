@@ -6,14 +6,16 @@ controller stepped-value tables in ``xcs_gen.machines`` — so
 ``line_spacing_mm`` IS a real physical quantity (10 / density mm/line).
 ``power_model`` stays opaque pending wall-plug-watts calibration.
 
-Formula change vs. v2 (PR #80 lineage):
-- ``density_model`` default + only legal value is now ``"lpc"``;
-  ``"opaque"`` is no longer accepted (legacy rows still deserialise via
-  the response schema, they're just not recomputed without an explicit
-  pass).
-- ``line_spacing_index`` is removed from the dataclass and from any
-  downstream consumer. ``line_spacing_mm`` carries the same information
-  in a meaningful unit.
+Formula change vs. v3 (PR #86 lineage):
+- ``compute_indices`` accepts a ``crosshatch: bool = False`` kwarg.
+  When True, the function uses an effective repeat of ``2 * repeat``
+  in the three pass-dependent indices (``total_exposure_index``,
+  ``ablation_aggression_index``, ``delivery_smoothness_index``) so the
+  delivered-energy accounting matches what XCS actually burns
+  (crosshatch adds a perpendicular stroke per pass, doubling the
+  strokes-of-energy per cell). Per-pulse indices (``PEi``, ``PIi``,
+  ``PSm``, ``LSm``) are unchanged because they describe pulse layout
+  and per-pulse energy, both of which crosshatch does not alter.
 
 ``mopa_frequency`` is in kHz; ``speed`` is mm/s; ``pulse_width`` is ns;
 ``power`` is the controller % setting.
@@ -25,7 +27,7 @@ from dataclasses import dataclass
 
 from .model import ProcessingParams
 
-INDICES_FORMULA_VERSION = 3
+INDICES_FORMULA_VERSION = 4
 
 
 @dataclass(frozen=True)
@@ -47,12 +49,20 @@ def compute_indices(
     *,
     density_model: str = "lpc",
     power_model: str = "controller_percent",
+    crosshatch: bool = False,
 ) -> LaserIndices:
     """Compute derived exposure indices from raw `ProcessingParams`.
 
+    Pass ``crosshatch=True`` when the burn used the test's
+    ``crosshatch`` flag. v4 multiplies ``repeat`` by 2 in that case so
+    ``total_exposure_index``, ``ablation_aggression_index``, and
+    ``delivery_smoothness_index`` reflect the actual delivered energy
+    (crosshatch adds a perpendicular stroke per pass, doubling the
+    strokes per cell). Per-pulse indices are unaffected.
+
     Raises `ValueError` (naming the offending field) if any input that
     appears in a denominator is zero, or if either model string is not
-    the supported value for formula version 3.
+    the supported value for the current formula version.
     """
     speed = params.speed
     power = params.power
@@ -82,11 +92,13 @@ def compute_indices(
             f"version {INDICES_FORMULA_VERSION}",
         )
 
+    effective_repeat = repeat * 2 if crosshatch else repeat
+
     pulse_spacing_mm = speed / (freq * 1000)
     line_spacing_mm = 10 / density  # 1 cm = 10 mm; lines/cm → mm/line
     pulse_energy_index = power / freq
     pulse_intensity_index = power / (freq * pw)
-    total_exposure_index = power * density * repeat / speed
+    total_exposure_index = power * density * effective_repeat / speed
     ablation_aggression_index = total_exposure_index * pulse_intensity_index
     delivery_smoothness_index = total_exposure_index / pulse_intensity_index
 
