@@ -99,20 +99,25 @@ export function ExposureFilterPanel({
             ))}
           </div>
         )}
-        <div className="flex gap-1">
-          {(["all", "sweep", "validation"] as const).map((k) => (
+        <div className="flex gap-1 min-w-0">
+          {([
+            { k: "all" as const, short: "All" },
+            { k: "sweep" as const, short: "Sweep" },
+            { k: "validation" as const, short: "Valid." },
+          ]).map(({ k, short }) => (
             <button
               key={k}
               type="button"
               onClick={() => onChange({ ...f, testKind: k })}
               className={
-                "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+                "flex-1 min-w-0 px-1 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.08em] rounded-sm border truncate " +
                 (f.testKind === k
                   ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
                   : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
               }
+              title={k}
             >
-              {k}
+              {short}
             </button>
           ))}
         </div>
@@ -140,12 +145,14 @@ export function ExposureFilterPanel({
       <Section title="Burn settings">
         <div className="flex flex-col gap-2">
           <TriStateRow
-            label="Crosshatch"
+            label="Hatch"
+            fullLabel="Crosshatch"
             value={f.crosshatch}
             onChange={(v) => onChange({ ...f, crosshatch: v })}
           />
           <TriStateRow
-            label="Unidirectional"
+            label="Uni-dir"
+            fullLabel="Unidirectional"
             value={f.unidirectional}
             onChange={(v) => onChange({ ...f, unidirectional: v })}
           />
@@ -219,7 +226,7 @@ function SegmentedButton<T extends string>({
       aria-pressed={active}
       onClick={() => onClick(value)}
       className={
-        "flex-1 px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.16em] rounded-sm border " +
+        "flex-1 min-w-0 px-1 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.16em] rounded-sm border " +
         (active
           ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
           : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-primary)]")
@@ -231,18 +238,20 @@ function SegmentedButton<T extends string>({
 }
 
 function TriStateRow({
-  label, value, onChange,
+  label, value, onChange, fullLabel,
 }: {
   label: string;
+  /** Full label used for hover tooltip when the visible label is abbreviated. */
+  fullLabel?: string;
   value: TriStateFlag;
   onChange: (v: TriStateFlag) => void;
 }) {
   return (
-    <div className="flex items-center gap-2" data-row={label.toLowerCase()}>
-      <span className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-[color:var(--color-ink-muted)] w-[100px] flex-none">
+    <div className="flex items-center gap-2" data-row={(fullLabel ?? label).toLowerCase()}>
+      <span className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[68px] flex-none truncate" title={fullLabel ?? label}>
         {label}
       </span>
-      <div className="flex gap-1 flex-1">
+      <div className="flex gap-1 flex-1 min-w-0">
         <SegmentedButton label="Any" value="any" active={value === "any"} onClick={onChange} />
         <SegmentedButton label="Yes" value="yes" active={value === "yes"} onClick={onChange} />
         <SegmentedButton label="No" value="no" active={value === "no"} onClick={onChange} />
@@ -259,10 +268,10 @@ function AngleModeRow({
 }) {
   return (
     <div className="flex items-center gap-2" data-row="angle_mode">
-      <span className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-[color:var(--color-ink-muted)] w-[100px] flex-none">
-        Angle mode
+      <span className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[68px] flex-none truncate" title="Angle mode">
+        Angle
       </span>
-      <div className="flex gap-1 flex-1">
+      <div className="flex gap-1 flex-1 min-w-0">
         <SegmentedButton label="Any" value="any" active={value === "any"} onClick={onChange} />
         <SegmentedButton label="Fixed" value="fixed" active={value === "fixed"} onClick={onChange} />
         <SegmentedButton label="Incr." value="incremental" active={value === "incremental"} onClick={onChange} />

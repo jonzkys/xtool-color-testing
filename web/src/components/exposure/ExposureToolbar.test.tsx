@@ -54,12 +54,12 @@ describe("ExposureToolbar", () => {
 
   it("renders the X axis pill with the current label", () => {
     render(<ExposureToolbar {...STD_PROPS} />);
-    expect(screen.getByText(/Total Exposure/)).toBeInTheDocument();
+    expect(screen.getByText(/^TEx/)).toBeInTheDocument();
   });
 
   it("clicking the X pill opens the picker (visible role=dialog)", () => {
     render(<ExposureToolbar {...STD_PROPS} />);
-    const xPill = screen.getByText(/Total Exposure/).closest("button")!;
+    const xPill = screen.getByText(/^TEx/).closest("button")!;
     fireEvent.click(xPill);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });

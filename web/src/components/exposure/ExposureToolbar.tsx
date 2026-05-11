@@ -4,6 +4,7 @@ import type { Material } from "../../library";
 import type { ChannelCol, IndexRow } from "./exposureCorrelations";
 import type { ScaleKind, ScatterMode } from "./ExposureScatter";
 import { ExposureAxisPicker } from "./ExposureAxisPicker";
+import { ExposureOverlaysMenu } from "./ExposureOverlaysMenu";
 
 interface Props {
   materials: readonly Material[];
@@ -35,14 +36,15 @@ interface Props {
   onToggleFadeDots: () => void;
 }
 
-const INDEX_PRETTY: Record<IndexRow, string> = {
-  pulse_spacing_mm: "Pulse Spacing (mm)",
-  line_spacing_mm: "Line Spacing (mm)",
-  pulse_energy_index: "Pulse Energy",
-  pulse_intensity_index: "Pulse Intensity",
-  total_exposure_index: "Total Exposure",
-  ablation_aggression_index: "Ablation Aggression",
-  delivery_smoothness_index: "Delivery Smoothness",
+// Short codes for the toolbar pill; full names live in ExposureAxisPicker.
+const INDEX_SHORT: Record<IndexRow, string> = {
+  pulse_spacing_mm: "PSp",
+  line_spacing_mm: "LSp",
+  pulse_energy_index: "PEn",
+  pulse_intensity_index: "PIn",
+  total_exposure_index: "TEx",
+  ablation_aggression_index: "AAg",
+  delivery_smoothness_index: "DSm",
 };
 
 const CHANNEL_PRETTY: Record<ChannelCol, string> = {
@@ -105,14 +107,14 @@ function AxisPill({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={
-          "px-3 py-1 font-mono text-[10.5px] uppercase tracking-[0.16em] " +
+          "shrink-0 whitespace-nowrap px-3 py-1 font-mono text-[10.5px] uppercase tracking-[0.16em] " +
           "rounded-sm border transition-colors " +
           (open
             ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)] bg-[color:var(--color-surface-elevated)]"
             : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:border-[color:var(--color-primary)] hover:text-[color:var(--color-ink)]")
         }
       >
-        {axis.toUpperCase()}: {pretty} ▾
+        <span className="text-[color:var(--color-ink-subtle)] mr-1">{axis}</span>{pretty} ▾
       </button>
       {open && ref.current && typeof document !== "undefined" && createPortal(
         <div
@@ -149,18 +151,18 @@ export function ExposureToolbar({
 }: Props) {
   const yPretty = mode === "univariate"
     ? CHANNEL_PRETTY[yKey as ChannelCol]
-    : INDEX_PRETTY[yKey as IndexRow];
+    : INDEX_SHORT[yKey as IndexRow];
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2 border-b border-[color:var(--color-border)] bg-[color:var(--color-surface)]">
-      <label className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em]">
+    <div className="flex items-center gap-2 px-4 py-2 border-b border-[color:var(--color-border)] bg-[color:var(--color-surface)] overflow-x-auto">
+      <label className="shrink-0 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em]">
         <span className="text-[color:var(--color-ink-subtle)]" id="material-label">Material</span>
         <select
           aria-label="material"
           aria-labelledby="material-label"
           value={materialId ?? ""}
           onChange={(e) => onMaterialChange(Number(e.target.value))}
-          className="font-mono text-[11px] px-2 py-1 rounded-sm border border-[color:var(--color-border)] bg-[color:var(--color-surface)]"
+          className="font-mono text-[11px] px-2 py-1 rounded-sm border border-[color:var(--color-border)] bg-[color:var(--color-surface)] max-w-[160px] truncate"
         >
           {materials.map((m) => (
             <option key={m.id} value={m.id}>{m.name}</option>
@@ -168,7 +170,7 @@ export function ExposureToolbar({
         </select>
       </label>
 
-      <div className="inline-flex border border-[color:var(--color-border)] rounded-sm overflow-hidden" role="tablist" aria-label="scatter mode">
+      <div className="shrink-0 inline-flex border border-[color:var(--color-border)] rounded-sm overflow-hidden" role="tablist" aria-label="scatter mode">
         {(["univariate", "bivariate"] as const).map((m) => (
           <button
             key={m}
@@ -177,7 +179,7 @@ export function ExposureToolbar({
             aria-selected={m === mode}
             onClick={() => onModeChange(m)}
             className={
-              "px-3 py-1 font-mono text-[10.5px] uppercase tracking-[0.16em] " +
+              "whitespace-nowrap px-3 py-1 font-mono text-[10.5px] uppercase tracking-[0.16em] " +
               (m === mode
                 ? "bg-[color:var(--color-primary)] text-white"
                 : "bg-[color:var(--color-surface)] text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)]")
@@ -190,7 +192,7 @@ export function ExposureToolbar({
 
       <AxisPill
         axis="x" mode={mode}
-        currentKey={xKey} scale={xScale} pretty={INDEX_PRETTY[xKey]}
+        currentKey={xKey} scale={xScale} pretty={INDEX_SHORT[xKey]}
         onKeyChange={(k) => onXKeyChange(k as IndexRow)}
         onScaleChange={onXScaleChange}
       />
@@ -201,66 +203,38 @@ export function ExposureToolbar({
         onScaleChange={onYScaleChange}
       />
 
-      <button
-        type="button"
-        disabled={!colourFieldAvailable}
-        onClick={onToggleColourField}
-        aria-pressed={colourField}
-        title={colourFieldAvailable
-          ? "Tint the chart background with the local measured colour"
-          : "Colour field is bivariate-only"}
-        className={
-          "ml-auto px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
-          (!colourFieldAvailable
-            ? "border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)] opacity-50 cursor-not-allowed"
-            : colourField
-              ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
-              : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:border-[color:var(--color-primary)]")
-        }
-      >
-        ▦ COLOUR FIELD
-      </button>
-
-      <button
-        type="button"
-        disabled={!contoursAvailable}
-        onClick={onToggleContours}
-        aria-pressed={contours}
-        title={contoursAvailable
-          ? "Overlay L* (brightness) contour lines"
-          : "Contours are bivariate-only"}
-        className={
-          "ml-1 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
-          (!contoursAvailable
-            ? "border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)] opacity-50 cursor-not-allowed"
-            : contours
-              ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
-              : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:border-[color:var(--color-primary)]")
-        }
-      >
-        ◷ CONTOURS
-      </button>
-
-      <button
-        type="button"
-        onClick={onToggleFadeDots}
-        aria-pressed={fadeDots}
-        title="Fade the palette dots so overlay viz reads clearly"
-        className={
-          "ml-1 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
-          (fadeDots
-            ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
-            : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:border-[color:var(--color-primary)]")
-        }
-      >
-        ◯ FADE DOTS
-      </button>
+      <div className="shrink-0 ml-auto">
+        <ExposureOverlaysMenu items={[
+          {
+            key: "colourField",
+            label: "▦  Colour field",
+            checked: colourField,
+            onToggle: onToggleColourField,
+            disabled: !colourFieldAvailable,
+            disabledReason: "Bivariate mode only",
+          },
+          {
+            key: "contours",
+            label: "◷  Contours · L*",
+            checked: contours,
+            onToggle: onToggleContours,
+            disabled: !contoursAvailable,
+            disabledReason: "Bivariate mode only",
+          },
+          {
+            key: "fadeDots",
+            label: "◯  Fade dots",
+            checked: fadeDots,
+            onToggle: onToggleFadeDots,
+          },
+        ]} />
+      </div>
 
       <button
         type="button"
         onClick={onToggleFilters}
         className={
-          "ml-1 px-3 py-1 font-mono text-[10.5px] uppercase tracking-[0.16em] " +
+          "shrink-0 whitespace-nowrap ml-1 px-3 py-1 font-mono text-[10.5px] uppercase tracking-[0.16em] " +
           "rounded-sm border transition-colors " +
           (filtersOpen || activeFilterCount > 0
             ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)] bg-[color:var(--color-surface-elevated)]"
@@ -277,7 +251,7 @@ export function ExposureToolbar({
         title={proposeAvailable ? undefined : "Propose Test is bivariate-only"}
         aria-pressed={proposeOpen}
         className={
-          "ml-1 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+          "shrink-0 whitespace-nowrap ml-1 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
           (!proposeAvailable
             ? "border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)] opacity-50 cursor-not-allowed"
             : proposeOpen
