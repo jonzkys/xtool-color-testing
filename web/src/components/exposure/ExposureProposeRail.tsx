@@ -43,6 +43,12 @@ export type ParamRow =
       unit: string;
     };
 
+/** Per-varied-param min/max user overrides. Undefined endpoint = use
+ *  the active machine's laser limit for that side. */
+export type ParamLimitOverrides = Partial<
+  Record<ParamKey, { min?: number; max?: number }>
+>;
+
 interface Props {
   anchor: ExposureRow | null;
   entriesInsidePolygon: number;
@@ -64,6 +70,27 @@ interface Props {
   helperText: string | null;
   onCreate: () => void;
   onCancel: () => void;
+  /** Use the page's active filters as constraints on the anchor's base
+   *  params + the varied params' min/max bounds. When ON, an `eq` clause
+   *  freezes that param to the clause value (anchor override), and range
+   *  clauses clamp the varied-param limits. */
+  useFilters: boolean;
+  onUseFiltersChange: (next: boolean) => void;
+  /** When ON, ``samplePolygonArea`` is called with an empty knownPoints
+   *  array so the sampler doesn't penalise targets near existing entries. */
+  ignoreExistingCells: boolean;
+  onIgnoreExistingCellsChange: (next: boolean) => void;
+  /** Per-param min/max overrides for the varied range. Empty for a param
+   *  means "use the active machine limits for that side". */
+  paramLimitOverrides: ParamLimitOverrides;
+  onParamLimitOverrideChange: (
+    param: ParamKey,
+    side: "min" | "max",
+    value: number | undefined,
+  ) => void;
+  /** Machine limits for the four varied-eligible params — surfaced so the
+   *  CONSTRAINTS section can show defaults in the placeholder. */
+  laserLimits: Record<ParamKey, { min: number; max: number; step: number }>;
 }
 
 const PARAM_LABEL: Record<string, string> = {
@@ -91,6 +118,9 @@ export const ExposureProposeRail: React.FC<Props> = ({
   hasParamOverrides, onResetParams,
   burnSettings, onBurnSettingChange,
   rangeReadout, canCreate, helperText, onCreate, onCancel,
+  useFilters, onUseFiltersChange,
+  ignoreExistingCells, onIgnoreExistingCellsChange,
+  paramLimitOverrides, onParamLimitOverrideChange, laserLimits,
 }) => {
   const isFill = mode.mode === "fill";
 
@@ -275,6 +305,101 @@ export const ExposureProposeRail: React.FC<Props> = ({
               )}
             </div>
           ))}
+        </div>
+      </section>
+
+      <section data-role="propose-constraints">
+        <div className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)] mb-2">
+          Constraints
+        </div>
+        <div className="flex flex-col gap-2">
+          <label
+            className="flex items-start gap-2 cursor-pointer"
+            data-row="use-filters"
+            title="Apply the page's active filter clauses as constraints on this propose-test. Eq clauses fix base params; range/lt/gt clauses clamp the varied param's min/max bounds."
+          >
+            <input
+              type="checkbox"
+              checked={useFilters}
+              onChange={(e) => onUseFiltersChange(e.target.checked)}
+              className="mt-0.5"
+              aria-label="Use active filters"
+            />
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] leading-snug">
+              Use active filters
+              <span className="block text-[9px] text-[color:var(--color-ink-subtle)] tracking-normal normal-case">
+                Eq clauses pin the base value; range clauses clamp the varied limits.
+              </span>
+            </span>
+          </label>
+
+          <label
+            className="flex items-start gap-2 cursor-pointer"
+            data-row="ignore-existing"
+            title="When ON, propose-test samples uniformly across the polygon without penalising targets near existing palette entries."
+          >
+            <input
+              type="checkbox"
+              checked={ignoreExistingCells}
+              onChange={(e) => onIgnoreExistingCellsChange(e.target.checked)}
+              className="mt-0.5"
+              aria-label="Ignore existing cells"
+            />
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] leading-snug">
+              Ignore existing cells
+              <span className="block text-[9px] text-[color:var(--color-ink-subtle)] tracking-normal normal-case">
+                Distribute new cells evenly across the polygon — don't avoid existing entries.
+              </span>
+            </span>
+          </label>
+
+          {/* Per-varied-param min/max overrides. Only rendered when there
+              are varied params (curve mode varies 1, fill mode varies 2). */}
+          {(() => {
+            const varied: ParamKey[] = mode.mode === "curve"
+              ? [mode.varyParam]
+              : [mode.varyParams[0], mode.varyParams[1]];
+            return varied.map((p) => {
+              const ov = paramLimitOverrides[p] ?? {};
+              const lim = laserLimits[p];
+              return (
+                <div
+                  key={p}
+                  className="flex items-center gap-2 min-w-0"
+                  data-row={`limits-${p}`}
+                >
+                  <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[60px] flex-none truncate">
+                    {PARAM_LABEL[p]}
+                  </div>
+                  <input
+                    type="number"
+                    value={ov.min ?? ""}
+                    placeholder={`${lim.min}`}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const n = raw === "" ? undefined : Number(raw);
+                      onParamLimitOverrideChange(p, "min", Number.isFinite(n!) ? n : undefined);
+                    }}
+                    aria-label={`${p} minimum`}
+                    className="flex-1 min-w-0 font-mono text-[10px] tabular-nums px-1.5 h-[20px] rounded-sm border border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-ink)] focus:outline-none focus:border-[color:var(--color-primary)]"
+                  />
+                  <span aria-hidden className="font-mono text-[10px] text-[color:var(--color-ink-subtle)]">–</span>
+                  <input
+                    type="number"
+                    value={ov.max ?? ""}
+                    placeholder={`${lim.max}`}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const n = raw === "" ? undefined : Number(raw);
+                      onParamLimitOverrideChange(p, "max", Number.isFinite(n!) ? n : undefined);
+                    }}
+                    aria-label={`${p} maximum`}
+                    className="flex-1 min-w-0 font-mono text-[10px] tabular-nums px-1.5 h-[20px] rounded-sm border border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-ink)] focus:outline-none focus:border-[color:var(--color-primary)]"
+                  />
+                </div>
+              );
+            });
+          })()}
         </div>
       </section>
 
