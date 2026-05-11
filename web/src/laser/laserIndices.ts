@@ -1,5 +1,5 @@
 /**
- * Frontend port of xcs_gen.laser_indices.compute_indices (formula v4).
+ * Frontend port of xcs_gen.laser_indices.compute_indices (formula v5).
  *
  * Field-naming bridge: BaseParams (web schema) uses `passes` and
  * `pulse_width`; ProcessingParams (xcs_gen domain) uses `repeat` and
@@ -7,12 +7,16 @@
  * `power, speed, frequency, density, passes, pulse_width` — and the
  * formulas use those names internally.
  *
- * v4 change vs. v3: ``crosshatch=true`` doubles the effective passes
- * fed into the three pass-dependent indices (TEi, AAi, DSi) so the
- * delivered-energy accounting matches what XCS actually burns —
- * crosshatch adds a perpendicular stroke per pass, doubling the
- * strokes per cell. Per-pulse indices (PSm, LSm, PEi, PIi) are
+ * v5 change vs. v4: `total_exposure_index` now factors `frequency`
+ * linearly — `power * freq * density * effectivePasses / speed`. On
+ * MOPA at fixed controller-%, avg optical power scales with pulse
+ * rate, so total delivered energy per cell scales with freq.
+ * `ablation_aggression_index` and `delivery_smoothness_index` inherit
+ * the change because they're derived from TEi. Per-pulse indices are
  * unaffected.
+ *
+ * v4 change vs. v3: ``crosshatch=true`` doubles the effective passes
+ * fed into the three pass-dependent indices (TEi, AAi, DSi).
  */
 
 export interface LaserParams {
@@ -32,7 +36,7 @@ export interface LaserIndices {
   total_exposure_index: number;
   ablation_aggression_index: number;
   delivery_smoothness_index: number;
-  formula_version: 4;
+  formula_version: 5;
 }
 
 export interface ComputeIndicesOptions {
@@ -41,7 +45,7 @@ export interface ComputeIndicesOptions {
   crosshatch?: boolean;
 }
 
-export const INDICES_FORMULA_VERSION = 4 as const;
+export const INDICES_FORMULA_VERSION = 5 as const;
 
 export function computeIndices(
   params: LaserParams,
@@ -60,7 +64,8 @@ export function computeIndices(
   const line_spacing_mm = 10 / density;
   const pulse_energy_index = power / frequency;
   const pulse_intensity_index = power / (frequency * pulse_width);
-  const total_exposure_index = (power * density * effectivePasses) / speed;
+  const total_exposure_index =
+    (power * frequency * density * effectivePasses) / speed;
   const ablation_aggression_index = total_exposure_index * pulse_intensity_index;
   const delivery_smoothness_index = total_exposure_index / pulse_intensity_index;
 

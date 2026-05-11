@@ -209,10 +209,9 @@ describe("pickModeAndParams", () => {
   }
 
   it("prefers a single param that moves both axes (curve mode)", () => {
-    // Polygon spans most of the index space for total_exposure_index (0-65)
-    // and ablation_aggression_index (0-0.046), so power/speed/density all
-    // score well above CURVE_COVERAGE_THRESHOLD and curve mode is chosen.
-    const polygon: Polygon = [[0.1, 0.0001], [60, 0.0001], [60, 0.045], [0.1, 0.045]];
+    // v5 TEi at anchor ≈ 6336; v5 AAi (freq cancels) ≈ 0.46.
+    // Polygon spans the reachable subspace so curve mode wins.
+    const polygon: Polygon = [[10, 0.01], [6000, 0.01], [6000, 4.5], [10, 4.5]];
     const out = pickModeAndParams(
       anchorRow(), polygon, "total_exposure_index", "ablation_aggression_index",
       F2_LIMITS,
@@ -224,7 +223,7 @@ describe("pickModeAndParams", () => {
   });
 
   it("returns a consistent ModeChoice for any polygon (fill or curve)", () => {
-    const polygon: Polygon = [[10, 0.0001], [90, 0.0001], [90, 0.05], [10, 0.05]];
+    const polygon: Polygon = [[1000, 0.0001], [9000, 0.0001], [9000, 0.05], [1000, 0.05]];
     const out = pickModeAndParams(
       anchorRow(), polygon, "total_exposure_index", "pulse_intensity_index",
       F2_LIMITS,
@@ -306,7 +305,8 @@ describe("fillByForwardGrid", () => {
   it("returns N cells, all inside the polygon", () => {
     // Polygon spanning a region the (power, speed) grid can hit in
     // (TEi, PIi). Pick generous bounds so the candidate count >= 16.
-    const polygon: Polygon = [[10, 0.0001], [90, 0.0001], [90, 0.045], [10, 0.045]];
+    // v5: TEi factor of ~100 (anchor freq=100) — polygon widened to match.
+    const polygon: Polygon = [[1000, 0.0001], [9000, 0.0001], [9000, 0.045], [1000, 0.045]];
     const cells = fillByForwardGrid(
       ANCHOR_PARAMS, ["power", "speed"], polygon,
       "total_exposure_index", "pulse_intensity_index", F2_LIMITS, 16,
@@ -320,7 +320,8 @@ describe("fillByForwardGrid", () => {
     }
   });
   it("clamps cell counts to laser-valid params", () => {
-    const polygon: Polygon = [[10, 0.0001], [90, 0.0001], [90, 0.045], [10, 0.045]];
+    // v5: TEi factor of ~100 (anchor freq=100) — polygon widened to match.
+    const polygon: Polygon = [[1000, 0.0001], [9000, 0.0001], [9000, 0.045], [1000, 0.045]];
     const cells = fillByForwardGrid(
       ANCHOR_PARAMS, ["power", "speed"], polygon,
       "total_exposure_index", "pulse_intensity_index", F2_LIMITS, 8,
@@ -341,7 +342,8 @@ describe("fillByForwardGrid", () => {
     // a populated sub-cell would be silently discarded; with the fix,
     // they're available to fill empty sub-cells (until the pool runs
     // out, in which case the function returns < n).
-    const polygon: Polygon = [[10, 0.0001], [90, 0.0001], [90, 0.045], [10, 0.045]];
+    // v5: TEi factor of ~100 (anchor freq=100) — polygon widened to match.
+    const polygon: Polygon = [[1000, 0.0001], [9000, 0.0001], [9000, 0.045], [1000, 0.045]];
     const cells = fillByForwardGrid(
       ANCHOR_PARAMS, ["power", "speed"], polygon,
       "total_exposure_index", "pulse_intensity_index", F2_LIMITS, 50,
@@ -487,8 +489,9 @@ describe("fillByInverseSolve", () => {
   it("returns ≤ N cells, all inside the polygon, with valid laser-range params", () => {
     // PIi range clamped to the reachable subset: for varying (power, speed)
     // at base freq=100/pw=200, max PIi is power/(freq*pw) = 100/20000 = 0.005.
+    // v5: TEi factor of ~100 (anchor freq=100) — polygon widened to match.
     const polygon: Polygon = [
-      [10, 0.0001], [90, 0.0001], [90, 0.0045], [10, 0.0045],
+      [1000, 0.0001], [9000, 0.0001], [9000, 0.0045], [1000, 0.0045],
     ];
     const cells = fillByInverseSolve(
       base, ["power", "speed"], polygon,
@@ -509,10 +512,11 @@ describe("fillByInverseSolve", () => {
   });
 
   it("avoids known points (existing palette entries inside polygon)", () => {
+    // v5: TEi factor of ~100 (anchor freq=100) — polygon widened to match.
     const polygon: Polygon = [
-      [10, 0.0001], [90, 0.0001], [90, 0.0045], [10, 0.0045],
+      [1000, 0.0001], [9000, 0.0001], [9000, 0.0045], [1000, 0.0045],
     ];
-    const known = [{ x: 50, y: 0.0022 }, { x: 30, y: 0.001 }];
+    const known = [{ x: 5000, y: 0.0022 }, { x: 3000, y: 0.001 }];
     const cells = fillByInverseSolve(
       base, ["power", "speed"], polygon,
       "total_exposure_index", "pulse_intensity_index",
@@ -522,7 +526,7 @@ describe("fillByInverseSolve", () => {
     // the sampler uses internally — so the test is scale-invariant for
     // anisotropic polygons. After the relaxation pass, threshold is
     // MIN_DIST_FACTOR/sqrt(n+known) * 0.5 = 0.6/sqrt(10)*0.5 ≈ 0.095.
-    const w = 80;          // bbox width (90 - 10)
+    const w = 8000;        // bbox width (9000 - 1000)
     const h = 0.0044;      // bbox height (0.0045 - 0.0001)
     for (const c of cells) {
       for (const k of known) {
@@ -537,8 +541,9 @@ describe("fillByInverseSolve", () => {
   });
 
   it("matches forward indices: each returned cell's params produce its (x, y)", () => {
+    // v5: TEi factor of ~100 (anchor freq=100) — polygon widened to match.
     const polygon: Polygon = [
-      [10, 0.0001], [90, 0.0001], [90, 0.0045], [10, 0.0045],
+      [1000, 0.0001], [9000, 0.0001], [9000, 0.0045], [1000, 0.0045],
     ];
     const cells = fillByInverseSolve(
       base, ["power", "speed"], polygon,

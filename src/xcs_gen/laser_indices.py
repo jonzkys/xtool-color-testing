@@ -6,16 +6,29 @@ controller stepped-value tables in ``xcs_gen.machines`` — so
 ``line_spacing_mm`` IS a real physical quantity (10 / density mm/line).
 ``power_model`` stays opaque pending wall-plug-watts calibration.
 
-Formula change vs. v3 (PR #86 lineage):
+Formula change vs. v4 (this revision):
+- ``total_exposure_index`` now factors ``mopa_frequency`` linearly:
+  ``power * freq * density * effective_repeat / speed``. On a MOPA
+  fiber laser at fixed controller-% the per-pulse energy stays
+  roughly constant and the average optical power scales with the
+  pulse repetition rate, so total-energy-delivered to each cell
+  scales linearly with freq. Without this, pure frequency sweeps
+  (everything else constant) collapsed to a single TEi value, which
+  made the exposure-page scatter unreadable for those tests.
+- ``ablation_aggression_index`` and ``delivery_smoothness_index``
+  inherit the change because they're derived from TEi × PIi and
+  TEi ÷ PIi respectively. Per-pulse indices (``PEi``, ``PIi``,
+  ``PSm``, ``LSm``) are unchanged — those describe per-pulse
+  energy/intensity and pulse geometry, which are by construction
+  freq-independent at the per-pulse level.
+
+Formula change vs. v3 (PR #88 lineage):
 - ``compute_indices`` accepts a ``crosshatch: bool = False`` kwarg.
   When True, the function uses an effective repeat of ``2 * repeat``
-  in the three pass-dependent indices (``total_exposure_index``,
-  ``ablation_aggression_index``, ``delivery_smoothness_index``) so the
-  delivered-energy accounting matches what XCS actually burns
-  (crosshatch adds a perpendicular stroke per pass, doubling the
-  strokes-of-energy per cell). Per-pulse indices (``PEi``, ``PIi``,
-  ``PSm``, ``LSm``) are unchanged because they describe pulse layout
-  and per-pulse energy, both of which crosshatch does not alter.
+  in the three pass-dependent indices so the delivered-energy
+  accounting matches what XCS actually burns (crosshatch adds a
+  perpendicular stroke per pass, doubling the strokes-of-energy per
+  cell).
 
 ``mopa_frequency`` is in kHz; ``speed`` is mm/s; ``pulse_width`` is ns;
 ``power`` is the controller % setting.
@@ -27,7 +40,7 @@ from dataclasses import dataclass
 
 from .model import ProcessingParams
 
-INDICES_FORMULA_VERSION = 4
+INDICES_FORMULA_VERSION = 5
 
 
 @dataclass(frozen=True)
@@ -98,7 +111,7 @@ def compute_indices(
     line_spacing_mm = 10 / density  # 1 cm = 10 mm; lines/cm → mm/line
     pulse_energy_index = power / freq
     pulse_intensity_index = power / (freq * pw)
-    total_exposure_index = power * density * effective_repeat / speed
+    total_exposure_index = power * freq * density * effective_repeat / speed
     ablation_aggression_index = total_exposure_index * pulse_intensity_index
     delivery_smoothness_index = total_exposure_index / pulse_intensity_index
 
