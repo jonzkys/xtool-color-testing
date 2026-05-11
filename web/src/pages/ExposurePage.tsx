@@ -226,6 +226,9 @@ function countActiveFilters(filters: ActiveFilters): number {
   if (filters.testKind !== "all") n++;
   if (filters.family) n++;
   if (filters.brushRange) n++;
+  if (filters.crosshatch !== "any") n++;
+  if (filters.unidirectional !== "any") n++;
+  if (filters.angleMode !== "any") n++;
   for (const k of FILTERABLE_PARAMS) {
     const r = filters.paramRanges[k];
     if (r && (r.min != null || r.max != null)) n++;
@@ -676,6 +679,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       if (key === "testKind") return { ...prev, testKind: "all" };
       if (key === "family") return { ...prev, family: null };
       if (key === "brush") return { ...prev, brushRange: null };
+      if (key === "crosshatch") return { ...prev, crosshatch: "any" };
+      if (key === "unidirectional") return { ...prev, unidirectional: "any" };
+      if (key === "angleMode") return { ...prev, angleMode: "any" };
       if (key.startsWith("range:")) {
         const k = key.slice("range:".length) as FilterableParam;
         const next = { ...prev.paramRanges };

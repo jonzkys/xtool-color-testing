@@ -6,6 +6,7 @@ import {
 export type ClearKey =
   | "sources" | "validated" | "testId" | "testKind"
   | "family" | "brush"
+  | "crosshatch" | "unidirectional" | "angleMode"
   | `range:${FilterableParam}`;
 
 interface Props {
@@ -18,6 +19,7 @@ interface Props {
 const PARAM_LABEL: Record<FilterableParam, string> = {
   power: "POWER", speed: "SPEED", frequency: "FREQUENCY",
   pulse_width: "PULSE WIDTH", density: "DENSITY", passes: "PASSES",
+  scan_angle: "SCAN ANGLE",
 };
 
 function fmtRange(min: number | null, max: number | null): string {
@@ -42,6 +44,9 @@ function isDefault(f: ActiveFilters): boolean {
     f.family == null &&
     f.testId == null &&
     f.testKind === "all" &&
+    f.crosshatch === "any" &&
+    f.unidirectional === "any" &&
+    f.angleMode === "any" &&
     Object.values(f.paramRanges).every((r) => !r ||
       (r.min == null && r.max == null))
   );
@@ -129,6 +134,27 @@ export function ExposureFilterPills({
       text: `EXPOSURE ${f.brushRange[0]}–${f.brushRange[1]}`,
       key: "brush",
       clear: () => onClearOne("brush"),
+    });
+  }
+  if (f.crosshatch !== "any") {
+    pills.push({
+      text: `CROSSHATCH: ${f.crosshatch.toUpperCase()}`,
+      key: "crosshatch",
+      clear: () => onClearOne("crosshatch"),
+    });
+  }
+  if (f.unidirectional !== "any") {
+    pills.push({
+      text: `UNIDIRECTIONAL: ${f.unidirectional.toUpperCase()}`,
+      key: "unidirectional",
+      clear: () => onClearOne("unidirectional"),
+    });
+  }
+  if (f.angleMode !== "any") {
+    pills.push({
+      text: `ANGLE MODE: ${f.angleMode.toUpperCase()}`,
+      key: "angleMode",
+      clear: () => onClearOne("angleMode"),
     });
   }
 

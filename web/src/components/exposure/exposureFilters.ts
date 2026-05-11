@@ -13,11 +13,15 @@ export interface ParamRange {
 
 export type FilterableParam =
   | "power" | "speed" | "frequency"
-  | "pulse_width" | "density" | "passes";
+  | "pulse_width" | "density" | "passes"
+  | "scan_angle";
 
 export const FILTERABLE_PARAMS: readonly FilterableParam[] = [
-  "power", "speed", "frequency", "pulse_width", "density", "passes",
+  "power", "speed", "frequency", "pulse_width", "density", "passes", "scan_angle",
 ];
+
+export type TriStateFlag = "any" | "yes" | "no";
+export type AngleModeFilter = "any" | "fixed" | "incremental";
 
 export interface ActiveFilters {
   sources: ReadonlySet<SourceKind>;
@@ -30,6 +34,10 @@ export interface ActiveFilters {
   testLineage: ReadonlySet<"source" | "parent">;
   testKind: "sweep" | "validation" | "all";
   paramRanges: Partial<Record<FilterableParam, ParamRange>>;
+  /** Burn-setting filters. "any" means no filter (default). */
+  crosshatch: TriStateFlag;
+  unidirectional: TriStateFlag;
+  angleMode: AngleModeFilter;
 }
 
 export const DEFAULT_FILTERS: ActiveFilters = {
@@ -42,6 +50,9 @@ export const DEFAULT_FILTERS: ActiveFilters = {
   testLineage: new Set(),
   testKind: "all",
   paramRanges: {},
+  crosshatch: "any",
+  unidirectional: "any",
+  angleMode: "any",
 };
 
 export interface TestSummary {
@@ -127,6 +138,24 @@ export function applyFilters(
     }
     if (outOfRange) continue;
 
+    // Burn-setting filters. Boolean fields ("yes" / "no" / "any") look
+    // at the raw value in params; missing keys treat as `false` so
+    // legacy entries don't get filtered out by an active "no" filter.
+    if (f.crosshatch !== "any") {
+      const v = !!e.params?.crosshatch;
+      if (f.crosshatch === "yes" && !v) continue;
+      if (f.crosshatch === "no" && v) continue;
+    }
+    if (f.unidirectional !== "any") {
+      const v = !!e.params?.unidirectional;
+      if (f.unidirectional === "yes" && !v) continue;
+      if (f.unidirectional === "no" && v) continue;
+    }
+    if (f.angleMode !== "any") {
+      const v = e.params?.angle_mode === "incremental" ? "incremental" : "fixed";
+      if (v !== f.angleMode) continue;
+    }
+
     out.push({
       id: e.id,
       hex: e.hex,
@@ -156,7 +185,7 @@ export function dataRanges(
 ): Record<FilterableParam, { min: number; max: number } | null> {
   const out: Record<FilterableParam, { min: number; max: number } | null> = {
     power: null, speed: null, frequency: null,
-    pulse_width: null, density: null, passes: null,
+    pulse_width: null, density: null, passes: null, scan_angle: null,
   };
   for (const k of FILTERABLE_PARAMS) {
     let lo = Infinity, hi = -Infinity;

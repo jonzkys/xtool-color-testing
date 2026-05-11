@@ -8,6 +8,7 @@ import {
 const PARAM_KEY: Record<FilterableParam, string> = {
   power: "p", speed: "s", frequency: "f",
   pulse_width: "pw", density: "d", passes: "r",
+  scan_angle: "sa",
 };
 
 const KEY_PARAM: Record<string, FilterableParam> = Object.fromEntries(

@@ -13,10 +13,12 @@ interface Props {
 const PARAM_LABEL: Record<FilterableParam, string> = {
   power: "POWER", speed: "SPEED", frequency: "FREQUENCY",
   pulse_width: "PULSE_WIDTH", density: "DENSITY", passes: "PASSES",
+  scan_angle: "SCAN_ANGLE",
 };
 
 const PARAM_SUFFIX: Record<FilterableParam, string> = {
   power: "%", speed: "", frequency: "", pulse_width: "", density: "", passes: "",
+  scan_angle: "°",
 };
 
 function fmtDelta(abs: number | null, pct: number | null): string {
