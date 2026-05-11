@@ -1,11 +1,18 @@
 /**
- * Frontend port of xcs_gen.laser_indices.compute_indices (formula v3).
+ * Frontend port of xcs_gen.laser_indices.compute_indices (formula v4).
  *
  * Field-naming bridge: BaseParams (web schema) uses `passes` and
  * `pulse_width`; ProcessingParams (xcs_gen domain) uses `repeat` and
  * `pw`. This port operates on the BaseParams shape — its inputs are
  * `power, speed, frequency, density, passes, pulse_width` — and the
  * formulas use those names internally.
+ *
+ * v4 change vs. v3: ``crosshatch=true`` doubles the effective passes
+ * fed into the three pass-dependent indices (TEi, AAi, DSi) so the
+ * delivered-energy accounting matches what XCS actually burns —
+ * crosshatch adds a perpendicular stroke per pass, doubling the
+ * strokes per cell. Per-pulse indices (PSm, LSm, PEi, PIi) are
+ * unaffected.
  */
 
 export interface LaserParams {
@@ -25,12 +32,21 @@ export interface LaserIndices {
   total_exposure_index: number;
   ablation_aggression_index: number;
   delivery_smoothness_index: number;
-  formula_version: 3;
+  formula_version: 4;
 }
 
-export const INDICES_FORMULA_VERSION = 3 as const;
+export interface ComputeIndicesOptions {
+  /** Set true when the burning test had ``crosshatch`` enabled.
+   *  Effective passes = passes × 2; affects TEi, AAi, DSi only. */
+  crosshatch?: boolean;
+}
 
-export function computeIndices(params: LaserParams): LaserIndices {
+export const INDICES_FORMULA_VERSION = 4 as const;
+
+export function computeIndices(
+  params: LaserParams,
+  opts?: ComputeIndicesOptions,
+): LaserIndices {
   const { power, speed, frequency, density, passes, pulse_width } = params;
 
   if (speed === 0) throw new Error("speed must be non-zero to compute laser indices");
@@ -38,11 +54,13 @@ export function computeIndices(params: LaserParams): LaserIndices {
   if (density === 0) throw new Error("density must be non-zero to compute laser indices");
   if (pulse_width === 0) throw new Error("pulse_width must be non-zero to compute laser indices");
 
+  const effectivePasses = passes * (opts?.crosshatch ? 2 : 1);
+
   const pulse_spacing_mm = speed / (frequency * 1000);
   const line_spacing_mm = 10 / density;
   const pulse_energy_index = power / frequency;
   const pulse_intensity_index = power / (frequency * pulse_width);
-  const total_exposure_index = (power * density * passes) / speed;
+  const total_exposure_index = (power * density * effectivePasses) / speed;
   const ablation_aggression_index = total_exposure_index * pulse_intensity_index;
   const delivery_smoothness_index = total_exposure_index / pulse_intensity_index;
 
