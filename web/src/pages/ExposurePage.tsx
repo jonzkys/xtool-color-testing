@@ -14,9 +14,7 @@ import {
   type ScatterMode,
   type ScatterViewport,
 } from "../components/exposure/ExposureScatter";
-import { ExposureHueRibbon } from "../components/exposure/ExposureHueRibbon";
 import { ExposureCorrelationMatrix } from "../components/exposure/ExposureCorrelationMatrix";
-import { ExposureRangeBrush } from "../components/exposure/ExposureRangeBrush";
 import { ExposureFocusedCard } from "../components/exposure/ExposureFocusedCard";
 import { ExposureNeighboursPanel } from "../components/exposure/ExposureNeighboursPanel";
 import {
@@ -271,6 +269,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const [colourField, setColourField] = useState<boolean>(false);
   const [contours, setContours] = useState<boolean>(false);
   const [fadeDots, setFadeDots] = useState<boolean>(false);
+  const [showCrosshair, setShowCrosshair] = useState<boolean>(false);
+  const [cropMode, setCropMode] = useState<boolean>(false);
 
   // Reset zoom whenever the user changes WHICH axes are on the chart or
   // their scale. The viewport stores bounds in scale-space, so they have
@@ -961,9 +961,12 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
             />
           ) : (
             <>
-              {/* Scatter — hero */}
+              {/* Scatter — hero. flex-1 lets it absorb whatever vertical
+                  slack the under-chart rows leave; minHeight 220px keeps
+                  the chart legible at the worst case. */}
               <div
-                className="relative rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-[var(--shadow-card)] p-4"
+                className="relative rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-[var(--shadow-card)] p-4 flex-1 flex flex-col"
+                style={{ minHeight: 220 }}
                 onClick={handleBackgroundClear}
               >
                 {proposeMode === "drawing" && (
@@ -987,6 +990,13 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                       : polygon.length < 3
                         ? `Click ${3 - polygon.length} more vertices · ESC cancels`
                         : `✓ Click here to finish · ENTER or double-click also works · ESC cancels`}
+                  </div>
+                )}
+                {cropMode && proposeMode !== "drawing" && (
+                  <div
+                    className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-white rounded-sm shadow-md bg-[color:var(--color-primary)] pointer-events-none"
+                  >
+                    Drag to crop · ESC cancels
                   </div>
                 )}
                 <ExposureScatter
@@ -1027,13 +1037,21 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   showColourField={colourField}
                   showContours={contours}
                   fadeDots={fadeDots}
+                  showCrosshair={showCrosshair}
+                  cropMode={cropMode}
+                  onCropModeChange={setCropMode}
                 />
               </div>
 
               {/* Under-graph pill bar — one-click toggles that always
                   live in the chart's gravitational field rather than
                   buried in the Filters tab. */}
-              <ExposureUnderGraphPills filters={filters} onChange={setFilters} />
+              <ExposureUnderGraphPills
+                filters={filters}
+                onChange={setFilters}
+                cropMode={cropMode}
+                onCropModeChange={setCropMode}
+              />
 
               {/* Stats hero echo — always-glanceable headline of the
                   three numbers users actually skim. Full breakdown lives
@@ -1057,106 +1075,6 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                 </span>
               </div>
 
-              {/* Hue ribbon + exposure range (left) | correlation matrix (right) */}
-              <div className="flex gap-4 items-stretch">
-                <div className="flex-1 min-w-0 flex flex-col gap-4">
-                  <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 flex-1 min-h-0 flex flex-col">
-                    <PanelLabel title="Hue ribbon" subtitle={`ordered by ${xKey}`} />
-                    <div className="flex-1 min-h-0 flex items-center">
-                      <div className="w-full">
-                        <ExposureHueRibbon
-                          rows={displayRows}
-                          orderBy={xKey}
-                          focusedId={focusedId}
-                          onHover={handleHover}
-                          onLeave={handleLeave}
-                          onClick={handleClick}
-                          dimRange={filters.brushRange}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 flex-1 min-h-0 flex flex-col">
-                    <PanelLabel title="Exposure range" subtitle="total_exposure_index, log scale" />
-                    <div className="flex-1 min-h-0 flex items-center">
-                      <div className="w-full">
-                        <ExposureRangeBrush
-                          rows={displayRows}
-                          range={filters.brushRange}
-                          onRangeChange={(r) => setFilters((prev) => ({ ...prev, brushRange: r }))}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="shrink-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
-                  <PanelLabel title="Correlations" subtitle="|r| heatmap" />
-                  <div className="flex gap-1 mb-2">
-                    <button
-                      type="button"
-                      onClick={() => setMatrixSource("indices")}
-                      className={
-                        "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
-                        (matrixSource === "indices"
-                          ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
-                          : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
-                      }
-                    >
-                      Indices
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMatrixSource("raw")}
-                      className={
-                        "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
-                        (matrixSource === "raw"
-                          ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
-                          : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
-                      }
-                    >
-                      Raw params
-                    </button>
-                  </div>
-                  {matrixSource === "indices" ? (
-                    <ExposureCorrelationMatrix<IndexRow>
-                      matrix={correlationMatrix}
-                      rowKeys={INDEX_ROWS}
-                      rowLabels={INDEX_LABELS_MATRIX}
-                      selectedRowKey={xKey}
-                      selectedChannel={mode === "univariate" ? yKeyUni : "L"}
-                      onSelect={(idx, ch) => {
-                        setXKey(idx);
-                        if (mode === "univariate") setYKeyUni(ch);
-                      }}
-                      renderRowLabel={(rowKey, label) => (
-                        <HelpTip
-                          help={EXPOSURE_INDEX_HELP[rowKey]}
-                          Body={IndexCardBody}
-                        >
-                          <span className="cursor-help">{label}</span>
-                        </HelpTip>
-                      )}
-                    />
-                  ) : (
-                    <ExposureCorrelationMatrix<RawParamRow>
-                      matrix={correlationMatrix}
-                      rowKeys={RAW_PARAM_ROWS}
-                      rowLabels={RAW_PARAM_LABELS}
-                      selectedRowKey={null}
-                      selectedChannel={null}
-                      onSelect={null}
-                      renderRowLabel={(rowKey, label) => (
-                        <HelpTip
-                          help={EXPOSURE_RAW_PARAM_HELP[rowKey]}
-                          Body={RawParamCardBody}
-                        >
-                          <span className="cursor-help">{label}</span>
-                        </HelpTip>
-                      )}
-                    />
-                  )}
-                </div>
-              </div>
             </>
           )}
         </main>
@@ -1254,25 +1172,6 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                         <MetalBar variant="soft" className="mb-3" />
                         <ExposureFocusedIndices row={focusedRow} />
                       </section>
-                      <section>
-                        <RailHeading>Neighbours</RailHeading>
-                        <MetalBar variant="soft" className="mb-3" />
-                        {focusedRow ? (
-                          <ExposureNeighboursPanel
-                            anchor={focusedRow}
-                            candidates={displayRows}
-                            onSelectNeighbour={(id) => {
-                              setTransientFocusId(null);
-                              setPinnedFocusId(id);
-                            }}
-                            onFilterFromNeighbour={handleFilterFromNeighbour}
-                          />
-                        ) : (
-                          <p className="font-mono text-[10px] italic text-[color:var(--color-ink-subtle)]">
-                            Focus an entry to see its neighbours.
-                          </p>
-                        )}
-                      </section>
                     </>
                   ),
                 },
@@ -1328,42 +1227,141 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   id: "color",
                   label: "Color",
                   body: (
-                    <section>
-                      <RailHeading>Scatter overlays</RailHeading>
-                      <MetalBar variant="soft" className="mb-3" />
-                      <p className="font-mono text-[10px] text-[color:var(--color-ink-muted)] mb-3 leading-relaxed">
-                        Layers that paint colour-window topology on top of
-                        the dots. Bivariate-only for the field and contours.
-                      </p>
-                      <div className="flex flex-col gap-2">
-                        <OverlayToggle
-                          label="▦  Colour field"
-                          help="Inverse-distance-weighted blend of the 12 nearest dots' measured hex values."
-                          checked={colourField}
-                          onToggle={() => setColourField((v) => !v)}
-                          disabled={mode !== "bivariate"}
-                          disabledReason="Bivariate mode only"
-                        />
-                        <OverlayToggle
-                          label="◷  Contours · L*"
-                          help="Marching-squares iso-L* lines over a kNN-interpolated grid."
-                          checked={contours}
-                          onToggle={() => setContours((v) => !v)}
-                          disabled={mode !== "bivariate"}
-                          disabledReason="Bivariate mode only"
-                        />
-                        <OverlayToggle
-                          label="◯  Fade dots"
-                          help="Drops palette dots to ~28% so the overlays above read clearly."
-                          checked={fadeDots}
-                          onToggle={() => setFadeDots((v) => !v)}
-                        />
-                      </div>
-                    </section>
+                    <>
+                      <section>
+                        <RailHeading>Neighbours</RailHeading>
+                        <MetalBar variant="soft" className="mb-3" />
+                        {focusedRow ? (
+                          <ExposureNeighboursPanel
+                            anchor={focusedRow}
+                            candidates={displayRows}
+                            onSelectNeighbour={(id) => {
+                              setTransientFocusId(null);
+                              setPinnedFocusId(id);
+                            }}
+                            onFilterFromNeighbour={handleFilterFromNeighbour}
+                          />
+                        ) : (
+                          <p className="font-mono text-[10px] italic text-[color:var(--color-ink-subtle)]">
+                            Focus an entry to see its neighbours.
+                          </p>
+                        )}
+                      </section>
+                      <section>
+                        <RailHeading>Scatter overlays</RailHeading>
+                        <MetalBar variant="soft" className="mb-3" />
+                        <p className="font-mono text-[10px] text-[color:var(--color-ink-muted)] mb-3 leading-relaxed">
+                          Layers that paint colour-window topology on top of
+                          the dots. Bivariate-only for the field and contours.
+                        </p>
+                        <div className="flex flex-col gap-2">
+                          <OverlayToggle
+                            label="▦  Colour field"
+                            help="Inverse-distance-weighted blend of the 12 nearest dots' measured hex values."
+                            checked={colourField}
+                            onToggle={() => setColourField((v) => !v)}
+                            disabled={mode !== "bivariate"}
+                            disabledReason="Bivariate mode only"
+                          />
+                          <OverlayToggle
+                            label="◷  Contours · L*"
+                            help="Marching-squares iso-L* lines over a kNN-interpolated grid."
+                            checked={contours}
+                            onToggle={() => setContours((v) => !v)}
+                            disabled={mode !== "bivariate"}
+                            disabledReason="Bivariate mode only"
+                          />
+                          <OverlayToggle
+                            label="◯  Fade dots"
+                            help="Drops palette dots to ~28% so the overlays above read clearly."
+                            checked={fadeDots}
+                            onToggle={() => setFadeDots((v) => !v)}
+                          />
+                          <OverlayToggle
+                            label="✛  Focus crosshair"
+                            help="Dashed lines crossing the chart through the focused dot. Helps line up values against the axes."
+                            checked={showCrosshair}
+                            onToggle={() => setShowCrosshair((v) => !v)}
+                          />
+                        </div>
+                      </section>
+                    </>
                   ),
                 },
               ]}
             />
+          )}
+
+          {/* Correlations matrix — pinned beneath the rail tabs so it's
+              always visible regardless of which tab is active. */}
+          {!rowsLoading && !rowsError && filteredRows.length > 0 && proposeMode !== "panel" && (
+            <section className="shrink-0 rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] p-3">
+              <PanelLabel title="Correlations" subtitle="|r| heatmap" />
+              <div className="flex gap-1 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setMatrixSource("indices")}
+                  className={
+                    "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+                    (matrixSource === "indices"
+                      ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
+                      : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+                  }
+                >
+                  Indices
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMatrixSource("raw")}
+                  className={
+                    "px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+                    (matrixSource === "raw"
+                      ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)]"
+                      : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+                  }
+                >
+                  Raw params
+                </button>
+              </div>
+              {matrixSource === "indices" ? (
+                <ExposureCorrelationMatrix<IndexRow>
+                  matrix={correlationMatrix}
+                  rowKeys={INDEX_ROWS}
+                  rowLabels={INDEX_LABELS_MATRIX}
+                  selectedRowKey={xKey}
+                  selectedChannel={mode === "univariate" ? yKeyUni : "L"}
+                  onSelect={(idx, ch) => {
+                    setXKey(idx);
+                    if (mode === "univariate") setYKeyUni(ch);
+                  }}
+                  renderRowLabel={(rowKey, label) => (
+                    <HelpTip
+                      help={EXPOSURE_INDEX_HELP[rowKey]}
+                      Body={IndexCardBody}
+                    >
+                      <span className="cursor-help">{label}</span>
+                    </HelpTip>
+                  )}
+                />
+              ) : (
+                <ExposureCorrelationMatrix<RawParamRow>
+                  matrix={correlationMatrix}
+                  rowKeys={RAW_PARAM_ROWS}
+                  rowLabels={RAW_PARAM_LABELS}
+                  selectedRowKey={null}
+                  selectedChannel={null}
+                  onSelect={null}
+                  renderRowLabel={(rowKey, label) => (
+                    <HelpTip
+                      help={EXPOSURE_RAW_PARAM_HELP[rowKey]}
+                      Body={RawParamCardBody}
+                    >
+                      <span className="cursor-help">{label}</span>
+                    </HelpTip>
+                  )}
+                />
+              )}
+            </section>
           )}
         </aside>
       </div>
