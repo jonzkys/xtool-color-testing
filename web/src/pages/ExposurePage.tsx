@@ -58,6 +58,7 @@ import {
   type ParamLimitOverrides,
 } from "../components/exposure/ExposureProposeRail";
 import type { LaserParams } from "../laser/laserIndices";
+import { ALLOWED_PULSE_WIDTHS } from "../laser/pulseWidths";
 import { HelpTip } from "../components/HelpTip";
 import {
   EXPOSURE_INDEX_HELP,
@@ -149,8 +150,10 @@ const STATIC_BURN_DEFAULTS: BurnSettings = {
 // ── PARAMS editor (rail) — module-scope domain table ─────────────────────
 type ParamRowKey = "power" | "speed" | "frequency" | "density" | "passes" | "pulse_width";
 
-const ALLOWED_PULSE_WIDTHS = [2, 4, 8, 30, 60, 80, 100, 200] as const;
-
+// Pull the pulse-width presets from the canonical machine spec —
+// `web/src/laser/pulseWidths.ts` is the source of truth and is kept in
+// sync with the Python `xcs_gen.pulse_width` module. Anything else is
+// rejected by the laser firmware without warning.
 const PARAM_DOMAIN: Record<ParamRowKey, {
   min: number; max: number; step: number; unit: string; presets?: readonly number[];
 }> = {
@@ -159,7 +162,13 @@ const PARAM_DOMAIN: Record<ParamRowKey, {
   frequency:   { min: 60, max: 500,   step: 1,  unit: "kHz" },
   density:     { min: 1,  max: 5000,  step: 1,  unit: "lpc" },
   passes:      { min: 1,  max: 99,    step: 1,  unit: "" },
-  pulse_width: { min: 2,  max: 200,   step: 1,  unit: "ns", presets: ALLOWED_PULSE_WIDTHS },
+  pulse_width: {
+    min: ALLOWED_PULSE_WIDTHS[0],
+    max: ALLOWED_PULSE_WIDTHS[ALLOWED_PULSE_WIDTHS.length - 1],
+    step: 1,
+    unit: "ns",
+    presets: ALLOWED_PULSE_WIDTHS,
+  },
 };
 
 function buildParamRows(
