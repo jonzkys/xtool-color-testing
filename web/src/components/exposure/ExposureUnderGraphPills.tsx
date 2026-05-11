@@ -5,6 +5,10 @@ type Lens = "all" | "validation" | "sweep";
 interface Props {
   filters: ActiveFilters;
   onChange: (next: ActiveFilters) => void;
+  /** Whether crop mode is active. When on, plain-drag on the scatter
+   *  draws a marquee that zooms the viewport on release. */
+  cropMode: boolean;
+  onCropModeChange: (active: boolean) => void;
 }
 
 /** Compute the effective lens by collapsing testKind + validatedOnly
@@ -32,7 +36,9 @@ function applyLens(f: ActiveFilters, lens: Lens): ActiveFilters {
  *  `testKind` + `validatedOnly` filters into a single mutually-
  *  exclusive control — most users only ever want one of the three
  *  views and tucking them in a slide-out was the wrong default. */
-export function ExposureUnderGraphPills({ filters: f, onChange }: Props) {
+export function ExposureUnderGraphPills({
+  filters: f, onChange, cropMode, onCropModeChange,
+}: Props) {
   const lens = readLens(f);
 
   return (
@@ -65,6 +71,24 @@ export function ExposureUnderGraphPills({ filters: f, onChange }: Props) {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={cropMode}
+          onClick={() => onCropModeChange(!cropMode)}
+          title={cropMode
+            ? "Crop mode on — drag a rectangle on the chart to zoom in (Esc cancels)"
+            : "Drag a rectangle on the chart to zoom in"}
+          className={
+            "whitespace-nowrap px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border transition-colors " +
+            (cropMode
+              ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)] bg-[color:var(--color-surface-elevated)]"
+              : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:border-[color:var(--color-primary)]")
+          }
+        >
+          ◰ crop
+        </button>
+
         <button
           type="button"
           role="switch"

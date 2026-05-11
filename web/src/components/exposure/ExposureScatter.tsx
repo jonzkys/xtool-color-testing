@@ -99,6 +99,16 @@ interface Props {
   /** When true, render dots at reduced opacity so the colour field /
    *  contours read clearly without dot-cloud interference. */
   fadeDots?: boolean;
+  /** When true, the next drag will draw a box-zoom rectangle instead of
+   *  panning — same outcome as cmd/ctrl + drag, but discoverable via
+   *  the under-graph Crop pill. Esc exits, as does completing a crop. */
+  cropMode?: boolean;
+  /** Called when crop mode should turn itself off (drag complete, Esc,
+   *  or a plain-click without dragging). */
+  onCropModeChange?: (active: boolean) => void;
+  /** When true, render the dashed focus-crosshair lines through the
+   *  focused dot. Opt-in via the Color tab; off by default. */
+  showCrosshair?: boolean;
 }
 
 function rowChannel(row: ExposureRow, key: ChannelCol): number {
@@ -175,6 +185,9 @@ export const ExposureScatter: React.FC<Props> = ({
   showColourField = false,
   showContours = false,
   fadeDots = false,
+  cropMode = false,
+  onCropModeChange,
+  showCrosshair = false,
 }) => {
   const xs = rows.map((r) => rowIndex(r, xKey));
   const ys = rows.map((r) =>
@@ -382,7 +395,12 @@ export const ExposureScatter: React.FC<Props> = ({
   const isInsidePlot = (sx: number, sy: number): boolean =>
     sx >= PADL && sx <= W - PADR && sy >= PADT && sy <= H - PADB;
 
-  // Wheel = zoom anchored at the cursor.
+  // Wheel routing — macOS trackpad convention:
+  //   wheel + ctrlKey      → pinch-zoom (browser synthesises ctrlKey
+  //                          for trackpad pinches)
+  //   wheel + shiftKey     → zoom (desktop mouse-wheel override)
+  //   wheel (plain)        → pan by (deltaX, deltaY)
+  // All three operate in scaled-bounds space (same as drag-pan).
   React.useEffect(() => {
     const el = svgRef.current;
     if (!el || !onViewportChange) return;
@@ -390,18 +408,44 @@ export const ExposureScatter: React.FC<Props> = ({
       const pt = clientToSvg(e.clientX, e.clientY);
       if (!pt || !isInsidePlot(pt[0], pt[1])) return;
       e.preventDefault();
-      const [dataX, dataY] = svgPointToData(pt[0], pt[1]);
-      // 1 wheel step → 1.15× zoom. Scroll up = zoom in, down = zoom out.
-      const k = Math.exp(-e.deltaY * 0.0015);
-      const nxMin = dataX - (dataX - xMin) / k;
-      const nxMax = dataX + (xMax - dataX) / k;
-      const nyMin = dataY - (dataY - yMin) / k;
-      const nyMax = dataY + (yMax - dataY) / k;
-      onViewportChange({ xMin: nxMin, xMax: nxMax, yMin: nyMin, yMax: nyMax });
+      const isZoom = e.ctrlKey || e.shiftKey;
+      if (isZoom) {
+        const [dataX, dataY] = svgPointToData(pt[0], pt[1]);
+        // 1 wheel step → 1.15× zoom. Scroll up = zoom in, down = zoom out.
+        const k = Math.exp(-e.deltaY * 0.0015);
+        const nxMin = dataX - (dataX - xMin) / k;
+        const nxMax = dataX + (xMax - dataX) / k;
+        const nyMin = dataY - (dataY - yMin) / k;
+        const nyMax = dataY + (yMax - dataY) / k;
+        onViewportChange({ xMin: nxMin, xMax: nxMax, yMin: nyMin, yMax: nyMax });
+      } else {
+        // Pan: trackpad 2-finger swipe (deltaX, deltaY) or mouse-wheel
+        // (deltaY only). Convert pixel deltas to data deltas via the
+        // current scale, then translate bounds in the opposite direction
+        // (cursor moves with content).
+        const dxData = (e.deltaX / (W - PADL - PADR)) * (xMax - xMin);
+        const dyData = (e.deltaY / (H - PADT - PADB)) * (yMax - yMin);
+        onViewportChange({
+          xMin: xMin + dxData,
+          xMax: xMax + dxData,
+          yMin: yMin - dyData,  // SVG y is inverted vs. data y
+          yMax: yMax - dyData,
+        });
+      }
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, [clientToSvg, svgPointToData, xMin, xMax, yMin, yMax, onViewportChange]);
+
+  // While crop mode is on, Esc exits without zooming.
+  React.useEffect(() => {
+    if (!cropMode || !onCropModeChange) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCropModeChange(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [cropMode, onCropModeChange]);
 
   // Drag gestures on the scatter:
   //   plain drag       → pan (unless we're in polygon-draw mode, where
@@ -427,7 +471,9 @@ export const ExposureScatter: React.FC<Props> = ({
     const pt = clientToSvg(e.clientX, e.clientY);
     if (!pt || !isInsidePlot(pt[0], pt[1])) return;
     const [sx0, sy0] = pt;
-    const isBoxZoom = (e.metaKey || e.ctrlKey) && !e.shiftKey;
+    // Crop pill turns plain drag into a box-zoom; cmd/ctrl + drag still
+    // works as a power-user shortcut without the pill.
+    const isBoxZoom = cropMode || ((e.metaKey || e.ctrlKey) && !e.shiftKey);
     const startBounds = { xMin, xMax, yMin, yMax };
     let dragging = false;
 
@@ -477,6 +523,8 @@ export const ExposureScatter: React.FC<Props> = ({
         yMin: Math.min(ay, by),
         yMax: Math.max(ay, by),
       });
+      // Crop pill: auto-exit after a successful crop.
+      if (cropMode) onCropModeChange?.(false);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -497,12 +545,13 @@ export const ExposureScatter: React.FC<Props> = ({
 
   return (
     <div
-      className="grid"
+      className="grid flex-1 min-h-0"
       style={{
         gridTemplateColumns: "44px 1fr",
         gridTemplateRows: "1fr 40px",
         columnGap: 0,
         rowGap: 0,
+        height: "100%",
       }}
     >
       {/* (1, 1) — Y axis label, single rotated heading line. Formula
@@ -574,7 +623,7 @@ export const ExposureScatter: React.FC<Props> = ({
       )}
 
       {/* (1, 2) — the SVG itself */}
-      <div style={{ gridColumn: 2, gridRow: 1, minWidth: 0, position: "relative" }}>
+      <div style={{ gridColumn: 2, gridRow: 1, minWidth: 0, minHeight: 0, position: "relative" }}>
         {viewport && onViewportChange && (
           <button
             type="button"
@@ -589,7 +638,7 @@ export const ExposureScatter: React.FC<Props> = ({
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
           preserveAspectRatio="xMidYMid meet"
-          className="block w-full h-auto rounded-[6px] bg-[color:var(--color-surface-elevated)]"
+          className="block w-full h-full rounded-[6px] bg-[color:var(--color-surface-elevated)]"
           role="img"
           aria-label="exposure scatter"
           onMouseDown={handlePlotMouseDown}
@@ -603,7 +652,7 @@ export const ExposureScatter: React.FC<Props> = ({
             onViewportChange(null);
           }}
           style={{
-            cursor: boxZoom
+            cursor: boxZoom || cropMode
               ? "crosshair"
               : polygonDrawing
                 ? undefined
@@ -690,8 +739,8 @@ export const ExposureScatter: React.FC<Props> = ({
             />
           )}
 
-          {/* Focus crosshair */}
-          {focusedId != null && (() => {
+          {/* Focus crosshair — off by default, opt-in via the Color tab. */}
+          {showCrosshair && focusedId != null && (() => {
             const focused = rows.find((r) => r.id === focusedId);
             if (!focused) return null;
             const fx = rowIndex(focused, xKey);
