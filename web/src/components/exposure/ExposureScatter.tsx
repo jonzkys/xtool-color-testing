@@ -26,6 +26,17 @@ import type { Polygon } from "./proposeTestMath";
 export type ScaleKind = "linear" | "log";
 export type ScatterMode = "univariate" | "bivariate";
 
+/** Viewport bounds — always expressed in the SAME space as the active scale
+ *  (i.e. log10-of-value when xScale=='log'; raw value when 'linear'). This
+ *  matches what the px/py projection helpers expect, so the override slots
+ *  in without extra conversion. */
+export interface ScatterViewport {
+  readonly xMin: number;
+  readonly xMax: number;
+  readonly yMin: number;
+  readonly yMax: number;
+}
+
 interface Props {
   rows: readonly ExposureRow[];
   mode: ScatterMode;
@@ -70,6 +81,11 @@ interface Props {
   /** Called continuously while a polygon vertex is being dragged (after
    *  the polygon has closed). */
   onPolygonVertexMove?: (vertexIndex: number, newPoint: readonly [number, number]) => void;
+  /** Optional viewport override. When set, the plot uses these bounds
+   *  instead of computing from the data; null/undefined = auto-fit. */
+  viewport?: ScatterViewport | null;
+  /** Called when the user changes the viewport via wheel/drag/box-zoom. */
+  onViewportChange?: (next: ScatterViewport | null) => void;
 }
 
 function rowChannel(row: ExposureRow, key: ChannelCol): number {
@@ -140,6 +156,8 @@ export const ExposureScatter: React.FC<Props> = ({
   onPolygonClose,
   onPolygonCancel,
   onPolygonVertexMove,
+  viewport,
+  onViewportChange,
 }) => {
   const xs = rows.map((r) => rowIndex(r, xKey));
   const ys = rows.map((r) =>
@@ -167,10 +185,17 @@ export const ExposureScatter: React.FC<Props> = ({
   // Pad bounds by 5% of range so dots don't sit on the frame edge.
   const xPad = (xHi - xLo) * 0.05;
   const yPad = (yHi - yLo) * 0.05;
-  const xMin = xLo - xPad;
-  const xMax = xHi + xPad;
-  const yMin = yLo - yPad;
-  const yMax = yHi + yPad;
+  const autoXMin = xLo - xPad;
+  const autoXMax = xHi + xPad;
+  const autoYMin = yLo - yPad;
+  const autoYMax = yHi + yPad;
+
+  // When the parent has set a viewport, use it verbatim — wheel zoom and
+  // box-zoom feed the same coordinate space the px/py helpers consume.
+  const xMin = viewport ? viewport.xMin : autoXMin;
+  const xMax = viewport ? viewport.xMax : autoXMax;
+  const yMin = viewport ? viewport.yMin : autoYMin;
+  const yMax = viewport ? viewport.yMax : autoYMax;
 
   const px = (v: number) => {
     const t = ((xScale === "log" ? Math.log10(v) : v) - xMin) / (xMax - xMin || 1);
@@ -256,6 +281,130 @@ export const ExposureScatter: React.FC<Props> = ({
     window.addEventListener("mousedown", onMouseDown);
     return () => window.removeEventListener("mousedown", onMouseDown);
   }, [xPickerOpen, yPickerOpen]);
+
+  // ── Zoom / pan / box-zoom ──────────────────────────────────────────
+  // All bounds (xMin/xMax/yMin/yMax) and the rect from svgPointToData
+  // live in *scaled* space — log10-of-value when xScale==='log', raw
+  // value otherwise. The wheel/drag handlers operate in that space so
+  // no extra projection logic is needed.
+
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [boxZoom, setBoxZoom] = useState<{
+    sx0: number; sy0: number; sx1: number; sy1: number;
+  } | null>(null);
+
+  /** Convert client-pixel coords from a mouse event into SVG viewport
+   *  units (i.e. the coordinate system viewBox lives in). The chart
+   *  uses preserveAspectRatio so the displayed size differs from the
+   *  intrinsic W×H — we account for that via getBoundingClientRect. */
+  const clientToSvg = React.useCallback(
+    (clientX: number, clientY: number): readonly [number, number] | null => {
+      const el = svgRef.current;
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return null;
+      // preserveAspectRatio xMidYMid meet → scale to fit, keep aspect
+      const scale = Math.min(rect.width / W, rect.height / H);
+      const drawW = W * scale;
+      const drawH = H * scale;
+      const offX = (rect.width - drawW) / 2;
+      const offY = (rect.height - drawH) / 2;
+      const sx = (clientX - rect.left - offX) / scale;
+      const sy = (clientY - rect.top - offY) / scale;
+      return [sx, sy];
+    },
+    [],
+  );
+
+  /** Convert an (sx, sy) point in SVG viewport coords into scaled data
+   *  coords (the space xMin/xMax/yMin/yMax live in). */
+  const svgPointToData = React.useCallback(
+    (sx: number, sy: number): readonly [number, number] => {
+      const tX = (sx - PADL) / (W - PADL - PADR || 1);
+      const tY = (H - PADB - sy) / (H - PADT - PADB || 1);
+      return [xMin + tX * (xMax - xMin), yMin + tY * (yMax - yMin)];
+    },
+    [xMin, xMax, yMin, yMax],
+  );
+
+  /** True when the SVG coord is inside the plot rectangle. */
+  const isInsidePlot = (sx: number, sy: number): boolean =>
+    sx >= PADL && sx <= W - PADR && sy >= PADT && sy <= H - PADB;
+
+  // Wheel = zoom anchored at the cursor.
+  React.useEffect(() => {
+    const el = svgRef.current;
+    if (!el || !onViewportChange) return;
+    const onWheel = (e: WheelEvent) => {
+      const pt = clientToSvg(e.clientX, e.clientY);
+      if (!pt || !isInsidePlot(pt[0], pt[1])) return;
+      e.preventDefault();
+      const [dataX, dataY] = svgPointToData(pt[0], pt[1]);
+      // 1 wheel step → 1.15× zoom. Scroll up = zoom in, down = zoom out.
+      const k = Math.exp(-e.deltaY * 0.0015);
+      const nxMin = dataX - (dataX - xMin) / k;
+      const nxMax = dataX + (xMax - dataX) / k;
+      const nyMin = dataY - (dataY - yMin) / k;
+      const nyMax = dataY + (yMax - dataY) / k;
+      onViewportChange({ xMin: nxMin, xMax: nxMax, yMin: nyMin, yMax: nyMax });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [clientToSvg, svgPointToData, xMin, xMax, yMin, yMax, onViewportChange]);
+
+  // Cmd/Ctrl+drag = box zoom; Shift+drag = pan. Both gated on the
+  // modifier so they don't fight polygon-vertex clicks.
+  const handlePlotMouseDown: React.MouseEventHandler<SVGSVGElement> = (e) => {
+    if (!onViewportChange) return;
+    if (!(e.metaKey || e.ctrlKey || e.shiftKey)) return;
+    const pt = clientToSvg(e.clientX, e.clientY);
+    if (!pt || !isInsidePlot(pt[0], pt[1])) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const [sx0, sy0] = pt;
+    const isPan = e.shiftKey && !(e.metaKey || e.ctrlKey);
+    const startBounds = { xMin, xMax, yMin, yMax };
+    if (!isPan) setBoxZoom({ sx0, sy0, sx1: sx0, sy1: sy0 });
+
+    const onMove = (ev: MouseEvent) => {
+      const p = clientToSvg(ev.clientX, ev.clientY);
+      if (!p) return;
+      if (isPan) {
+        // Pan: translate bounds by the inverse of the cursor delta.
+        const dxData = ((p[0] - sx0) / (W - PADL - PADR)) * (startBounds.xMax - startBounds.xMin);
+        const dyData = ((p[1] - sy0) / (H - PADT - PADB)) * (startBounds.yMax - startBounds.yMin);
+        onViewportChange({
+          xMin: startBounds.xMin - dxData,
+          xMax: startBounds.xMax - dxData,
+          yMin: startBounds.yMin + dyData,  // SVG y is inverted vs. data y
+          yMax: startBounds.yMax + dyData,
+        });
+      } else {
+        setBoxZoom({ sx0, sy0, sx1: p[0], sy1: p[1] });
+      }
+    };
+    const onUp = (ev: MouseEvent) => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      if (isPan) return;
+      const p = clientToSvg(ev.clientX, ev.clientY) ?? [sx0, sy0];
+      const dx = Math.abs(p[0] - sx0);
+      const dy = Math.abs(p[1] - sy0);
+      setBoxZoom(null);
+      // Treat tiny drags as clicks (no-op).
+      if (dx < 4 || dy < 4) return;
+      const [ax, ay] = svgPointToData(sx0, sy0);
+      const [bx, by] = svgPointToData(p[0], p[1]);
+      onViewportChange({
+        xMin: Math.min(ax, bx),
+        xMax: Math.max(ax, bx),
+        yMin: Math.min(ay, by),
+        yMax: Math.max(ay, by),
+      });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   // Top-line + formula resolution
   const xLabelTop = INDEX_PRETTY[xKey];
@@ -349,13 +498,37 @@ export const ExposureScatter: React.FC<Props> = ({
       )}
 
       {/* (1, 2) — the SVG itself */}
-      <div style={{ gridColumn: 2, gridRow: 1, minWidth: 0 }}>
+      <div style={{ gridColumn: 2, gridRow: 1, minWidth: 0, position: "relative" }}>
+        {viewport && onViewportChange && (
+          <button
+            type="button"
+            onClick={() => onViewportChange(null)}
+            title="Reset to auto-fit (also dbl-click)"
+            className="absolute top-2 right-2 z-10 px-2 py-0.5 rounded-sm border border-[color:var(--color-primary)] bg-[color:var(--color-surface-elevated)] font-mono text-[9.5px] uppercase tracking-[0.18em] text-[color:var(--color-primary)] hover:bg-[color:var(--color-primary)] hover:text-white"
+          >
+            Reset zoom
+          </button>
+        )}
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
           preserveAspectRatio="xMidYMid meet"
           className="block w-full h-auto rounded-[6px] bg-[color:var(--color-surface-elevated)]"
           role="img"
           aria-label="exposure scatter"
+          onMouseDown={handlePlotMouseDown}
+          onDoubleClick={(e) => {
+            if (!onViewportChange || !viewport) return;
+            // If the polygon wizard is open, let it own double-click
+            // (it uses dbl-click to close the polygon).
+            if (polygonDrawing) return;
+            const pt = clientToSvg(e.clientX, e.clientY);
+            if (!pt || !isInsidePlot(pt[0], pt[1])) return;
+            onViewportChange(null);
+          }}
+          style={{
+            cursor: boxZoom ? "crosshair" : undefined,
+          }}
         >
           {/* Plot frame */}
           <rect
@@ -601,6 +774,29 @@ export const ExposureScatter: React.FC<Props> = ({
             y2={H - PADB}
             stroke="var(--color-border-strong)"
           />
+
+          {/* Box-zoom marquee — visible only while the user is dragging
+              cmd/ctrl with the mouse. Clamped to the plot rectangle. */}
+          {boxZoom && (
+            <rect
+              x={Math.max(PADL, Math.min(boxZoom.sx0, boxZoom.sx1))}
+              y={Math.max(PADT, Math.min(boxZoom.sy0, boxZoom.sy1))}
+              width={Math.min(
+                Math.abs(boxZoom.sx1 - boxZoom.sx0),
+                (W - PADR) - Math.max(PADL, Math.min(boxZoom.sx0, boxZoom.sx1)),
+              )}
+              height={Math.min(
+                Math.abs(boxZoom.sy1 - boxZoom.sy0),
+                (H - PADB) - Math.max(PADT, Math.min(boxZoom.sy0, boxZoom.sy1)),
+              )}
+              fill="var(--color-primary)"
+              fillOpacity={0.08}
+              stroke="var(--color-primary)"
+              strokeWidth={0.8}
+              strokeDasharray="3 3"
+              pointerEvents="none"
+            />
+          )}
         </svg>
       </div>
 

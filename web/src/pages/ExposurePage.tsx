@@ -12,6 +12,7 @@ import {
   ExposureScatter,
   type ScaleKind,
   type ScatterMode,
+  type ScatterViewport,
 } from "../components/exposure/ExposureScatter";
 import { ExposureHueRibbon } from "../components/exposure/ExposureHueRibbon";
 import { ExposureCorrelationMatrix } from "../components/exposure/ExposureCorrelationMatrix";
@@ -253,6 +254,14 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const [yKeyBi, setYKeyBi] = useState<IndexRow>("pulse_intensity_index");
   const [xScale, setXScale] = useState<ScaleKind>("log");
   const [yScale, setYScale] = useState<ScaleKind>("log");
+  const [viewport, setViewport] = useState<ScatterViewport | null>(null);
+
+  // Reset zoom whenever the user changes WHICH axes are on the chart or
+  // their scale. The viewport stores bounds in scale-space, so they have
+  // no meaning against a new axis or after flipping log↔linear.
+  useEffect(() => {
+    setViewport(null);
+  }, [mode, xKey, yKeyUni, yKeyBi, xScale, yScale, materialId]);
 
   // ── unified filter state ───────────────────────────────────────────────
   const [filters, setFilters] = useState<ActiveFilters>(DEFAULT_FILTERS);
@@ -991,6 +1000,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                     if (polygon.length >= 3) setProposeMode("panel");
                   }}
                   onPolygonCancel={closeProposeWizard}
+                  viewport={viewport}
+                  onViewportChange={setViewport}
                 />
               </div>
 
