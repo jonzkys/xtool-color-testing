@@ -55,6 +55,7 @@ import {
   type RangeReadout,
   type ParamRow,
   type BurnSettings,
+  type ParamLimitOverrides,
 } from "../components/exposure/ExposureProposeRail";
 import type { LaserParams } from "../laser/laserIndices";
 import { HelpTip } from "../components/HelpTip";
@@ -176,7 +177,13 @@ function buildParamRows(
   );
   return (Object.keys(PARAM_DOMAIN) as ParamRowKey[]).map((key): ParamRow => {
     const domain = PARAM_DOMAIN[key];
-    const anchorValue = base[key as keyof LaserParams] as number;
+    const rawAnchor = base[key as keyof LaserParams] as number | undefined;
+    // Older / sparse palette entries may be missing one of the six
+    // recipe fields; fall back to the domain's minimum so downstream
+    // formatters don't crash on undefined.
+    const anchorValue = (typeof rawAnchor === "number" && Number.isFinite(rawAnchor))
+      ? rawAnchor
+      : domain.min;
     if (variedSet.has(key)) {
       const values = cells
         .map((c): number | null => {
@@ -488,6 +495,12 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const [proposeOverride, setProposeOverride] = useState<ModeChoice | null>(null);
   const [cellCount, setCellCount] = useState(16);
   const [paramOverrides, setParamOverrides] = useState<Partial<Record<ParamRowKey, number>>>({});
+  // CONSTRAINTS section state (propose-rail). All three default to
+  // their permissive value so the existing behaviour is unchanged until
+  // the user opts in.
+  const [proposeUseFilters, setProposeUseFilters] = useState(false);
+  const [proposeIgnoreExistingCells, setProposeIgnoreExistingCells] = useState(false);
+  const [proposeLimitOverrides, setProposeLimitOverrides] = useState<ParamLimitOverrides>({});
 
   // ── propose-test BURN SETTINGS state ──────────────────────────────────
   // Three-layer cascade like paramOverrides:
@@ -518,21 +531,97 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     [proposeMode, polygon, displayRows, xKey, yKeyForMath],
   );
 
+  // Filter-driven overrides for the propose flow. Only computed when the
+  // user has opted in via "Use active filters" — eq clauses fix the
+  // anchor's base value, range / lt / lte / gt / gte clauses clamp the
+  // varied-param min/max limits. neq is intentionally ignored (would
+  // turn the solver into a constrained-exclude problem).
+  const filterDrivenBaseOverrides = useMemo<Partial<Record<ParamKey, number>>>(() => {
+    if (!proposeUseFilters) return {};
+    const out: Partial<Record<ParamKey, number>> = {};
+    for (const k of ["power", "speed", "frequency", "density"] as const) {
+      const clauses = filters.paramClauses[k as FilterableParam];
+      if (!clauses) continue;
+      for (const c of clauses) {
+        if (c.kind === "eq") { out[k] = c.value; break; }
+      }
+    }
+    return out;
+  }, [proposeUseFilters, filters.paramClauses]);
+
+  const filterDrivenLimitOverrides = useMemo<ParamLimitOverrides>(() => {
+    if (!proposeUseFilters) return {};
+    const out: ParamLimitOverrides = {};
+    for (const k of ["power", "speed", "frequency", "density"] as const) {
+      const clauses = filters.paramClauses[k as FilterableParam];
+      if (!clauses) continue;
+      let min: number | undefined;
+      let max: number | undefined;
+      for (const c of clauses) {
+        if (c.kind === "range") {
+          min = min !== undefined ? Math.max(min, c.value) : c.value;
+          const hi = c.valueHi ?? c.value;
+          max = max !== undefined ? Math.min(max, hi) : hi;
+        } else if (c.kind === "lt") {
+          // Half-open lower of [machine_min, c.value). Treat as max=c.value-eps.
+          max = max !== undefined ? Math.min(max, c.value) : c.value;
+        } else if (c.kind === "lte") {
+          max = max !== undefined ? Math.min(max, c.value) : c.value;
+        } else if (c.kind === "gt") {
+          min = min !== undefined ? Math.max(min, c.value) : c.value;
+        } else if (c.kind === "gte") {
+          min = min !== undefined ? Math.max(min, c.value) : c.value;
+        }
+        // eq and neq don't widen/narrow the range here; eq is handled by
+        // filterDrivenBaseOverrides; neq is ignored.
+      }
+      if (min !== undefined || max !== undefined) out[k] = { min, max };
+    }
+    return out;
+  }, [proposeUseFilters, filters.paramClauses]);
+
+  // Effective laser limits = machine limits, narrowed by filter-driven
+  // overrides (when "Use active filters" is on), then narrowed further
+  // by the user's explicit min/max sliders.
+  const effectiveLaserLimits = useMemo<LaserLimits>(() => {
+    const out: LaserLimits = {
+      power:     { ...F2_MOPA_LIMITS.power },
+      speed:     { ...F2_MOPA_LIMITS.speed },
+      frequency: { ...F2_MOPA_LIMITS.frequency },
+      density:   { ...F2_MOPA_LIMITS.density },
+    };
+    const apply = (p: ParamKey, ov: { min?: number; max?: number } | undefined) => {
+      if (!ov) return;
+      if (ov.min !== undefined && Number.isFinite(ov.min)) {
+        out[p].min = Math.max(out[p].min, ov.min);
+      }
+      if (ov.max !== undefined && Number.isFinite(ov.max)) {
+        out[p].max = Math.min(out[p].max, ov.max);
+      }
+      // Re-clamp min ≤ max if user inverted them.
+      if (out[p].min > out[p].max) out[p].min = out[p].max;
+    };
+    for (const p of ["power", "speed", "frequency", "density"] as const) {
+      apply(p, filterDrivenLimitOverrides[p]);
+      apply(p, proposeLimitOverrides[p]);
+    }
+    return out;
+  }, [filterDrivenLimitOverrides, proposeLimitOverrides]);
+
   const smartDefault = useMemo(() => {
     if (!anchor) return null;
-    return pickModeAndParams(anchor, polygon, xKey, yKeyForMath, F2_MOPA_LIMITS);
-  }, [anchor, polygon, xKey, yKeyForMath]);
+    return pickModeAndParams(anchor, polygon, xKey, yKeyForMath, effectiveLaserLimits);
+  }, [anchor, polygon, xKey, yKeyForMath, effectiveLaserLimits]);
 
   const effective: ModeChoice | null = proposeOverride ?? smartDefault;
 
-  // Anchor's raw params merged with the user's PARAMS-editor overrides.
-  // Both the curve solver and inverse fill consume this — editing a non-
-  // varied param rotates the curve / shifts the fill region live.
+  // Anchor's raw params merged with the user's PARAMS-editor overrides
+  // and the filter-driven eq overrides.
   const effectiveBaseParams = useMemo<LaserParams | null>(() => {
     if (!anchor || !anchor.params) return null;
     const base = anchor.params as unknown as LaserParams;
-    return { ...base, ...paramOverrides } as LaserParams;
-  }, [anchor, paramOverrides]);
+    return { ...base, ...paramOverrides, ...filterDrivenBaseOverrides } as LaserParams;
+  }, [anchor, paramOverrides, filterDrivenBaseOverrides]);
 
   // Fetch the anchor's source test so the BURN SETTINGS section can
   // inherit its scan_angle / crosshatch / angle_mode / unidirectional as
@@ -585,7 +674,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     if (effective.mode === "curve") {
       const curve = computeCurve(
         effectiveBaseParams, effective.varyParam, xKey, yKeyForMath,
-        F2_MOPA_LIMITS, effectiveBurnSettings.crosshatch,
+        effectiveLaserLimits, effectiveBurnSettings.crosshatch,
       );
       const segments = clipPolylineToPolygon(curve, polygon);
       const flat = segments.flat();
@@ -595,11 +684,12 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     }
     const cells = fillByInverseSolve(
       effectiveBaseParams, effective.varyParams, polygon, xKey, yKeyForMath,
-      F2_MOPA_LIMITS, cellCount, entriesInsidePolygonCoords,
+      effectiveLaserLimits, cellCount,
+      proposeIgnoreExistingCells ? [] : entriesInsidePolygonCoords,
       effectiveBurnSettings.crosshatch,
     );
     return { curve: null, cells };
-  }, [effective, effectiveBaseParams, polygon, xKey, yKeyForMath, cellCount, entriesInsidePolygonCoords, effectiveBurnSettings.crosshatch]);
+  }, [effective, effectiveBaseParams, polygon, xKey, yKeyForMath, cellCount, entriesInsidePolygonCoords, effectiveBurnSettings.crosshatch, effectiveLaserLimits, proposeIgnoreExistingCells]);
 
   const paramRows = useMemo(
     () => buildParamRows(effectiveBaseParams, effective, preview.cells),
@@ -686,6 +776,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     setParamOverrides({});
     setBurnOverrides({});
     setSourceBurnDefaults({});
+    setProposeUseFilters(false);
+    setProposeIgnoreExistingCells(false);
+    setProposeLimitOverrides({});
   }, []);
 
   const handleToggleProposeMode = useCallback(() => {
@@ -696,6 +789,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       setParamOverrides({});
       setBurnOverrides({});
       setSourceBurnDefaults({});
+      setProposeUseFilters(false);
+      setProposeIgnoreExistingCells(false);
+      setProposeLimitOverrides({});
     } else {
       closeProposeWizard();
     }
@@ -1123,6 +1219,26 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               }
               onCreate={handleCreateTest}
               onCancel={closeProposeWizard}
+              useFilters={proposeUseFilters}
+              onUseFiltersChange={setProposeUseFilters}
+              ignoreExistingCells={proposeIgnoreExistingCells}
+              onIgnoreExistingCellsChange={setProposeIgnoreExistingCells}
+              paramLimitOverrides={proposeLimitOverrides}
+              onParamLimitOverrideChange={(param, side, value) => {
+                setProposeLimitOverrides((prev) => {
+                  const next: ParamLimitOverrides = { ...prev };
+                  const current = { ...(next[param] ?? {}) };
+                  if (value === undefined) delete current[side];
+                  else current[side] = value;
+                  if (current.min === undefined && current.max === undefined) {
+                    delete next[param];
+                  } else {
+                    next[param] = current;
+                  }
+                  return next;
+                });
+              }}
+              laserLimits={effectiveLaserLimits}
             />
           ) : (
             <>

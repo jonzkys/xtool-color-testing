@@ -58,6 +58,18 @@ function defaultProps() {
     helperText: null,
     onCreate: vi.fn(),
     onCancel: vi.fn(),
+    useFilters: false,
+    onUseFiltersChange: vi.fn(),
+    ignoreExistingCells: false,
+    onIgnoreExistingCellsChange: vi.fn(),
+    paramLimitOverrides: {},
+    onParamLimitOverrideChange: vi.fn(),
+    laserLimits: {
+      power:     { min: 1,  max: 100,   step: 1 },
+      speed:     { min: 2,  max: 15000, step: 1 },
+      frequency: { min: 60, max: 500,   step: 1 },
+      density:   { min: 1,  max: 5000,  step: 1 },
+    },
   };
 }
 
