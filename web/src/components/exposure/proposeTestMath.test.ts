@@ -46,6 +46,7 @@ function makeRow(id: number, x: number, y: number): ExposureRow {
       total_exposure_index: 0,
       ablation_aggression_index: 0,
       delivery_smoothness_index: 0,
+      duty_cycle_index: 22.2,
       formula_version: 3,
       density_model: "lpc",
       power_model: "controller_percent",

@@ -99,6 +99,7 @@ const INDEX_LABELS_MATRIX: Record<IndexRow, string> = {
   total_exposure_index: "TEx",
   ablation_aggression_index: "AAg",
   delivery_smoothness_index: "DSm",
+  duty_cycle_index: "Duty",
 };
 
 const RAW_PARAM_LABELS: Record<RawParamRow, string> = {

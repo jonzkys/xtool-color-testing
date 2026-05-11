@@ -4,9 +4,23 @@ These are HEURISTIC INDICES, not calibrated physical quantities for
 power. ``density`` is treated as lines per cm — confirmed by the
 controller stepped-value tables in ``xcs_gen.machines`` — so
 ``line_spacing_mm`` IS a real physical quantity (10 / density mm/line).
-``power_model`` stays opaque pending wall-plug-watts calibration.
+``power_model`` is ``controller_percent``: the % slider has been
+verified (via xTool G-code inspection) to map linearly onto the
+per-move ``S`` value as ``S = power × 10`` on a 0–1000 scale, so the
+indices are correct as *relative* measures across the slider range —
+only the absolute % → watts conversion remains machine-specific.
 
-Formula change vs. v4 (this revision):
+Formula change vs. v5 (this revision):
+- New index ``duty_cycle_index`` = ``mopa_frequency * pulse_width /
+  10000``, expressed as a percentage 0–100. This is a true physical
+  ratio (laser-on time ÷ pulse period), independent of power
+  calibration. It surfaces the lever that converts average-power %
+  to peak-power % on a MOPA fiber laser: two recipes with the same
+  controller-% can deliver wildly different peak intensities if their
+  duty cycles differ. Adding it as a first-class index lets the
+  exposure-page scatter plot against it directly.
+
+Formula change vs. v4 (PR #91 lineage):
 - ``total_exposure_index`` now factors ``mopa_frequency`` linearly:
   ``power * freq * density * effective_repeat / speed``. On a MOPA
   fiber laser at fixed controller-% the per-pulse energy stays
@@ -40,7 +54,7 @@ from dataclasses import dataclass
 
 from .model import ProcessingParams
 
-INDICES_FORMULA_VERSION = 5
+INDICES_FORMULA_VERSION = 6
 
 
 @dataclass(frozen=True)
@@ -52,6 +66,7 @@ class LaserIndices:
     total_exposure_index: float
     ablation_aggression_index: float
     delivery_smoothness_index: float
+    duty_cycle_index: float
     formula_version: int
     density_model: str
     power_model: str
@@ -114,6 +129,9 @@ def compute_indices(
     total_exposure_index = power * freq * density * effective_repeat / speed
     ablation_aggression_index = total_exposure_index * pulse_intensity_index
     delivery_smoothness_index = total_exposure_index / pulse_intensity_index
+    # freq is kHz (1e3 Hz), pw is ns (1e-9 s); product is 1e-6 dimensionless.
+    # Multiplying by 100 to express as a percentage 0–100.
+    duty_cycle_index = freq * pw / 10_000
 
     return LaserIndices(
         pulse_spacing_mm=pulse_spacing_mm,
@@ -123,6 +141,7 @@ def compute_indices(
         total_exposure_index=total_exposure_index,
         ablation_aggression_index=ablation_aggression_index,
         delivery_smoothness_index=delivery_smoothness_index,
+        duty_cycle_index=duty_cycle_index,
         formula_version=INDICES_FORMULA_VERSION,
         density_model=density_model,
         power_model=power_model,

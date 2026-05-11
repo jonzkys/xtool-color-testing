@@ -27,6 +27,7 @@ const INDEX_LABELS: Record<IndexRow, string> = {
   total_exposure_index: "Total Exposure",
   ablation_aggression_index: "Ablation Aggression",
   delivery_smoothness_index: "Delivery Smoothness",
+  duty_cycle_index: "Duty Cycle (%)",
 };
 
 const CHANNEL_LABELS: Record<ChannelCol, string> = {

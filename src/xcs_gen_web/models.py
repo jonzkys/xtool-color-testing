@@ -279,6 +279,7 @@ palette_entries = Table(
     Column("total_exposure_index", Float, nullable=True),
     Column("ablation_aggression_index", Float, nullable=True),
     Column("delivery_smoothness_index", Float, nullable=True),
+    Column("duty_cycle_index", Float, nullable=True),
     Column(
         "indices_formula_version", Integer,
         nullable=False, server_default="1",

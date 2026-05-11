@@ -27,6 +27,7 @@ function row(
       total_exposure_index: surface,
       ablation_aggression_index: 0.02,
       delivery_smoothness_index: 1000,
+      duty_cycle_index: 22.2,
       formula_version: 2,
       density_model: "opaque",
       power_model: "controller_percent",
@@ -35,12 +36,12 @@ function row(
 }
 
 describe("buildCorrelationMatrix", () => {
-  it("dimensions are 7 indices × 5 channels", () => {
+  it("dimensions are 8 indices × 5 channels", () => {
     const rows: ExposureRow[] = [row(10, 50, 0, 0), row(20, 40, 0, 0), row(30, 30, 0, 0)];
     const m = buildCorrelationMatrix(rows);
-    expect(INDEX_ROWS.length).toBe(7);
+    expect(INDEX_ROWS.length).toBe(8);
     expect(CHANNEL_COLS.length).toBe(5);
-    expect(m.length).toBe(7);
+    expect(m.length).toBe(8);
     expect(m[0].length).toBe(5);
   });
 

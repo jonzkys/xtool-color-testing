@@ -16,6 +16,7 @@ function row(id: number, hex: string, lab: [number, number, number]): ExposureRo
       total_exposure_index: 100,
       ablation_aggression_index: 0.02,
       delivery_smoothness_index: 1000,
+      duty_cycle_index: 22.2,
       formula_version: 2,
       density_model: "opaque",
       power_model: "controller_percent",

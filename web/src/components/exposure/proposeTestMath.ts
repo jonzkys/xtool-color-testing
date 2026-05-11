@@ -16,7 +16,8 @@ export type IndexKey =
   | "pulse_intensity_index"
   | "total_exposure_index"
   | "ablation_aggression_index"
-  | "delivery_smoothness_index";
+  | "delivery_smoothness_index"
+  | "duty_cycle_index";
 
 export function pointInPolygon(p: Point2, polygon: Polygon): boolean {
   if (polygon.length < 3) return false;
@@ -455,6 +456,14 @@ export function partialDerivative(
         case "passes":      return frequency * frequency * density * xh * pulse_width / speed;
         case "pulse_width": return frequency * frequency * density * effPasses / speed;
         case "speed":       return -frequency * frequency * density * effPasses * pulse_width / (speed * speed);
+        default: return 0;
+      }
+    }
+    case "duty_cycle_index": {
+      // v6: Duty = frequency * pulse_width / 10000 — independent of crosshatch
+      switch (paramKey) {
+        case "frequency":   return pulse_width / 10_000;
+        case "pulse_width": return frequency / 10_000;
         default: return 0;
       }
     }

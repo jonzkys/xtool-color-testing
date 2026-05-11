@@ -48,6 +48,7 @@ export function ExposureFocusedIndices({ row }: Props) {
       <Chip label="Total exposure" value={fmtNum(i.total_exposure_index)} />
       <Chip label="Ablation aggression" value={fmtNum(i.ablation_aggression_index)} />
       <Chip label="Delivery smoothness" value={fmtNum(i.delivery_smoothness_index)} />
+      <Chip label="Duty cycle" value={`${fmtNum(i.duty_cycle_index)}%`} />
     </div>
   );
 }
