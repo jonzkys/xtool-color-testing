@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { ExposureRangeSlider } from "./ExposureRangeSlider";
 
 describe("ExposureRangeSlider", () => {
-  it("renders the param name and the data caption", () => {
+  it("renders the param name and the data range (via label tooltip)", () => {
     render(
       <ExposureRangeSlider
         param="power"
@@ -12,8 +12,11 @@ describe("ExposureRangeSlider", () => {
         onChange={() => undefined}
       />,
     );
-    expect(screen.getByText(/POWER/)).toBeInTheDocument();
-    expect(screen.getByText(/data: 10/)).toBeInTheDocument();
+    const label = screen.getByText(/POWER/);
+    expect(label).toBeInTheDocument();
+    // The data range is in the label's `title` tooltip rather than a
+    // standalone caption (filter-panel rework, 2026-05).
+    expect(label.getAttribute("title")).toMatch(/10.*80/);
     expect(screen.getAllByText(/80/).length).toBeGreaterThan(0);
   });
 

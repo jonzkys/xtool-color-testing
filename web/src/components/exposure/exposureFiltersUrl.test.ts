@@ -25,14 +25,20 @@ describe("encodeFilters", () => {
     expect(encodeFilters(f)).toBe("d=100..");
   });
 
-  it("encodes test id + lineage + kind", () => {
+  it("encodes test ids + lineage + kind", () => {
     const f: ActiveFilters = { ...DEFAULT_FILTERS,
-      testId: 42, testLineage: new Set(["source", "parent"]),
+      testIds: new Set([42]), testLineage: new Set(["source", "parent"]),
       testKind: "validation" };
     const q = encodeFilters(f);
     expect(q).toContain("test=42");
     expect(q).toContain("lin=source,parent");
     expect(q).toContain("kind=validation");
+  });
+
+  it("encodes multi-select test ids as a comma list", () => {
+    const f: ActiveFilters = { ...DEFAULT_FILTERS,
+      testIds: new Set([5, 1, 42]) };
+    expect(encodeFilters(f)).toContain("test=1,5,42");
   });
 
   it("omits sources when all three are checked (default)", () => {
@@ -58,8 +64,10 @@ describe("round-trip", () => {
         speed: { min: null, max: 1000 },
       } }],
     ["test + lineage + kind", { ...DEFAULT_FILTERS,
-      testId: 42, testLineage: new Set(["source"]),
+      testIds: new Set([42]), testLineage: new Set(["source"]),
       testKind: "sweep" }],
+    ["multi-test", { ...DEFAULT_FILTERS,
+      testIds: new Set([1, 5, 42]) }],
     ["sources subset + validated", { ...DEFAULT_FILTERS,
       sources: new Set(["averaged", "manual"]),
       validatedOnly: true }],

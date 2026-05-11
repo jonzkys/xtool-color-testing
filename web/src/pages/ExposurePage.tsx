@@ -228,7 +228,7 @@ function countActiveFilters(filters: ActiveFilters): number {
   let n = 0;
   if (!setsEqual(filters.sources, DEFAULT_FILTERS.sources)) n++;
   if (filters.validatedOnly) n++;
-  if (filters.testId != null) n++;
+  if (filters.testIds.size > 0) n++;
   if (filters.testKind !== "all") n++;
   if (filters.family) n++;
   if (filters.brushRange) n++;
@@ -695,7 +695,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     setFilters((prev) => {
       if (key === "sources") return { ...prev, sources: DEFAULT_FILTERS.sources };
       if (key === "validated") return { ...prev, validatedOnly: false };
-      if (key === "testId") return { ...prev, testId: null, testLineage: new Set() };
+      if (key === "testIds") return { ...prev, testIds: new Set(), testLineage: new Set() };
       if (key === "testKind") return { ...prev, testKind: "all" };
       if (key === "family") return { ...prev, family: null };
       if (key === "brush") return { ...prev, brushRange: null };

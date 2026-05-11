@@ -100,7 +100,7 @@ describe("applyFilters", () => {
       entry({ id: 2, test_id: 20 }),
       entry({ id: 3, test_id: null }),
     ];
-    const f: ActiveFilters = { ...DEFAULT_FILTERS, testId: 10 };
+    const f: ActiveFilters = { ...DEFAULT_FILTERS, testIds: new Set([10]) };
     expect(applyFilters(rows, f, TESTS).map(r => r.id)).toEqual([1]);
   });
 
@@ -110,7 +110,7 @@ describe("applyFilters", () => {
       entry({ id: 2, test_id: 20 }),     // selected test
       entry({ id: 3, test_id: 30 }),     // unrelated
     ];
-    const f: ActiveFilters = { ...DEFAULT_FILTERS, testId: 20,
+    const f: ActiveFilters = { ...DEFAULT_FILTERS, testIds: new Set([20]),
       testLineage: new Set(["source"]) };
     expect(applyFilters(rows, f, TESTS).map(r => r.id)).toEqual([1, 2]);
   });
@@ -120,9 +120,20 @@ describe("applyFilters", () => {
       entry({ id: 1, test_id: 10 }),     // parent of test 30
       entry({ id: 2, test_id: 30 }),     // selected test
     ];
-    const f: ActiveFilters = { ...DEFAULT_FILTERS, testId: 30,
+    const f: ActiveFilters = { ...DEFAULT_FILTERS, testIds: new Set([30]),
       testLineage: new Set(["parent"]) };
     expect(applyFilters(rows, f, TESTS).map(r => r.id)).toEqual([1, 2]);
+  });
+
+  it("multi-select tests union the entries from each selected test", () => {
+    const rows = [
+      entry({ id: 1, test_id: 10 }),
+      entry({ id: 2, test_id: 20 }),
+      entry({ id: 3, test_id: 30 }),
+      entry({ id: 4, test_id: null }),
+    ];
+    const f: ActiveFilters = { ...DEFAULT_FILTERS, testIds: new Set([10, 30]) };
+    expect(applyFilters(rows, f, TESTS).map(r => r.id)).toEqual([1, 3]);
   });
 
   it("kind filter narrows to sweeps or validations", () => {

@@ -4,7 +4,7 @@ import {
 } from "./exposureFilters";
 
 export type ClearKey =
-  | "sources" | "validated" | "testId" | "testKind"
+  | "sources" | "validated" | "testIds" | "testKind"
   | "family" | "brush"
   | "crosshatch" | "unidirectional" | "angleMode"
   | `range:${FilterableParam}`;
@@ -42,7 +42,7 @@ function isDefault(f: ActiveFilters): boolean {
     !f.validatedOnly &&
     f.brushRange == null &&
     f.family == null &&
-    f.testId == null &&
+    f.testIds.size === 0 &&
     f.testKind === "all" &&
     f.crosshatch === "any" &&
     f.unidirectional === "any" &&
@@ -104,15 +104,19 @@ export function ExposureFilterPills({
       clear: () => onClearOne(`range:${k}`),
     });
   }
-  if (f.testId != null) {
+  if (f.testIds.size > 0) {
     const lineage: string[] = [];
     if (f.testLineage.has("source")) lineage.push("source");
     if (f.testLineage.has("parent")) lineage.push("parent");
     const suffix = lineage.length ? ` (+${lineage.join(",+")})` : "";
+    const ids = [...f.testIds].sort((a, b) => a - b);
+    const text = ids.length === 1
+      ? `TEST #${ids[0]}${suffix}`
+      : `TESTS ${ids.map((n) => `#${n}`).join(",")}${suffix}`;
     pills.push({
-      text: `TEST #${f.testId}${suffix}`,
-      key: "testId",
-      clear: () => onClearOne("testId"),
+      text,
+      key: "testIds",
+      clear: () => onClearOne("testIds"),
     });
   }
   if (f.testKind !== "all") {
