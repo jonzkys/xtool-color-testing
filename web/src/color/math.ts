@@ -133,6 +133,59 @@ export function wrapHueDelta(d: number): number {
   return x;
 }
 
+/** Mean / min / max for cyclic-angle samples in degrees.
+ *
+ *  Mean is computed as the angle of the unit-vector average (mean-of-
+ *  sin / mean-of-cos), so values that straddle the seam — e.g.
+ *  `[+179, -179]` — give a mean near `±180` instead of the misleading
+ *  arithmetic 0. Min/max are returned as the smallest/largest signed
+ *  deviations *from* that mean, added back to it, so the spread
+ *  reflects the actual shortest-arc dispersion rather than the
+ *  seam-crossing arithmetic range.
+ *
+ *  Input units are degrees; behaviour is undefined for non-finite or
+ *  empty input (caller filters). The returned `min` and `max` can
+ *  fall outside `[-180, 180]` when the mean is near the seam — that's
+ *  intentional so the rendered bar spans the correct visual arc.
+ *  Callers that need the values strictly inside the symmetric range
+ *  can `wrapHueDelta` on the way out.
+ *
+ *  ``signed`` controls the chosen branch when the mean sits exactly
+ *  on the seam: ``true`` (default) returns ±180 in `[-180, 180]`;
+ *  ``false`` returns ``[0, 360)`` and is appropriate for raw
+ *  `measured_hue` values where the "neutral" point is 0/360, not 0. */
+export function circularStatsDeg(
+  values: readonly number[],
+  signed: boolean = true,
+): { mean: number; min: number; max: number } | null {
+  if (values.length === 0) return null;
+  let sumSin = 0;
+  let sumCos = 0;
+  for (const v of values) {
+    const rad = (v * Math.PI) / 180;
+    sumSin += Math.sin(rad);
+    sumCos += Math.cos(rad);
+  }
+  // atan2 returns angle in (-π, π]; convert to degrees in (-180, 180].
+  let meanSigned = (Math.atan2(sumSin, sumCos) * 180) / Math.PI;
+  // For values reported in [0, 360) (raw hue), shift mean to that range.
+  const mean = signed
+    ? meanSigned
+    : ((meanSigned % 360) + 360) % 360;
+
+  // Deviations from the mean, wrapped to [-180, 180]. Add back to the
+  // mean so the returned min/max are in the same numeric register the
+  // caller expects (e.g. close to the mean even when mean ~ ±180).
+  let minDev = Infinity;
+  let maxDev = -Infinity;
+  for (const v of values) {
+    const dev = wrapHueDelta(v - mean);
+    if (dev < minDev) minDev = dev;
+    if (dev > maxDev) maxDev = dev;
+  }
+  return { mean, min: mean + minDev, max: mean + maxDev };
+}
+
 /** CIEDE2000 color difference (Sharma et al. 2005).
  *
  *  Ported verbatim from ``src/xcs_gen_web/palette.py::delta_e_2000``. Used on

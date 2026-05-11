@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   alignPcaWithReference,
   chroma,
+  circularStatsDeg,
   deltaE76,
   hexToLab,
   hueDeg,
@@ -160,5 +161,50 @@ describe("predictXFromLab", () => {
     const r = predictXFromLab(samples, [50, 0, 0] as Lab);
     expect(r).not.toBeNull();
     expect(r!.x).toBeCloseTo(50, 0);
+  });
+});
+
+describe("circularStatsDeg", () => {
+  it("returns null on empty input", () => {
+    expect(circularStatsDeg([])).toBeNull();
+  });
+
+  it("matches arithmetic stats when values are clustered far from the seam", () => {
+    const s = circularStatsDeg([+5, +10, +15], true)!;
+    expect(s.mean).toBeCloseTo(10, 3);
+    expect(s.min).toBeCloseTo(5, 3);
+    expect(s.max).toBeCloseTo(15, 3);
+  });
+
+  it("means values straddling the seam to ±180 instead of 0 (THE BUG)", () => {
+    // The reported case: two runs at +179° and -179° hue rotation are
+    // visually nearly identical (both ~180° off-target). Naive mean
+    // would give 0; circular mean correctly returns ±180.
+    const s = circularStatsDeg([+179, -179], true)!;
+    // Mean lands at ±180; sign depends on numerical bias, magnitude is what matters.
+    expect(Math.abs(s.mean)).toBeCloseTo(180, 1);
+    // min/max bar reflects the actual 2° dispersion, not the full ±180 range.
+    expect(s.max - s.min).toBeCloseTo(2, 1);
+  });
+
+  it("returns deviations clipped to the shortest arc per sample", () => {
+    // mean ≈ 0; samples are -5, +5 — min/max should be -5/+5, NOT
+    // wrapped through +355.
+    const s = circularStatsDeg([-5, +5], true)!;
+    expect(s.mean).toBeCloseTo(0, 3);
+    expect(s.min).toBeCloseTo(-5, 3);
+    expect(s.max).toBeCloseTo(+5, 3);
+  });
+
+  it("unsigned mode lands the mean in [0, 360) for raw hue values", () => {
+    // Two runs measure hue 355° and 5° — both near red.
+    // Circular mean is 0° (or 360°); arithmetic would give 180° (cyan).
+    const s = circularStatsDeg([355, 5], false)!;
+    // Mean ≈ 0 or 360 (both represent the same direction).
+    const m = s.mean;
+    expect(m === 0 || Math.abs(m - 360) < 0.5 || Math.abs(m) < 0.5).toBe(true);
+    // Spread is small — both values are within 5° of the mean.
+    const spread = Math.max(Math.abs(s.max - s.mean), Math.abs(s.min - s.mean));
+    expect(spread).toBeLessThan(6);
   });
 });

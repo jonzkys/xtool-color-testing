@@ -45,11 +45,33 @@ describe("perCellRange — Δ-axis", () => {
     const out = perCellRange(cells, series, "delta_hue");
     expect(out).toHaveLength(1);
     expect(out[0].count).toBe(3);
-    expect(out[0].min).toBeCloseTo(5, 5);
-    expect(out[0].max).toBeCloseTo(20, 5);
-    expect(out[0].mean).toBeCloseTo((10 + 5 + 20) / 3, 5);
+    // delta_hue now uses CIRCULAR mean — agrees with arithmetic to two
+    // decimals for clustered samples and stays sane for samples that
+    // straddle the seam (e.g. [+179, -179]).
+    expect(out[0].min).toBeCloseTo(5, 2);
+    expect(out[0].max).toBeCloseTo(20, 2);
+    expect(out[0].mean).toBeCloseTo((10 + 5 + 20) / 3, 2);
     // Δ-axis expected is always 0 by construction.
     expect(out[0].expected).toBe(0);
+  });
+
+  it("means seam-straddling Δh° runs to ±180, not 0 (the bug fix)", () => {
+    // Two runs both about 180° off-target but on opposite sides of
+    // the wrap seam — visually nearly identical, but the previous
+    // arithmetic mean reported mean=0 and a bar spanning the whole
+    // axis (the user-reported issue on stability/71 cell 25).
+    const cells = [makeCell(0, [50, 30, 0])];
+    const series = [
+      makeSeries(1, "r1", [{ idx: 0, lab: rotateHue([50, 30, 0], +179) }]),
+      makeSeries(2, "r2", [{ idx: 0, lab: rotateHue([50, 30, 0], -179) }]),
+    ];
+    const out = perCellRange(cells, series, "delta_hue");
+    expect(out).toHaveLength(1);
+    // Mean lands near ±180 (sign depends on numerical bias).
+    expect(Math.abs(out[0].mean!)).toBeCloseTo(180, 1);
+    // Spread reflects the actual ~2° dispersion, not the seam-crossing
+    // arithmetic range.
+    expect(out[0].max! - out[0].min!).toBeCloseTo(2, 1);
   });
 });
 

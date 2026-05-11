@@ -1,4 +1,5 @@
 import {
+  circularStatsDeg,
   deltaE76,
   hueDeg,
   wrapHueDelta,
@@ -158,17 +159,24 @@ function aggregateMetric(
         : burnDeltaHue(labs, expected);
     return v == null ? NaN : v;
   }
-  // Mean across runs that sampled this cell.
-  let acc = 0;
-  let n = 0;
+  // Mean across runs that sampled this cell. Hue is cyclic: a run pair
+  // straddling the seam (e.g. [+179, -179]) is visually identical, but
+  // arithmetic mean would land at 0 and lie about how off-target the
+  // cell is. Route delta_hue through the circular mean.
+  const vals: number[] = [];
   for (const m of measured) {
     if (!m) continue;
     const v = singleResultMetric(metric, expected, m.lab);
-    if (!Number.isFinite(v)) continue;
-    acc += v;
-    n += 1;
+    if (Number.isFinite(v)) vals.push(v);
   }
-  return n > 0 ? acc / n : NaN;
+  if (vals.length === 0) return NaN;
+  if (metric === "delta_hue") {
+    const stats = circularStatsDeg(vals, true);
+    return stats ? stats.mean : NaN;
+  }
+  let acc = 0;
+  for (const v of vals) acc += v;
+  return acc / vals.length;
 }
 
 function singleResultMetric(
