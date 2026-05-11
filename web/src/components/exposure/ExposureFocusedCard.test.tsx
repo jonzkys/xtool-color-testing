@@ -42,15 +42,15 @@ describe("ExposureFocusedCard", () => {
     expect(screen.queryByText(/TOTAL_EXPOSURE/i)).toBeNull();
   });
 
-  it("active state shows hex, recipe section, indices section", () => {
+  it("active state shows hex and recipe section", () => {
     const rows = [row(1, "#a0522d"), row(2, "#704020")];
     render(<ExposureFocusedCard rows={rows} focusedId={1} />);
     expect(screen.getByText("#A0522D")).toBeInTheDocument();
-    // Section labels are case-sensitive in the new design ("Recipe" /
-    // "Indices"); use case-insensitive matchers so future copy tweaks
-    // don't trip the suite.
     expect(screen.getByText(/^recipe$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^indices$/i)).toBeInTheDocument();
+    // Indices used to live inside this card; they now have their own
+    // section in the Info tab via ExposureFocusedIndices, so the
+    // "Indices" heading is no longer rendered here.
+    expect(screen.queryByText(/^indices$/i)).toBeNull();
   });
 
   it("renders a 'Source test' link when focused entry has test_id", () => {

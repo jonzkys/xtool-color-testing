@@ -4,7 +4,6 @@ import type { Material } from "../../library";
 import type { ChannelCol, IndexRow } from "./exposureCorrelations";
 import type { ScaleKind, ScatterMode } from "./ExposureScatter";
 import { ExposureAxisPicker } from "./ExposureAxisPicker";
-import { ExposureOverlaysMenu } from "./ExposureOverlaysMenu";
 
 interface Props {
   materials: readonly Material[];
@@ -20,20 +19,9 @@ interface Props {
   onYKeyChange: (k: ChannelCol | IndexRow) => void;
   onXScaleChange: (s: ScaleKind) => void;
   onYScaleChange: (s: ScaleKind) => void;
-  filtersOpen: boolean;
-  onToggleFilters: () => void;
-  activeFilterCount: number;
   proposeOpen: boolean;
   onToggleProposeMode: () => void;
   proposeAvailable: boolean;   // false in univariate mode → chip disabled
-  colourField: boolean;
-  onToggleColourField: () => void;
-  colourFieldAvailable: boolean;   // false in univariate mode → chip disabled
-  contours: boolean;
-  onToggleContours: () => void;
-  contoursAvailable: boolean;      // false in univariate mode → chip disabled
-  fadeDots: boolean;
-  onToggleFadeDots: () => void;
 }
 
 // Short codes for the toolbar pill; full names live in ExposureAxisPicker.
@@ -143,11 +131,7 @@ export function ExposureToolbar({
   mode, onModeChange,
   xKey, yKey, xScale, yScale,
   onXKeyChange, onYKeyChange, onXScaleChange, onYScaleChange,
-  filtersOpen, onToggleFilters, activeFilterCount,
   proposeOpen, onToggleProposeMode, proposeAvailable,
-  colourField, onToggleColourField, colourFieldAvailable,
-  contours, onToggleContours, contoursAvailable,
-  fadeDots, onToggleFadeDots,
 }: Props) {
   const yPretty = mode === "univariate"
     ? CHANNEL_PRETTY[yKey as ChannelCol]
@@ -203,47 +187,6 @@ export function ExposureToolbar({
         onScaleChange={onYScaleChange}
       />
 
-      <div className="shrink-0 ml-auto">
-        <ExposureOverlaysMenu items={[
-          {
-            key: "colourField",
-            label: "▦  Colour field",
-            checked: colourField,
-            onToggle: onToggleColourField,
-            disabled: !colourFieldAvailable,
-            disabledReason: "Bivariate mode only",
-          },
-          {
-            key: "contours",
-            label: "◷  Contours · L*",
-            checked: contours,
-            onToggle: onToggleContours,
-            disabled: !contoursAvailable,
-            disabledReason: "Bivariate mode only",
-          },
-          {
-            key: "fadeDots",
-            label: "◯  Fade dots",
-            checked: fadeDots,
-            onToggle: onToggleFadeDots,
-          },
-        ]} />
-      </div>
-
-      <button
-        type="button"
-        onClick={onToggleFilters}
-        className={
-          "shrink-0 whitespace-nowrap ml-1 px-3 py-1 font-mono text-[10.5px] uppercase tracking-[0.16em] " +
-          "rounded-sm border transition-colors " +
-          (filtersOpen || activeFilterCount > 0
-            ? "border-[color:var(--color-primary)] text-[color:var(--color-primary)] bg-[color:var(--color-surface-elevated)]"
-            : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:border-[color:var(--color-primary)]")
-        }
-      >
-        ⚙ FILTERS{activeFilterCount > 0 ? ` · ${activeFilterCount}` : ""}
-      </button>
-
       <button
         type="button"
         disabled={!proposeAvailable}
@@ -251,7 +194,7 @@ export function ExposureToolbar({
         title={proposeAvailable ? undefined : "Propose Test is bivariate-only"}
         aria-pressed={proposeOpen}
         className={
-          "shrink-0 whitespace-nowrap ml-1 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+          "shrink-0 whitespace-nowrap ml-auto px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
           (!proposeAvailable
             ? "border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)] opacity-50 cursor-not-allowed"
             : proposeOpen

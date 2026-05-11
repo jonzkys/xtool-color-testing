@@ -41,6 +41,11 @@ import {
 import { ExposureFilterPanel } from "../components/exposure/ExposureFilterPanel";
 import { ExposureFilterPills, type ClearKey } from "../components/exposure/ExposureFilterPills";
 import { ExposureFocusedIndices } from "../components/exposure/ExposureFocusedIndices";
+import {
+  ExposureRailTabs,
+  type ExposureRailTabId,
+  useRailTabUrlSync,
+} from "../components/exposure/ExposureRailTabs";
 import { ExposureToolbar } from "../components/exposure/ExposureToolbar";
 import { useFiltersUrlSync } from "../components/exposure/exposureFiltersUrl";
 import {
@@ -483,8 +488,11 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
 
   // ── (currentMaterial available for future use — not shown in top bar) ─
 
-  // ── filter panel open/closed (toggled by toolbar Filters button) ──────
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  // ── right-rail active tab (synced to the URL hash query). The four
+  //    tabs collect what used to be stacked sections — Info, Filters,
+  //    Stats, Color — into a single focused view. ──────────────────────
+  const [railTab, setRailTab] = useState<ExposureRailTabId>("info");
+  useRailTabUrlSync(railTab, setRailTab);
 
   // ── propose-test wizard state ─────────────────────────────────────────
   // off      — chip dormant, no overlays
@@ -864,20 +872,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
         }}
         onXScaleChange={setXScale}
         onYScaleChange={setYScale}
-        filtersOpen={filtersOpen}
-        onToggleFilters={() => setFiltersOpen((v) => !v)}
-        activeFilterCount={countActiveFilters(filters)}
         proposeOpen={proposeMode !== "off"}
         onToggleProposeMode={handleToggleProposeMode}
         proposeAvailable={mode === "bivariate"}
-        colourField={colourField}
-        onToggleColourField={() => setColourField((v) => !v)}
-        colourFieldAvailable={mode === "bivariate"}
-        contours={contours}
-        onToggleContours={() => setContours((v) => !v)}
-        contoursAvailable={mode === "bivariate"}
-        fadeDots={fadeDots}
-        onToggleFadeDots={() => setFadeDots((v) => !v)}
       />
 
       {/* ── PILL BAR (active filter chips) ────────────────────────────── */}
@@ -1019,6 +1016,28 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                 />
               </div>
 
+              {/* Stats hero echo — always-glanceable headline of the
+                  three numbers users actually skim. Full breakdown lives
+                  in the Stats rail tab. */}
+              <div className="flex items-center gap-4 px-1 font-mono text-[10.5px] tabular-nums text-[color:var(--color-ink-muted)]">
+                <span>
+                  <span className="text-[color:var(--color-ink-subtle)] uppercase tracking-[0.16em] mr-1.5">r</span>
+                  <span className="text-[color:var(--color-primary)] font-semibold">{fmtR(stats.pearsonR)}</span>
+                </span>
+                <span>
+                  <span className="text-[color:var(--color-ink-subtle)] uppercase tracking-[0.16em] mr-1.5">ρ</span>
+                  {fmtR(stats.spearmanRho)}
+                </span>
+                <span>
+                  <span className="text-[color:var(--color-ink-subtle)] uppercase tracking-[0.16em] mr-1.5">R²</span>
+                  {fmtR2(stats.fit.r2)}
+                </span>
+                <span>
+                  <span className="text-[color:var(--color-ink-subtle)] uppercase tracking-[0.16em] mr-1.5">n</span>
+                  {stats.fit.n}
+                </span>
+              </div>
+
               {/* Hue ribbon + exposure range (left) | correlation matrix (right) */}
               <div className="flex gap-4 items-stretch">
                 <div className="flex-1 min-w-0 flex flex-col gap-4">
@@ -1123,28 +1142,9 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
           )}
         </main>
 
-        {/* ── FILTERS RAIL (toggleable via toolbar) ─────────────────────── */}
-        {filtersOpen && (
-          <aside
-            style={{ width: 240 }}
-            className="shrink-0 flex flex-col gap-4 border-l border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-4 overflow-y-auto"
-          >
-            <section>
-              <RailHeading>Filters</RailHeading>
-              <MetalBar variant="soft" className="mb-3" />
-              <ExposureFilterPanel
-                filters={filters}
-                onChange={setFilters}
-                tests={tests}
-                dataRanges={ranges}
-              />
-            </section>
-          </aside>
-        )}
-
         {/* ── RIGHT RAIL ────────────────────────────────────────────────── */}
         <aside
-          style={{ width: proposeMode === "panel" ? 300 : 240 }}
+          style={{ width: proposeMode === "panel" ? 300 : 280 }}
           className="shrink-0 flex flex-col gap-4 border-l border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-4 overflow-y-auto"
         >
           {proposeMode === "panel" ? (
@@ -1186,105 +1186,165 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               onCancel={closeProposeWizard}
             />
           ) : (
-            <>
-          <section>
-            <RailHeading>Stats</RailHeading>
-            <MetalBar variant="soft" className="mb-3" />
-
-            {/* Hero r = */}
-            <div className="flex flex-col gap-0.5 mb-3">
-              <span className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold">
-                Pearson r
-              </span>
-              <span
-                className="font-mono text-[28px] leading-none tabular-nums text-[color:var(--color-primary)] font-semibold"
-                title="Linear correlation between X and Y, computed on log-X if log scale is on"
-              >
-                {fmtR(stats.pearsonR)}
-              </span>
-            </div>
-
-            {/* Sub-stats — denser stack */}
-            <div className="grid grid-cols-2 gap-y-2 gap-x-3 font-mono">
-              <SubStat label="Spearman ρ" value={fmtR(stats.spearmanRho)} />
-              <SubStat label="R² (log·lin)" value={fmtR2(stats.fit.r2)} />
-              <SubStat
-                label="Slope"
-                value={Number.isFinite(stats.fit.slope) ? stats.fit.slope.toFixed(3) : "—"}
-              />
-              <SubStat label="n" value={String(stats.fit.n)} />
-            </div>
-
-            {mode === "bivariate" && (
-              <p className="font-mono text-[10px] italic text-[color:var(--color-ink-subtle)] leading-relaxed mt-3">
-                No Y outcome — bivariate r is between two indices, not a fit quality.
-              </p>
-            )}
-          </section>
-
-          <section>
-            <div className="flex items-center justify-between mb-1.5">
-              <RailHeading>
-                {pinnedFocusId != null ? "Pinned" : "Focused"}
-              </RailHeading>
-              {focusedId != null && (
-                <button
-                  type="button"
-                  onClick={handleBackgroundClear}
-                  className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-ink-muted)] transition-colors"
-                  title={pinnedFocusId != null ? "Unpin" : "Clear hover"}
-                >
-                  clear
-                </button>
-              )}
-            </div>
-            <MetalBar variant="soft" className="mb-3" />
-            <ExposureFocusedCard
-              rows={displayRows}
-              focusedId={focusedId}
-              highlightIndex={xKey}
-              onDiscHover={handleHover}
-              onDiscLeave={handleLeave}
-              onDiscClick={handleClick}
-              dimRange={filters.brushRange}
-              focusedFamily={focusedFamily}
-              availableFamilies={focusedAvailableFamilies}
-              activeFilterAxis={filters.family?.axis ?? null}
-              onSetFilter={(axis, anchorRowId) =>
-                setFilters((prev) => ({ ...prev, family: { axis, anchorRowId } }))}
-              onClearFilter={() =>
-                setFilters((prev) => ({ ...prev, family: null }))}
-              activeParamFilters={activeParamFilterKeys(filters)}
-              onTogglePerParamFilter={handleTogglePerParamFilter}
+            <ExposureRailTabs
+              active={railTab}
+              onActiveChange={setRailTab}
+              tabs={[
+                {
+                  id: "info",
+                  label: "Info",
+                  body: (
+                    <>
+                      <section>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <RailHeading>
+                            {pinnedFocusId != null ? "Pinned" : "Focused"}
+                          </RailHeading>
+                          {focusedId != null && (
+                            <button
+                              type="button"
+                              onClick={handleBackgroundClear}
+                              className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-[color:var(--color-ink-subtle)] hover:text-[color:var(--color-ink-muted)] transition-colors"
+                              title={pinnedFocusId != null ? "Unpin" : "Clear hover"}
+                            >
+                              clear
+                            </button>
+                          )}
+                        </div>
+                        <MetalBar variant="soft" className="mb-3" />
+                        <ExposureFocusedCard
+                          rows={displayRows}
+                          focusedId={focusedId}
+                          onDiscHover={handleHover}
+                          onDiscLeave={handleLeave}
+                          onDiscClick={handleClick}
+                          dimRange={filters.brushRange}
+                          focusedFamily={focusedFamily}
+                          availableFamilies={focusedAvailableFamilies}
+                          activeFilterAxis={filters.family?.axis ?? null}
+                          onSetFilter={(axis, anchorRowId) =>
+                            setFilters((prev) => ({ ...prev, family: { axis, anchorRowId } }))}
+                          onClearFilter={() =>
+                            setFilters((prev) => ({ ...prev, family: null }))}
+                          activeParamFilters={activeParamFilterKeys(filters)}
+                          onTogglePerParamFilter={handleTogglePerParamFilter}
+                        />
+                      </section>
+                      <section>
+                        <RailHeading>Indices</RailHeading>
+                        <MetalBar variant="soft" className="mb-3" />
+                        <ExposureFocusedIndices row={focusedRow} />
+                      </section>
+                      <section>
+                        <RailHeading>Neighbours</RailHeading>
+                        <MetalBar variant="soft" className="mb-3" />
+                        {focusedRow ? (
+                          <ExposureNeighboursPanel
+                            anchor={focusedRow}
+                            candidates={displayRows}
+                            onSelectNeighbour={(id) => {
+                              setTransientFocusId(null);
+                              setPinnedFocusId(id);
+                            }}
+                            onFilterFromNeighbour={handleFilterFromNeighbour}
+                          />
+                        ) : (
+                          <p className="font-mono text-[10px] italic text-[color:var(--color-ink-subtle)]">
+                            Focus an entry to see its neighbours.
+                          </p>
+                        )}
+                      </section>
+                    </>
+                  ),
+                },
+                {
+                  id: "filters",
+                  label: "Filters",
+                  badge: countActiveFilters(filters),
+                  body: (
+                    <ExposureFilterPanel
+                      filters={filters}
+                      onChange={setFilters}
+                      tests={tests}
+                      dataRanges={ranges}
+                    />
+                  ),
+                },
+                {
+                  id: "stats",
+                  label: "Stats",
+                  body: (
+                    <section>
+                      {/* Hero r = */}
+                      <div className="flex flex-col gap-0.5 mb-3">
+                        <span className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-[color:var(--color-ink-subtle)] font-semibold">
+                          Pearson r
+                        </span>
+                        <span
+                          className="font-mono text-[28px] leading-none tabular-nums text-[color:var(--color-primary)] font-semibold"
+                          title="Linear correlation between X and Y, computed on log-X if log scale is on"
+                        >
+                          {fmtR(stats.pearsonR)}
+                        </span>
+                      </div>
+                      {/* Sub-stats */}
+                      <div className="grid grid-cols-2 gap-y-2 gap-x-3 font-mono">
+                        <SubStat label="Spearman ρ" value={fmtR(stats.spearmanRho)} />
+                        <SubStat label="R² (log·lin)" value={fmtR2(stats.fit.r2)} />
+                        <SubStat
+                          label="Slope"
+                          value={Number.isFinite(stats.fit.slope) ? stats.fit.slope.toFixed(3) : "—"}
+                        />
+                        <SubStat label="n" value={String(stats.fit.n)} />
+                      </div>
+                      {mode === "bivariate" && (
+                        <p className="font-mono text-[10px] italic text-[color:var(--color-ink-subtle)] leading-relaxed mt-3">
+                          No Y outcome — bivariate r is between two indices, not a fit quality.
+                        </p>
+                      )}
+                    </section>
+                  ),
+                },
+                {
+                  id: "color",
+                  label: "Color",
+                  body: (
+                    <section>
+                      <RailHeading>Scatter overlays</RailHeading>
+                      <MetalBar variant="soft" className="mb-3" />
+                      <p className="font-mono text-[10px] text-[color:var(--color-ink-muted)] mb-3 leading-relaxed">
+                        Layers that paint colour-window topology on top of
+                        the dots. Bivariate-only for the field and contours.
+                      </p>
+                      <div className="flex flex-col gap-2">
+                        <OverlayToggle
+                          label="▦  Colour field"
+                          help="Inverse-distance-weighted blend of the 12 nearest dots' measured hex values."
+                          checked={colourField}
+                          onToggle={() => setColourField((v) => !v)}
+                          disabled={mode !== "bivariate"}
+                          disabledReason="Bivariate mode only"
+                        />
+                        <OverlayToggle
+                          label="◷  Contours · L*"
+                          help="Marching-squares iso-L* lines over a kNN-interpolated grid."
+                          checked={contours}
+                          onToggle={() => setContours((v) => !v)}
+                          disabled={mode !== "bivariate"}
+                          disabledReason="Bivariate mode only"
+                        />
+                        <OverlayToggle
+                          label="◯  Fade dots"
+                          help="Drops palette dots to ~28% so the overlays above read clearly."
+                          checked={fadeDots}
+                          onToggle={() => setFadeDots((v) => !v)}
+                        />
+                      </div>
+                    </section>
+                  ),
+                },
+              ]}
             />
-          </section>
-
-          <section>
-            <RailHeading>Neighbours</RailHeading>
-            <MetalBar variant="soft" className="mb-3" />
-            {focusedRow ? (
-              <ExposureNeighboursPanel
-                anchor={focusedRow}
-                candidates={displayRows}
-                onSelectNeighbour={(id) => {
-                  setTransientFocusId(null);
-                  setPinnedFocusId(id);
-                }}
-                onFilterFromNeighbour={handleFilterFromNeighbour}
-              />
-            ) : (
-              <p className="font-mono text-[10px] italic text-[color:var(--color-ink-subtle)]">
-                Focus an entry to see its neighbours.
-              </p>
-            )}
-          </section>
-
-          <section>
-            <RailHeading>Indices</RailHeading>
-            <MetalBar variant="soft" className="mb-3" />
-            <ExposureFocusedIndices row={focusedRow} />
-          </section>
-            </>
           )}
         </aside>
       </div>
@@ -1312,6 +1372,57 @@ function SubStat({ label, value }: { label: string; value: string }) {
         {value}
       </span>
     </div>
+  );
+}
+
+/* ── Color-tab overlay toggle row ──────────────────────────────────────── */
+
+function OverlayToggle({
+  label, help, checked, onToggle, disabled, disabledReason,
+}: {
+  label: string;
+  help: string;
+  checked: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+  disabledReason?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={onToggle}
+      title={disabled ? disabledReason : help}
+      className={
+        "flex items-center gap-2.5 px-2 py-1.5 rounded-sm border text-left transition-colors " +
+        (disabled
+          ? "border-[color:var(--color-border)] text-[color:var(--color-ink-subtle)] opacity-50 cursor-not-allowed"
+          : checked
+            ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
+            : "border-[color:var(--color-border)] text-[color:var(--color-ink)] hover:border-[color:var(--color-primary)]")
+      }
+    >
+      <span
+        aria-hidden
+        className={
+          "inline-block w-3 h-3 flex-none rounded-sm border " +
+          (disabled
+            ? "border-[color:var(--color-border-strong)] bg-transparent"
+            : checked
+              ? "border-white bg-white"
+              : "border-[color:var(--color-border-strong)] bg-[color:var(--color-surface)]")
+        }
+      >
+        {checked && !disabled && (
+          <svg viewBox="0 0 10 10" className="w-3 h-3">
+            <path d="M2 5.5l2 2 4-4.5" fill="none" stroke="var(--color-primary)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
+      <span className="flex-1 font-mono text-[10.5px] uppercase tracking-[0.14em]">{label}</span>
+    </button>
   );
 }
 
