@@ -101,6 +101,7 @@ export function computeCurve(
   xKey: IndexKey,
   yKey: IndexKey,
   laserLimits: LaserLimits,
+  crosshatch: boolean = false,
 ): CurveSample[] {
   const range = laserLimits[varyParam];
   const out: CurveSample[] = [];
@@ -110,7 +111,7 @@ export function computeCurve(
     const params: LaserParams = { ...anchor, [varyParam]: value };
     let indices;
     try {
-      indices = computeIndices(params);
+      indices = computeIndices(params, { crosshatch });
     } catch {
       // Skip points where the formula throws (e.g. zero denominators).
       continue;
@@ -382,12 +383,15 @@ export function partialDerivative(
   indexKey: IndexKey,
   paramKey: ParamKey | "passes" | "pulse_width",
   params: LaserParams,
+  crosshatch: boolean = false,
 ): number {
   const { power, speed, frequency, density, passes, pulse_width } = params;
+  const xh = crosshatch ? 2 : 1;
+  const effPasses = passes * xh;
 
   switch (indexKey) {
     case "pulse_spacing_mm": {
-      // PSm = speed / (frequency * 1000)
+      // PSm = speed / (frequency * 1000) — independent of crosshatch
       switch (paramKey) {
         case "speed":     return 1 / (frequency * 1000);
         case "frequency": return -speed / (frequency * frequency * 1000);
@@ -395,14 +399,14 @@ export function partialDerivative(
       }
     }
     case "line_spacing_mm": {
-      // LSm = 10 / density
+      // LSm = 10 / density — independent of crosshatch
       switch (paramKey) {
         case "density": return -10 / (density * density);
         default: return 0;
       }
     }
     case "pulse_energy_index": {
-      // PEi = power / frequency
+      // PEi = power / frequency — independent of crosshatch
       switch (paramKey) {
         case "power":     return 1 / frequency;
         case "frequency": return -power / (frequency * frequency);
@@ -410,7 +414,7 @@ export function partialDerivative(
       }
     }
     case "pulse_intensity_index": {
-      // PIi = power / (frequency * pulse_width)
+      // PIi = power / (frequency * pulse_width) — independent of crosshatch
       switch (paramKey) {
         case "power":       return 1 / (frequency * pulse_width);
         case "frequency":   return -power / (frequency * frequency * pulse_width);
@@ -419,36 +423,36 @@ export function partialDerivative(
       }
     }
     case "total_exposure_index": {
-      // TEi = power * density * passes / speed
+      // TEi = power * density * effPasses / speed
       switch (paramKey) {
-        case "power":   return density * passes / speed;
-        case "density": return power * passes / speed;
-        case "passes":  return power * density / speed;
-        case "speed":   return -power * density * passes / (speed * speed);
+        case "power":   return density * effPasses / speed;
+        case "density": return power * effPasses / speed;
+        case "passes":  return power * density * xh / speed;
+        case "speed":   return -power * density * effPasses / (speed * speed);
         default: return 0;
       }
     }
     case "ablation_aggression_index": {
-      // AAi = power² * density * passes / (speed * frequency * pulse_width)
+      // AAi = power² * density * effPasses / (speed * frequency * pulse_width)
       const denom = speed * frequency * pulse_width;
       switch (paramKey) {
-        case "power":       return 2 * power * density * passes / denom;
-        case "density":     return power * power * passes / denom;
-        case "passes":      return power * power * density / denom;
-        case "speed":       return -power * power * density * passes / (speed * denom);
-        case "frequency":   return -power * power * density * passes / (frequency * denom);
-        case "pulse_width": return -power * power * density * passes / (pulse_width * denom);
+        case "power":       return 2 * power * density * effPasses / denom;
+        case "density":     return power * power * effPasses / denom;
+        case "passes":      return power * power * density * xh / denom;
+        case "speed":       return -power * power * density * effPasses / (speed * denom);
+        case "frequency":   return -power * power * density * effPasses / (frequency * denom);
+        case "pulse_width": return -power * power * density * effPasses / (pulse_width * denom);
         default: return 0;
       }
     }
     case "delivery_smoothness_index": {
-      // DSi = density * passes * frequency * pulse_width / speed
+      // DSi = density * effPasses * frequency * pulse_width / speed
       switch (paramKey) {
-        case "density":     return passes * frequency * pulse_width / speed;
-        case "passes":      return density * frequency * pulse_width / speed;
-        case "frequency":   return density * passes * pulse_width / speed;
-        case "pulse_width": return density * passes * frequency / speed;
-        case "speed":       return -density * passes * frequency * pulse_width / (speed * speed);
+        case "density":     return effPasses * frequency * pulse_width / speed;
+        case "passes":      return density * xh * frequency * pulse_width / speed;
+        case "frequency":   return density * effPasses * pulse_width / speed;
+        case "pulse_width": return density * effPasses * frequency / speed;
+        case "speed":       return -density * effPasses * frequency * pulse_width / (speed * speed);
         default: return 0;
       }
     }
@@ -471,6 +475,7 @@ export function fillByForwardGrid(
   yKey: IndexKey,
   laserLimits: LaserLimits,
   n: number,
+  crosshatch: boolean = false,
 ): FillCell[] {
   const [a, b] = varyParams;
   const aRange = laserLimits[a];
@@ -486,7 +491,7 @@ export function fillByForwardGrid(
       const params: LaserParams = { ...anchor, [a]: aValue, [b]: bValue };
       let indices;
       try {
-        indices = computeIndices(params);
+        indices = computeIndices(params, { crosshatch });
       } catch {
         continue;
       }
@@ -652,6 +657,7 @@ export function inverseSolve(
   xKey: IndexKey,
   yKey: IndexKey,
   laserLimits: LaserLimits,
+  crosshatch: boolean = false,
 ): LaserParams | null {
   const [p1, p2] = varyParams;
   const params: LaserParams = { ...baseParams };
@@ -659,7 +665,7 @@ export function inverseSolve(
   for (let iter = 0; iter < INVERSE_SOLVE_MAX_ITERS; iter++) {
     let current: LaserIndices;
     try {
-      current = computeIndices(params);
+      current = computeIndices(params, { crosshatch });
     } catch {
       return null;
     }
@@ -669,10 +675,10 @@ export function inverseSolve(
       return params;
     }
 
-    const j00 = partialDerivative(xKey, p1, params);
-    const j01 = partialDerivative(xKey, p2, params);
-    const j10 = partialDerivative(yKey, p1, params);
-    const j11 = partialDerivative(yKey, p2, params);
+    const j00 = partialDerivative(xKey, p1, params, crosshatch);
+    const j01 = partialDerivative(xKey, p2, params, crosshatch);
+    const j10 = partialDerivative(yKey, p1, params, crosshatch);
+    const j11 = partialDerivative(yKey, p2, params, crosshatch);
     const det = j00 * j11 - j01 * j10;
     if (Math.abs(det) < INVERSE_SOLVE_DET_EPS) {
       return null;
@@ -698,18 +704,19 @@ export function fillByInverseSolve(
   laserLimits: LaserLimits,
   n: number,
   knownPoints: ReadonlyArray<{ x: number; y: number }>,
+  crosshatch: boolean = false,
 ): FillCell[] {
   const targets = samplePolygonArea(polygon, n, knownPoints);
   const [p1, p2] = varyParams;
   const out: FillCell[] = [];
 
   for (const t of targets) {
-    const solved = inverseSolve(t, varyParams, baseParams, xKey, yKey, laserLimits);
+    const solved = inverseSolve(t, varyParams, baseParams, xKey, yKey, laserLimits, crosshatch);
     if (solved === null) continue;
 
     let verify: LaserIndices;
     try {
-      verify = computeIndices(solved);
+      verify = computeIndices(solved, { crosshatch });
     } catch {
       continue;
     }

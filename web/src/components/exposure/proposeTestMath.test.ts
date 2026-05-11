@@ -568,3 +568,45 @@ describe("fillByInverseSolve", () => {
     expect(cells.length).toBe(0);
   });
 });
+
+describe("partialDerivative crosshatch", () => {
+  const params: LaserParams = {
+    power: 14.6, speed: 1152, frequency: 100, density: 5000, passes: 1, pulse_width: 200,
+  };
+
+  it("doubles ∂TEi/∂param for power, density, speed when crosshatch is true", () => {
+    const keys = ["power", "density", "speed"] as const;
+    for (const k of keys) {
+      const a = partialDerivative("total_exposure_index", k, params, false);
+      const b = partialDerivative("total_exposure_index", k, params, true);
+      expect(b).toBeCloseTo(a * 2, 6);
+    }
+  });
+
+  it("doubles ∂TEi/∂passes when crosshatch is true (chain rule)", () => {
+    const a = partialDerivative("total_exposure_index", "passes", params, false);
+    const b = partialDerivative("total_exposure_index", "passes", params, true);
+    expect(b).toBeCloseTo(a * 2, 6);
+  });
+
+  it("leaves ∂PEi/∂param unchanged when crosshatch is true", () => {
+    const a = partialDerivative("pulse_energy_index", "power", params, false);
+    const b = partialDerivative("pulse_energy_index", "power", params, true);
+    expect(b).toBeCloseTo(a, 6);
+  });
+});
+
+describe("computeCurve crosshatch", () => {
+  it("doubles TEi values for the same param sweep when crosshatch is true", () => {
+    const base: LaserParams = {
+      power: 14.6, speed: 1152, frequency: 100, density: 5000, passes: 1, pulse_width: 200,
+    };
+    const curveA = computeCurve(base, "power", "total_exposure_index", "pulse_intensity_index", F2_LIMITS, false);
+    const curveB = computeCurve(base, "power", "total_exposure_index", "pulse_intensity_index", F2_LIMITS, true);
+    // PIi is independent of crosshatch → same y. TEi doubles → x doubles.
+    for (let i = 0; i < curveA.length; i++) {
+      expect(curveB[i].y).toBeCloseTo(curveA[i].y, 6);
+      expect(curveB[i].x).toBeCloseTo(curveA[i].x * 2, 4);
+    }
+  });
+});
