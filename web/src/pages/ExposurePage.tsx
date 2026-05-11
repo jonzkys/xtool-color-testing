@@ -116,6 +116,18 @@ const F2_MOPA_LIMITS: LaserLimits = {
   density:   { min: 1,  max: 5000,  step: 1 },
 };
 
+/** Snap a free-precision value to the controller's step + clamp to
+ *  [min, max]. The inverse solver in proposeTestMath returns floats
+ *  like 249.87 kHz; the machine accepts integer kHz, so we snap
+ *  before persisting cell.params. */
+function snapToLimits(v: number, range: { min: number; max: number; step: number }): number {
+  const snapped = Math.round(v / range.step) * range.step;
+  const clamped = Math.min(range.max, Math.max(range.min, snapped));
+  // Use toFixed to avoid float dust like 249.9999999999 when step is 1.
+  const decimals = Math.max(0, -Math.floor(Math.log10(range.step)));
+  return Number(clamped.toFixed(decimals));
+}
+
 const PROPOSE_PARAM_LABELS: Record<ParamKey, { name: string; unit: string }> = {
   power:     { name: "POWER",   unit: "%" },
   speed:     { name: "SPEED",   unit: "mm/s" },
@@ -697,10 +709,41 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
 
     // Build per-cell parameter overrides — a curve mode varies one
     // param along arc-length; a fill samples two params at once.
+    //
+    // Two cleanups vs. an earlier shape:
+    //
+    // 1. Write the FULL effective recipe per cell — power, speed,
+    //    frequency, density, passes, pulse_width all present, with the
+    //    varied params overlaid on the anchor's base. Matches how
+    //    palette entries store their recipes, so a single
+    //    `validation_cell.params` row is now a complete description of
+    //    what the laser will burn. Previously we wrote only the varied
+    //    keys, leaving the rest implicit (merged from base at burn
+    //    time) — which made the data incomplete when read in isolation.
+    //
+    // 2. Snap every solved value to the controller's step. The inverse
+    //    solver returns floats (e.g. freq=249.87 kHz, speed=2073.72 mm/s);
+    //    the laser only accepts the stepped values, so the burn would
+    //    round these anyway. Snapping now means the persisted recipe
+    //    matches what actually gets burned.
+    const fullBase: Record<string, number> = {
+      power: baseParamsAnchor.power,
+      speed: baseParamsAnchor.speed,
+      frequency: baseParamsAnchor.frequency,
+      density: baseParamsAnchor.density,
+      passes: baseParamsAnchor.passes,
+      pulse_width: baseParamsAnchor.pulse_width,
+    };
     const validationCells = preview.cells.map((c, i) => {
-      const cellParams: Record<string, number> = effective.mode === "curve"
+      const raw: Record<string, number> = effective.mode === "curve"
         ? { [effective.varyParam]: (c as CurveSample).paramValue }
         : { ...(c as FillCell).paramValues } as Record<string, number>;
+      const merged: Record<string, number> = { ...fullBase, ...raw };
+      const cellParams: Record<string, number> = {};
+      for (const [k, v] of Object.entries(merged)) {
+        const limit = (F2_MOPA_LIMITS as Record<string, { min: number; max: number; step: number } | undefined>)[k];
+        cellParams[k] = limit ? snapToLimits(v, limit) : v;
+      }
       return { params: cellParams, index: i };
     });
 

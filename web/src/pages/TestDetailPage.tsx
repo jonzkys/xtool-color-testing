@@ -583,6 +583,7 @@ export function TestDetailPage({ testId }: Props) {
                 ? [
                     { id: "test", label: "Test" },
                     { id: "palette", label: "Palette" },
+                    { id: "recipes", label: "Recipes" },
                     { id: "registration", label: "Registration" },
                   ]
                 : [
