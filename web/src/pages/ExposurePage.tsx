@@ -46,6 +46,7 @@ import {
   type ExposureRailTabId,
   useRailTabUrlSync,
 } from "../components/exposure/ExposureRailTabs";
+import { ExposureUnderGraphPills } from "../components/exposure/ExposureUnderGraphPills";
 import { ExposureToolbar } from "../components/exposure/ExposureToolbar";
 import { useFiltersUrlSync } from "../components/exposure/exposureFiltersUrl";
 import {
@@ -1027,6 +1028,11 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   fadeDots={fadeDots}
                 />
               </div>
+
+              {/* Under-graph pill bar — one-click toggles that always
+                  live in the chart's gravitational field rather than
+                  buried in the Filters tab. */}
+              <ExposureUnderGraphPills filters={filters} onChange={setFilters} />
 
               {/* Stats hero echo — always-glanceable headline of the
                   three numbers users actually skim. Full breakdown lives
