@@ -1,7 +1,7 @@
 import {
   DEFAULT_FILTERS, FILTERABLE_PARAMS,
-  type ActiveFilters, type FilterableParam,
-  type SourceKind, type TestSummary,
+  type ActiveFilters, type AngleModeFilter, type FilterableParam,
+  type SourceKind, type TestSummary, type TriStateFlag,
 } from "./exposureFilters";
 import { ExposureRangeSlider } from "./ExposureRangeSlider";
 
@@ -137,6 +137,25 @@ export function ExposureFilterPanel({
         </div>
       </Section>
 
+      <Section title="Burn settings">
+        <div className="flex flex-col gap-2">
+          <TriStateRow
+            label="Crosshatch"
+            value={f.crosshatch}
+            onChange={(v) => onChange({ ...f, crosshatch: v })}
+          />
+          <TriStateRow
+            label="Unidirectional"
+            value={f.unidirectional}
+            onChange={(v) => onChange({ ...f, unidirectional: v })}
+          />
+          <AngleModeRow
+            value={f.angleMode}
+            onChange={(v) => onChange({ ...f, angleMode: v })}
+          />
+        </div>
+      </Section>
+
       <Section title="Recipe family">
         {f.family ? (
           <div className="flex items-center gap-2 font-mono text-[10.5px]">
@@ -187,6 +206,67 @@ export function ExposureFilterPanel({
       >
         Clear all filters
       </button>
+    </div>
+  );
+}
+
+function SegmentedButton<T extends string>({
+  label, value, active, onClick,
+}: { label: string; value: T; active: boolean; onClick: (v: T) => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={() => onClick(value)}
+      className={
+        "flex-1 px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.16em] rounded-sm border " +
+        (active
+          ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
+          : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-primary)]")
+      }
+    >
+      {label}
+    </button>
+  );
+}
+
+function TriStateRow({
+  label, value, onChange,
+}: {
+  label: string;
+  value: TriStateFlag;
+  onChange: (v: TriStateFlag) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2" data-row={label.toLowerCase()}>
+      <span className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-[color:var(--color-ink-muted)] w-[100px] flex-none">
+        {label}
+      </span>
+      <div className="flex gap-1 flex-1">
+        <SegmentedButton label="Any" value="any" active={value === "any"} onClick={onChange} />
+        <SegmentedButton label="Yes" value="yes" active={value === "yes"} onClick={onChange} />
+        <SegmentedButton label="No" value="no" active={value === "no"} onClick={onChange} />
+      </div>
+    </div>
+  );
+}
+
+function AngleModeRow({
+  value, onChange,
+}: {
+  value: AngleModeFilter;
+  onChange: (v: AngleModeFilter) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2" data-row="angle_mode">
+      <span className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-[color:var(--color-ink-muted)] w-[100px] flex-none">
+        Angle mode
+      </span>
+      <div className="flex gap-1 flex-1">
+        <SegmentedButton label="Any" value="any" active={value === "any"} onClick={onChange} />
+        <SegmentedButton label="Fixed" value="fixed" active={value === "fixed"} onClick={onChange} />
+        <SegmentedButton label="Incr." value="incremental" active={value === "incremental"} onClick={onChange} />
+      </div>
     </div>
   );
 }

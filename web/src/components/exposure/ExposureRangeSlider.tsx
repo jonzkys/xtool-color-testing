@@ -15,6 +15,7 @@ const PARAM_LABEL: Record<FilterableParam, string> = {
   pulse_width: "PULSE WIDTH",
   density: "DENSITY",
   passes: "PASSES",
+  scan_angle: "SCAN ANGLE",
 };
 
 const PARAM_UNIT: Record<FilterableParam, string> = {
@@ -24,6 +25,7 @@ const PARAM_UNIT: Record<FilterableParam, string> = {
   pulse_width: "ns",
   density: "lpc",
   passes: "",
+  scan_angle: "°",
 };
 
 function isLogScale(domain: { min: number; max: number }): boolean {

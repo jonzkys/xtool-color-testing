@@ -23,6 +23,7 @@ describe("ExposureFilterPanel", () => {
           power: { min: 1, max: 100 }, speed: { min: 200, max: 1000 },
           frequency: { min: 30, max: 60 }, pulse_width: { min: 100, max: 400 },
           density: { min: 50, max: 5000 }, passes: { min: 1, max: 4 },
+          scan_angle: { min: 0, max: 360 },
         }}
       />,
     );
@@ -41,7 +42,7 @@ describe("ExposureFilterPanel", () => {
       <ExposureFilterPanel filters={f} onChange={onChange} tests={TESTS}
         dataRanges={{
           power: null, speed: null, frequency: null,
-          pulse_width: null, density: null, passes: null,
+          pulse_width: null, density: null, passes: null, scan_angle: null,
         }} />,
     );
     fireEvent.click(screen.getByText(/clear all/i));
@@ -54,7 +55,7 @@ describe("ExposureFilterPanel", () => {
       <ExposureFilterPanel filters={DEFAULT_FILTERS} onChange={onChange}
         tests={TESTS} dataRanges={{
           power: null, speed: null, frequency: null,
-          pulse_width: null, density: null, passes: null,
+          pulse_width: null, density: null, passes: null, scan_angle: null,
         }} />,
     );
     fireEvent.click(screen.getByLabelText(/validated only/i));

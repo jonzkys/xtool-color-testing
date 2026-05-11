@@ -15,7 +15,7 @@ export interface ExposureRow {
   /** The raw laser params from PaletteEntry.params. Optional because
    *  not every consumer of ExposureRow needs them — ExposureFocusedCard
    *  does, the math helpers don't. */
-  params?: Record<string, number | string>;
+  params?: Record<string, number | string | boolean | null>;
   /** Source test that produced this entry, if any. Manual entries
    *  have null. Used by the focused-card's "Source test" link. */
   test_id?: number | null;
