@@ -40,12 +40,17 @@ function fmt(v: unknown, unit: string, integer = false): string {
 
 function effectiveValue(
   cell: ValidationCell, base: BaseParams | null | undefined, key: keyof BaseParams,
-): { value: unknown; overridden: boolean } {
-  const override = cell.params?.[key as string];
-  if (override !== undefined && override !== null) {
-    return { value: override, overridden: true };
+): { value: unknown; differsFromBase: boolean } {
+  const cellVal = cell.params?.[key as string];
+  const baseVal = base?.[key];
+  if (cellVal !== undefined && cellVal !== null) {
+    // Compare numerically when possible; otherwise strict.
+    const same = typeof cellVal === "number" && typeof baseVal === "number"
+      ? cellVal === baseVal
+      : cellVal === baseVal;
+    return { value: cellVal, differsFromBase: !same };
   }
-  return { value: base?.[key], overridden: false };
+  return { value: baseVal, differsFromBase: false };
 }
 
 export function ExposureRecipesTab({ baseParams, validationCells }: Props) {
@@ -56,20 +61,20 @@ export function ExposureRecipesTab({ baseParams, validationCells }: Props) {
 
   // Which fields actually vary across cells? Headers for these get
   // primary-tinted to draw the eye to the per-cell values that matter.
+  // Works whether cell.params carries the full recipe or only the
+  // varied keys (legacy tests created before the full-recipe fix).
   const variedFields = React.useMemo(() => {
     const out = new Set<string>();
     for (const f of NUMERIC_FIELDS) {
-      let seenOverride = false;
       let allSame: unknown = undefined;
       let allSameValid = true;
       for (const c of cells) {
         const v = c.params?.[f.key as string];
-        if (v !== undefined && v !== null) seenOverride = true;
         const eff = v !== undefined && v !== null ? v : baseParams?.[f.key];
         if (allSame === undefined) allSame = eff;
-        else if (eff !== allSame) allSameValid = false;
+        else if (eff !== allSame) { allSameValid = false; break; }
       }
-      if (seenOverride && !allSameValid) out.add(f.key as string);
+      if (!allSameValid) out.add(f.key as string);
     }
     return out;
   }, [cells, baseParams]);
@@ -156,17 +161,17 @@ export function ExposureRecipesTab({ baseParams, validationCells }: Props) {
                   </span>
                 </td>
                 {NUMERIC_FIELDS.map((f) => {
-                  const { value, overridden } = effectiveValue(c, baseParams, f.key);
+                  const { value, differsFromBase } = effectiveValue(c, baseParams, f.key);
                   return (
                     <td
                       key={f.key as string}
                       className={
                         "px-2 py-1 text-right " +
-                        (overridden
+                        (differsFromBase
                           ? "text-[color:var(--color-primary)] font-semibold bg-[color:var(--color-primary-tint)]/40"
                           : "text-[color:var(--color-ink)]")
                       }
-                      title={overridden ? "Per-cell override" : "Inherited from base params"}
+                      title={differsFromBase ? "Differs from base" : "Matches base"}
                     >
                       {fmt(value, f.unit, f.integer)}
                     </td>
@@ -178,11 +183,11 @@ export function ExposureRecipesTab({ baseParams, validationCells }: Props) {
         </table>
       </div>
       <p className="font-mono text-[10px] text-[color:var(--color-ink-subtle)] leading-relaxed px-1 max-w-[80ch]">
-        Per-cell overrides ({" "}
+        Tinted cells ({" "}
         <span className="inline-block w-1.5 h-1.5 rounded-sm bg-[color:var(--color-primary-tint)] border border-[color:var(--color-primary)] align-middle" />{" "}
-        ) take precedence over the test's base params; un-tinted cells
-        inherit from base. Numbers shown are exactly what the laser
-        will receive at burn time.
+        ) differ from the test's base parameters; un-tinted cells
+        match base. Numbers shown are exactly what the laser will
+        receive at burn time.
       </p>
     </div>
   );
