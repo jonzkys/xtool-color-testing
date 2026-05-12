@@ -88,6 +88,27 @@ export interface ParamRange {
 
 export type LaserLimits = Record<ParamKey, ParamRange>;
 
+/** Numeric params the forward-sample algorithm draws from. Distinct
+ *  from ``ParamKey`` (four-param subset used by the legacy inverse
+ *  solver / curve mode). */
+export type SampleableKey =
+  | "power" | "speed" | "frequency" | "density"
+  | "pulse_width" | "passes";
+
+export const SAMPLEABLE_KEYS: readonly SampleableKey[] = [
+  "power", "speed", "frequency", "density", "pulse_width", "passes",
+];
+
+export interface ForwardSampleConstraints {
+  /** Per-param min/max (after merging machine limits + filter
+   *  overrides + user min/max sliders). When ``min === max`` the
+   *  param is pinned to that value. */
+  ranges: Record<SampleableKey, { min: number; max: number }>;
+  /** ``"varies"`` (default) — sample crosshatch ~Bernoulli(0.5).
+   *  ``"on"`` / ``"off"`` — pin every candidate to that value. */
+  crosshatch: "varies" | "on" | "off";
+}
+
 export interface CurveSample {
   paramValue: number;
   x: number;
