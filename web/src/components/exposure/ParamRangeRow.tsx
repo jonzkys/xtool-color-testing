@@ -36,13 +36,135 @@ function formatValue(v: number | null | undefined, unit: string): string {
   return `${v.toFixed(2)}${u}`;
 }
 
+/** Compact numeric formatter for the in-field readout (no unit, since
+ *  the value sits beside the slider and the unit lives on the label).
+ *  Mirrors ``formatValue`` precision rules so the displayed text reads
+ *  identically to the pinned-mode collapsed line. */
+function formatBare(v: number): string {
+  if (!Number.isFinite(v)) return "";
+  if (Math.abs(v) >= 1000) return `${Math.round(v)}`;
+  if (Math.abs(v) >= 100) return `${v.toFixed(0)}`;
+  if (Math.abs(v) >= 10) return `${v.toFixed(1)}`;
+  if (Number.isInteger(v)) return `${v}`;
+  return `${v.toFixed(2)}`;
+}
+
+/** Click-to-edit numeric readout. Looks like a quiet monospaced label
+ *  at rest — no border, no spinner arrows, transparent background —
+ *  and reveals an editable affordance (hairline underline) on hover /
+ *  focus. The underlying element is always an ``<input type="number">``
+ *  so that existing tests (which fire ``change`` events against the
+ *  aria-labeled element) continue to pass without a click step.
+ *
+ *  Commit semantics:
+ *    - typing keeps the local string buffer mutable;
+ *    - Enter / blur calls ``onCommit`` with the parsed number;
+ *    - Escape reverts to the prop value;
+ *    - the field auto-selects on focus so a single click + type
+ *      replaces the old value cleanly. */
+interface EditableValueProps {
+  ariaLabel: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  /** True when the value sits at a machine extreme (no user narrowing
+   *  on this side) — used to mute the colour so the eye is drawn to
+   *  the side the user has actually constrained. */
+  atBound: boolean;
+  align: "left" | "right";
+  onCommit: (raw: string) => void;
+}
+
+const EditableValue: React.FC<EditableValueProps> = ({
+  ariaLabel,
+  value,
+  min,
+  max,
+  step,
+  atBound,
+  align,
+  onCommit,
+}) => {
+  const [buf, setBuf] = React.useState<string>(formatBare(value));
+  const [focused, setFocused] = React.useState(false);
+
+  // Sync from upstream when not actively editing — keeps slider drags
+  // and resets visible without clobbering mid-typed text.
+  React.useEffect(() => {
+    if (!focused) setBuf(formatBare(value));
+  }, [value, focused]);
+
+  const colour = focused
+    ? "text-[color:var(--color-primary)]"
+    : atBound
+      ? "text-[color:var(--color-ink-subtle)]"
+      : "text-[color:var(--color-ink)]";
+
+  const underline = focused
+    ? "border-[color:var(--color-primary)]"
+    : "border-transparent hover:border-[color:var(--color-ink-subtle)]";
+
+  return (
+    <input
+      type="number"
+      aria-label={ariaLabel}
+      value={buf}
+      min={min}
+      max={max}
+      step={step}
+      onChange={(e) => {
+        setBuf(e.target.value);
+        // Fire commit immediately so the parent state (and tests) see
+        // every keystroke — matches the previous component's contract.
+        onCommit(e.target.value);
+      }}
+      onFocus={(e) => {
+        setFocused(true);
+        // Defer select so the caret-on-click case still works.
+        const el = e.currentTarget;
+        requestAnimationFrame(() => {
+          try { el.select(); } catch { /* noop */ }
+        });
+      }}
+      onBlur={() => {
+        setFocused(false);
+        // Snap the buffer back to the canonical formatted value so the
+        // user sees the clamped result rather than their raw input.
+        setBuf(formatBare(value));
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          (e.currentTarget as HTMLInputElement).blur();
+        } else if (e.key === "Escape") {
+          setBuf(formatBare(value));
+          (e.currentTarget as HTMLInputElement).blur();
+        }
+      }}
+      className={
+        "w-[44px] flex-none font-mono text-[10px] tabular-nums leading-none " +
+        "bg-transparent border-0 border-b border-dotted " +
+        "px-0 py-0.5 cursor-text focus:outline-none " +
+        "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none " +
+        `${align === "right" ? "text-right" : "text-left"} ` +
+        `${colour} ${underline} transition-colors`
+      }
+    />
+  );
+};
+
 /** Single row in the unified PARAMS section. When ``vary`` is on the
  *  row stacks into two lines: a top line with the label on the left
  *  and the vary toggle pill on the right, and a bottom line with the
- *  min text input, the Radix two-thumb range slider (full width), and
- *  the max text input. When off it collapses to a single line: label
+ *  min readout, the Radix two-thumb range slider (full width), and
+ *  the max readout. When off it collapses to a single line: label
  *  + pinned value + vary toggle. The toggle pill is always visible so
  *  the user can re-expand the row.
+ *
+ *  The min / max readouts are click-to-edit ``EditableValue`` fields
+ *  — they look like quiet monospaced labels at rest and reveal an
+ *  editable underline on hover / focus, so the slider remains the
+ *  dominant interaction.
  *
  *  Cross-clamping is handled here: typing a min greater than the
  *  current ``rangeMax`` snaps min up to that max and leaves max alone;
@@ -63,19 +185,7 @@ export const ParamRangeRow: React.FC<ParamRangeRowProps> = ({
   onRangeChange,
   onVaryChange,
 }) => {
-  // Local string state for the min/max text boxes — keeps the input
-  // editable while the user is mid-typing without immediately echoing
-  // a (clamped) numeric value back into the field.
-  const [minStr, setMinStr] = React.useState<string>(String(rangeMin));
-  const [maxStr, setMaxStr] = React.useState<string>(String(rangeMax));
-
-  // Sync local input state when the row's props change (e.g. reset or
-  // slider drag updates the canonical range).
-  React.useEffect(() => { setMinStr(String(rangeMin)); }, [rangeMin]);
-  React.useEffect(() => { setMaxStr(String(rangeMax)); }, [rangeMax]);
-
   const commitMin = (raw: string) => {
-    setMinStr(raw);
     if (raw === "") return;
     const n = Number(raw);
     if (!Number.isFinite(n)) return;
@@ -87,7 +197,6 @@ export const ParamRangeRow: React.FC<ParamRangeRowProps> = ({
   };
 
   const commitMax = (raw: string) => {
-    setMaxStr(raw);
     if (raw === "") return;
     const n = Number(raw);
     if (!Number.isFinite(n)) return;
@@ -135,6 +244,11 @@ export const ParamRangeRow: React.FC<ParamRangeRowProps> = ({
     );
   }
 
+  // Strict equality is intentional: a value that's been dragged off the
+  // bound and then back onto it should read as "at bound" again.
+  const minAtBound = rangeMin <= machineMin;
+  const maxAtBound = rangeMax >= machineMax;
+
   // vary === true: stack into two lines so the slider gets the full row width.
   return (
     <div className="flex flex-col gap-0.5 min-w-0" data-row={paramKey}>
@@ -142,21 +256,26 @@ export const ParamRangeRow: React.FC<ParamRangeRowProps> = ({
       <div className="flex items-center gap-2 min-w-0">
         <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] flex-1 min-w-0 truncate">
           {label}
+          {unit ? (
+            <span className="ml-1 text-[color:var(--color-ink-subtle)] normal-case tracking-normal">
+              {unit}
+            </span>
+          ) : null}
         </div>
         {varyToggle}
       </div>
 
-      {/* Bottom line: min textbox | full-width slider | max textbox */}
+      {/* Bottom line: min readout | full-width slider | max readout */}
       <div className="flex items-center gap-2 min-w-0">
-        <input
-          type="number"
-          aria-label={`${paramKey} minimum`}
-          value={minStr}
+        <EditableValue
+          ariaLabel={`${paramKey} minimum`}
+          value={rangeMin}
           min={machineMin}
           max={machineMax}
           step={step}
-          onChange={(e) => commitMin(e.target.value)}
-          className="w-[48px] flex-none font-mono text-[10px] tabular-nums px-1 h-[20px] rounded-sm border border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-ink)] focus:outline-none focus:border-[color:var(--color-primary)]"
+          atBound={minAtBound}
+          align="left"
+          onCommit={commitMin}
         />
         <Slider.Root
           value={[rangeMin, rangeMax]}
@@ -182,15 +301,15 @@ export const ParamRangeRow: React.FC<ParamRangeRowProps> = ({
             className="block w-3 h-3 rounded-full bg-[color:var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--color-primary)] focus:ring-offset-1"
           />
         </Slider.Root>
-        <input
-          type="number"
-          aria-label={`${paramKey} maximum`}
-          value={maxStr}
+        <EditableValue
+          ariaLabel={`${paramKey} maximum`}
+          value={rangeMax}
           min={machineMin}
           max={machineMax}
           step={step}
-          onChange={(e) => commitMax(e.target.value)}
-          className="w-[48px] flex-none font-mono text-[10px] tabular-nums px-1 h-[20px] rounded-sm border border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-ink)] focus:outline-none focus:border-[color:var(--color-primary)]"
+          atBound={maxAtBound}
+          align="right"
+          onCommit={commitMax}
         />
       </div>
     </div>
