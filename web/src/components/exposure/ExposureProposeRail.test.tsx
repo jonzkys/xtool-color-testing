@@ -246,4 +246,15 @@ describe("ExposureProposeRail CONSTRAINTS — crosshatch / passes", () => {
     expect(screen.getByLabelText(/passes minimum/i)).toHaveValue(1);
     expect(screen.getByLabelText(/passes maximum/i)).toHaveValue(4);
   });
+
+  it("cross-clamps passes min/max (typing min > max bumps max)", () => {
+    const onPassesRangeChange = vi.fn();
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      passesRange={{ min: 1, max: 4 }}
+      onPassesRangeChange={onPassesRangeChange}
+    />);
+    fireEvent.change(screen.getByLabelText(/passes minimum/i), { target: { value: "8" } });
+    expect(onPassesRangeChange).toHaveBeenCalledWith({ min: 8, max: 8 });
+  });
 });

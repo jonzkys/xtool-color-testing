@@ -451,13 +451,15 @@ export const ExposureProposeRail: React.FC<Props> = ({
               min={1}
               max={99}
               onChange={(e) => {
-                const v = Number(e.target.value);
-                if (Number.isFinite(v)) {
-                  onPassesRangeChange({
-                    ...passesRange,
-                    min: Math.max(1, Math.min(99, Math.round(v))),
-                  });
-                }
+                const raw = e.target.value;
+                if (raw === "") return;
+                const v = Number(raw);
+                if (!Number.isFinite(v)) return;
+                const clamped = Math.max(1, Math.min(99, Math.round(v)));
+                onPassesRangeChange({
+                  min: clamped,
+                  max: Math.max(clamped, passesRange.max),
+                });
               }}
               className="flex-1 min-w-0 font-mono text-[10px] tabular-nums px-1.5 h-[20px] rounded-sm border border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-ink)] focus:outline-none focus:border-[color:var(--color-primary)]"
             />
@@ -469,13 +471,15 @@ export const ExposureProposeRail: React.FC<Props> = ({
               min={1}
               max={99}
               onChange={(e) => {
-                const v = Number(e.target.value);
-                if (Number.isFinite(v)) {
-                  onPassesRangeChange({
-                    ...passesRange,
-                    max: Math.max(1, Math.min(99, Math.round(v))),
-                  });
-                }
+                const raw = e.target.value;
+                if (raw === "") return;
+                const v = Number(raw);
+                if (!Number.isFinite(v)) return;
+                const clamped = Math.max(1, Math.min(99, Math.round(v)));
+                onPassesRangeChange({
+                  min: Math.min(passesRange.min, clamped),
+                  max: clamped,
+                });
               }}
               className="flex-1 min-w-0 font-mono text-[10px] tabular-nums px-1.5 h-[20px] rounded-sm border border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-ink)] focus:outline-none focus:border-[color:var(--color-primary)]"
             />
