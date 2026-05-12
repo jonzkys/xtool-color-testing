@@ -896,20 +896,43 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   // direct-add paths (e.g. drag-to-filter on the chart).
   void addClause;
 
-  // Limits passed to the propose rail. Extends `effectiveLaserLimits`
-  // (machine + filter + slider overrides on the four `ParamKey` params)
-  // with the static `pulse_width` preset window and the controller's
-  // hard `passes` cap so the rail's min/max sliders for those two new
-  // params clamp to sensible values.
-  const proposeRailLimits = useMemo(() => ({
-    ...effectiveLaserLimits,
-    pulse_width: {
-      min: ALLOWED_PULSE_WIDTHS[0],
-      max: ALLOWED_PULSE_WIDTHS[ALLOWED_PULSE_WIDTHS.length - 1],
-      step: 1,
-    },
-    passes: { min: 1, max: 99, step: 1 },
-  }), [effectiveLaserLimits]);
+  // Limits passed to the propose rail. The slider's machine min/max
+  // must be the WIDEST window the user can drag to — i.e. the raw
+  // machine limits, optionally narrowed by *filter-driven* clauses
+  // (the user opted in to those via "Use active filters"), but NOT
+  // by `proposeLimitOverrides`. The overrides ARE the user's slider
+  // position; folding them back in would mean every drag shrinks the
+  // bounds, leaving the slider stuck at its narrowest position with
+  // no way to widen again. The forward sampler still applies the
+  // overrides independently in `forwardConstraints`.
+  const proposeRailLimits = useMemo(() => {
+    const base: LaserLimits = {
+      power:     { ...F2_MOPA_LIMITS.power },
+      speed:     { ...F2_MOPA_LIMITS.speed },
+      frequency: { ...F2_MOPA_LIMITS.frequency },
+      density:   { ...F2_MOPA_LIMITS.density },
+    };
+    for (const p of ["power", "speed", "frequency", "density"] as const) {
+      const ov = filterDrivenLimitOverrides[p];
+      if (!ov) continue;
+      if (ov.min !== undefined && Number.isFinite(ov.min)) {
+        base[p].min = Math.max(base[p].min, ov.min);
+      }
+      if (ov.max !== undefined && Number.isFinite(ov.max)) {
+        base[p].max = Math.min(base[p].max, ov.max);
+      }
+      if (base[p].min > base[p].max) base[p].min = base[p].max;
+    }
+    return {
+      ...base,
+      pulse_width: {
+        min: ALLOWED_PULSE_WIDTHS[0],
+        max: ALLOWED_PULSE_WIDTHS[ALLOWED_PULSE_WIDTHS.length - 1],
+        step: 1,
+      },
+      passes: { min: 1, max: 99, step: 1 },
+    };
+  }, [filterDrivenLimitOverrides]);
 
   const closeProposeWizard = useCallback(() => {
     setProposeMode("off");

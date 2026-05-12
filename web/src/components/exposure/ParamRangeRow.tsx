@@ -254,6 +254,7 @@ export const ParamRangeRow: React.FC<ParamRangeRowProps> = ({
         </div>
         <div className="flex-1 min-w-0 flex items-center justify-end gap-1">
           <EditableValue
+            key="pinned"
             ariaLabel={`${paramKey} value`}
             value={effectivePinned}
             min={machineMin}
@@ -305,6 +306,7 @@ export const ParamRangeRow: React.FC<ParamRangeRowProps> = ({
       {/* Bottom line: min readout | full-width slider | max readout */}
       <div className="flex items-center gap-2 min-w-0">
         <EditableValue
+          key="min"
           ariaLabel={`${paramKey} minimum`}
           value={rangeMin}
           min={machineMin}
@@ -339,6 +341,7 @@ export const ParamRangeRow: React.FC<ParamRangeRowProps> = ({
           />
         </Slider.Root>
         <EditableValue
+          key="max"
           ariaLabel={`${paramKey} maximum`}
           value={rangeMax}
           min={machineMin}

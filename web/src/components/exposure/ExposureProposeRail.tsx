@@ -626,17 +626,21 @@ export const ExposureProposeRail: React.FC<Props> = ({
             </div>
           </div>
 
-          <label className="flex items-center gap-2 cursor-pointer" data-row="crosshatch">
-            <input
-              type="checkbox"
-              checked={burnSettings.crosshatch}
-              onChange={(e) => onBurnSettingChange("crosshatch", e.target.checked)}
-              aria-label="Crosshatch"
-            />
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)]">
-              Crosshatch
-            </span>
-          </label>
+          {/* Fill mode has its own crosshatch tri-state inside the PARAMS
+              section — don't show this legacy checkbox there too. */}
+          {!isFill && (
+            <label className="flex items-center gap-2 cursor-pointer" data-row="crosshatch">
+              <input
+                type="checkbox"
+                checked={burnSettings.crosshatch}
+                onChange={(e) => onBurnSettingChange("crosshatch", e.target.checked)}
+                aria-label="Crosshatch"
+              />
+              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)]">
+                Crosshatch
+              </span>
+            </label>
+          )}
 
           <div className="flex items-center gap-2 min-w-0" data-row="angle_mode">
             <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[76px] flex-none truncate">
