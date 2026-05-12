@@ -236,6 +236,25 @@ function buildParamRows(
 }
 
 
+/** Merge a FillCell's per-cell params (incl. passes + crosshatch) into
+ *  the test's base recipe. Pure; snapping/clamping is the caller's job.
+ *
+ *  ``cell.paramValues`` overrides base on a per-key basis (this is what
+ *  the forward-sampler writes per cell). If the cell carries an explicit
+ *  ``passes`` or ``crosshatch`` (forward-sampler sets these whenever
+ *  those dimensions were varied), it overrides the base value as well —
+ *  so the saved validation cell ends up self-describing. */
+export function mergeFillCellWithBase(
+  base: Record<string, number>,
+  cell: FillCell,
+): Record<string, number | boolean> {
+  const out: Record<string, number | boolean> = { ...base, ...cell.paramValues };
+  if (cell.passes !== undefined) out.passes = cell.passes;
+  if (cell.crosshatch !== undefined) out.crosshatch = cell.crosshatch;
+  return out;
+}
+
+
 // ── component ──────────────────────────────────────────────────────────────
 
 export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) {
@@ -908,14 +927,29 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       pulse_width: baseParamsAnchor.pulse_width,
     };
     const validationCells = preview.cells.map((c, i) => {
-      const raw: Record<string, number> = effective.mode === "curve"
-        ? { [effective.varyParam]: (c as CurveSample).paramValue }
-        : { ...(c as FillCell).paramValues } as Record<string, number>;
-      const merged: Record<string, number> = { ...fullBase, ...raw };
-      const cellParams: Record<string, number> = {};
+      // Curve mode varies a single param along arc-length, so the cell
+      // carries one numeric override. Fill mode now uses the forward
+      // sampler, which can attach per-cell ``passes`` + ``crosshatch``
+      // as well as the four primary param overrides + ``pulse_width``
+      // (embedded in paramValues via a cast at the sampler call-site).
+      // mergeFillCellWithBase folds all of those into the test's base
+      // recipe so the persisted ``validation_cells.params`` row is a
+      // complete description of what the laser will burn.
+      const merged: Record<string, number | boolean> =
+        effective.mode === "curve"
+          ? { ...fullBase, [effective.varyParam]: (c as CurveSample).paramValue }
+          : mergeFillCellWithBase(fullBase, c as FillCell);
+      const cellParams: Record<string, number | boolean> = {};
       for (const [k, v] of Object.entries(merged)) {
+        if (k === "crosshatch") {
+          // Boolean flag — not a numeric param, so the snap loop
+          // doesn't apply. Backend coerces to int (0/1) on the way in
+          // and reads it back with ``bool(...)`` at render time.
+          cellParams[k] = v as boolean;
+          continue;
+        }
         const limit = (F2_MOPA_LIMITS as Record<string, { min: number; max: number; step: number } | undefined>)[k];
-        cellParams[k] = limit ? snapToLimits(v, limit) : v;
+        cellParams[k] = limit ? snapToLimits(v as number, limit) : v;
       }
       return { params: cellParams, index: i };
     });
