@@ -46,9 +46,10 @@ import { ExposureToolbar } from "../components/exposure/ExposureToolbar";
 import { useFiltersUrlSync } from "../components/exposure/exposureFiltersUrl";
 import {
   findAnchor, pickModeAndParams, computeCurve, clipPolylineToPolygon,
-  sampleByArcLength, fillByInverseSolve, pointInPolygon,
+  sampleByArcLength, fillByForwardSample, pointInPolygon,
   type Polygon, type ParamKey, type ModeChoice, type LaserLimits,
-  type CurveSample, type FillCell,
+  type CurveSample, type FillCell, type ForwardSampleConstraints,
+  type SampleableKey,
 } from "../components/exposure/proposeTestMath";
 import {
   ExposureProposeRail,
@@ -508,8 +509,18 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   // their permissive value so the existing behaviour is unchanged until
   // the user opts in.
   const [proposeUseFilters, setProposeUseFilters] = useState(false);
+  // NOTE: under the forward-sample fill algorithm (Task 9) this toggle
+  // is a no-op — the sampler operates in param-space and has no
+  // mechanism for "avoid these target-space coordinates". The control
+  // remains in the rail UI for layout stability; flipping it changes
+  // nothing in the preview pipeline. Consider removing in a follow-up.
   const [proposeIgnoreExistingCells, setProposeIgnoreExistingCells] = useState(false);
   const [proposeLimitOverrides, setProposeLimitOverrides] = useState<ParamLimitOverrides>({});
+  const [passesRange, setPassesRange] = useState<{ min: number; max: number }>(
+    { min: 1, max: 4 },
+  );
+  const [crosshatchPolicy, setCrosshatchPolicy] =
+    useState<"varies" | "on" | "off">("varies");
 
   // ── propose-test BURN SETTINGS state ──────────────────────────────────
   // Three-layer cascade like paramOverrides:
@@ -660,8 +671,45 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     return () => { cancelled = true; };
   }, [anchor?.test_id]);
 
+  // Forward-sample constraints bundle for fill mode. Merges machine
+  // limits with the user's per-param min/max sliders. Per-param ranges
+  // are clamped to `[machineMin, machineMax]` and `max` is bumped up to
+  // `min` if the user typed an inverted pair so the sampler always sees
+  // a valid range.
+  const forwardConstraints = useMemo<ForwardSampleConstraints>(() => {
+    const range = (
+      _key: SampleableKey,
+      machine: { min: number; max: number; step?: number },
+      override?: { min?: number; max?: number },
+    ) => {
+      const lo = Math.max(machine.min, override?.min ?? machine.min);
+      const hi = Math.min(machine.max, override?.max ?? machine.max);
+      return { min: lo, max: Math.max(lo, hi) };
+    };
+    return {
+      ranges: {
+        power:       range("power",       effectiveLaserLimits.power,       proposeLimitOverrides.power),
+        speed:       range("speed",       effectiveLaserLimits.speed,       proposeLimitOverrides.speed),
+        frequency:   range("frequency",   effectiveLaserLimits.frequency,   proposeLimitOverrides.frequency),
+        density:     range("density",     effectiveLaserLimits.density,     proposeLimitOverrides.density),
+        pulse_width: range(
+          "pulse_width",
+          { min: ALLOWED_PULSE_WIDTHS[0], max: ALLOWED_PULSE_WIDTHS[ALLOWED_PULSE_WIDTHS.length - 1] },
+          proposeLimitOverrides.pulse_width,
+        ),
+        passes: {
+          min: passesRange.min,
+          max: Math.max(passesRange.min, passesRange.max),
+        },
+      },
+      crosshatch: crosshatchPolicy,
+    };
+  }, [effectiveLaserLimits, proposeLimitOverrides, passesRange, crosshatchPolicy]);
+
   // Palette entries currently inside the polygon — count is shown in the
-  // rail; coords feed fillByInverseSolve so new cells avoid existing ones.
+  // rail. (Historically these coords fed `fillByInverseSolve` to avoid
+  // overlaps; the forward sampler doesn't consume them — see
+  // `proposeIgnoreExistingCells` comment in state above.)
   const entriesInsidePolygonCoords = useMemo<readonly { x: number; y: number }[]>(() => {
     if (polygon.length < 3) return [];
     return displayRows
@@ -691,14 +739,15 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       const sampled = sampleByArcLength(flat, cellCount);
       return { curve, cells: sampled };
     }
-    const cells = fillByInverseSolve(
-      effectiveBaseParams, effective.varyParams, polygon, xKey, yKeyForMath,
-      effectiveLaserLimits, cellCount,
-      proposeIgnoreExistingCells ? [] : entriesInsidePolygonCoords,
-      effectiveBurnSettings.crosshatch,
-    );
+    const cells = fillByForwardSample({
+      polygon,
+      xKey,
+      yKey: yKeyForMath,
+      constraints: forwardConstraints,
+      n: cellCount,
+    });
     return { curve: null, cells };
-  }, [effective, effectiveBaseParams, polygon, xKey, yKeyForMath, cellCount, entriesInsidePolygonCoords, effectiveBurnSettings.crosshatch, effectiveLaserLimits, proposeIgnoreExistingCells]);
+  }, [effective, effectiveBaseParams, polygon, xKey, yKeyForMath, cellCount, effectiveBurnSettings.crosshatch, effectiveLaserLimits, forwardConstraints]);
 
   const paramRows = useMemo(
     () => buildParamRows(effectiveBaseParams, effective, preview.cells),
@@ -778,6 +827,21 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   // direct-add paths (e.g. drag-to-filter on the chart).
   void addClause;
 
+  // Limits passed to the propose rail. Extends `effectiveLaserLimits`
+  // (machine + filter + slider overrides on the four `ParamKey` params)
+  // with the static `pulse_width` preset window and the controller's
+  // hard `passes` cap so the rail's min/max sliders for those two new
+  // params clamp to sensible values.
+  const proposeRailLimits = useMemo(() => ({
+    ...effectiveLaserLimits,
+    pulse_width: {
+      min: ALLOWED_PULSE_WIDTHS[0],
+      max: ALLOWED_PULSE_WIDTHS[ALLOWED_PULSE_WIDTHS.length - 1],
+      step: 1,
+    },
+    passes: { min: 1, max: 99, step: 1 },
+  }), [effectiveLaserLimits]);
+
   const closeProposeWizard = useCallback(() => {
     setProposeMode("off");
     setPolygon([]);
@@ -788,6 +852,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     setProposeUseFilters(false);
     setProposeIgnoreExistingCells(false);
     setProposeLimitOverrides({});
+    setPassesRange({ min: 1, max: 4 });
+    setCrosshatchPolicy("varies");
   }, []);
 
   const handleToggleProposeMode = useCallback(() => {
@@ -801,6 +867,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       setProposeUseFilters(false);
       setProposeIgnoreExistingCells(false);
       setProposeLimitOverrides({});
+      setPassesRange({ min: 1, max: 4 });
+      setCrosshatchPolicy("varies");
     } else {
       closeProposeWizard();
     }
@@ -1247,19 +1315,11 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   return next;
                 });
               }}
-              laserLimits={{
-                ...effectiveLaserLimits,
-                pulse_width: {
-                  min: ALLOWED_PULSE_WIDTHS[0],
-                  max: ALLOWED_PULSE_WIDTHS[ALLOWED_PULSE_WIDTHS.length - 1],
-                  step: 1,
-                },
-                passes: { min: 1, max: 99, step: 1 },
-              }}
-              crosshatchPolicy="varies"
-              onCrosshatchPolicyChange={() => { /* wired in Task 9 */ }}
-              passesRange={{ min: 1, max: 4 }}
-              onPassesRangeChange={() => { /* wired in Task 9 */ }}
+              laserLimits={proposeRailLimits}
+              crosshatchPolicy={crosshatchPolicy}
+              onCrosshatchPolicyChange={setCrosshatchPolicy}
+              passesRange={passesRange}
+              onPassesRangeChange={setPassesRange}
             />
           ) : (
             <>
