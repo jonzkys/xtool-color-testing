@@ -111,6 +111,12 @@ const PARAM_LABEL: Record<string, string> = {
   pulse_width: "PULSE W",
 };
 
+const CROSSHATCH_LABEL: Record<"varies" | "on" | "off", string> = {
+  varies: "VARY",
+  on: "ON",
+  off: "OFF",
+};
+
 function formatValue(v: number | null | undefined, unit: string): string {
   if (v == null || !Number.isFinite(v)) return "—";
   // Round integers to 0dp, fractional to 2dp, large numbers to 0dp.
@@ -269,7 +275,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
         <div className="flex flex-col gap-1.5">
           {paramRows.map((row) => (
             <div key={row.key} className="flex items-center gap-2 min-w-0" data-row={row.key}>
-              <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[60px] flex-none truncate">
+              <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[76px] flex-none truncate">
                 {PARAM_LABEL[row.key as string]}
               </div>
               {row.kind === "editable" ? (
@@ -382,7 +388,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
                   className="flex items-center gap-2 min-w-0"
                   data-row={`limits-${p}`}
                 >
-                  <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[60px] flex-none truncate">
+                  <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[76px] flex-none truncate">
                     {PARAM_LABEL[p]}
                   </div>
                   <input
@@ -417,7 +423,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
 
           {/* Crosshatch tri-state */}
           <div className="flex items-center gap-2 min-w-0" data-row="crosshatch-policy">
-            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[60px] flex-none truncate">
+            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[76px] flex-none truncate">
               CROSSHATCH
             </div>
             <div className="flex gap-1 flex-1 min-w-0">
@@ -437,7 +443,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
                         : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
                     }
                   >
-                    {v}
+                    {CROSSHATCH_LABEL[v]}
                   </button>
                 );
               })}
@@ -446,7 +452,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
 
           {/* Passes min/max */}
           <div className="flex items-center gap-2 min-w-0" data-row="passes-range">
-            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[60px] flex-none truncate">
+            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[76px] flex-none truncate">
               PASSES
             </div>
             <input
@@ -498,7 +504,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
         </div>
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2 min-w-0" data-row="scan_angle">
-            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[60px] flex-none truncate">
+            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[76px] flex-none truncate">
               SCAN ANGLE
             </div>
             <input
@@ -527,7 +533,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
           </label>
 
           <div className="flex items-center gap-2 min-w-0" data-row="angle_mode">
-            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[60px] flex-none truncate">
+            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[76px] flex-none truncate">
               ANGLE MODE
             </div>
             <div className="flex gap-1 flex-1 min-w-0">
