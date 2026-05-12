@@ -19,6 +19,9 @@ interface Props {
   anchorPx: { x: number; y: number };
   plotW: number;
   plotH: number;
+  /** When true (propose-test signature), the header swatch shows the
+   *  measured-mean colour and is labelled "mean" instead of "expected". */
+  proposeStyle?: boolean;
 }
 
 export function StabilitySpectrumHoverCard({
@@ -28,6 +31,7 @@ export function StabilitySpectrumHoverCard({
   anchorPx,
   plotW,
   plotH,
+  proposeStyle = false,
 }: Props) {
   const TOOLTIP_W = 280;
   const TOOLTIP_H = 80 + series.length * 22 + 56;
@@ -53,24 +57,33 @@ export function StabilitySpectrumHoverCard({
         transform,
       }}
     >
-      <div className="flex items-baseline justify-between mb-1.5">
-        <div className="font-mono text-[10.5px] tracking-[0.16em] uppercase font-semibold text-[color:var(--color-ink-subtle)]">
-          cell #{s.cellIndex}
-        </div>
-        <div className="font-mono text-[10px] tabular-nums text-[color:var(--color-ink-subtle)]">
-          {s.expectedHex}
-        </div>
-      </div>
-      <div className="flex items-center gap-2 mb-2">
-        <div
-          aria-hidden
-          className="h-7 w-7 rounded-[3px] border border-[color:var(--color-border-strong)] shrink-0"
-          style={{ backgroundColor: s.expectedHex }}
-        />
-        <div className="font-mono text-[10px] tracking-[0.12em] uppercase text-[color:var(--color-ink-subtle)]">
-          expected
-        </div>
-      </div>
+      {(() => {
+        const useMean = proposeStyle && s.meanHex != null;
+        const headerHex = useMean ? (s.meanHex as string) : s.expectedHex;
+        const headerLabel = useMean ? "mean" : "expected";
+        return (
+          <>
+            <div className="flex items-baseline justify-between mb-1.5">
+              <div className="font-mono text-[10.5px] tracking-[0.16em] uppercase font-semibold text-[color:var(--color-ink-subtle)]">
+                cell #{s.cellIndex}
+              </div>
+              <div className="font-mono text-[10px] tabular-nums text-[color:var(--color-ink-subtle)]">
+                {headerHex}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mb-2">
+              <div
+                aria-hidden
+                className="h-7 w-7 rounded-[3px] border border-[color:var(--color-border-strong)] shrink-0"
+                style={{ backgroundColor: headerHex }}
+              />
+              <div className="font-mono text-[10px] tracking-[0.12em] uppercase text-[color:var(--color-ink-subtle)]">
+                {headerLabel}
+              </div>
+            </div>
+          </>
+        );
+      })()}
       <div className="flex flex-col gap-1">
         {series.map((srs, i) => {
           const m = srs.cells.get(s.cellIndex);

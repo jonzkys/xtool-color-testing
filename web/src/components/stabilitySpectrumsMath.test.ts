@@ -100,6 +100,30 @@ describe("perCellRange — computed metric", () => {
   });
 });
 
+describe("perCellRange — meanLab / meanHex", () => {
+  it("returns the per-cell mean Lab + hex when ≥1 run carries a measurement", () => {
+    const cells = [makeCell(0, [50, 0, 0])];
+    const series = [
+      makeSeries(1, "r1", [{ idx: 0, lab: [60, 10, 0] }]),
+      makeSeries(2, "r2", [{ idx: 0, lab: [40, -10, 0] }]),
+    ];
+    const out = perCellRange(cells, series, "delta_e");
+    expect(out[0].meanLab).not.toBeNull();
+    expect(out[0].meanLab![0]).toBeCloseTo(50);
+    expect(out[0].meanLab![1]).toBeCloseTo(0);
+    expect(out[0].meanLab![2]).toBeCloseTo(0);
+    expect(out[0].meanHex).toMatch(/^#[0-9a-fA-F]{6}$/);
+  });
+
+  it("returns null mean Lab/hex when no series has any measurement for the cell", () => {
+    const cells = [makeCell(0, [50, 0, 0])];
+    const series: SeriesInput[] = [];
+    const out = perCellRange(cells, series, "delta_e");
+    expect(out[0].meanLab).toBeNull();
+    expect(out[0].meanHex).toBeNull();
+  });
+});
+
 describe("sortSpectrums", () => {
   it("orders by expected hue ascending", () => {
     const cells = [
