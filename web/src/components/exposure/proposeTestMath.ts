@@ -809,3 +809,52 @@ export function fillByInverseSolve(
   }
   return out;
 }
+
+/** Pick ``k`` points from ``survivors`` by farthest-point traversal,
+ *  normalising distance by the polygon bbox so the algorithm is
+ *  scale-invariant across anisotropic chart axes. Picks index 0 first
+ *  (deterministic; callers shuffle upstream when randomness matters). */
+export function farthestPointDownsample<T extends { x: number; y: number }>(
+  survivors: readonly T[],
+  k: number,
+  bbox: { minX: number; maxX: number; minY: number; maxY: number },
+): T[] {
+  if (k <= 0 || survivors.length === 0) return [];
+  if (survivors.length <= k) return [...survivors];
+
+  const w = Math.max(bbox.maxX - bbox.minX, 1e-12);
+  const h = Math.max(bbox.maxY - bbox.minY, 1e-12);
+  const picked: T[] = [survivors[0]];
+  // minDistSq[i] = squared normalised distance from survivors[i] to the
+  // closest already-picked point. Maintained incrementally.
+  const minDistSq = survivors.map((s) => {
+    const dx = (s.x - survivors[0].x) / w;
+    const dy = (s.y - survivors[0].y) / h;
+    return dx * dx + dy * dy;
+  });
+  minDistSq[0] = -1; // sentinel — never re-pick the first
+
+  while (picked.length < k) {
+    let bestIdx = -1;
+    let bestDist = -1;
+    for (let i = 0; i < survivors.length; i++) {
+      if (minDistSq[i] < 0) continue;
+      if (minDistSq[i] > bestDist) {
+        bestDist = minDistSq[i];
+        bestIdx = i;
+      }
+    }
+    if (bestIdx < 0) break;
+    picked.push(survivors[bestIdx]);
+    const p = survivors[bestIdx];
+    minDistSq[bestIdx] = -1;
+    for (let i = 0; i < survivors.length; i++) {
+      if (minDistSq[i] < 0) continue;
+      const dx = (survivors[i].x - p.x) / w;
+      const dy = (survivors[i].y - p.y) / h;
+      const d = dx * dx + dy * dy;
+      if (d < minDistSq[i]) minDistSq[i] = d;
+    }
+  }
+  return picked;
+}

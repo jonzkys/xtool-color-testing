@@ -712,3 +712,50 @@ describe("FillCell shape", () => {
     expect(cell.crosshatch).toBeUndefined();
   });
 });
+
+import { farthestPointDownsample } from "./proposeTestMath";
+
+describe("farthestPointDownsample", () => {
+  const bbox = { minX: 0, maxX: 10, minY: 0, maxY: 10 };
+
+  it("returns all survivors when k >= survivors.length", () => {
+    const survivors = [
+      { x: 0, y: 0 }, { x: 5, y: 5 }, { x: 10, y: 10 },
+    ];
+    const out = farthestPointDownsample(survivors, 10, bbox);
+    expect(out.length).toBe(3);
+  });
+
+  it("returns exactly k points when k < survivors.length", () => {
+    const survivors = Array.from({ length: 50 }, (_, i) =>
+      ({ x: (i % 10), y: Math.floor(i / 10) }),
+    );
+    const out = farthestPointDownsample(survivors, 8, bbox);
+    expect(out.length).toBe(8);
+  });
+
+  it("picks points spread across the bbox (rough coverage)", () => {
+    // Clustered + spread mix: should pick the spread ones over duplicates.
+    const survivors = [
+      ...Array.from({ length: 40 }, () => ({ x: 0.1, y: 0.1 })),  // tight cluster
+      { x: 9, y: 9 },
+      { x: 9, y: 0 },
+      { x: 0, y: 9 },
+    ];
+    const out = farthestPointDownsample(survivors, 4, bbox);
+    // The four corners + cluster: farthest-point should pull one from
+    // the cluster + the three spread points.
+    const xs = out.map((p) => p.x);
+    const ys = out.map((p) => p.y);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(5);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(5);
+  });
+
+  it("returns [] when survivors is empty", () => {
+    expect(farthestPointDownsample([], 5, bbox)).toEqual([]);
+  });
+
+  it("returns [] when k === 0", () => {
+    expect(farthestPointDownsample([{ x: 0, y: 0 }], 0, bbox)).toEqual([]);
+  });
+});
