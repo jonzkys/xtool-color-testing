@@ -57,12 +57,14 @@ def test_compute_layout_pinned_geometry():
         x = 10 - 5 - 1.5 = 3.5
         y = 10 - 5 - 1.5 = 3.5
 
+    With QR_SIZE_DEFAULT_MM=6 and ARUCO_SIZE_DEFAULT_MM=3:
+
     Top-right ArUco (ID=1):
         x = 10 + 40 + 1.5 = 51.5
-        y = 10 - 2 - 1.5  = 6.5
+        y = 10 - 3 - 1.5  = 5.5
 
     Bottom-left ArUco (ID=2):
-        x = 10 - 2 - 1.5  = 6.5
+        x = 10 - 3 - 1.5  = 5.5
         y = 10 + 20 + 1.5 = 31.5
 
     Bottom-right ArUco (ID=3):
@@ -71,10 +73,12 @@ def test_compute_layout_pinned_geometry():
     """
     layout = compute_layout(grid_x=10.0, grid_y=10.0, grid_w=40.0, grid_h=20.0)
 
-    # QR
+    # QR — top-left corner, sized to QR_SIZE_DEFAULT_MM with MARGIN gap.
+    qr_offset = QR_SIZE_DEFAULT_MM + 1.5  # = 7.5 at the new defaults
+    aruco_offset = ARUCO_SIZE_DEFAULT_MM + 1.5  # = 4.5 at the new defaults
     assert layout.qr is not None
-    assert layout.qr.x == pytest.approx(3.5)
-    assert layout.qr.y == pytest.approx(3.5)
+    assert layout.qr.x == pytest.approx(10.0 - qr_offset)
+    assert layout.qr.y == pytest.approx(10.0 - qr_offset)
     assert layout.qr.size == pytest.approx(QR_SIZE_DEFAULT_MM)
     assert layout.qr.marker_id == 0
 
@@ -84,11 +88,11 @@ def test_compute_layout_pinned_geometry():
 
     tr = by_id[ARUCO_ID_TOP_RIGHT]
     assert tr.x == pytest.approx(51.5)
-    assert tr.y == pytest.approx(6.5)
+    assert tr.y == pytest.approx(10.0 - aruco_offset)
     assert tr.size == pytest.approx(ARUCO_SIZE_DEFAULT_MM)
 
     bl = by_id[ARUCO_ID_BOTTOM_LEFT]
-    assert bl.x == pytest.approx(6.5)
+    assert bl.x == pytest.approx(10.0 - aruco_offset)
     assert bl.y == pytest.approx(31.5)
     assert bl.size == pytest.approx(ARUCO_SIZE_DEFAULT_MM)
 

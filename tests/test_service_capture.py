@@ -199,12 +199,17 @@ def test_run_capture_uses_spec_sample_aggregator(monkeypatch):
     monkeypatch.setattr(cap, "warp_to_burn_space",
                         lambda *a, **kw: warped)
 
+    # Marker sizes pinned to the pre-2026-05-12 defaults so this test
+    # stays a pure aggregator check — independent of QR/ArUco default
+    # tuning. The warped image dimensions + stripe position above are
+    # calibrated against (QR=5 mm, ArUco=2 mm) → 21.5×21.5 mm burn space
+    # at 10 px/mm.
     spec_base = {
         "x_param": "frequency", "x_min": 50.0, "x_max": 100.0, "x_steps": 2,
         "y_param": "pulse_width", "y_min": 2.0, "y_max": 10.0, "y_steps": 2,
         "rows": 1, "width_mm": 10.0, "height_mm": 10.0,
         "cell_shape": "rect",
-        "registration": {"mode": "on", "qr_size_mm": None, "aruco_size_mm": None},
+        "registration": {"mode": "on", "qr_size_mm": 5.0, "aruco_size_mm": 2.0},
     }
     median_result = cap.run_capture(
         image_bytes=b"fake", test_id=1,

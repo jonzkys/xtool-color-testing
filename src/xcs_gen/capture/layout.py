@@ -11,8 +11,8 @@ from typing import Literal
 
 MARKER_MARGIN_MM = 1.5
 
-QR_SIZE_DEFAULT_MM = 5.0
-ARUCO_SIZE_DEFAULT_MM = 2.0
+QR_SIZE_DEFAULT_MM = 6.0
+ARUCO_SIZE_DEFAULT_MM = 3.0
 
 PERIMETER_STRIP_WIDTH_MM = 3.0
 PERIMETER_STRIP_INSET_MM = 1.0   # gap between strip endpoint and adjacent marker edge

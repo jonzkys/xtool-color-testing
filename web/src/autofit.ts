@@ -28,8 +28,9 @@
  */
 
 const MARGIN = 1.5;
-const QR_DEFAULT = 5;
-const ARUCO_DEFAULT = 2;
+// Defaults must match xcs_gen/capture/layout.py {QR,ARUCO}_SIZE_DEFAULT_MM.
+const QR_DEFAULT = 6;
+const ARUCO_DEFAULT = 3;
 
 export interface AutoFitInput {
   shape: "circle" | "rect" | null;
