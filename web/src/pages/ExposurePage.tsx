@@ -540,6 +540,20 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   );
   const [crosshatchPolicy, setCrosshatchPolicy] =
     useState<"varies" | "on" | "off">("varies");
+  // Unified fill-mode PARAMS section: per-row vary toggle. Default ON
+  // for every sampleable param so the algorithm starts with maximum
+  // variation (matches the pre-rework "all params sampled over their
+  // machine range" baseline). User turns a row OFF to pin that param
+  // to the anchor's resolved value.
+  const VARY_DEFAULT: Record<SampleableKey, boolean> = useMemo(() => ({
+    power: true,
+    speed: true,
+    frequency: true,
+    density: true,
+    pulse_width: true,
+    passes: true,
+  }), []);
+  const [varyEnabled, setVaryEnabled] = useState<Record<SampleableKey, boolean>>(VARY_DEFAULT);
 
   // ── propose-test BURN SETTINGS state ──────────────────────────────────
   // Three-layer cascade like paramOverrides:
@@ -705,25 +719,48 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       const hi = Math.min(machine.max, override?.max ?? machine.max);
       return { min: lo, max: Math.max(lo, hi) };
     };
+    // When a param's vary toggle is OFF, pin its range to the anchor's
+    // resolved value so the forward sampler emits that exact value for
+    // every candidate. pulse_width snaps to the nearest allowed preset
+    // (the only sampleable param with a discrete domain).
+    const anchorPin = (
+      key: SampleableKey,
+      machine: { min: number; max: number; step?: number },
+      override?: { min?: number; max?: number },
+    ) => {
+      if (varyEnabled[key]) return range(key, machine, override);
+      const raw = effectiveBaseParams?.[key as keyof typeof effectiveBaseParams] as number | undefined;
+      if (raw == null || !Number.isFinite(raw)) return range(key, machine, override);
+      let pinned = raw;
+      if (key === "pulse_width") {
+        pinned = ALLOWED_PULSE_WIDTHS.reduce((a, b) =>
+          Math.abs(b - raw) < Math.abs(a - raw) ? b : a,
+        );
+      }
+      return { min: pinned, max: pinned };
+    };
+    const pulseMachine = {
+      min: ALLOWED_PULSE_WIDTHS[0],
+      max: ALLOWED_PULSE_WIDTHS[ALLOWED_PULSE_WIDTHS.length - 1],
+    };
+    const passesMachine = { min: 1, max: 99 };
     return {
       ranges: {
-        power:       range("power",       effectiveLaserLimits.power,       proposeLimitOverrides.power),
-        speed:       range("speed",       effectiveLaserLimits.speed,       proposeLimitOverrides.speed),
-        frequency:   range("frequency",   effectiveLaserLimits.frequency,   proposeLimitOverrides.frequency),
-        density:     range("density",     effectiveLaserLimits.density,     proposeLimitOverrides.density),
-        pulse_width: range(
-          "pulse_width",
-          { min: ALLOWED_PULSE_WIDTHS[0], max: ALLOWED_PULSE_WIDTHS[ALLOWED_PULSE_WIDTHS.length - 1] },
-          proposeLimitOverrides.pulse_width,
-        ),
-        passes: {
-          min: passesRange.min,
-          max: Math.max(passesRange.min, passesRange.max),
-        },
+        power:       anchorPin("power",       effectiveLaserLimits.power,       proposeLimitOverrides.power),
+        speed:       anchorPin("speed",       effectiveLaserLimits.speed,       proposeLimitOverrides.speed),
+        frequency:   anchorPin("frequency",   effectiveLaserLimits.frequency,   proposeLimitOverrides.frequency),
+        density:     anchorPin("density",     effectiveLaserLimits.density,     proposeLimitOverrides.density),
+        pulse_width: anchorPin("pulse_width", pulseMachine, proposeLimitOverrides.pulse_width),
+        passes: varyEnabled.passes
+          ? {
+              min: passesRange.min,
+              max: Math.max(passesRange.min, passesRange.max),
+            }
+          : anchorPin("passes", passesMachine, undefined),
       },
       crosshatch: crosshatchPolicy,
     };
-  }, [effectiveLaserLimits, proposeLimitOverrides, passesRange, crosshatchPolicy]);
+  }, [effectiveLaserLimits, proposeLimitOverrides, passesRange, crosshatchPolicy, varyEnabled, effectiveBaseParams]);
 
   // Palette entries currently inside the polygon — count is shown in the
   // rail. (Historically these coords fed `fillByInverseSolve` to avoid
@@ -873,7 +910,8 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     setProposeLimitOverrides({});
     setPassesRange({ min: 1, max: 4 });
     setCrosshatchPolicy("varies");
-  }, []);
+    setVaryEnabled(VARY_DEFAULT);
+  }, [VARY_DEFAULT]);
 
   const handleToggleProposeMode = useCallback(() => {
     if (proposeMode === "off") {
@@ -888,10 +926,11 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       setProposeLimitOverrides({});
       setPassesRange({ min: 1, max: 4 });
       setCrosshatchPolicy("varies");
+      setVaryEnabled(VARY_DEFAULT);
     } else {
       closeProposeWizard();
     }
-  }, [proposeMode, closeProposeWizard]);
+  }, [proposeMode, closeProposeWizard, VARY_DEFAULT]);
 
   const handleCreateTest = useCallback(async () => {
     if (!anchor || !anchor.params || preview.cells.length === 0 || !effective) return;
@@ -1355,6 +1394,16 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               passesRange={passesRange}
               onPassesRangeChange={setPassesRange}
               survivorCount={preview.cells.length}
+              varyEnabled={varyEnabled}
+              onVaryChange={(p, v) => setVaryEnabled((prev) => ({ ...prev, [p]: v }))}
+              anchorParamValues={{
+                power: effectiveBaseParams?.power ?? F2_MOPA_LIMITS.power.min,
+                speed: effectiveBaseParams?.speed ?? F2_MOPA_LIMITS.speed.min,
+                frequency: effectiveBaseParams?.frequency ?? F2_MOPA_LIMITS.frequency.min,
+                density: effectiveBaseParams?.density ?? F2_MOPA_LIMITS.density.min,
+                pulse_width: effectiveBaseParams?.pulse_width ?? ALLOWED_PULSE_WIDTHS[0],
+                passes: effectiveBaseParams?.passes ?? 1,
+              }}
             />
           ) : (
             <>

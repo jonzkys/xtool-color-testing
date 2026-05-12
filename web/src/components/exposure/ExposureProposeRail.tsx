@@ -1,6 +1,7 @@
 import * as React from "react";
 import type { ExposureRow } from "./exposureCorrelations";
 import type { ModeChoice, ParamKey, SampleableKey } from "./proposeTestMath";
+import { ParamRangeRow } from "./ParamRangeRow";
 
 interface RangeReadout {
   paramName: string;
@@ -100,6 +101,17 @@ interface Props {
   /** Number of cells the algorithm actually placed (≤ ``cellCount``).
    *  Drives the partial-fill feedback line under the cell-count slider. */
   survivorCount: number;
+  /** Fill-mode unified PARAMS section: per-param vary toggle. When a
+   *  param's toggle is OFF the row collapses to a single pinned value
+   *  (the anchor's resolved value) and the forward sampler pins that
+   *  param to ``[anchor, anchor]``. Defaults to ``true`` for every
+   *  sampleable key so the algorithm starts with maximum variation. */
+  varyEnabled: Record<SampleableKey, boolean>;
+  onVaryChange: (param: SampleableKey, next: boolean) => void;
+  /** Resolved anchor values for every sampleable param. Surfaced into
+   *  the rail so a collapsed (vary === false) row can display the
+   *  pinned value without re-deriving it from ``paramRows``. */
+  anchorParamValues: Record<SampleableKey, number>;
 }
 
 const PARAM_LABEL: Record<string, string> = {
@@ -109,6 +121,15 @@ const PARAM_LABEL: Record<string, string> = {
   density: "DENSITY",
   passes: "PASSES",
   pulse_width: "PULSE W",
+};
+
+const PARAM_UNIT: Record<SampleableKey, string> = {
+  power: "%",
+  speed: "mm/s",
+  frequency: "kHz",
+  density: "lpc",
+  passes: "",
+  pulse_width: "ns",
 };
 
 const CROSSHATCH_LABEL: Record<"varies" | "on" | "off", string> = {
@@ -140,6 +161,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
   crosshatchPolicy, onCrosshatchPolicyChange,
   passesRange, onPassesRangeChange,
   survivorCount,
+  varyEnabled, onVaryChange, anchorParamValues,
 }) => {
   const isFill = mode.mode === "fill";
 
@@ -225,29 +247,31 @@ export const ExposureProposeRail: React.FC<Props> = ({
         )}
       </section>
 
-      <section>
-        <div className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)] mb-2">
-          Vary
-        </div>
-        <div className="grid grid-cols-2 gap-1">
-          {(["power", "speed", "frequency", "density"] as ParamKey[]).map((p) => (
-            <button
-              key={p}
-              type="button"
-              aria-pressed={isChipSelected(p)}
-              onClick={() => toggleChip(p)}
-              className={
-                "px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
-                (isChipSelected(p)
-                  ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
-                  : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
-              }
-            >
-              {PARAM_LABEL[p]}
-            </button>
-          ))}
-        </div>
-      </section>
+      {!isFill && (
+        <section>
+          <div className="font-mono text-[9px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)] mb-2">
+            Vary
+          </div>
+          <div className="grid grid-cols-2 gap-1">
+            {(["power", "speed", "frequency", "density"] as ParamKey[]).map((p) => (
+              <button
+                key={p}
+                type="button"
+                aria-pressed={isChipSelected(p)}
+                onClick={() => toggleChip(p)}
+                className={
+                  "px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] rounded-sm border " +
+                  (isChipSelected(p)
+                    ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
+                    : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+                }
+              >
+                {PARAM_LABEL[p]}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section data-role="propose-params-editor">
         <div className="flex items-center justify-between mb-2">
@@ -272,59 +296,127 @@ export const ExposureProposeRail: React.FC<Props> = ({
             ↺ reset
           </button>
         </div>
-        <div className="flex flex-col gap-1.5">
-          {paramRows.map((row) => (
-            <div key={row.key} className="flex items-center gap-2 min-w-0" data-row={row.key}>
-              <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[76px] flex-none truncate">
-                {PARAM_LABEL[row.key as string]}
+        {isFill ? (
+          <div className="flex flex-col gap-1.5">
+            {(["power", "speed", "frequency", "density", "pulse_width", "passes"] as SampleableKey[]).map((p) => {
+              const lim = laserLimits[p];
+              const ov = paramLimitOverrides[p] ?? {};
+              const rangeMin = ov.min !== undefined && Number.isFinite(ov.min)
+                ? Math.max(lim.min, ov.min)
+                : lim.min;
+              const rangeMax = ov.max !== undefined && Number.isFinite(ov.max)
+                ? Math.min(lim.max, ov.max)
+                : lim.max;
+              return (
+                <ParamRangeRow
+                  key={p}
+                  paramKey={p}
+                  label={PARAM_LABEL[p]}
+                  unit={PARAM_UNIT[p]}
+                  machineMin={lim.min}
+                  machineMax={lim.max}
+                  step={lim.step}
+                  rangeMin={rangeMin}
+                  rangeMax={rangeMax}
+                  vary={varyEnabled[p]}
+                  pinnedValue={anchorParamValues[p]}
+                  onRangeChange={({ min, max }) => {
+                    // Persist as overrides; undefined-out the side that
+                    // equals the machine limit so we keep the override
+                    // map sparse (matches the existing semantics in
+                    // ExposurePage::onParamLimitOverrideChange).
+                    onParamLimitOverrideChange(p, "min", min === lim.min ? undefined : min);
+                    onParamLimitOverrideChange(p, "max", max === lim.max ? undefined : max);
+                  }}
+                  onVaryChange={(next) => onVaryChange(p, next)}
+                />
+              );
+            })}
+
+            {/* Crosshatch tri-state — special row inside PARAMS (no slider). */}
+            <div className="flex items-center gap-2 min-w-0" data-row="crosshatch-policy">
+              <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[68px] flex-none truncate">
+                CROSSHATCH
               </div>
-              {row.kind === "editable" ? (
-                <>
-                  <input
-                    type="range"
-                    min={row.min}
-                    max={row.max}
-                    step={row.step}
-                    value={row.value}
-                    onChange={(e) => {
-                      const raw = Number(e.target.value);
-                      const snapped = row.presets
-                        ? row.presets.reduce((a, b) =>
-                            Math.abs(b - raw) < Math.abs(a - raw) ? b : a,
-                          )
-                        : raw;
-                      onParamOverrideChange(row.key, snapped);
-                    }}
-                    aria-label={`${PARAM_LABEL[row.key as string]} value`}
-                    className="flex-1 min-w-0"
-                  />
-                  <div className="font-mono text-[10px] text-[color:var(--color-ink)] tabular-nums w-[64px] flex-none text-right truncate">
-                    {formatValue(row.value, row.unit)}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div
-                    aria-disabled="true"
-                    className="flex-1 min-w-0 h-1.5 rounded-full bg-[color:var(--color-border)] relative overflow-hidden"
-                    title={`Locked — varied param. Range ${row.resolved.min}..${row.resolved.max}`}
-                  >
-                    <div
-                      className="absolute top-0 bottom-0 bg-[color:var(--color-primary)]/40"
-                      style={{ left: "0%", right: "0%" }}
-                    />
-                  </div>
-                  <div
-                    className="font-mono text-[10px] text-[color:var(--color-primary)] tabular-nums w-[96px] flex-none text-right truncate"
-                    title={`${formatValue(row.resolved.min, row.unit)} → ${formatValue(row.resolved.max, row.unit)}`}
-                  >
-                    {formatValue(row.resolved.min, row.unit)}→{formatValue(row.resolved.max, row.unit)}
-                  </div>
-                </>
-              )}
+              <div className="flex gap-1 flex-1 min-w-0">
+                {(["varies", "on", "off"] as const).map((v) => {
+                  const active = crosshatchPolicy === v;
+                  return (
+                    <button
+                      key={v}
+                      type="button"
+                      aria-pressed={active}
+                      aria-label={`Crosshatch ${v}`}
+                      onClick={() => onCrosshatchPolicyChange(v)}
+                      className={
+                        "flex-1 min-w-0 px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] rounded-sm border truncate " +
+                        (active
+                          ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
+                          : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+                      }
+                    >
+                      {CROSSHATCH_LABEL[v]}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          ))}
-        </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {paramRows.map((row) => (
+              <div key={row.key} className="flex items-center gap-2 min-w-0" data-row={row.key}>
+                <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[76px] flex-none truncate">
+                  {PARAM_LABEL[row.key as string]}
+                </div>
+                {row.kind === "editable" ? (
+                  <>
+                    <input
+                      type="range"
+                      min={row.min}
+                      max={row.max}
+                      step={row.step}
+                      value={row.value}
+                      onChange={(e) => {
+                        const raw = Number(e.target.value);
+                        const snapped = row.presets
+                          ? row.presets.reduce((a, b) =>
+                              Math.abs(b - raw) < Math.abs(a - raw) ? b : a,
+                            )
+                          : raw;
+                        onParamOverrideChange(row.key, snapped);
+                      }}
+                      aria-label={`${PARAM_LABEL[row.key as string]} value`}
+                      className="flex-1 min-w-0"
+                    />
+                    <div className="font-mono text-[10px] text-[color:var(--color-ink)] tabular-nums w-[64px] flex-none text-right truncate">
+                      {formatValue(row.value, row.unit)}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div
+                      aria-disabled="true"
+                      className="flex-1 min-w-0 h-1.5 rounded-full bg-[color:var(--color-border)] relative overflow-hidden"
+                      title={`Locked — varied param. Range ${row.resolved.min}..${row.resolved.max}`}
+                    >
+                      <div
+                        className="absolute top-0 bottom-0 bg-[color:var(--color-primary)]/40"
+                        style={{ left: "0%", right: "0%" }}
+                      />
+                    </div>
+                    <div
+                      className="font-mono text-[10px] text-[color:var(--color-primary)] tabular-nums w-[96px] flex-none text-right truncate"
+                      title={`${formatValue(row.resolved.min, row.unit)} → ${formatValue(row.resolved.max, row.unit)}`}
+                    >
+                      {formatValue(row.resolved.min, row.unit)}→{formatValue(row.resolved.max, row.unit)}
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section data-role="propose-constraints">
@@ -372,13 +464,13 @@ export const ExposureProposeRail: React.FC<Props> = ({
             </span>
           </label>
 
-          {/* Per-param min/max overrides. Curve mode shows only the
-              single varied param; fill mode always shows every numeric
-              sampleable param (the forward sampler draws from all of them). */}
-          {(() => {
-            const varied: SampleableKey[] = mode.mode === "curve"
-              ? [mode.varyParam]
-              : ["power", "speed", "frequency", "density", "pulse_width"];
+          {/* Per-param min/max overrides + crosshatch tri-state +
+              passes range. CURVE-MODE ONLY — fill mode now folds these
+              into the unified PARAMS section above (each row has its
+              own min/max boxes + range slider + vary toggle, and
+              crosshatch sits inline as a special tri-state row). */}
+          {!isFill && (() => {
+            const varied: SampleableKey[] = [mode.varyParam];
             return varied.map((p) => {
               const ov = paramLimitOverrides[p] ?? {};
               const lim = laserLimits[p];
@@ -421,7 +513,9 @@ export const ExposureProposeRail: React.FC<Props> = ({
             });
           })()}
 
-          {/* Crosshatch tri-state */}
+          {/* Crosshatch tri-state — curve mode only; fill mode shows it
+              as a row inside the unified PARAMS section. */}
+          {!isFill && (
           <div className="flex items-center gap-2 min-w-0" data-row="crosshatch-policy">
             <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[76px] flex-none truncate">
               CROSSHATCH
@@ -449,8 +543,10 @@ export const ExposureProposeRail: React.FC<Props> = ({
               })}
             </div>
           </div>
+          )}
 
-          {/* Passes min/max */}
+          {/* Passes min/max — curve mode only; fill mode has a ParamRangeRow for passes. */}
+          {!isFill && (
           <div className="flex items-center gap-2 min-w-0" data-row="passes-range">
             <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[76px] flex-none truncate">
               PASSES
@@ -495,6 +591,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
               className="flex-1 min-w-0 font-mono text-[10px] tabular-nums px-1.5 h-[20px] rounded-sm border border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-ink)] focus:outline-none focus:border-[color:var(--color-primary)]"
             />
           </div>
+          )}
         </div>
       </section>
 

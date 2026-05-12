@@ -91,6 +91,23 @@ function defaultProps() {
     passesRange: { min: 1, max: 4 },
     onPassesRangeChange: vi.fn(),
     survivorCount: 16,
+    varyEnabled: {
+      power: true,
+      speed: true,
+      frequency: true,
+      density: true,
+      pulse_width: true,
+      passes: true,
+    },
+    onVaryChange: vi.fn(),
+    anchorParamValues: {
+      power: 14.6,
+      speed: 1152,
+      frequency: 100,
+      density: 5000,
+      pulse_width: 200,
+      passes: 1,
+    },
   };
 }
 
@@ -241,25 +258,17 @@ describe("ExposureProposeRail CONSTRAINTS — crosshatch / passes", () => {
     expect(onCrosshatchPolicyChange).toHaveBeenCalledWith("on");
   });
 
-  it("renders the passes min/max inputs", () => {
+  it("renders the passes min/max inputs in curve mode", () => {
+    // In curve mode, the legacy CONSTRAINTS section still has dedicated
+    // passes min/max boxes (PASSES isn't varied so a ParamRangeRow
+    // doesn't apply — the curve-mode PARAMS section sliders show the
+    // anchor's current passes value, not a range).
     render(<ExposureProposeRail
       {...defaultProps()}
       passesRange={{ min: 1, max: 4 }}
     />);
     expect(screen.getByLabelText(/passes minimum/i)).toHaveValue(1);
     expect(screen.getByLabelText(/passes maximum/i)).toHaveValue(4);
-  });
-
-  it("in fill mode, renders min/max inputs for power/speed/frequency/density/pulse_width", () => {
-    render(<ExposureProposeRail
-      {...defaultProps()}
-      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
-    />);
-    expect(screen.getByLabelText(/power minimum/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/speed minimum/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/frequency minimum/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/density minimum/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/pulse_width minimum/i)).toBeInTheDocument();
   });
 
   it("in curve mode, keeps the legacy behaviour (only varied param has min/max)", () => {
@@ -271,7 +280,7 @@ describe("ExposureProposeRail CONSTRAINTS — crosshatch / passes", () => {
     expect(screen.queryByLabelText(/speed minimum/i)).toBeNull();
   });
 
-  it("cross-clamps passes min/max (typing min > max bumps max)", () => {
+  it("cross-clamps passes min/max in curve mode (typing min > max bumps max)", () => {
     const onPassesRangeChange = vi.fn();
     render(<ExposureProposeRail
       {...defaultProps()}
@@ -299,5 +308,101 @@ describe("ExposureProposeRail CONSTRAINTS — crosshatch / passes", () => {
       canCreate={false}
     />);
     expect(screen.getByText(/no cells reachable/i)).toBeInTheDocument();
+  });
+});
+
+describe("ExposureProposeRail unified PARAMS — fill mode", () => {
+  it("renders a ParamRangeRow for each of the 6 sampleable params", () => {
+    const { container } = render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+    />);
+    const editor = container.querySelector('[data-role="propose-params-editor"]');
+    expect(editor).toBeTruthy();
+    const rows = Array.from(editor!.querySelectorAll("[data-row]"))
+      .map((el) => (el as HTMLElement).getAttribute("data-row"));
+    // Crosshatch is rendered as the last row inside the PARAMS section.
+    expect(rows).toEqual([
+      "power", "speed", "frequency", "density", "pulse_width", "passes",
+      "crosshatch-policy",
+    ]);
+  });
+
+  it("vary ON renders Radix slider thumbs + min + max text inputs", () => {
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+    />);
+    // Radix Slider renders thumbs as buttons with role="slider".
+    const thumbs = screen.getAllByRole("slider", { name: /power range/i });
+    expect(thumbs.length).toBe(2);
+    expect(screen.getByLabelText(/power minimum/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/power maximum/i)).toBeInTheDocument();
+  });
+
+  it("vary OFF collapses the row to a pinned value (no slider / boxes)", () => {
+    const { container } = render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+      varyEnabled={{
+        power: false,
+        speed: true,
+        frequency: true,
+        density: true,
+        pulse_width: true,
+        passes: true,
+      }}
+    />);
+    const row = container.querySelector('[data-row="power"]');
+    expect(row).toBeTruthy();
+    // Pinned value renders (anchor power = 14.6 → "14.6 %").
+    expect(row!.textContent).toMatch(/14\.6 %/);
+    // No Radix slider thumb for power.
+    expect(row!.querySelector('[role="slider"]')).toBeNull();
+    // No min/max number inputs for power.
+    expect(row!.querySelector('input[type="number"]')).toBeNull();
+    // Vary toggle pill still present.
+    expect(row!.querySelector('button[role="switch"]')).toBeTruthy();
+  });
+
+  it("clicking the vary toggle flips state", () => {
+    const onVaryChange = vi.fn();
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+      onVaryChange={onVaryChange}
+    />);
+    fireEvent.click(screen.getByLabelText(/power vary/i));
+    expect(onVaryChange).toHaveBeenCalledWith("power", false);
+  });
+
+  it("typing a min greater than the current max bumps max", () => {
+    const onParamLimitOverrideChange = vi.fn();
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+      paramLimitOverrides={{ power: { min: 10, max: 30 } }}
+      onParamLimitOverrideChange={onParamLimitOverrideChange}
+    />);
+    fireEvent.change(screen.getByLabelText(/power minimum/i), { target: { value: "50" } });
+    // The component fires two override callbacks per range update
+    // (one for "min", one for "max"). With user min=50 > current
+    // max=30, max must be bumped up to 50 to keep the range valid.
+    const maxCall = onParamLimitOverrideChange.mock.calls.find(
+      (c) => c[0] === "power" && c[1] === "max",
+    );
+    expect(maxCall).toBeTruthy();
+    expect(maxCall![2]).toBe(50);
+  });
+
+  it("does NOT render the legacy CONSTRAINTS per-param min/max in fill mode", () => {
+    const { container } = render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+    />);
+    // The old CONSTRAINTS section's per-param rows were keyed
+    // ``limits-${param}`` — none of those should be present anymore.
+    expect(container.querySelector('[data-row="limits-power"]')).toBeNull();
+    expect(container.querySelector('[data-row="passes-range"]')).toBeNull();
   });
 });
