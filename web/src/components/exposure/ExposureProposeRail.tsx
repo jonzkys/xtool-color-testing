@@ -1,6 +1,6 @@
 import * as React from "react";
 import type { ExposureRow } from "./exposureCorrelations";
-import type { ModeChoice, ParamKey } from "./proposeTestMath";
+import type { ModeChoice, ParamKey, SampleableKey } from "./proposeTestMath";
 
 interface RangeReadout {
   paramName: string;
@@ -46,7 +46,7 @@ export type ParamRow =
 /** Per-varied-param min/max user overrides. Undefined endpoint = use
  *  the active machine's laser limit for that side. */
 export type ParamLimitOverrides = Partial<
-  Record<ParamKey, { min?: number; max?: number }>
+  Record<SampleableKey, { min?: number; max?: number }>
 >;
 
 interface Props {

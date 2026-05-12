@@ -561,7 +561,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
   const filterDrivenLimitOverrides = useMemo<ParamLimitOverrides>(() => {
     if (!proposeUseFilters) return {};
     const out: ParamLimitOverrides = {};
-    for (const k of ["power", "speed", "frequency", "density"] as const) {
+    for (const k of ["power", "speed", "frequency", "density", "pulse_width"] as const) {
       const clauses = filters.paramClauses[k as FilterableParam];
       if (!clauses) continue;
       let min: number | undefined;

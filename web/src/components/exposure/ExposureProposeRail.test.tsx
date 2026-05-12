@@ -1,7 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ExposureProposeRail, type ParamRow, type BurnSettings } from "./ExposureProposeRail";
+import type { ParamLimitOverrides } from "./ExposureProposeRail";
 import type { ExposureRow } from "./exposureCorrelations";
+
+describe("ParamLimitOverrides type", () => {
+  it("accepts pulse_width and passes overrides", () => {
+    const o: ParamLimitOverrides = {
+      power: { min: 5, max: 30 },
+      pulse_width: { min: 60, max: 200 },
+      passes: { min: 1, max: 4 },
+    };
+    expect(o.power?.min).toBe(5);
+    expect(o.pulse_width?.max).toBe(200);
+    expect(o.passes?.min).toBe(1);
+  });
+});
 
 const ANCHOR: ExposureRow = {
   id: 1,
