@@ -1,0 +1,244 @@
+- generic [ref=e3]:
+  - link "Skip to main content" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner [ref=e5]:
+    - generic [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]: xcs-gen
+        - generic [ref=e10]: workbench
+      - navigation [ref=e11]:
+        - button "Testing" [ref=e12] [cursor=pointer]:
+          - generic [ref=e13]: Testing
+          - img [ref=e14]
+        - button "Materials" [ref=e16] [cursor=pointer]:
+          - generic [ref=e17]: Materials
+          - img [ref=e18]
+        - button "Engraving" [ref=e20] [cursor=pointer]:
+          - generic [ref=e21]: Engraving
+          - img [ref=e22]
+        - button "Experimental" [ref=e24] [cursor=pointer]:
+          - generic [ref=e25]: Experimental
+          - img [ref=e26]
+      - generic [ref=e28]:
+        - 'button "Active machine: F2 Ultra. Click to switch." [ref=e52] [cursor=pointer]':
+          - img [ref=e53]
+          - generic [ref=e54]: F2 Ultra
+          - img [ref=e55]
+        - button "Open the Getting Started guide" [ref=e30] [cursor=pointer]:
+          - img [ref=e31]
+          - generic [ref=e33]: Guide
+        - button "Open changelog" [ref=e34] [cursor=pointer]:
+          - img [ref=e35]
+          - generic [ref=e38]: New
+          - generic [ref=e57]: 9+
+        - button "Upload test photo" [ref=e39] [cursor=pointer]:
+          - img [ref=e40]
+          - generic [ref=e43]: Upload
+        - link "View source on GitHub (opens in new tab)" [ref=e44] [cursor=pointer]:
+          - /url: https://github.com/jonzkys/xtool-color-testing
+          - img [ref=e45]
+        - 'button "Theme: system. Click to cycle." [ref=e47] [cursor=pointer]':
+          - img [ref=e48]
+  - main [ref=e51]:
+    - generic [ref=e58]:
+      - generic [ref=e59]:
+        - heading "How does the burn relate to laser dose?" [level=1] [ref=e60]
+        - generic [ref=e61]:
+          - generic [ref=e62]: SS Tag
+          - generic [ref=e63]: ·
+          - generic [ref=e64]: n = 0
+          - generic [ref=e65]: ·
+          - generic [ref=e66]: v1
+      - generic [ref=e68]:
+        - complementary [ref=e69]:
+          - generic [ref=e70]:
+            - generic [ref=e71]: Material
+            - generic [ref=e73]:
+              - button "SS Tag" [pressed] [ref=e74] [cursor=pointer]
+              - button "Circular tag" [ref=e75] [cursor=pointer]
+              - button "Stainless 0.3mm card" [ref=e76] [cursor=pointer]
+              - button "SS 4 Hole Card 1mm" [ref=e77] [cursor=pointer]
+              - button "Xtool SS Tag" [ref=e78] [cursor=pointer]
+              - button "100x100x1mm SS" [ref=e79] [cursor=pointer]
+          - generic [ref=e80]:
+            - generic [ref=e81]: X axis
+            - generic [ref=e83]:
+              - button "Pulse Spacing (mm)" [ref=e85] [cursor=pointer]
+              - button "Line Spacing (mm)" [ref=e87] [cursor=pointer]
+              - button "Pulse Energy Index" [ref=e89] [cursor=pointer]
+              - button "Pulse Intensity Index" [ref=e91] [cursor=pointer]
+              - button "Total Exposure" [pressed] [ref=e93] [cursor=pointer]
+              - button "Ablation Aggression" [ref=e95] [cursor=pointer]
+              - button "Delivery Smoothness" [ref=e97] [cursor=pointer]
+            - generic [ref=e98] [cursor=pointer]:
+              - checkbox "log scale" [checked] [ref=e99]
+              - generic [ref=e100]: log scale
+          - generic [ref=e101]:
+            - generic [ref=e102]: Y axis
+            - generic [ref=e104]:
+              - button "L*" [pressed] [ref=e297] [cursor=pointer]
+              - button "a*" [ref=e299] [cursor=pointer]
+              - button "b*" [ref=e301] [cursor=pointer]
+              - button "Hue°" [ref=e303] [cursor=pointer]
+              - button "Chroma" [ref=e305] [cursor=pointer]
+            - generic [ref=e119] [cursor=pointer]:
+              - checkbox "log scale" [checked] [ref=e120]
+              - generic [ref=e121]: log scale
+        - main [ref=e122]:
+          - generic [ref=e123]:
+            - generic [ref=e124]: Mode
+            - tablist "scatter mode" [ref=e125]:
+              - tab "univariate" [active] [selected] [ref=e126] [cursor=pointer]
+              - tab "bivariate" [ref=e127] [cursor=pointer]
+          - generic [ref=e130]:
+            - heading "No exposure data yet" [level=4] [ref=e131]
+            - paragraph [ref=e132]: This material has no palette entries with computed exposure indices. Burn a few cells, save them, then return.
+        - complementary [ref=e133]:
+          - generic [ref=e134]:
+            - generic [ref=e135]:
+              - generic [ref=e136]: Stats
+              - generic [ref=e138]:
+                - generic [ref=e139]: Pearson r
+                - generic "Linear correlation between X and Y, computed on log-X if log scale is on" [ref=e140]: —
+              - generic [ref=e141]:
+                - generic [ref=e142]:
+                  - generic [ref=e143]: Spearman ρ
+                  - generic [ref=e144]: —
+                - generic [ref=e145]:
+                  - generic [ref=e146]: R² (log·lin)
+                  - generic [ref=e147]: —
+                - generic [ref=e148]:
+                  - generic [ref=e149]: Slope
+                  - generic [ref=e150]: —
+                - generic [ref=e151]:
+                  - generic [ref=e152]: "n"
+                  - generic [ref=e153]: "0"
+            - generic [ref=e155]:
+              - generic [ref=e157]: Focused
+              - generic [ref=e159]:
+                - img "a* / b* chromaticity disc" [ref=e161]:
+                  - generic [ref=e165]: +a
+                  - generic [ref=e166]: −a
+                  - generic [ref=e167]: +b
+                  - generic [ref=e168]: −b
+                - generic [ref=e169]:
+                  - paragraph [ref=e170]: Idle
+                  - paragraph [ref=e171]: Hover or click any dot to inspect its recipe and indices.
+            - generic [ref=e172]:
+              - generic [ref=e173]: Indices
+              - paragraph [ref=e175]: Focus an entry to see its indices.
+          - generic [ref=e177]:
+            - generic [ref=e178]: Filters
+            - generic [ref=e180]:
+              - generic [ref=e181]:
+                - heading "Source / validated" [level=3] [ref=e182]
+                - generic [ref=e184]:
+                  - generic [ref=e185]:
+                    - checkbox "averaged" [checked] [ref=e186]
+                    - text: averaged
+                  - generic [ref=e187]:
+                    - checkbox "single_result" [checked] [ref=e188]
+                    - text: single_result
+                  - generic [ref=e189]:
+                    - checkbox "manual" [checked] [ref=e190]
+                    - text: manual
+                  - generic [ref=e191]:
+                    - checkbox "validated only" [checked] [ref=e192]
+                    - text: validated only
+              - generic [ref=e193]:
+                - heading "Test" [level=3] [ref=e194]
+                - combobox [ref=e196]:
+                  - option "— all —"
+                  - option "#33 · New test · sweep"
+                  - option "#19 · New test · sweep"
+                  - option "#2 · Dupe Test · sweep" [selected]
+                  - option "#1 · New test · sweep"
+                - generic [ref=e197]:
+                  - generic [ref=e198]:
+                    - checkbox "+ source test" [checked] [ref=e199]
+                    - text: + source test
+                  - generic [ref=e200]:
+                    - checkbox "+ parent test" [checked] [ref=e201]
+                    - text: + parent test
+                - generic [ref=e202]:
+                  - button "all" [ref=e203] [cursor=pointer]
+                  - button "sweep" [ref=e204] [cursor=pointer]
+                  - button "validation" [ref=e205] [cursor=pointer]
+              - generic [ref=e206]:
+                - heading "Ranges" [level=3] [ref=e207]
+                - generic [ref=e209]:
+                  - generic [ref=e210]:
+                    - generic [ref=e211]:
+                      - generic [ref=e212]: POWER (%)
+                      - button "reset power" [ref=e213] [cursor=pointer]: ×
+                    - generic [ref=e214]:
+                      - button "power min handle" [ref=e217] [cursor=pointer]
+                      - button "power max handle" [ref=e218] [cursor=pointer]
+                    - generic [ref=e219]:
+                      - button "8" [ref=e220] [cursor=pointer]
+                      - button "14.60" [ref=e221] [cursor=pointer]
+                    - generic [ref=e222]: "data: 8–14.60"
+                  - generic [ref=e223]:
+                    - generic [ref=e224]:
+                      - generic [ref=e225]: SPEED (mm/s)
+                      - button "reset speed" [ref=e226] [cursor=pointer]: ×
+                    - generic [ref=e227]:
+                      - button "speed min handle" [ref=e230] [cursor=pointer]
+                      - button "speed max handle" [ref=e231] [cursor=pointer]
+                    - generic [ref=e232]:
+                      - button "500" [ref=e233] [cursor=pointer]
+                      - button "2000" [ref=e234] [cursor=pointer]
+                    - generic [ref=e235]: "data: 500–2000"
+                  - generic [ref=e236]:
+                    - generic [ref=e237]:
+                      - generic [ref=e238]: FREQUENCY (kHz)
+                      - button "reset frequency" [ref=e239] [cursor=pointer]: ×
+                    - generic [ref=e240]:
+                      - button "frequency min handle" [ref=e243] [cursor=pointer]
+                      - button "frequency max handle" [ref=e244] [cursor=pointer]
+                    - generic [ref=e245]:
+                      - button "60" [ref=e246] [cursor=pointer]
+                      - button "300" [ref=e247] [cursor=pointer]
+                    - generic [ref=e248]: "data: 60–300"
+                  - generic [ref=e249]:
+                    - generic [ref=e250]:
+                      - generic [ref=e251]: PULSE WIDTH (ns)
+                      - button "reset pulse_width" [ref=e252] [cursor=pointer]: ×
+                    - generic [ref=e253]:
+                      - button "pulse_width min handle" [ref=e255] [cursor=pointer]
+                      - button "pulse_width max handle" [ref=e256] [cursor=pointer]
+                    - generic [ref=e257]:
+                      - button "200" [ref=e258] [cursor=pointer]
+                      - button "200" [ref=e259] [cursor=pointer]
+                    - generic [ref=e260]: "data: 200–200"
+                  - generic [ref=e261]:
+                    - generic [ref=e262]:
+                      - generic [ref=e263]: DENSITY (lpc)
+                      - button "reset density" [ref=e264] [cursor=pointer]: ×
+                    - generic [ref=e265]:
+                      - button "density min handle" [ref=e267] [cursor=pointer]
+                      - button "density max handle" [ref=e268] [cursor=pointer]
+                    - generic [ref=e269]:
+                      - button "5000" [ref=e270] [cursor=pointer]
+                      - button "5000" [ref=e271] [cursor=pointer]
+                    - generic [ref=e272]: "data: 5000–5000"
+                  - generic [ref=e273]:
+                    - generic [ref=e274]:
+                      - generic [ref=e275]: PASSES
+                      - button "reset passes" [ref=e276] [cursor=pointer]: ×
+                    - generic [ref=e277]:
+                      - button "passes min handle" [ref=e280] [cursor=pointer]
+                      - button "passes max handle" [ref=e281] [cursor=pointer]
+                    - generic [ref=e282]:
+                      - button "1" [ref=e283] [cursor=pointer]
+                      - button "2" [ref=e284] [cursor=pointer]
+                    - generic [ref=e285]: "data: 1–2"
+              - generic [ref=e286]:
+                - heading "Recipe family" [level=3] [ref=e287]
+                - paragraph [ref=e289]: Set from the focused card.
+              - generic [ref=e290]:
+                - heading "Outliers / brush" [level=3] [ref=e291]
+                - generic [ref=e293]:
+                  - checkbox "trim 1%/99%" [checked] [ref=e294]
+                  - text: trim 1%/99%
+              - button "Clear all filters" [ref=e295] [cursor=pointer]

@@ -1,0 +1,176 @@
+- generic [ref=e3]:
+  - link "Skip to main content" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner [ref=e5]:
+    - generic [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]: xcs-gen
+        - generic [ref=e10]: workbench
+      - navigation [ref=e11]:
+        - button "Testing" [ref=e12] [cursor=pointer]:
+          - generic [ref=e13]: Testing
+          - img [ref=e14]
+        - button "Materials" [ref=e16] [cursor=pointer]:
+          - generic [ref=e17]: Materials
+          - img [ref=e18]
+        - button "Engraving" [ref=e20] [cursor=pointer]:
+          - generic [ref=e21]: Engraving
+          - img [ref=e22]
+        - button "Experimental" [ref=e24] [cursor=pointer]:
+          - generic [ref=e25]: Experimental
+          - img [ref=e26]
+      - generic [ref=e28]:
+        - 'button "Active machine: F2 Ultra. Click to switch." [ref=e52] [cursor=pointer]':
+          - img [ref=e53]
+          - generic [ref=e54]: F2 Ultra
+          - img [ref=e55]
+        - button "Open the Getting Started guide" [ref=e30] [cursor=pointer]:
+          - img [ref=e31]
+          - generic [ref=e33]: Guide
+        - button "Open changelog" [ref=e34] [cursor=pointer]:
+          - img [ref=e35]
+          - generic [ref=e38]: New
+          - generic [ref=e57]: 9+
+        - button "Upload test photo" [ref=e39] [cursor=pointer]:
+          - img [ref=e40]
+          - generic [ref=e43]: Upload
+        - link "View source on GitHub (opens in new tab)" [ref=e44] [cursor=pointer]:
+          - /url: https://github.com/jonzkys/xtool-color-testing
+          - img [ref=e45]
+        - 'button "Theme: system. Click to cycle." [ref=e47] [cursor=pointer]':
+          - img [ref=e48]
+  - main [ref=e51]:
+    - generic [ref=e58]:
+      - generic [ref=e59]:
+        - heading "How does the burn relate to laser dose?" [level=1] [ref=e60]
+        - generic [ref=e61]:
+          - generic [ref=e62]: SS Tag
+          - generic [ref=e63]: ·
+          - generic [ref=e64]: n = 280
+          - generic [ref=e65]: ·
+          - generic [ref=e66]: v1
+      - generic [ref=e68]:
+        - generic [ref=e69]:
+          - generic [ref=e70]: Material
+          - combobox "Material" [ref=e71]:
+            - option "SS Tag" [selected]
+            - option "Circular tag"
+            - option "Stainless 0.3mm card"
+            - option "SS 4 Hole Card 1mm"
+            - option "Xtool SS Tag"
+            - option "100x100x1mm SS"
+        - tablist "scatter mode" [ref=e72]:
+          - tab "univariate" [ref=e73] [cursor=pointer]
+          - tab "bivariate" [selected] [ref=e74] [cursor=pointer]
+        - button "xTEx ▾" [ref=e75] [cursor=pointer]
+        - button "yPIn ▾" [ref=e76] [cursor=pointer]
+        - button "× CANCEL" [pressed] [ref=e77] [cursor=pointer]
+      - generic [ref=e79]:
+        - main [ref=e80]:
+          - generic [ref=e82]:
+            - generic [ref=e85] [cursor=pointer]: LOG₁₀ PULSE INTENSITY IDX
+            - img "exposure scatter" [ref=e87]:
+              - generic [ref=e89]: "2512"
+              - generic [ref=e90]: "3981"
+              - generic [ref=e91]: "6310"
+              - generic [ref=e92]: "10000"
+              - generic [ref=e93]: "15849"
+              - generic [ref=e94]: "25119"
+              - generic [ref=e95]: "39811"
+              - generic [ref=e96]: "2.5e-4"
+              - generic [ref=e97]: "4.0e-4"
+              - generic [ref=e98]: "6.3e-4"
+              - generic [ref=e99]: "0.0010"
+            - generic [ref=e666] [cursor=pointer]:
+              - generic [ref=e667]: LOG₁₀ TOTAL EXPOSURE IDX
+              - generic [ref=e668]: power × density × passes ÷ speed
+          - generic [ref=e669]:
+            - radiogroup "lens" [ref=e670]:
+              - radio "all" [checked] [ref=e671] [cursor=pointer]
+              - radio "validation" [ref=e672] [cursor=pointer]
+              - radio "sweep" [ref=e673] [cursor=pointer]
+            - generic [ref=e674]:
+              - switch "◰ crop" [ref=e675] [cursor=pointer]
+              - switch "⌖ trim 1/99%" [checked] [ref=e676] [cursor=pointer]
+          - generic [ref=e677]:
+            - generic [ref=e678]: r-0.524
+            - generic [ref=e679]: ρ-0.613
+            - generic [ref=e680]: R²0.490
+            - generic [ref=e681]: n280
+        - complementary [ref=e682]:
+          - generic [ref=e683]:
+            - generic [ref=e684]:
+              - generic [ref=e685]: Propose Test
+              - generic [ref=e686]:
+                - button "curve" [ref=e687] [cursor=pointer]
+                - button "fill" [ref=e688] [cursor=pointer]
+            - generic [ref=e689]:
+              - generic [ref=e690]: Anchor
+              - generic [ref=e691]: "#a78e70"
+              - generic [ref=e692]: 53 entries inside polygon
+            - generic [ref=e693]:
+              - generic [ref=e694]: Vary
+              - generic [ref=e695]:
+                - button "POWER" [pressed] [ref=e696] [cursor=pointer]
+                - button "SPEED" [pressed] [ref=e697] [cursor=pointer]
+                - button "FREQ" [ref=e698] [cursor=pointer]
+                - button "DENSITY" [ref=e699] [cursor=pointer]
+            - generic [ref=e700]:
+              - generic [ref=e701]:
+                - generic [ref=e702]: Params
+                - button "↺ reset" [disabled] [ref=e703] [cursor=pointer]
+              - generic [ref=e704]:
+                - generic [ref=e705]:
+                  - generic [ref=e706]: POWER
+                  - generic "Locked — varied param. Range 10.198896284066418..15.573209581280254" [ref=e707]
+                  - generic "10.2 % → 15.6 %" [ref=e709]: 10.2 %→15.6 %
+                - generic [ref=e710]:
+                  - generic [ref=e711]: SPEED
+                  - generic "Locked — varied param. Range 379.8794418802901..1062.9171521620106" [ref=e712]
+                  - generic "380 mm/s → 1063 mm/s" [ref=e714]: 380 mm/s→1063 mm/s
+                - generic [ref=e715]:
+                  - generic [ref=e716]: FREQ
+                  - slider "FREQ value" [ref=e717]: "87"
+                  - generic [ref=e718]: 87.0 kHz
+                - generic [ref=e719]:
+                  - generic [ref=e720]: DENSITY
+                  - slider "DENSITY value" [ref=e721]: "5000"
+                  - generic [ref=e722]: 5000 lpc
+                - generic [ref=e723]:
+                  - generic [ref=e724]: PASSES
+                  - slider "PASSES value" [ref=e725]: "1"
+                  - generic [ref=e726]: "1"
+                - generic [ref=e727]:
+                  - generic [ref=e728]: PULSE W
+                  - slider "PULSE W value" [ref=e729]: "200"
+                  - generic [ref=e730]: 200 ns
+            - generic [ref=e731]:
+              - generic [ref=e732]: Burn settings
+              - generic [ref=e733]:
+                - generic [ref=e734]:
+                  - generic [ref=e735]: SCAN ANGLE
+                  - slider "Scan angle" [ref=e736]: "90"
+                  - generic [ref=e737]: 90°
+                - generic [ref=e738] [cursor=pointer]:
+                  - checkbox "Crosshatch" [ref=e739]
+                  - generic [ref=e740]: Crosshatch
+                - generic [ref=e741]:
+                  - generic [ref=e742]: ANGLE MODE
+                  - generic [ref=e743]:
+                    - button "fixed" [pressed] [ref=e744] [cursor=pointer]
+                    - button "incr" [ref=e745] [cursor=pointer]
+                - generic [ref=e746] [cursor=pointer]:
+                  - checkbox "Unidirectional" [ref=e747]
+                  - generic [ref=e748]: Unidirectional
+            - generic [ref=e749]:
+              - generic [ref=e751]: Cells · 16
+              - slider "Cells" [ref=e752]: "16"
+              - generic [ref=e753]:
+                - generic [ref=e754]: "2"
+                - generic [ref=e755]: "200"
+            - generic [ref=e756]:
+              - generic [ref=e757]: Range
+              - generic [ref=e758]: SPEED · 380 → 1063 mm/s
+              - generic [ref=e759]: POWER · 10.2 → 15.6 %
+            - button "Create Test →" [ref=e760] [cursor=pointer]
+            - button "Cancel" [ref=e761] [cursor=pointer]

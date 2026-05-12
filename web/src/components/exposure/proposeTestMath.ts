@@ -130,7 +130,7 @@ export function sampleParamHypercube(
   if (pwPresets.length === 0) return null;
 
   const sampleInt = (lo: number, hi: number): number =>
-    lo === hi ? lo : Math.round(lo + Math.random() * (hi - lo));
+    lo === hi ? lo : lo + Math.floor(Math.random() * (hi - lo + 1));
 
   const params: LaserParams = {
     power:       sampleInt(r.power.min, r.power.max),

@@ -1,0 +1,42 @@
+- generic [ref=e3]:
+  - link "Skip to main content" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner [ref=e5]:
+    - generic [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]: xcs-gen
+        - generic [ref=e10]: workbench
+      - navigation [ref=e11]:
+        - button "Testing" [ref=e12] [cursor=pointer]:
+          - generic [ref=e13]: Testing
+          - img [ref=e14]
+        - button "Materials" [ref=e16] [cursor=pointer]:
+          - generic [ref=e17]: Materials
+          - img [ref=e18]
+        - button "Engraving" [ref=e20] [cursor=pointer]:
+          - generic [ref=e21]: Engraving
+          - img [ref=e22]
+        - button "Experimental" [ref=e24] [cursor=pointer]:
+          - generic [ref=e25]: Experimental
+          - img [ref=e26]
+      - generic [ref=e28]:
+        - 'button "Active machine: F2 Ultra. Click to switch." [ref=e52] [cursor=pointer]':
+          - img [ref=e53]
+          - generic [ref=e54]: F2 Ultra
+          - img [ref=e55]
+        - button "Open the Getting Started guide" [ref=e30] [cursor=pointer]:
+          - img [ref=e31]
+          - generic [ref=e33]: Guide
+        - button "Open changelog" [ref=e34] [cursor=pointer]:
+          - img [ref=e35]
+          - generic [ref=e38]: New
+          - generic [ref=e57]: 9+
+        - button "Upload test photo" [ref=e39] [cursor=pointer]:
+          - img [ref=e40]
+          - generic [ref=e43]: Upload
+        - link "View source on GitHub (opens in new tab)" [ref=e44] [cursor=pointer]:
+          - /url: https://github.com/jonzkys/xtool-color-testing
+          - img [ref=e45]
+        - 'button "Theme: system. Click to cycle." [ref=e47] [cursor=pointer]':
+          - img [ref=e48]
+  - main [ref=e51]
