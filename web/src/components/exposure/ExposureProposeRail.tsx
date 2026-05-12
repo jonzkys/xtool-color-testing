@@ -112,6 +112,12 @@ interface Props {
    *  the rail so a collapsed (vary === false) row can display the
    *  pinned value without re-deriving it from ``paramRows``. */
   anchorParamValues: Record<SampleableKey, number>;
+  /** Per-param pinned-value override. Used when ``varyEnabled[p]`` is
+   *  ``false`` to let the user choose the pinned value rather than just
+   *  reading the anchor's. Independent from ``paramLimitOverrides`` —
+   *  toggling VARY off-on-off preserves both. */
+  pinnedValueOverrides: Partial<Record<SampleableKey, number>>;
+  onPinnedOverrideChange: (param: SampleableKey, value: number | undefined) => void;
 }
 
 const PARAM_LABEL: Record<string, string> = {
@@ -162,6 +168,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
   passesRange, onPassesRangeChange,
   survivorCount,
   varyEnabled, onVaryChange, anchorParamValues,
+  pinnedValueOverrides, onPinnedOverrideChange,
 }) => {
   const isFill = mode.mode === "fill";
 
@@ -320,6 +327,8 @@ export const ExposureProposeRail: React.FC<Props> = ({
                   rangeMax={rangeMax}
                   vary={varyEnabled[p]}
                   pinnedValue={anchorParamValues[p]}
+                  pinnedOverride={pinnedValueOverrides[p]}
+                  onPinnedOverrideChange={(v) => onPinnedOverrideChange(p, v)}
                   onRangeChange={({ min, max }) => {
                     // Persist as overrides; undefined-out the side that
                     // equals the machine limit so we keep the override

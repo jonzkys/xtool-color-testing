@@ -14,32 +14,24 @@ export interface ParamRangeRowProps {
   /** Current user-set max (already clamped to machine range upstream). */
   rangeMax: number;
   vary: boolean;
-  /** Anchor's value for this param — displayed when ``vary === false``. */
+  /** Anchor's value for this param — displayed when ``vary === false``
+   *  unless the user has typed an explicit ``pinnedOverride``. */
   pinnedValue: number;
+  /** User-set pinned value used when ``vary === false``. Undefined =
+   *  fall back to ``pinnedValue`` (the anchor's value). */
+  pinnedOverride?: number;
   onRangeChange: (next: { min: number; max: number }) => void;
   onVaryChange: (next: boolean) => void;
-}
-
-/** Format a numeric param value for compact display.
- *
- *  Tuned to keep the right-aligned numeric column legible in the
- *  narrow rail — integers show as integers, fractional values clip to
- *  the first non-redundant decimal, and a trailing space + unit is
- *  appended only when ``unit`` is non-empty. */
-function formatValue(v: number | null | undefined, unit: string): string {
-  if (v == null || !Number.isFinite(v)) return "—";
-  const u = unit ? ` ${unit}` : "";
-  if (Math.abs(v) >= 1000) return `${Math.round(v)}${u}`;
-  if (Math.abs(v) >= 100) return `${v.toFixed(0)}${u}`;
-  if (Math.abs(v) >= 10) return `${v.toFixed(1)}${u}`;
-  if (Number.isInteger(v)) return `${v}${u}`;
-  return `${v.toFixed(2)}${u}`;
+  /** Called when the user types a new pinned value. Pass ``undefined``
+   *  when the field is cleared or set back to the anchor value so the
+   *  override clears and the row falls back to the anchor. */
+  onPinnedOverrideChange: (next: number | undefined) => void;
 }
 
 /** Compact numeric formatter for the in-field readout (no unit, since
- *  the value sits beside the slider and the unit lives on the label).
- *  Mirrors ``formatValue`` precision rules so the displayed text reads
- *  identically to the pinned-mode collapsed line. */
+ *  the value sits beside the slider and the unit lives on the label /
+ *  beside the field). Integers show as integers, fractional values
+ *  clip to the first non-redundant decimal. */
 function formatBare(v: number): string {
   if (!Number.isFinite(v)) return "";
   if (Math.abs(v) >= 1000) return `${Math.round(v)}`;
@@ -182,8 +174,10 @@ export const ParamRangeRow: React.FC<ParamRangeRowProps> = ({
   rangeMax,
   vary,
   pinnedValue,
+  pinnedOverride,
   onRangeChange,
   onVaryChange,
+  onPinnedOverrideChange,
 }) => {
   const commitMin = (raw: string) => {
     if (raw === "") return;
@@ -194,6 +188,23 @@ export const ParamRangeRow: React.FC<ParamRangeRowProps> = ({
     const nextMin = clampedToMachine;
     const nextMax = Math.max(clampedToMachine, rangeMax);
     onRangeChange({ min: nextMin, max: nextMax });
+  };
+
+  const commitPinned = (raw: string) => {
+    if (raw === "") {
+      onPinnedOverrideChange(undefined);
+      return;
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return;
+    const clamped = Math.max(machineMin, Math.min(machineMax, n));
+    // If the typed value lands back on the anchor, clear the override so
+    // the row reads as "no override" (muted colour, falls back to anchor).
+    if (clamped === pinnedValue) {
+      onPinnedOverrideChange(undefined);
+      return;
+    }
+    onPinnedOverrideChange(clamped);
   };
 
   const commitMax = (raw: string) => {
@@ -228,6 +239,11 @@ export const ParamRangeRow: React.FC<ParamRangeRowProps> = ({
   );
 
   if (!vary) {
+    const effectivePinned = pinnedOverride ?? pinnedValue;
+    // ``atBound`` here reuses the EditableValue colour convention: when
+    // the value equals the anchor (no override), render muted; when the
+    // user has set an override, render active.
+    const noOverride = pinnedOverride === undefined;
     return (
       <div
         className="flex items-center gap-2 min-w-0"
@@ -236,8 +252,29 @@ export const ParamRangeRow: React.FC<ParamRangeRowProps> = ({
         <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[68px] flex-none truncate">
           {label}
         </div>
-        <div className="flex-1 min-w-0 font-mono text-[10px] tabular-nums text-[color:var(--color-ink)] text-right truncate">
-          {formatValue(pinnedValue, unit)}
+        <div className="flex-1 min-w-0 flex items-center justify-end gap-1">
+          <EditableValue
+            ariaLabel={`${paramKey} value`}
+            value={effectivePinned}
+            min={machineMin}
+            max={machineMax}
+            step={step}
+            atBound={noOverride}
+            align="right"
+            onCommit={commitPinned}
+          />
+          {unit ? (
+            <span
+              className={
+                "font-mono text-[10px] tabular-nums leading-none flex-none " +
+                (noOverride
+                  ? "text-[color:var(--color-ink-subtle)]"
+                  : "text-[color:var(--color-ink)]")
+              }
+            >
+              {unit}
+            </span>
+          ) : null}
         </div>
         {varyToggle}
       </div>

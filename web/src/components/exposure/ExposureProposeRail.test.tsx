@@ -108,6 +108,8 @@ function defaultProps() {
       pulse_width: 200,
       passes: 1,
     },
+    pinnedValueOverrides: {} as Partial<Record<import("./proposeTestMath").SampleableKey, number>>,
+    onPinnedOverrideChange: vi.fn(),
   };
 }
 
@@ -340,7 +342,7 @@ describe("ExposureProposeRail unified PARAMS — fill mode", () => {
     expect(screen.getByLabelText(/power maximum/i)).toBeInTheDocument();
   });
 
-  it("vary OFF collapses the row to a pinned value (no slider / boxes)", () => {
+  it("vary OFF collapses the row to an editable pinned value (no slider)", () => {
     const { container } = render(<ExposureProposeRail
       {...defaultProps()}
       mode={{ mode: "fill", varyParams: ["power", "speed"] }}
@@ -355,14 +357,58 @@ describe("ExposureProposeRail unified PARAMS — fill mode", () => {
     />);
     const row = container.querySelector('[data-row="power"]');
     expect(row).toBeTruthy();
-    // Pinned value renders (anchor power = 14.6 → "14.6 %").
-    expect(row!.textContent).toMatch(/14\.6 %/);
+    // Pinned value renders (anchor power = 14.6) — the editable input
+    // shows the bare value and the unit sits beside it as a span.
+    const valueInput = row!.querySelector('input[aria-label="power value"]') as HTMLInputElement | null;
+    expect(valueInput).toBeTruthy();
+    expect(valueInput!.value).toMatch(/14\.6/);
+    expect(row!.textContent).toMatch(/%/);
     // No Radix slider thumb for power.
     expect(row!.querySelector('[role="slider"]')).toBeNull();
-    // No min/max number inputs for power.
-    expect(row!.querySelector('input[type="number"]')).toBeNull();
+    // No min/max readouts for power — they only render when vary is ON.
+    expect(row!.querySelector('input[aria-label="power minimum"]')).toBeNull();
+    expect(row!.querySelector('input[aria-label="power maximum"]')).toBeNull();
     // Vary toggle pill still present.
     expect(row!.querySelector('button[role="switch"]')).toBeTruthy();
+  });
+
+  it("vary OFF: typing a new pinned value calls onPinnedOverrideChange", () => {
+    const onPinnedOverrideChange = vi.fn();
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+      varyEnabled={{
+        power: false,
+        speed: true,
+        frequency: true,
+        density: true,
+        pulse_width: true,
+        passes: true,
+      }}
+      onPinnedOverrideChange={onPinnedOverrideChange}
+    />);
+    fireEvent.change(screen.getByLabelText(/power value/i), { target: { value: "20" } });
+    expect(onPinnedOverrideChange).toHaveBeenCalledWith("power", 20);
+  });
+
+  it("vary OFF: clearing the pinned value calls onPinnedOverrideChange(undefined)", () => {
+    const onPinnedOverrideChange = vi.fn();
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+      varyEnabled={{
+        power: false,
+        speed: true,
+        frequency: true,
+        density: true,
+        pulse_width: true,
+        passes: true,
+      }}
+      pinnedValueOverrides={{ power: 20 }}
+      onPinnedOverrideChange={onPinnedOverrideChange}
+    />);
+    fireEvent.change(screen.getByLabelText(/power value/i), { target: { value: "" } });
+    expect(onPinnedOverrideChange).toHaveBeenCalledWith("power", undefined);
   });
 
   it("clicking the vary toggle flips state", () => {

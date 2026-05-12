@@ -554,6 +554,12 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     passes: true,
   }), []);
   const [varyEnabled, setVaryEnabled] = useState<Record<SampleableKey, boolean>>(VARY_DEFAULT);
+  // Per-param user-set pinned values used when ``varyEnabled[p]`` is
+  // ``false``. Kept independent of ``proposeLimitOverrides`` (which
+  // drives the range slider min/max) so toggling VARY off-on-off
+  // preserves both the user's range AND their pinned override.
+  const [pinnedValueOverrides, setPinnedValueOverrides] =
+    useState<Partial<Record<SampleableKey, number>>>({});
 
   // ── propose-test BURN SETTINGS state ──────────────────────────────────
   // Three-layer cascade like paramOverrides:
@@ -729,12 +735,19 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       override?: { min?: number; max?: number },
     ) => {
       if (varyEnabled[key]) return range(key, machine, override);
-      const raw = effectiveBaseParams?.[key as keyof typeof effectiveBaseParams] as number | undefined;
+      // Prefer the user-set pinned override when present; fall back to
+      // the anchor's resolved value. Either way we clamp to the machine
+      // window and snap pulse_width to the nearest allowed preset.
+      const anchorRaw = effectiveBaseParams?.[key as keyof typeof effectiveBaseParams] as number | undefined;
+      const overrideRaw = pinnedValueOverrides[key];
+      const raw = overrideRaw !== undefined && Number.isFinite(overrideRaw)
+        ? overrideRaw
+        : anchorRaw;
       if (raw == null || !Number.isFinite(raw)) return range(key, machine, override);
-      let pinned = raw;
+      let pinned = Math.max(machine.min, Math.min(machine.max, raw));
       if (key === "pulse_width") {
         pinned = ALLOWED_PULSE_WIDTHS.reduce((a, b) =>
-          Math.abs(b - raw) < Math.abs(a - raw) ? b : a,
+          Math.abs(b - pinned) < Math.abs(a - pinned) ? b : a,
         );
       }
       return { min: pinned, max: pinned };
@@ -760,7 +773,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       },
       crosshatch: crosshatchPolicy,
     };
-  }, [effectiveLaserLimits, proposeLimitOverrides, passesRange, crosshatchPolicy, varyEnabled, effectiveBaseParams]);
+  }, [effectiveLaserLimits, proposeLimitOverrides, passesRange, crosshatchPolicy, varyEnabled, effectiveBaseParams, pinnedValueOverrides]);
 
   // Palette entries currently inside the polygon — count is shown in the
   // rail. (Historically these coords fed `fillByInverseSolve` to avoid
@@ -911,6 +924,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     setPassesRange({ min: 1, max: 4 });
     setCrosshatchPolicy("varies");
     setVaryEnabled(VARY_DEFAULT);
+    setPinnedValueOverrides({});
   }, [VARY_DEFAULT]);
 
   const handleToggleProposeMode = useCallback(() => {
@@ -927,6 +941,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
       setPassesRange({ min: 1, max: 4 });
       setCrosshatchPolicy("varies");
       setVaryEnabled(VARY_DEFAULT);
+      setPinnedValueOverrides({});
     } else {
       closeProposeWizard();
     }
@@ -1403,6 +1418,15 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                 density: effectiveBaseParams?.density ?? F2_MOPA_LIMITS.density.min,
                 pulse_width: effectiveBaseParams?.pulse_width ?? ALLOWED_PULSE_WIDTHS[0],
                 passes: effectiveBaseParams?.passes ?? 1,
+              }}
+              pinnedValueOverrides={pinnedValueOverrides}
+              onPinnedOverrideChange={(p, v) => {
+                setPinnedValueOverrides((prev) => {
+                  const next = { ...prev };
+                  if (v === undefined) delete next[p];
+                  else next[p] = v;
+                  return next;
+                });
               }}
             />
           ) : (
