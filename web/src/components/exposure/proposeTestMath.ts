@@ -77,6 +77,7 @@ export function findAnchor(
 }
 
 import { computeIndices, type LaserParams, type LaserIndices } from "../../laser/laserIndices";
+import { ALLOWED_PULSE_WIDTHS } from "../../laser/pulseWidths";
 
 export type ParamKey = "power" | "speed" | "frequency" | "density";
 
@@ -107,6 +108,47 @@ export interface ForwardSampleConstraints {
   /** ``"varies"`` (default) — sample crosshatch ~Bernoulli(0.5).
    *  ``"on"`` / ``"off"`` — pin every candidate to that value. */
   crosshatch: "varies" | "on" | "off";
+}
+
+/** One candidate recipe drawn from the constraint hypercube. */
+export interface CandidateSample {
+  params: LaserParams;
+  crosshatch: boolean;
+}
+
+/** Draw a single recipe candidate. Returns ``null`` if the pulse_width
+ *  range admits no allowed preset (the only constraint that can be
+ *  unsatisfiable on its own). All other ranges either pin or sample
+ *  uniformly on the (snapped) integer line. */
+export function sampleParamHypercube(
+  c: ForwardSampleConstraints,
+): CandidateSample | null {
+  const r = c.ranges;
+  const pwPresets = ALLOWED_PULSE_WIDTHS.filter(
+    (v) => v >= r.pulse_width.min && v <= r.pulse_width.max,
+  );
+  if (pwPresets.length === 0) return null;
+
+  const sampleInt = (lo: number, hi: number): number =>
+    lo === hi ? lo : Math.round(lo + Math.random() * (hi - lo));
+
+  const params: LaserParams = {
+    power:       sampleInt(r.power.min, r.power.max),
+    speed:       sampleInt(r.speed.min, r.speed.max),
+    frequency:   sampleInt(r.frequency.min, r.frequency.max),
+    density:     sampleInt(r.density.min, r.density.max),
+    pulse_width: pwPresets[Math.floor(Math.random() * pwPresets.length)],
+    passes:      sampleInt(r.passes.min, r.passes.max),
+  };
+
+  let crosshatch: boolean;
+  switch (c.crosshatch) {
+    case "on":  crosshatch = true; break;
+    case "off": crosshatch = false; break;
+    default:    crosshatch = Math.random() < 0.5;
+  }
+
+  return { params, crosshatch };
 }
 
 export interface CurveSample {

@@ -618,6 +618,79 @@ describe("computeCurve crosshatch", () => {
   });
 });
 
+import { sampleParamHypercube, type ForwardSampleConstraints } from "./proposeTestMath";
+import { ALLOWED_PULSE_WIDTHS } from "../../laser/pulseWidths";
+
+function freshConstraints(): ForwardSampleConstraints {
+  return {
+    ranges: {
+      power:       { min: 1, max: 100 },
+      speed:       { min: 2, max: 15000 },
+      frequency:   { min: 60, max: 500 },
+      density:     { min: 1, max: 5000 },
+      pulse_width: { min: ALLOWED_PULSE_WIDTHS[0],
+                     max: ALLOWED_PULSE_WIDTHS[ALLOWED_PULSE_WIDTHS.length - 1] },
+      passes:      { min: 1, max: 4 },
+    },
+    crosshatch: "varies",
+  };
+}
+
+describe("sampleParamHypercube", () => {
+  it("emits values inside the configured ranges", () => {
+    const c = freshConstraints();
+    for (let i = 0; i < 200; i++) {
+      const s = sampleParamHypercube(c)!;
+      expect(s.params.power).toBeGreaterThanOrEqual(1);
+      expect(s.params.power).toBeLessThanOrEqual(100);
+      expect(s.params.passes).toBeGreaterThanOrEqual(1);
+      expect(s.params.passes).toBeLessThanOrEqual(4);
+      expect(Number.isInteger(s.params.passes)).toBe(true);
+      expect(ALLOWED_PULSE_WIDTHS).toContain(s.params.pulse_width);
+    }
+  });
+
+  it("pins a param when min === max", () => {
+    const c = freshConstraints();
+    c.ranges.power = { min: 14.6, max: 14.6 };
+    for (let i = 0; i < 50; i++) {
+      expect(sampleParamHypercube(c)!.params.power).toBe(14.6);
+    }
+  });
+
+  it("respects crosshatch=on", () => {
+    const c = freshConstraints();
+    c.crosshatch = "on";
+    for (let i = 0; i < 50; i++) {
+      expect(sampleParamHypercube(c)!.crosshatch).toBe(true);
+    }
+  });
+
+  it("respects crosshatch=off", () => {
+    const c = freshConstraints();
+    c.crosshatch = "off";
+    for (let i = 0; i < 50; i++) {
+      expect(sampleParamHypercube(c)!.crosshatch).toBe(false);
+    }
+  });
+
+  it("varies crosshatch when crosshatch=varies (covers both values across many samples)", () => {
+    const c = freshConstraints();
+    const seen = new Set<boolean>();
+    for (let i = 0; i < 200 && seen.size < 2; i++) {
+      seen.add(sampleParamHypercube(c)!.crosshatch);
+    }
+    expect(seen.size).toBe(2);
+  });
+
+  it("returns null when pulse_width range admits no allowed presets", () => {
+    const c = freshConstraints();
+    // Range that's strictly between two allowed presets — should return null.
+    c.ranges.pulse_width = { min: 5, max: 5 };  // not an allowed value
+    expect(sampleParamHypercube(c)).toBeNull();
+  });
+});
+
 describe("FillCell shape", () => {
   it("optionally carries passes and crosshatch", () => {
     const cell: FillCell = {
