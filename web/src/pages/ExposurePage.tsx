@@ -1248,6 +1248,10 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                 });
               }}
               laserLimits={effectiveLaserLimits}
+              crosshatchPolicy="varies"
+              onCrosshatchPolicyChange={() => { /* wired in Task 9 */ }}
+              passesRange={{ min: 1, max: 4 }}
+              onPassesRangeChange={() => { /* wired in Task 9 */ }}
             />
           ) : (
             <>

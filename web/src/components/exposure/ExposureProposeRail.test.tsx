@@ -84,6 +84,10 @@ function defaultProps() {
       frequency: { min: 60, max: 500,   step: 1 },
       density:   { min: 1,  max: 5000,  step: 1 },
     },
+    crosshatchPolicy: "varies" as "varies" | "on" | "off",
+    onCrosshatchPolicyChange: vi.fn(),
+    passesRange: { min: 1, max: 4 },
+    onPassesRangeChange: vi.fn(),
   };
 }
 
@@ -175,7 +179,7 @@ describe("ExposureProposeRail burn settings", () => {
   it("calls onBurnSettingChange when crosshatch toggles", () => {
     const onBurnSettingChange = vi.fn();
     render(<ExposureProposeRail {...defaultProps()} onBurnSettingChange={onBurnSettingChange} />);
-    const cb = screen.getByLabelText(/Crosshatch/) as HTMLInputElement;
+    const cb = screen.getByLabelText(/^Crosshatch$/) as HTMLInputElement;
     fireEvent.click(cb);
     expect(onBurnSettingChange).toHaveBeenCalledWith("crosshatch", true);
   });
@@ -212,5 +216,34 @@ describe("ExposureProposeRail burn settings", () => {
     const inc = container.querySelector('[data-row="angle_mode"] button:nth-of-type(2)');
     expect(fixed?.getAttribute("aria-pressed")).toBe("false");
     expect(inc?.getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+describe("ExposureProposeRail CONSTRAINTS — crosshatch / passes", () => {
+  it("renders the crosshatch tri-state", () => {
+    render(<ExposureProposeRail {...defaultProps()} crosshatchPolicy="varies" />);
+    expect(screen.getByLabelText(/crosshatch varies/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/crosshatch on/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/crosshatch off/i)).toBeInTheDocument();
+  });
+
+  it("calls onCrosshatchPolicyChange when a state is clicked", () => {
+    const onCrosshatchPolicyChange = vi.fn();
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      crosshatchPolicy="varies"
+      onCrosshatchPolicyChange={onCrosshatchPolicyChange}
+    />);
+    fireEvent.click(screen.getByLabelText(/crosshatch on/i));
+    expect(onCrosshatchPolicyChange).toHaveBeenCalledWith("on");
+  });
+
+  it("renders the passes min/max inputs", () => {
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      passesRange={{ min: 1, max: 4 }}
+    />);
+    expect(screen.getByLabelText(/passes minimum/i)).toHaveValue(1);
+    expect(screen.getByLabelText(/passes maximum/i)).toHaveValue(4);
   });
 });

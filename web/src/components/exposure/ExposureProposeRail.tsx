@@ -91,6 +91,12 @@ interface Props {
   /** Machine limits for the four varied-eligible params — surfaced so the
    *  CONSTRAINTS section can show defaults in the placeholder. */
   laserLimits: Record<ParamKey, { min: number; max: number; step: number }>;
+  /** Crosshatch sampling policy for fill mode. */
+  crosshatchPolicy: "varies" | "on" | "off";
+  onCrosshatchPolicyChange: (v: "varies" | "on" | "off") => void;
+  /** Min/max pass count for fill mode. min === max pins the value. */
+  passesRange: { min: number; max: number };
+  onPassesRangeChange: (next: { min: number; max: number }) => void;
 }
 
 const PARAM_LABEL: Record<string, string> = {
@@ -122,6 +128,8 @@ export const ExposureProposeRail: React.FC<Props> = ({
   useFilters, onUseFiltersChange,
   ignoreExistingCells, onIgnoreExistingCellsChange,
   paramLimitOverrides, onParamLimitOverrideChange, laserLimits,
+  crosshatchPolicy, onCrosshatchPolicyChange,
+  passesRange, onPassesRangeChange,
 }) => {
   const isFill = mode.mode === "fill";
 
@@ -401,6 +409,77 @@ export const ExposureProposeRail: React.FC<Props> = ({
               );
             });
           })()}
+
+          {/* Crosshatch tri-state */}
+          <div className="flex items-center gap-2 min-w-0" data-row="crosshatch-policy">
+            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[60px] flex-none truncate">
+              CROSSHATCH
+            </div>
+            <div className="flex gap-1 flex-1 min-w-0">
+              {(["varies", "on", "off"] as const).map((v) => {
+                const active = crosshatchPolicy === v;
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    aria-pressed={active}
+                    aria-label={`Crosshatch ${v}`}
+                    onClick={() => onCrosshatchPolicyChange(v)}
+                    className={
+                      "flex-1 min-w-0 px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] rounded-sm border truncate " +
+                      (active
+                        ? "border-[color:var(--color-primary)] bg-[color:var(--color-primary)] text-white"
+                        : "border-[color:var(--color-border)] text-[color:var(--color-ink-muted)]")
+                    }
+                  >
+                    {v}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Passes min/max */}
+          <div className="flex items-center gap-2 min-w-0" data-row="passes-range">
+            <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] w-[60px] flex-none truncate">
+              PASSES
+            </div>
+            <input
+              type="number"
+              aria-label="Passes minimum"
+              value={passesRange.min}
+              min={1}
+              max={99}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (Number.isFinite(v)) {
+                  onPassesRangeChange({
+                    ...passesRange,
+                    min: Math.max(1, Math.min(99, Math.round(v))),
+                  });
+                }
+              }}
+              className="flex-1 min-w-0 font-mono text-[10px] tabular-nums px-1.5 h-[20px] rounded-sm border border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-ink)] focus:outline-none focus:border-[color:var(--color-primary)]"
+            />
+            <span aria-hidden className="font-mono text-[10px] text-[color:var(--color-ink-subtle)]">–</span>
+            <input
+              type="number"
+              aria-label="Passes maximum"
+              value={passesRange.max}
+              min={1}
+              max={99}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (Number.isFinite(v)) {
+                  onPassesRangeChange({
+                    ...passesRange,
+                    max: Math.max(1, Math.min(99, Math.round(v))),
+                  });
+                }
+              }}
+              className="flex-1 min-w-0 font-mono text-[10px] tabular-nums px-1.5 h-[20px] rounded-sm border border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-ink)] focus:outline-none focus:border-[color:var(--color-primary)]"
+            />
+          </div>
         </div>
       </section>
 
