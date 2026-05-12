@@ -1144,7 +1144,7 @@ class ValidationCellIn(BaseModel):
     # before they hit ``_set_param``. Matches the project's tolerant
     # input-validator convention (CLAUDE.md "Pydantic validators snap
     # legacy values rather than rejecting").
-    params: dict[str, float | int | str | None]
+    params: dict[str, float | int | bool | str | None]
 
 
 class ValidationCellsPatch(BaseModel):

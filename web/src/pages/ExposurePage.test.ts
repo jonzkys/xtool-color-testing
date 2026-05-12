@@ -16,10 +16,12 @@ describe("mergeFillCellWithBase", () => {
     expect(mergeFillCellWithBase(base, cell)).toEqual(base);
   });
 
-  it("cell.paramValues override base", () => {
+  it("cell.paramValues override base, base-only keys survive", () => {
     const base = { power: 12, speed: 1000 };
     const cell: FillCell = { paramValues: { power: 14.6 }, x: 0, y: 0 };
-    expect(mergeFillCellWithBase(base, cell).power).toBe(14.6);
+    const out = mergeFillCellWithBase(base, cell);
+    expect(out.power).toBe(14.6);
+    expect(out.speed).toBe(1000);
   });
 
   it("attaches passes + crosshatch when set on the cell", () => {
