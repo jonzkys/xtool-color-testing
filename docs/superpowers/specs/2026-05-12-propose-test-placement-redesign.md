@@ -75,6 +75,33 @@ interface FillCell {
 - **Curve** — unchanged: vary one param along the polygon's arc-length.
 - **Fill** — new behaviour: forward sample. The current 2x2 VARY pill grid gets removed in this mode; per-param pinning happens via CONSTRAINTS (existing surface).
 
+### CONSTRAINTS section: min/max sliders for every numeric param
+
+Today the CONSTRAINTS section only renders min/max inputs for the param(s) currently being "varied" (1 for curve, 2 for fill). Under the new model every numeric param can vary, so every numeric param needs its own min/max row, always rendered, regardless of mode:
+
+```
+CONSTRAINTS
+  ☐ Use active filters
+  ☐ Ignore existing cells
+
+  POWER       [□ min] – [□ max]    placeholder = machine limit
+  SPEED       [□ min] – [□ max]
+  FREQUENCY   [□ min] – [□ max]
+  DENSITY     [□ min] – [□ max]
+  PULSE W.    [□ min] – [□ max]
+  PASSES      [□ min] – [□ max]
+  CROSSHATCH  [varies] [on] [off]
+```
+
+Behaviour per row:
+
+- **Empty placeholders** → use machine limit. Param varies freely on its full range.
+- **`min == max`** → pin to that single value. Param does not vary.
+- **`min < max`** → uniform sample on the (snapped/stepped) range.
+- **Filter-driven overrides** (when "Use active filters" is on) AND user-typed values are AND'd: the narrower wins (existing behaviour).
+
+The four-button VARY pill grid is **removed** in fill mode. Curve mode keeps it (curve mode still varies exactly one param). Where the pill grid used to live in fill mode, the CONSTRAINTS list takes the space.
+
 ### New crosshatch / passes controls inside CONSTRAINTS
 
 Two new rows in the CONSTRAINTS section:
