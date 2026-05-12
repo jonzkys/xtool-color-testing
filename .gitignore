@@ -42,3 +42,6 @@ web/dist/
 web/*.tsbuildinfo
 web/vite.config.d.ts
 web/vite.config.js
+
+# Playwright MCP scratch output
+.playwright-mcp/

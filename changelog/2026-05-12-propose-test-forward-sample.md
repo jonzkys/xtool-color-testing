@@ -20,4 +20,4 @@ What changes:
 - **Surfaces a partial-fill hint** below the cell-count slider when constraints are too tight (`Found N of M cells.` or `No cells reachable.`).
 - **Persists per-cell recipes**: when crosshatch or passes vary across the sweep, each cell's `validation_cells.params` carries its own value so the burn matches what the algorithm chose.
 
-CONSTRAINTS in fill mode now renders min/max rows for every numeric parameter (power, speed, frequency, density, pulse width) regardless of how many params are picked to vary. Filter-driven overrides continue to AND with the per-param sliders — the narrower bound wins.
+The fill-mode rail is reorganised around per-param rows. Each numeric parameter gets one row with a two-thumb range slider, click-to-edit min/max labels at each end, and a `VARY` toggle on the right. Turning `VARY` off collapses the row to a single editable pinned-value label that defaults to the anchor cell. Filter-driven overrides continue to AND with the per-row sliders — the narrower bound wins.
