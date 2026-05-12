@@ -90,6 +90,7 @@ function defaultProps() {
     onCrosshatchPolicyChange: vi.fn(),
     passesRange: { min: 1, max: 4 },
     onPassesRangeChange: vi.fn(),
+    survivorCount: 16,
   };
 }
 
@@ -279,5 +280,24 @@ describe("ExposureProposeRail CONSTRAINTS — crosshatch / passes", () => {
     />);
     fireEvent.change(screen.getByLabelText(/passes minimum/i), { target: { value: "8" } });
     expect(onPassesRangeChange).toHaveBeenCalledWith({ min: 8, max: 8 });
+  });
+
+  it("renders 'Found N/M cells' hint when canCreate is true but cells fall short", () => {
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      cellCount={50}
+      survivorCount={31}
+    />);
+    expect(screen.getByText(/found 31 of 50 cells/i)).toBeInTheDocument();
+  });
+
+  it("renders 'No cells reachable' hint when survivors is 0", () => {
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      cellCount={50}
+      survivorCount={0}
+      canCreate={false}
+    />);
+    expect(screen.getByText(/no cells reachable/i)).toBeInTheDocument();
   });
 });

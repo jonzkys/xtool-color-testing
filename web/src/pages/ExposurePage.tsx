@@ -1354,6 +1354,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
               onCrosshatchPolicyChange={setCrosshatchPolicy}
               passesRange={passesRange}
               onPassesRangeChange={setPassesRange}
+              survivorCount={preview.cells.length}
             />
           ) : (
             <>

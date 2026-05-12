@@ -97,6 +97,9 @@ interface Props {
   /** Min/max pass count for fill mode. min === max pins the value. */
   passesRange: { min: number; max: number };
   onPassesRangeChange: (next: { min: number; max: number }) => void;
+  /** Number of cells the algorithm actually placed (≤ ``cellCount``).
+   *  Drives the partial-fill feedback line under the cell-count slider. */
+  survivorCount: number;
 }
 
 const PARAM_LABEL: Record<string, string> = {
@@ -130,6 +133,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
   paramLimitOverrides, onParamLimitOverrideChange, laserLimits,
   crosshatchPolicy, onCrosshatchPolicyChange,
   passesRange, onPassesRangeChange,
+  survivorCount,
 }) => {
   const isFill = mode.mode === "fill";
 
@@ -584,6 +588,13 @@ export const ExposureProposeRail: React.FC<Props> = ({
           <span>2</span>
           <span>200</span>
         </div>
+        {survivorCount < cellCount && (
+          <p className="font-mono text-[10px] text-[color:var(--color-ink-muted)] mt-1">
+            {survivorCount === 0
+              ? "No cells reachable. Try widening constraints or redrawing the polygon."
+              : `Found ${survivorCount} of ${cellCount} cells.`}
+          </p>
+        )}
       </section>
 
       <section>
