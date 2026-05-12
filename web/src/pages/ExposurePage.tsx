@@ -1247,7 +1247,15 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   return next;
                 });
               }}
-              laserLimits={effectiveLaserLimits}
+              laserLimits={{
+                ...effectiveLaserLimits,
+                pulse_width: {
+                  min: ALLOWED_PULSE_WIDTHS[0],
+                  max: ALLOWED_PULSE_WIDTHS[ALLOWED_PULSE_WIDTHS.length - 1],
+                  step: 1,
+                },
+                passes: { min: 1, max: 99, step: 1 },
+              }}
               crosshatchPolicy="varies"
               onCrosshatchPolicyChange={() => { /* wired in Task 9 */ }}
               passesRange={{ min: 1, max: 4 }}

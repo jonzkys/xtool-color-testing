@@ -79,10 +79,12 @@ function defaultProps() {
     paramLimitOverrides: {},
     onParamLimitOverrideChange: vi.fn(),
     laserLimits: {
-      power:     { min: 1,  max: 100,   step: 1 },
-      speed:     { min: 2,  max: 15000, step: 1 },
-      frequency: { min: 60, max: 500,   step: 1 },
-      density:   { min: 1,  max: 5000,  step: 1 },
+      power:       { min: 1,  max: 100,   step: 1 },
+      speed:       { min: 2,  max: 15000, step: 1 },
+      frequency:   { min: 60, max: 500,   step: 1 },
+      density:     { min: 1,  max: 5000,  step: 1 },
+      pulse_width: { min: 2,  max: 500,   step: 1 },
+      passes:      { min: 1,  max: 99,    step: 1 },
     },
     crosshatchPolicy: "varies" as "varies" | "on" | "off",
     onCrosshatchPolicyChange: vi.fn(),
@@ -245,6 +247,27 @@ describe("ExposureProposeRail CONSTRAINTS — crosshatch / passes", () => {
     />);
     expect(screen.getByLabelText(/passes minimum/i)).toHaveValue(1);
     expect(screen.getByLabelText(/passes maximum/i)).toHaveValue(4);
+  });
+
+  it("in fill mode, renders min/max inputs for power/speed/frequency/density/pulse_width", () => {
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+    />);
+    expect(screen.getByLabelText(/power minimum/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/speed minimum/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/frequency minimum/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/density minimum/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/pulse_width minimum/i)).toBeInTheDocument();
+  });
+
+  it("in curve mode, keeps the legacy behaviour (only varied param has min/max)", () => {
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "curve", varyParam: "power" }}
+    />);
+    expect(screen.getByLabelText(/power minimum/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/speed minimum/i)).toBeNull();
   });
 
   it("cross-clamps passes min/max (typing min > max bumps max)", () => {

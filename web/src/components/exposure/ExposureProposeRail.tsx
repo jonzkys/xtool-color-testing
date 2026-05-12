@@ -84,13 +84,13 @@ interface Props {
    *  means "use the active machine limits for that side". */
   paramLimitOverrides: ParamLimitOverrides;
   onParamLimitOverrideChange: (
-    param: ParamKey,
+    param: SampleableKey,
     side: "min" | "max",
     value: number | undefined,
   ) => void;
-  /** Machine limits for the four varied-eligible params — surfaced so the
+  /** Machine limits for every sampleable param — surfaced so the
    *  CONSTRAINTS section can show defaults in the placeholder. */
-  laserLimits: Record<ParamKey, { min: number; max: number; step: number }>;
+  laserLimits: Record<SampleableKey, { min: number; max: number; step: number }>;
   /** Crosshatch sampling policy for fill mode. */
   crosshatchPolicy: "varies" | "on" | "off";
   onCrosshatchPolicyChange: (v: "varies" | "on" | "off") => void;
@@ -362,12 +362,13 @@ export const ExposureProposeRail: React.FC<Props> = ({
             </span>
           </label>
 
-          {/* Per-varied-param min/max overrides. Only rendered when there
-              are varied params (curve mode varies 1, fill mode varies 2). */}
+          {/* Per-param min/max overrides. Curve mode shows only the
+              single varied param; fill mode always shows every numeric
+              sampleable param (the forward sampler draws from all of them). */}
           {(() => {
-            const varied: ParamKey[] = mode.mode === "curve"
+            const varied: SampleableKey[] = mode.mode === "curve"
               ? [mode.varyParam]
-              : [mode.varyParams[0], mode.varyParams[1]];
+              : ["power", "speed", "frequency", "density", "pulse_width"];
             return varied.map((p) => {
               const ov = paramLimitOverrides[p] ?? {};
               const lim = laserLimits[p];
