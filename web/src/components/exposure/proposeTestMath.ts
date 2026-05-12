@@ -129,8 +129,13 @@ export function sampleParamHypercube(
   );
   if (pwPresets.length === 0) return null;
 
-  const sampleInt = (lo: number, hi: number): number =>
-    lo === hi ? lo : lo + Math.floor(Math.random() * (hi - lo + 1));
+  const sampleInt = (lo: number, hi: number): number => {
+    if (lo === hi) return lo;
+    const ilo = Math.ceil(lo);
+    const ihi = Math.floor(hi);
+    if (ilo >= ihi) return ilo;  // rounding collapsed the range
+    return ilo + Math.floor(Math.random() * (ihi - ilo + 1));
+  };
 
   const params: LaserParams = {
     power:       sampleInt(r.power.min, r.power.max),
@@ -829,7 +834,9 @@ export function fillByForwardSample(args: {
   const bbox = polygonBox(polygon);
   if (!bbox) return [];
 
-  const sampleBudget = Math.max(1000, n * 50);
+  // Keeps the synchronous loop under ~5ms even for very large n.
+  const MAX_SAMPLE_BUDGET = 50_000;
+  const sampleBudget = Math.min(MAX_SAMPLE_BUDGET, Math.max(1000, n * 50));
   const survivors: FillCell[] = [];
   for (let i = 0; i < sampleBudget; i++) {
     const draw = sampleParamHypercube(constraints);
