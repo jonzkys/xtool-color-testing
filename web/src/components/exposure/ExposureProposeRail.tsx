@@ -589,7 +589,7 @@ export const ExposureProposeRail: React.FC<Props> = ({
           <span>200</span>
         </div>
         {survivorCount < cellCount && (
-          <p className="font-mono text-[10px] text-[color:var(--color-ink-muted)] mt-1">
+          <p role="status" aria-live="polite" className="font-mono text-[10px] text-[color:var(--color-ink-muted)] mt-1">
             {survivorCount === 0
               ? "No cells reachable. Try widening constraints or redrawing the polygon."
               : `Found ${survivorCount} of ${cellCount} cells.`}
