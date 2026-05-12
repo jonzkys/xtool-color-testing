@@ -810,6 +810,62 @@ export function fillByInverseSolve(
   return out;
 }
 
+/** Forward-sample cell-placement algorithm. Pure function. Samples
+ *  ``50 × n`` (min 1000) candidate recipes, computes indices, keeps
+ *  those whose (xKey, yKey) lies inside the polygon, downsamples to
+ *  ``n`` by farthest-point. Replaces the legacy ``fillByInverseSolve``.
+ *  See spec at docs/superpowers/specs/2026-05-12-propose-test-placement-redesign.md.
+ *
+ *  Pure function: no side effects, no mutation of inputs. */
+export function fillByForwardSample(args: {
+  polygon: Polygon;
+  xKey: IndexKey;
+  yKey: IndexKey;
+  constraints: ForwardSampleConstraints;
+  n: number;
+}): FillCell[] {
+  const { polygon, xKey, yKey, constraints, n } = args;
+  if (polygon.length < 3 || n <= 0) return [];
+  const bbox = polygonBox(polygon);
+  if (!bbox) return [];
+
+  const sampleBudget = Math.max(1000, n * 50);
+  const survivors: FillCell[] = [];
+  for (let i = 0; i < sampleBudget; i++) {
+    const draw = sampleParamHypercube(constraints);
+    if (draw === null) continue;
+    let idx: LaserIndices;
+    try {
+      idx = computeIndices(draw.params, { crosshatch: draw.crosshatch });
+    } catch {
+      continue;
+    }
+    const x = idx[xKey] as number;
+    const y = idx[yKey] as number;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (!pointInPolygon([x, y], polygon)) continue;
+    const paramValues: Partial<Record<ParamKey, number>> = {
+      power: draw.params.power,
+      speed: draw.params.speed,
+      frequency: draw.params.frequency,
+      density: draw.params.density,
+    };
+    // pulse_width is not a ParamKey member; embed via cast so saved
+    // validation cells carry the full recipe. The page widens the
+    // record at the call site.
+    (paramValues as Record<string, number>).pulse_width = draw.params.pulse_width;
+    survivors.push({
+      paramValues,
+      passes: draw.params.passes,
+      crosshatch: draw.crosshatch,
+      x,
+      y,
+    });
+  }
+
+  return farthestPointDownsample(survivors, n, bbox);
+}
+
 /** Pick ``k`` points from ``survivors`` by farthest-point traversal,
  *  normalising distance by the polygon bbox so the algorithm is
  *  scale-invariant across anisotropic chart axes. Picks index 0 first

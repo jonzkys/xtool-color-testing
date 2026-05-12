@@ -759,3 +759,91 @@ describe("farthestPointDownsample", () => {
     expect(farthestPointDownsample([{ x: 0, y: 0 }], 0, bbox)).toEqual([]);
   });
 });
+
+import { fillByForwardSample } from "./proposeTestMath";
+
+const FULL_LIMITS: ForwardSampleConstraints["ranges"] = {
+  power:       { min: 1, max: 100 },
+  speed:       { min: 2, max: 15000 },
+  frequency:   { min: 60, max: 500 },
+  density:     { min: 1, max: 5000 },
+  pulse_width: { min: ALLOWED_PULSE_WIDTHS[0],
+                 max: ALLOWED_PULSE_WIDTHS[ALLOWED_PULSE_WIDTHS.length - 1] },
+  passes:      { min: 1, max: 4 },
+};
+
+describe("fillByForwardSample", () => {
+  it("returns n cells for a wide-open polygon and constraints", () => {
+    // Polygon covering most of the reachable (TEi, PIi) plane in log space.
+    const polygon: Polygon = [
+      [100, 1e-4], [1e6, 1e-4], [1e6, 1e-2], [100, 1e-2],
+    ];
+    const out = fillByForwardSample({
+      polygon,
+      xKey: "total_exposure_index",
+      yKey: "pulse_intensity_index",
+      constraints: { ranges: FULL_LIMITS, crosshatch: "varies" },
+      n: 24,
+    });
+    expect(out.length).toBeGreaterThanOrEqual(20);
+    expect(out.length).toBeLessThanOrEqual(24);
+    for (const cell of out) {
+      expect(cell.x).toBeGreaterThanOrEqual(100);
+      expect(cell.x).toBeLessThanOrEqual(1e6);
+      expect(cell.y).toBeGreaterThanOrEqual(1e-4);
+      expect(cell.y).toBeLessThanOrEqual(1e-2);
+    }
+  });
+
+  it("populates per-cell passes and crosshatch when those vary", () => {
+    const polygon: Polygon = [
+      [100, 1e-4], [1e6, 1e-4], [1e6, 1e-2], [100, 1e-2],
+    ];
+    const out = fillByForwardSample({
+      polygon,
+      xKey: "total_exposure_index",
+      yKey: "pulse_intensity_index",
+      constraints: { ranges: FULL_LIMITS, crosshatch: "varies" },
+      n: 10,
+    });
+    for (const cell of out) {
+      expect(typeof cell.passes).toBe("number");
+      expect(typeof cell.crosshatch).toBe("boolean");
+    }
+  });
+
+  it("returns empty when the polygon is unreachable", () => {
+    // Impossible region — indices can't go negative.
+    const polygon: Polygon = [
+      [-2, -1], [-1, -1], [-1, -0.5], [-2, -0.5],
+    ];
+    const out = fillByForwardSample({
+      polygon,
+      xKey: "total_exposure_index",
+      yKey: "pulse_intensity_index",
+      constraints: { ranges: FULL_LIMITS, crosshatch: "varies" },
+      n: 10,
+    });
+    expect(out).toEqual([]);
+  });
+
+  it("respects pinned constraints (min === max)", () => {
+    const polygon: Polygon = [
+      [100, 1e-4], [1e6, 1e-4], [1e6, 1e-2], [100, 1e-2],
+    ];
+    const pinned = {
+      ...FULL_LIMITS,
+      power: { min: 14.6, max: 14.6 },
+    };
+    const out = fillByForwardSample({
+      polygon,
+      xKey: "total_exposure_index",
+      yKey: "pulse_intensity_index",
+      constraints: { ranges: pinned, crosshatch: "varies" },
+      n: 10,
+    });
+    for (const cell of out) {
+      expect(cell.paramValues.power).toBe(14.6);
+    }
+  });
+});
