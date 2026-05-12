@@ -474,6 +474,13 @@ export const FILL_GRID_RESOLUTION = 32;
 
 export interface FillCell {
   paramValues: Partial<Record<ParamKey, number>>;
+  /** Per-cell pass count when the forward-sample algorithm varied
+   *  passes. Absent when passes is pinned to the test's base value. */
+  passes?: number;
+  /** Per-cell crosshatch when the forward-sample algorithm varied
+   *  crosshatch. Absent when crosshatch is pinned to the test's burn
+   *  settings. */
+  crosshatch?: boolean;
   x: number;
   y: number;
 }

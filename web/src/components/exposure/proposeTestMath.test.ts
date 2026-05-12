@@ -3,6 +3,7 @@ import {
   pointInPolygon,
   findAnchor,
   type Polygon,
+  type FillCell,
 } from "./proposeTestMath";
 import type { ExposureRow } from "./exposureCorrelations";
 
@@ -614,5 +615,27 @@ describe("computeCurve crosshatch", () => {
       expect(curveB[i].y).toBeCloseTo(curveA[i].y, 6);
       expect(curveB[i].x).toBeCloseTo(curveA[i].x * 2, 4);
     }
+  });
+});
+
+describe("FillCell shape", () => {
+  it("optionally carries passes and crosshatch", () => {
+    const cell: FillCell = {
+      paramValues: { power: 14.6 },
+      passes: 3,
+      crosshatch: true,
+      x: 100, y: 0.001,
+    };
+    expect(cell.passes).toBe(3);
+    expect(cell.crosshatch).toBe(true);
+  });
+
+  it("makes passes and crosshatch optional", () => {
+    const cell: FillCell = {
+      paramValues: { power: 14.6 },
+      x: 100, y: 0.001,
+    };
+    expect(cell.passes).toBeUndefined();
+    expect(cell.crosshatch).toBeUndefined();
   });
 });
