@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { computeAutoFitGrid, gridHeightToSpecHeight, squareCellAutoFit } from "./autofit";
 
+// Mirrors the canonical defaults in src/xcs_gen/capture/layout.py;
+// kept in sync with autofit.ts's local QR_DEFAULT/ARUCO_DEFAULT.
 const MARGIN = 1.5;
-const QR = 5;
-const ARU = 2;
-const X_CHROME = Math.max(QR, ARU) + MARGIN + (ARU + MARGIN); // 10
+const QR = 6;
+const ARU = 3;
+const X_CHROME = Math.max(QR, ARU) + MARGIN + (ARU + MARGIN); // 12
 const Y_CHROME = X_CHROME;
 
 describe("computeAutoFitGrid", () => {
