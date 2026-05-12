@@ -77,6 +77,19 @@ export function StabilitySpectrums({
     [spectrums, order],
   );
 
+  // Propose-test signature: every cell shares the same expected_hex
+  // (every cell was created with the polygon anchor's hex as a
+  // placeholder, not a per-cell target). When detected, prefer the
+  // per-cell mean Lab for the visual swatch — anchor pink across 100
+  // cells is meaningless; the measured-mean strip reads as a colour
+  // gradient that maps to the recipe gradient. Falls back to expected
+  // when a cell has no measurement yet.
+  const proposeStyleCells = useMemo(() => {
+    if (spectrums.length < 2) return false;
+    const first = spectrums[0].expectedHex;
+    return spectrums.every((s) => s.expectedHex === first);
+  }, [spectrums]);
+
   const hasAnySeries = series.length > 0;
   const computed = isComputedYAxis(metric);
   // ``per_cell_sigma`` and burn-* axes need ≥2 runs.
@@ -119,6 +132,7 @@ export function StabilitySpectrums({
         onBackgroundClear={onBackgroundClear}
         series={series}
         simulationActive={simulationActive ?? false}
+        proposeStyleCells={proposeStyleCells}
       />
     </div>
   );
@@ -148,6 +162,7 @@ function SpectrumsCanvas({
   onBackgroundClear,
   series,
   simulationActive,
+  proposeStyleCells,
 }: {
   sorted: CellSpectrum[];
   yMeta: AxisMeta;
@@ -161,7 +176,15 @@ function SpectrumsCanvas({
   onBackgroundClear: () => void;
   series: SeriesInput[];
   simulationActive: boolean;
+  /** When true (every cell shares the same expected_hex — the
+   *  propose-test signature), the hue strip + hover-card header swap
+   *  to the per-cell measured-mean swatch so the visual reflects what
+   *  was burned rather than the anchor placeholder. */
+  proposeStyleCells: boolean;
 }) {
+  function displayHexFor(s: CellSpectrum): string {
+    return proposeStyleCells && s.meanHex ? s.meanHex : s.expectedHex;
+  }
   const svgRef = useRef<SVGSVGElement>(null);
 
   // Y bounds across every visible spectrum.
@@ -437,7 +460,7 @@ function SpectrumsCanvas({
                   y={stripY}
                   width={w}
                   height={stripH}
-                  fill={s.expectedHex}
+                  fill={displayHexFor(s)}
                 />
               ))}
             </g>
@@ -471,6 +494,7 @@ function SpectrumsCanvas({
           anchorPx={hoveredAnchor}
           plotW={W}
           plotH={H}
+          proposeStyle={proposeStyleCells}
         />
       )}
     </div>

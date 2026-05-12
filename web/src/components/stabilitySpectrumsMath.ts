@@ -1,4 +1,4 @@
-import { chroma, circularStatsDeg, hueDeg, type Lab } from "../color/math";
+import { chroma, circularStatsDeg, hueDeg, labToHex, type Lab } from "../color/math";
 import type { ValidationCell } from "../types";
 import {
   computeComputedXValue,
@@ -64,6 +64,15 @@ export interface CellSpectrum {
   /** σ across runs (RMS Lab distance from centroid). Cached for the
    *  hover card. */
   sigma: number;
+  /** Mean Lab across the selected runs (one entry per cell). ``null``
+   *  when no runs are selected or none had a measurement for this
+   *  cell. Computed regardless of the active metric so propose-test
+   *  visuals can swap from the (anchor-coloured) expected swatch to
+   *  the measured-mean swatch. */
+  meanLab: Lab | null;
+  /** Hex form of ``meanLab`` for convenient swatch rendering. ``null``
+   *  when ``meanLab`` is null. */
+  meanHex: string | null;
 }
 
 export interface SortKey {
@@ -175,6 +184,20 @@ export function perCellRange(
 
     const expectedValue = expectedFor(metric, expected);
 
+    // Per-cell mean Lab — computed once across the gathered measurements
+    // regardless of the active metric. Lets the visual swatch swap from
+    // anchor-coloured ``expected_hex`` to the actual measured-mean
+    // swatch for propose-test entries where every cell shares the
+    // anchor's expected. Requires at least one finite Lab.
+    let meanLab: Lab | null = null;
+    let meanHex: string | null = null;
+    if (labs.length > 0) {
+      let sl = 0, sa = 0, sb = 0;
+      for (const lab of labs) { sl += lab[0]; sa += lab[1]; sb += lab[2]; }
+      meanLab = [sl / labs.length, sa / labs.length, sb / labs.length];
+      meanHex = labToHex(meanLab);
+    }
+
     out.push({
       cellIndex: c.cell_index,
       expectedLab: expected,
@@ -185,6 +208,8 @@ export function perCellRange(
       mean,
       count,
       sigma,
+      meanLab,
+      meanHex,
     });
   }
   return out;
