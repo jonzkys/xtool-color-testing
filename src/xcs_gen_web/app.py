@@ -1400,6 +1400,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         img.save(out, format="JPEG", quality=85, optimize=True)
         return out.getvalue()
 
+    def _cached_jpeg_path(original_path: str) -> str:
+        """Path convention for the transcoded JPEG sidecar of a HEIC
+        source. Co-located with the original — survives both the FS
+        and S3 storage backends (s3://bucket/.../4.heic →
+        s3://bucket/.../4.heic.cached.jpg is a valid key). Keeps the
+        cache out of the DB schema; ``delete`` invalidates by path
+        suffix."""
+        return f"{original_path}.cached.jpg"
+
     def _result_to_response(r: dict) -> ResultResponse:
         return ResultResponse(
             id=r["id"], test_id=r["test_id"],
@@ -1859,6 +1868,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if path is None:
             raise HTTPException(status_code=404, detail="result not found")
         images.delete(path)
+        # Drop the HEIC→JPEG transcode sidecar too; idempotent on the
+        # non-HEIC case (delete is a no-op when the path doesn't exist).
+        images.delete(_cached_jpeg_path(path))
         return Response(status_code=204)
 
     # The source image on a result row is immutable once uploaded —
@@ -1878,20 +1890,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         r = r_repo.get(rid, owner_id=user_id)
         if r is None:
             raise HTTPException(status_code=404, detail="result not found")
-        data = images.read(r["image_path"])
         suffix = Path(r["image_path"]).suffix.lower()
         # Browsers don't natively decode HEIC/HEIF, so the inline
         # preview on the test page broke for iPhone uploads. Transcode
-        # to JPEG on demand. The browser-side cache + the
-        # ``Cache-Control`` header below mean a typical session
-        # transcodes each image once.
+        # to JPEG on demand and cache the result as a sidecar — the
+        # first viewer pays the 200-800ms PIL decode + EXIF + encode
+        # tax, everyone else reads pre-encoded bytes. The browser cache
+        # still cuts most calls (see Cache-Control below), but server
+        # restarts, multi-tab opens, and S3-backed deployments all
+        # benefit from the on-disk hit too.
         if suffix in (".heic", ".heif"):
-            data = _transcode_heic_to_jpeg(data)
+            cached = _cached_jpeg_path(r["image_path"])
+            try:
+                jpeg = images.read(cached)
+            except FileNotFoundError:
+                heic = images.read(r["image_path"])
+                jpeg = _transcode_heic_to_jpeg(heic)
+                # Best-effort: a write failure must not break the
+                # response. Worst case is we re-transcode next time.
+                try:
+                    images.save_at(cached, jpeg)
+                except Exception:
+                    import logging as _logging
+                    _logging.getLogger("xcs_gen").exception(
+                        "failed to cache HEIC→JPEG sidecar",
+                    )
             return Response(
-                content=data,
+                content=jpeg,
                 media_type="image/jpeg",
                 headers={"Cache-Control": _IMMUTABLE_IMAGE_CACHE},
             )
+        data = images.read(r["image_path"])
         # ``image/*`` is a wildcard only valid in Accept headers, not a real
         # Content-Type — browsers that MIME-sniff strictly (e.g. Safari
         # cross-origin) refuse to render it. Derive the real type from the

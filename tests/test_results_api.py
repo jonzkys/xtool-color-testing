@@ -411,6 +411,80 @@ def test_image_endpoint_transcodes_heic_for_browsers(
     assert resp.content[:3] == b"\xff\xd8\xff"
 
 
+def _upload_heic(c, tid: int, *, colour=(200, 100, 50)) -> int:
+    """Helper: build a tiny but valid HEIF payload and post it as a
+    new result. Returns the result id."""
+    import io
+    from PIL import Image
+    import pillow_heif
+
+    img = Image.new("RGB", (8, 8), colour)
+    heic_buf = io.BytesIO()
+    pillow_heif.from_pillow(img).save(heic_buf, format="HEIF")
+    upload = c.post(
+        f"/api/tests/{tid}/results",
+        files={"image": ("photo.heic", heic_buf.getvalue(), "image/heic")},
+    )
+    assert upload.status_code == 201, upload.text
+    return upload.json()["id"]
+
+
+def test_heic_transcode_cached_as_sidecar(fresh_db, monkeypatch, tmp_path):
+    """First /image view decodes + JPEG-encodes the HEIC source;
+    subsequent views must short-circuit on the cached sidecar without
+    touching the original. Verified by deleting the source HEIC after
+    the cache is warm — the second response still serves bytes, which
+    can only happen via the cache."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    rid = _upload_heic(c, tid)
+
+    # First fetch: decodes + writes the sidecar.
+    r1 = c.get(f"/api/results/{rid}/image")
+    assert r1.status_code == 200
+    assert r1.headers["content-type"] == "image/jpeg"
+    assert r1.content[:3] == b"\xff\xd8\xff"  # JPEG SOI
+
+    sidecars = list(tmp_path.rglob("*.heic.cached.jpg"))
+    assert len(sidecars) == 1, f"expected 1 sidecar, got {sidecars}"
+
+    # Yank the original HEIC. If the second call still works, it must
+    # have read the cached sidecar — the transcode path requires the
+    # original bytes.
+    heic_files = list(tmp_path.rglob("*.heic"))
+    assert len(heic_files) == 1
+    heic_files[0].unlink()
+
+    r2 = c.get(f"/api/results/{rid}/image")
+    assert r2.status_code == 200
+    assert r2.content == r1.content
+    assert r2.headers["content-type"] == "image/jpeg"
+
+
+def test_heic_cache_dropped_on_result_delete(fresh_db, monkeypatch, tmp_path):
+    """Result delete cleans up the HEIC→JPEG sidecar alongside the
+    original — otherwise it leaks until the test-dir is wiped, and on
+    S3 it would silently accrue storage cost."""
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(tmp_path))
+    monkeypatch.setattr(cap, "run_capture", _fake_capture)
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    rid = _upload_heic(c, tid)
+
+    # Warm the cache.
+    c.get(f"/api/results/{rid}/image")
+    assert list(tmp_path.rglob("*.heic.cached.jpg")), "expected a sidecar"
+
+    resp = c.delete(f"/api/results/{rid}")
+    assert resp.status_code == 204
+    assert list(tmp_path.rglob("*.heic.cached.jpg")) == []
+    assert list(tmp_path.rglob("*.heic")) == []
+
+
 def test_image_endpoints_set_immutable_cache_control(
     fresh_db, monkeypatch, tmp_path,
 ):
