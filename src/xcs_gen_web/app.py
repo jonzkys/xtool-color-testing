@@ -700,12 +700,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return UserResponse(
                 id=user_id, api_key="", first_name="",
                 created_at="", last_seen_at="",
+                is_seed_user=False,
             )
         user = u_repo.get_by_id(user_id)
         if user is None:
             # Shouldn't happen — dep would 401 first — but don't throw 500.
             raise HTTPException(status_code=404, detail="user not found")
-        return UserResponse(**user)
+        is_seed = user_id == int(settings.demo_target_user_id)
+        return UserResponse(**user, is_seed_user=is_seed)
 
     @app.patch("/api/me", response_model=UserResponse)
     def users_me_patch(
@@ -720,7 +722,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             u_repo.update_first_name(user_id, body.first_name.strip())
         user = u_repo.get_by_id(user_id)
         assert user is not None
-        return UserResponse(**user)
+        is_seed = user_id == int(settings.demo_target_user_id)
+        return UserResponse(**user, is_seed_user=is_seed)
 
     @app.post("/api/svg-stack")
     def svg_stack(request: SvgStackRequest) -> Response:

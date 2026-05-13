@@ -783,6 +783,12 @@ class UserResponse(BaseModel):
     first_name: str
     created_at: str
     last_seen_at: str
+    # Cleanly lets the FE branch on "is the current user the seed
+    # account?" without leaking the configured demo_target_user_id —
+    # the TopBar uses this to hide the "Load demo" pill for the seed
+    # user itself. Always false in standalone mode (no multi-user
+    # concept).
+    is_seed_user: bool = False
 
 
 class PresetCreate(BaseModel):
