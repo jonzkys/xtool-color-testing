@@ -6,7 +6,9 @@ import { cn, MetalBar, PageContainer, ThemeToggle } from "../ui";
 import { UploadResultDialog } from "./UploadResultDialog";
 import { AccountMenu } from "./AccountMenu";
 import { MachineSwitcher } from "./MachineSwitcher";
+import { SeedImportButton } from "./SeedImportButton";
 import { getChangelog } from "../api/changelog";
+import { getMe } from "../api/users";
 
 interface Props {
   // Accepted-but-unused: the active root + active child in the nav now
@@ -91,6 +93,7 @@ const NAV_GROUPS: NavGroup[] = [
 export function TopBar({ route, onNavigate }: Props) {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [mode, setMode] = useState<"standalone" | "multi_user" | null>(null);
+  const [isSeedUser, setIsSeedUser] = useState<boolean | null>(null);
   const [unseenChanges, setUnseenChanges] = useState(0);
 
   // Probe the backend once so we can render a mode badge + user chip
@@ -104,6 +107,17 @@ export function TopBar({ route, onNavigate }: Props) {
       })
       .catch(() => {});
   }, []);
+
+  // In multi_user mode, fetch the user record so we know whether the
+  // current user is the seed account itself (in which case the
+  // "Load demo" pill would be a no-op + a guaranteed 400, so hide
+  // it). Silent on failure — AccountMenu handles its own auth retry.
+  useEffect(() => {
+    if (mode !== "multi_user") return;
+    getMe()
+      .then((u) => setIsSeedUser(Boolean(u.is_seed_user)))
+      .catch(() => setIsSeedUser(null));
+  }, [mode]);
 
   const refreshUnseen = useCallback(async () => {
     if (!mode) return;
@@ -150,14 +164,6 @@ export function TopBar({ route, onNavigate }: Props) {
     <header className="shrink-0 bg-[color:var(--color-surface)] border-b border-[color:var(--color-border)]">
       <PageContainer bleed={false}>
         <div className="flex items-center gap-6 h-14">
-          <div className="flex items-baseline gap-2">
-            <span className="font-mono text-[15px] font-semibold tracking-tight text-[color:var(--color-ink)]">
-              xcs-gen
-            </span>
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[color:var(--color-ink-subtle)]">
-              workbench
-            </span>
-          </div>
           <nav
             className="flex items-stretch h-14"
             onPointerLeave={scheduleClose}
@@ -214,6 +220,9 @@ export function TopBar({ route, onNavigate }: Props) {
               unseen={unseenChanges}
               onClick={() => onNavigate({ name: "changelog" })}
             />
+            {mode === "multi_user" && (
+              <SeedImportButton isSeedUser={isSeedUser} />
+            )}
             <button
               type="button"
               onClick={() => setUploadOpen(true)}

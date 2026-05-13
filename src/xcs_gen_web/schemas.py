@@ -426,6 +426,7 @@ class PaletteEntryResponse(BaseModel):
     y_value: float | None = None
     source_result_id: int | None = None
     owner_id: int
+    import_source: str | None = None
     visibility: str
     machine_id: str
     # Validated state. ``is_validated`` defaults to ``False`` so
@@ -730,6 +731,10 @@ class MaterialResponse(BaseModel):
     notes: str
     created_at: str
     owner_id: int
+    # Provenance tag — ``None`` for normal user rows, ``"seed"`` for
+    # rows created by the demo-import flow. Read-only on the API; the
+    # seed-import service is the only writer.
+    import_source: str | None = None
     visibility: str
     shape: MaterialShape | None = None
     diameter_mm: float | None = None
@@ -778,6 +783,12 @@ class UserResponse(BaseModel):
     first_name: str
     created_at: str
     last_seen_at: str
+    # Cleanly lets the FE branch on "is the current user the seed
+    # account?" without leaking the configured demo_target_user_id —
+    # the TopBar uses this to hide the "Load demo" pill for the seed
+    # user itself. Always false in standalone mode (no multi-user
+    # concept).
+    is_seed_user: bool = False
 
 
 class PresetCreate(BaseModel):
@@ -812,6 +823,7 @@ class PresetResponse(BaseModel):
     created_at: str
     updated_at: str
     owner_id: int
+    import_source: str | None = None
     visibility: str
     machine_id: str
 
@@ -908,6 +920,7 @@ class TestResponse(BaseModel):
     updated_at: str
     locked: bool
     owner_id: int
+    import_source: str | None = None
     visibility: str
     machine_id: str
     # Monotonic counter — each POST /api/tests/{id}/retest bumps by 1.
@@ -950,6 +963,7 @@ class ResultResponse(BaseModel):
     notes: str
     swatches: list[ResultSwatch]
     owner_id: int
+    import_source: str | None = None
     visibility: str
     # Copied from the QR at ingest. 0 for burns from pre-retest-era
     # XCS files (the implicit "first burn").
@@ -1104,6 +1118,7 @@ class SavedSpectrumResponse(BaseModel):
     machine_id: str
     material_id: int | None
     owner_id: int
+    import_source: str | None = None
     axis_param: str
     axis_min: float
     axis_max: float
@@ -1184,6 +1199,7 @@ class TextRegMachineDefault(TextRegParamsBody):
     machine_id: str
     created_at: str
     updated_at: str
+    import_source: str | None = None
 
 
 class TextRegMaterialDefault(TextRegParamsBody):
@@ -1193,6 +1209,7 @@ class TextRegMaterialDefault(TextRegParamsBody):
     material_id: int
     created_at: str
     updated_at: str
+    import_source: str | None = None
 
 
 class TextRegResolveResponse(BaseModel):
@@ -1295,3 +1312,38 @@ class ResultWBState(BaseModel):
     # chromaticity: per-channel [sR, sG, sB] flat list.
     correction: list[dict] | list[float] | None = None
     canonical_id: str | None = None
+
+
+# Seed-import — one-click copy of a curated seed account's catalogue
+# into the empty workbench of a freshly-registered user. The routes are
+# only meaningful in multi_user mode; standalone returns 404.
+class SeedPreviewResponse(BaseModel):
+    """Read-only counts + idempotency flags shown in the import modal
+    before the user confirms the deep-copy."""
+
+    src_owner_id: int
+    src_has_data: bool
+    already_imported: bool
+    materials: int
+    presets: int
+    tests: int
+    results: int
+    palette_entries: int
+    saved_spectrums: int
+
+
+class SeedImportResponse(BaseModel):
+    """Row counts written by the actual import. ``image_warnings``
+    surfaces source-side missing image bytes — the row was copied but
+    the bytes couldn't be located on disk (storage drift)."""
+
+    materials: int
+    presets: int
+    tests: int
+    results: int
+    palette_entries: int
+    saved_spectrums: int
+    validation_cells: int
+    text_reg_machine: int
+    text_reg_material: int
+    image_warnings: list[str]

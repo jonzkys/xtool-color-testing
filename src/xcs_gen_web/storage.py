@@ -86,9 +86,9 @@ class FilesystemStorage:
 
     def save_at(self, path: str, data: bytes) -> None:
         """Write raw bytes to an explicit path. Used for path-convention
-        sidecars (e.g. the cached HEIC→JPEG transcode) whose location
-        is derived from a sibling path rather than ``(test_id,
-        result_id, kind)``."""
+        sidecars (e.g. the cached HEIC→JPEG transcode, the seed-import
+        copies of either of the above) whose location is derived from
+        a sibling path rather than ``(test_id, result_id, kind)``."""
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(data)

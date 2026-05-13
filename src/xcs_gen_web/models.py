@@ -90,6 +90,11 @@ materials = Table(
     Column("notes", Text),
     Column("created_at", String(_ISO_TS_LEN), nullable=False),
     Column("owner_id", Integer, nullable=False),
+    # `import_source` tags row provenance for revert / idempotency. ``None``
+    # for normal user-created rows; set to ``"seed"`` for rows copied via
+    # the demo-import flow. Future values may distinguish other automated
+    # import sources (per-user copy, restore-from-backup, etc.).
+    Column("import_source", String(32), nullable=True),
     Column("visibility", String(_VISIBILITY_LEN), nullable=False, server_default="private"),
     # Optional physical-shape metadata. Drives the new Tests-page
     # auto-fit feature: when set, generators size a test to fit the
@@ -127,6 +132,7 @@ presets = Table(
     Column("created_at", String(_ISO_TS_LEN), nullable=False),
     Column("updated_at", String(_ISO_TS_LEN), nullable=False),
     Column("owner_id", Integer, nullable=False),
+    Column("import_source", String(32), nullable=True),
     Column("visibility", String(_VISIBILITY_LEN), nullable=False, server_default="private"),
     Column("machine_id", String(_MACHINE_ID_LEN), nullable=False, server_default="F2Ultra"),
     CheckConstraint(_VISIBILITY_CHECK, name="presets_visibility_chk"),
@@ -147,6 +153,7 @@ tests = Table(
     Column("updated_at", String(_ISO_TS_LEN), nullable=False),
     Column("locked", Integer, nullable=False, server_default="0"),
     Column("owner_id", Integer, nullable=False),
+    Column("import_source", String(32), nullable=True),
     Column("visibility", String(_VISIBILITY_LEN), nullable=False, server_default="private"),
     # Monotonic counter incremented by POST /api/tests/{id}/retest. The
     # current value is stamped into the generated XCS's QR payload so
@@ -188,6 +195,7 @@ results = Table(
     Column("notes", Text, nullable=False, server_default=""),
     Column("swatches_json", Text, nullable=False),
     Column("owner_id", Integer, nullable=False),
+    Column("import_source", String(32), nullable=True),
     Column("visibility", String(_VISIBILITY_LEN), nullable=False, server_default="private"),
     Column("via", String(_STATUS_LEN), nullable=False, server_default="desktop"),
     # Copied from the QR payload at ingest. Older burns without a
@@ -243,6 +251,7 @@ palette_entries = Table(
     Column("notes", Text, nullable=False, server_default=""),
     Column("created_at", String(_ISO_TS_LEN), nullable=False),
     Column("owner_id", Integer, nullable=False),
+    Column("import_source", String(32), nullable=True),
     Column("visibility", String(_VISIBILITY_LEN), nullable=False, server_default="private"),
     Column("favorited", Boolean, nullable=False, server_default="0"),
     Column("machine_id", String(_MACHINE_ID_LEN), nullable=False, server_default="F2Ultra"),
@@ -342,6 +351,7 @@ saved_spectrums = Table(
         nullable=True,
     ),
     Column("owner_id", Integer, nullable=False),
+    Column("import_source", String(32), nullable=True),
     Column("axis_param", String(32), nullable=False),
     Column("axis_min", Float, nullable=False),
     Column("axis_max", Float, nullable=False),
@@ -483,6 +493,7 @@ text_reg_defaults_machine = Table(
     "text_reg_defaults_machine", metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("owner_id", Integer, nullable=False),
+    Column("import_source", String(32), nullable=True),
     Column("machine_id", String(_MACHINE_ID_LEN), nullable=False),
     Column("speed", Integer, nullable=False),
     Column("power", Float, nullable=False),
@@ -506,6 +517,7 @@ text_reg_defaults_material = Table(
     "text_reg_defaults_material", metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("owner_id", Integer, nullable=False),
+    Column("import_source", String(32), nullable=True),
     Column("machine_id", String(_MACHINE_ID_LEN), nullable=False),
     Column(
         "material_id", Integer,

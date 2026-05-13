@@ -33,6 +33,7 @@ def _row_to_dict(r) -> dict[str, Any]:
         "created_at": r.created_at,
         "updated_at": r.updated_at,
         "owner_id": r.owner_id,
+        "import_source": getattr(r, "import_source", None),
         "visibility": r.visibility,
         "machine_id": getattr(r, "machine_id", "F2Ultra"),
     }

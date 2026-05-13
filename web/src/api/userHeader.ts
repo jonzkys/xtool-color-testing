@@ -165,6 +165,19 @@ export function installUserHeader(): void {
       resp = await original(rebuilt, init);
     }
 
+    // Stale-key recovery: if the backend reports the stored api_key is
+    // no longer registered (e.g. the DB was reset), wipe the slot and
+    // hard-reload so the Welcome gate re-renders. Without this the user
+    // gets stuck — every page mount fires its own 401-laced fetch and
+    // the SPA never returns to a usable state.
+    //
+    // Backend contract (src/xcs_gen_web/deps.py::get_current_user):
+    //   401 + JSON body containing the substring "api key not registered".
+    // If that string ever changes, update both sides.
+    if (resp.status === 401 && userId) {
+      void handleStaleApiKey(resp.clone()).catch(() => {});
+    }
+
     // Surface non-2xx /api/* errors via the toast host. Per-call sites
     // can still catch the error and show their own banner — the toast
     // is a global safety net so a save / generate failure can't be
@@ -188,6 +201,63 @@ export function installUserHeader(): void {
 /** Exposed for tests / debugging. */
 export function getApiBaseUrl(): string {
   return API_BASE_URL;
+}
+
+/** Substring the backend includes in its detail when the api_key in
+ *  the header doesn't match any user row. See
+ *  ``src/xcs_gen_web/deps.py::get_current_user`` for the source string.
+ *  If the backend message changes, update this constant too. */
+const STALE_API_KEY_MARKER = "api key not registered";
+
+/** Guard so we only fire the stale-key reload once per page life. The
+ *  fetch interceptor sees the same 401 many times in a row when several
+ *  page-mount queries fan out concurrently. */
+let staleApiKeyHandled = false;
+
+/**
+ * Stale-key recovery. Reads the response body, checks for the marker
+ * the backend uses to signal "this api_key isn't registered", and on
+ * match: clears the stored slot and hard-reloads. The Welcome gate then
+ * re-renders on the fresh page load and the user can claim/load a new
+ * key.
+ *
+ * Defensive on every step — body might already be consumed, JSON may be
+ * malformed, location may be locked down — we no-op on any failure
+ * rather than throwing inside fetch.
+ */
+async function handleStaleApiKey(resp: Response): Promise<void> {
+  if (staleApiKeyHandled) return;
+  let text = "";
+  try {
+    text = await resp.text();
+  } catch {
+    return;
+  }
+  if (!text.includes(STALE_API_KEY_MARKER)) return;
+  // Re-check the flag after the await: a concurrent burst of stale 401s
+  // can all clear the first guard before any of them sets it. Setting
+  // here keeps the reload exactly-once without a lock.
+  if (staleApiKeyHandled) return;
+  staleApiKeyHandled = true;
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(PREV_KEY);
+  } catch {
+    /* private mode — fall through, the reload still helps */
+  }
+  try {
+    // Drop the hash so the Welcome dialog mounts on the default landing
+    // rather than a deep-link that needs the now-cleared key.
+    window.location.hash = "";
+    window.location.reload();
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Exposed for tests so the one-shot guard can be reset between cases. */
+export function __resetStaleApiKeyGuardForTests(): void {
+  staleApiKeyHandled = false;
 }
 
 /**

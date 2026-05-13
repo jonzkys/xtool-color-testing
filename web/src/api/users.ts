@@ -7,6 +7,11 @@ export interface User {
   first_name: string;
   created_at: string;
   last_seen_at: string;
+  // Backend-evaluated flag: true iff the current user is the
+  // configured seed account (settings.demo_target_user_id). FE uses
+  // this to hide UI that would no-op for the seed user (e.g. the
+  // "Load demo" pill).
+  is_seed_user?: boolean;
 }
 
 export interface HealthInfo {

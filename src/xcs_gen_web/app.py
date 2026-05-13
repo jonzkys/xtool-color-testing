@@ -60,6 +60,8 @@ from .schemas import (
     SavedSpectrumCreate,
     SavedSpectrumPatch,
     SavedSpectrumResponse,
+    SeedImportResponse,
+    SeedPreviewResponse,
     SwatchPreviewResponse,
     SvgLayersRequest,
     SvgPreviewRequest,
@@ -499,6 +501,89 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         u_repo.set_last_seen_change(user_id, entry_id)
         return {"ok": True, "persisted": True}
 
+    # Seed import --------------------------------------------------------
+    # One-click deep-copy of the curated seed account's catalogue into a
+    # freshly-registered user's empty workbench. Both routes are sync
+    # (def, not async def) — the import runs in the anyio threadpool so
+    # the 10-60s image-bytes copy doesn't block the event loop. Standalone
+    # mode has no concept of multiple owners so both routes return 404.
+    from .services import seed_import as _seed_import
+
+    @app.get("/api/seed/preview", response_model=SeedPreviewResponse)
+    def seed_preview(
+        user_id: int = Depends(get_current_user),
+    ) -> SeedPreviewResponse:
+        if settings.mode != "multi_user":
+            raise HTTPException(
+                status_code=404,
+                detail="seed import unavailable in standalone mode",
+            )
+        src = int(settings.demo_target_user_id)
+        if user_id == src:
+            raise HTTPException(
+                status_code=400,
+                detail="cannot import seed data into the seed account",
+            )
+        pv = _seed_import.preview(src_owner_id=src, dst_owner_id=user_id)
+        return SeedPreviewResponse(
+            src_owner_id=pv.src_owner_id,
+            src_has_data=pv.src_has_data,
+            already_imported=pv.already_imported,
+            materials=pv.materials,
+            presets=pv.presets,
+            tests=pv.tests,
+            results=pv.results,
+            palette_entries=pv.palette_entries,
+            saved_spectrums=pv.saved_spectrums,
+        )
+
+    @app.post("/api/seed/import", response_model=SeedImportResponse)
+    def seed_import_route(
+        user_id: int = Depends(get_current_user),
+    ) -> SeedImportResponse:
+        if settings.mode != "multi_user":
+            raise HTTPException(
+                status_code=404,
+                detail="seed import unavailable in standalone mode",
+            )
+        src = int(settings.demo_target_user_id)
+        if user_id == src:
+            raise HTTPException(
+                status_code=400,
+                detail="cannot import seed data into the seed account",
+            )
+        try:
+            result = _seed_import.run_import(
+                src_owner_id=src, dst_owner_id=user_id,
+            )
+        except _seed_import.AlreadyImportedError:
+            raise HTTPException(status_code=409, detail="already imported")
+        except _seed_import.EmptySeedError:
+            raise HTTPException(
+                status_code=400,
+                detail="seed account has no data to copy",
+            )
+        except _seed_import.SameUserError:
+            # Already guarded above, but keep the mapping symmetric so
+            # an internal caller can't bypass the 400 by skipping the
+            # explicit check.
+            raise HTTPException(
+                status_code=400,
+                detail="cannot import seed data into the seed account",
+            )
+        return SeedImportResponse(
+            materials=result.materials,
+            presets=result.presets,
+            tests=result.tests,
+            results=result.results,
+            palette_entries=result.palette_entries,
+            saved_spectrums=result.saved_spectrums,
+            validation_cells=result.validation_cells,
+            text_reg_machine=result.text_reg_machine,
+            text_reg_material=result.text_reg_material,
+            image_warnings=list(result.image_warnings),
+        )
+
     # User onboarding (alpha bearer-token "auth") ------------------------
     # Registration is the one endpoint that doesn't require a valid key
     # in the header — the caller is claiming one. Everything else uses
@@ -677,12 +762,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return UserResponse(
                 id=user_id, api_key="", first_name="",
                 created_at="", last_seen_at="",
+                is_seed_user=False,
             )
         user = u_repo.get_by_id(user_id)
         if user is None:
             # Shouldn't happen — dep would 401 first — but don't throw 500.
             raise HTTPException(status_code=404, detail="user not found")
-        return UserResponse(**user)
+        is_seed = user_id == int(settings.demo_target_user_id)
+        return UserResponse(**user, is_seed_user=is_seed)
 
     @app.patch("/api/me", response_model=UserResponse)
     def users_me_patch(
@@ -697,7 +784,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             u_repo.update_first_name(user_id, body.first_name.strip())
         user = u_repo.get_by_id(user_id)
         assert user is not None
-        return UserResponse(**user)
+        is_seed = user_id == int(settings.demo_target_user_id)
+        return UserResponse(**user, is_seed_user=is_seed)
 
     @app.post("/api/svg-stack")
     def svg_stack(request: SvgStackRequest) -> Response:

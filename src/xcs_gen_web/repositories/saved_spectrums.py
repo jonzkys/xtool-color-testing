@@ -60,6 +60,7 @@ def _row_to_record(parent_row, swatch_rows, coefficient_rows) -> dict[str, Any]:
         "machine_id": parent_row.machine_id,
         "material_id": parent_row.material_id,
         "owner_id": parent_row.owner_id,
+        "import_source": getattr(parent_row, "import_source", None),
         "axis_param": parent_row.axis_param,
         "axis_min": parent_row.axis_min,
         "axis_max": parent_row.axis_max,

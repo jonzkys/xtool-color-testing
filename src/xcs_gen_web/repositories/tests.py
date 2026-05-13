@@ -50,6 +50,7 @@ def _row(r, *, ingested: bool = False) -> dict[str, Any]:
         "updated_at": r.updated_at,
         "locked": bool(r.locked),
         "owner_id": r.owner_id,
+        "import_source": getattr(r, "import_source", None),
         "visibility": r.visibility,
         # Pre-0006 rows don't have the column; getattr fallback keeps
         # tests that use older DB snapshots working. New reads always

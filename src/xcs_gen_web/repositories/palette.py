@@ -118,6 +118,7 @@ def _row_to_entry(r, *, original_validated: bool = False) -> dict[str, Any]:
         "notes": r.notes,
         "created_at": r.created_at,
         "owner_id": r.owner_id,
+        "import_source": getattr(r, "import_source", None),
         "visibility": r.visibility,
         "favorited": bool(r.favorited),
         "machine_id": r.machine_id,
