@@ -283,6 +283,13 @@ def _configure_threadpool() -> int:
     Override at deploy time via ``XCS_GEN_THREADPOOL_SIZE`` if you
     move to bigger hardware. Returns the resolved limit so callers
     (e.g. the lifespan handler) can log it.
+
+    **Must be called from inside a running event loop** (the FastAPI
+    lifespan handler, where this lives today). Anyio's
+    ``current_default_thread_limiter()`` is event-loop-local: invoked
+    from bare ``create_app()`` or any other sync context, it silently
+    creates a transient limiter that is discarded when the loop later
+    starts, leaving the real per-loop limiter at its 40-thread default.
     """
     limit = int(os.environ.get("XCS_GEN_THREADPOOL_SIZE", "4"))
     limit = max(1, limit)
@@ -1619,6 +1626,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 status_code=410,
                 detail="source image no longer available — cannot reingest",
             )
+        # Drop the cached warped PNG sidecar BEFORE running the pipeline:
+        # ``r_repo.replace_capture`` nulls ``warped_image_path`` further
+        # down, so without an explicit invalidate the previous sidecar
+        # would be orphaned on disk. Mirrors the ``results_delete`` path.
+        warped_cache.invalidate(rid, owner_id=user_id)
         from .repositories import materials as m_repo
         material = None
         if t.get("material_id") is not None:
