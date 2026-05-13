@@ -725,12 +725,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # tracing, no more network round-trip, and the backend no longer
     # depends on the `vtracer` Python wheel.
 
+    # Threshold past which a single svg-layers conversion is unusual
+    # enough to log. The hatch generator caps at 50k segments and a
+    # cold path on a complex multi-layer SVG sits at <1s on a typical
+    # laptop — anything over 5s is either a pathological input or a
+    # regression worth seeing in CloudWatch.
+    _SVG_LAYERS_SLOW_THRESHOLD_S = 5.0
+
     @app.post("/api/svg-layers")
     def svg_layers(request: SvgLayersRequest) -> Response:
+        import time as _time
+        t0 = _time.perf_counter()
         try:
             body = svg_layers_to_xcs_bytes(request)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        elapsed = _time.perf_counter() - t0
+        if elapsed > _SVG_LAYERS_SLOW_THRESHOLD_S:
+            import logging as _logging
+            _logging.getLogger("xcs_gen").warning(
+                "slow /api/svg-layers: %.2fs, layers=%d, svg_bytes=%d",
+                elapsed, len(request.layers), len(request.svg_content),
+            )
 
         filename = f"{request.name or 'svg-layers'}.xcs"
         return Response(
