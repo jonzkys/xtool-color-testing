@@ -411,6 +411,26 @@ def test_image_endpoint_transcodes_heic_for_browsers(
     assert resp.content[:3] == b"\xff\xd8\xff"
 
 
+def test_image_endpoints_set_immutable_cache_control(
+    fresh_db, monkeypatch, tmp_path,
+):
+    """Image bytes on a result row are content-addressed (reingest
+    creates a new row + new URL), so the browser can safely cache them
+    forever without revalidating. Asserting the header keeps a future
+    refactor from silently re-introducing per-render network round
+    trips."""
+    c, rid, _ = _setup_for_warped_cache(monkeypatch, tmp_path)
+    expected = "private, max-age=86400, immutable"
+
+    img = c.get(f"/api/results/{rid}/image")
+    assert img.status_code == 200
+    assert img.headers.get("cache-control") == expected
+
+    warped = c.get(f"/api/results/{rid}/warped-image")
+    assert warped.status_code == 200
+    assert warped.headers.get("cache-control") == expected
+
+
 def test_delete_invalidates_warped_cache(fresh_db, monkeypatch, tmp_path):
     """Deleting a result removes the cached warped sidecar so it can't
     leak into a future result that happens to take the same id."""

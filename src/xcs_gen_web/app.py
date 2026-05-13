@@ -1861,6 +1861,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         images.delete(path)
         return Response(status_code=204)
 
+    # The source image on a result row is immutable once uploaded —
+    # reingest creates a new row with a new id, so the URL changes
+    # whenever the bytes would. Same posture for the warped sidecar
+    # (regenerated under a new key) and the debug overlays (pure
+    # functions of immutable inputs). ``immutable`` tells the browser
+    # not to revalidate; ``private`` keeps these out of any shared
+    # proxy cache since results are per-user.
+    _IMMUTABLE_IMAGE_CACHE = "private, max-age=86400, immutable"
+
     @app.get("/api/results/{rid}/image")
     def results_image(
         rid: int, user_id: int = Depends(get_current_user),
@@ -1881,13 +1890,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return Response(
                 content=data,
                 media_type="image/jpeg",
-                headers={"Cache-Control": "private, max-age=3600"},
+                headers={"Cache-Control": _IMMUTABLE_IMAGE_CACHE},
             )
         # ``image/*`` is a wildcard only valid in Accept headers, not a real
         # Content-Type — browsers that MIME-sniff strictly (e.g. Safari
         # cross-origin) refuse to render it. Derive the real type from the
         # stored file's suffix so every browser displays the image.
-        return Response(content=data, media_type=content_type_for(suffix))
+        return Response(
+            content=data,
+            media_type=content_type_for(suffix),
+            headers={"Cache-Control": _IMMUTABLE_IMAGE_CACHE},
+        )
 
     def _warped_or_http(rid: int, user_id: int):
         """Adapt :mod:`warped_cache` exceptions to FastAPI HTTP errors.
@@ -1938,7 +1951,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=410, detail=msg)
         except warped_cache.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        return Response(content=png, media_type="image/png")
+        return Response(
+            content=png,
+            media_type="image/png",
+            headers={"Cache-Control": _IMMUTABLE_IMAGE_CACHE},
+        )
 
     @app.get("/api/results/{rid}/debug/warped-with-grid")
     def results_debug_warped_with_grid(
@@ -1953,7 +1970,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        return Response(content=png, media_type="image/png")
+        return Response(
+            content=png,
+            media_type="image/png",
+            headers={"Cache-Control": _IMMUTABLE_IMAGE_CACHE},
+        )
 
     @app.get("/api/results/{rid}/debug/row-count")
     def results_debug_row_count(
@@ -1982,7 +2003,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        return Response(content=png, media_type="image/png")
+        return Response(
+            content=png,
+            media_type="image/png",
+            headers={"Cache-Control": _IMMUTABLE_IMAGE_CACHE},
+        )
 
     @app.get("/api/tests/{tid}/swatches", response_model=list[AveragedSwatch])
     def test_swatches(
