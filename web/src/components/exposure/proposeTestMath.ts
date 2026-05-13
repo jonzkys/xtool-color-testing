@@ -77,6 +77,7 @@ export function findAnchor(
 }
 
 import { computeIndices, type LaserParams, type LaserIndices } from "../../laser/laserIndices";
+import { ALLOWED_PULSE_WIDTHS } from "../../laser/pulseWidths";
 
 export type ParamKey = "power" | "speed" | "frequency" | "density";
 
@@ -87,6 +88,73 @@ export interface ParamRange {
 }
 
 export type LaserLimits = Record<ParamKey, ParamRange>;
+
+/** Numeric params the forward-sample algorithm draws from. Distinct
+ *  from ``ParamKey`` (four-param subset used by the legacy inverse
+ *  solver / curve mode). */
+export type SampleableKey =
+  | "power" | "speed" | "frequency" | "density"
+  | "pulse_width" | "passes";
+
+export const SAMPLEABLE_KEYS: readonly SampleableKey[] = [
+  "power", "speed", "frequency", "density", "pulse_width", "passes",
+];
+
+export interface ForwardSampleConstraints {
+  /** Per-param min/max (after merging machine limits + filter
+   *  overrides + user min/max sliders). When ``min === max`` the
+   *  param is pinned to that value. */
+  ranges: Record<SampleableKey, { min: number; max: number }>;
+  /** ``"varies"`` (default) — sample crosshatch ~Bernoulli(0.5).
+   *  ``"on"`` / ``"off"`` — pin every candidate to that value. */
+  crosshatch: "varies" | "on" | "off";
+}
+
+/** One candidate recipe drawn from the constraint hypercube. */
+export interface CandidateSample {
+  params: LaserParams;
+  crosshatch: boolean;
+}
+
+/** Draw a single recipe candidate. Returns ``null`` if the pulse_width
+ *  range admits no allowed preset (the only constraint that can be
+ *  unsatisfiable on its own). All other ranges either pin or sample
+ *  uniformly on the (snapped) integer line. */
+export function sampleParamHypercube(
+  c: ForwardSampleConstraints,
+): CandidateSample | null {
+  const r = c.ranges;
+  const pwPresets = ALLOWED_PULSE_WIDTHS.filter(
+    (v) => v >= r.pulse_width.min && v <= r.pulse_width.max,
+  );
+  if (pwPresets.length === 0) return null;
+
+  const sampleInt = (lo: number, hi: number): number => {
+    if (lo === hi) return lo;
+    const ilo = Math.ceil(lo);
+    const ihi = Math.floor(hi);
+    if (ilo >= ihi) return ilo;  // rounding collapsed the range
+    return ilo + Math.floor(Math.random() * (ihi - ilo + 1));
+  };
+
+  const params: LaserParams = {
+    power:       sampleInt(r.power.min, r.power.max),
+    speed:       sampleInt(r.speed.min, r.speed.max),
+    frequency:   sampleInt(r.frequency.min, r.frequency.max),
+    density:     sampleInt(r.density.min, r.density.max),
+    pulse_width: pwPresets[Math.floor(Math.random() * pwPresets.length)],
+    passes:      sampleInt(r.passes.min, r.passes.max),
+  };
+
+  let crosshatch: boolean;
+  switch (c.crosshatch) {
+    case "on":  crosshatch = true; break;
+    case "off": crosshatch = false; break;
+    default:    crosshatch = Math.random() < 0.5;
+  }
+
+  return { params, crosshatch };
+}
 
 export interface CurveSample {
   paramValue: number;
@@ -474,6 +542,13 @@ export const FILL_GRID_RESOLUTION = 32;
 
 export interface FillCell {
   paramValues: Partial<Record<ParamKey, number>>;
+  /** Per-cell pass count when the forward-sample algorithm varied
+   *  passes. Absent when passes is pinned to the test's base value. */
+  passes?: number;
+  /** Per-cell crosshatch when the forward-sample algorithm varied
+   *  crosshatch. Absent when crosshatch is pinned to the test's burn
+   *  settings. */
+  crosshatch?: boolean;
   x: number;
   y: number;
 }
@@ -738,4 +813,111 @@ export function fillByInverseSolve(
     });
   }
   return out;
+}
+
+/** Forward-sample cell-placement algorithm. Pure function. Samples
+ *  ``50 × n`` (min 1000) candidate recipes, computes indices, keeps
+ *  those whose (xKey, yKey) lies inside the polygon, downsamples to
+ *  ``n`` by farthest-point. Replaces the legacy ``fillByInverseSolve``.
+ *  See spec at docs/superpowers/specs/2026-05-12-propose-test-placement-redesign.md.
+ *
+ *  Pure function: no side effects, no mutation of inputs. */
+export function fillByForwardSample(args: {
+  polygon: Polygon;
+  xKey: IndexKey;
+  yKey: IndexKey;
+  constraints: ForwardSampleConstraints;
+  n: number;
+}): FillCell[] {
+  const { polygon, xKey, yKey, constraints, n } = args;
+  if (polygon.length < 3 || n <= 0) return [];
+  const bbox = polygonBox(polygon);
+  if (!bbox) return [];
+
+  // Keeps the synchronous loop under ~5ms even for very large n.
+  const MAX_SAMPLE_BUDGET = 50_000;
+  const sampleBudget = Math.min(MAX_SAMPLE_BUDGET, Math.max(1000, n * 50));
+  const survivors: FillCell[] = [];
+  for (let i = 0; i < sampleBudget; i++) {
+    const draw = sampleParamHypercube(constraints);
+    if (draw === null) continue;
+    let idx: LaserIndices;
+    try {
+      idx = computeIndices(draw.params, { crosshatch: draw.crosshatch });
+    } catch {
+      continue;
+    }
+    const x = idx[xKey] as number;
+    const y = idx[yKey] as number;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (!pointInPolygon([x, y], polygon)) continue;
+    const paramValues: Partial<Record<ParamKey, number>> = {
+      power: draw.params.power,
+      speed: draw.params.speed,
+      frequency: draw.params.frequency,
+      density: draw.params.density,
+    };
+    // pulse_width is not a ParamKey member; embed via cast so saved
+    // validation cells carry the full recipe. The page widens the
+    // record at the call site.
+    (paramValues as Record<string, number>).pulse_width = draw.params.pulse_width;
+    survivors.push({
+      paramValues,
+      passes: draw.params.passes,
+      crosshatch: draw.crosshatch,
+      x,
+      y,
+    });
+  }
+
+  return farthestPointDownsample(survivors, n, bbox);
+}
+
+/** Pick ``k`` points from ``survivors`` by farthest-point traversal,
+ *  normalising distance by the polygon bbox so the algorithm is
+ *  scale-invariant across anisotropic chart axes. Picks index 0 first
+ *  (deterministic; callers shuffle upstream when randomness matters). */
+export function farthestPointDownsample<T extends { x: number; y: number }>(
+  survivors: readonly T[],
+  k: number,
+  bbox: { minX: number; maxX: number; minY: number; maxY: number },
+): T[] {
+  if (k <= 0 || survivors.length === 0) return [];
+  if (survivors.length <= k) return [...survivors];
+
+  const w = Math.max(bbox.maxX - bbox.minX, 1e-12);
+  const h = Math.max(bbox.maxY - bbox.minY, 1e-12);
+  const picked: T[] = [survivors[0]];
+  // minDistSq[i] = squared normalised distance from survivors[i] to the
+  // closest already-picked point. Maintained incrementally.
+  const minDistSq = survivors.map((s) => {
+    const dx = (s.x - survivors[0].x) / w;
+    const dy = (s.y - survivors[0].y) / h;
+    return dx * dx + dy * dy;
+  });
+  minDistSq[0] = -1; // sentinel — never re-pick the first
+
+  while (picked.length < k) {
+    let bestIdx = -1;
+    let bestDist = -1;
+    for (let i = 0; i < survivors.length; i++) {
+      if (minDistSq[i] < 0) continue;
+      if (minDistSq[i] > bestDist) {
+        bestDist = minDistSq[i];
+        bestIdx = i;
+      }
+    }
+    if (bestIdx < 0) break;
+    picked.push(survivors[bestIdx]);
+    const p = survivors[bestIdx];
+    minDistSq[bestIdx] = -1;
+    for (let i = 0; i < survivors.length; i++) {
+      if (minDistSq[i] < 0) continue;
+      const dx = (survivors[i].x - p.x) / w;
+      const dy = (survivors[i].y - p.y) / h;
+      const d = dx * dx + dy * dy;
+      if (d < minDistSq[i]) minDistSq[i] = d;
+    }
+  }
+  return picked;
 }

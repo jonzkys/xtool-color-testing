@@ -3,6 +3,7 @@ import {
   pointInPolygon,
   findAnchor,
   type Polygon,
+  type FillCell,
 } from "./proposeTestMath";
 import type { ExposureRow } from "./exposureCorrelations";
 
@@ -613,6 +614,236 @@ describe("computeCurve crosshatch", () => {
     for (let i = 0; i < curveA.length; i++) {
       expect(curveB[i].y).toBeCloseTo(curveA[i].y, 6);
       expect(curveB[i].x).toBeCloseTo(curveA[i].x * 2, 4);
+    }
+  });
+});
+
+import { sampleParamHypercube, type ForwardSampleConstraints } from "./proposeTestMath";
+import { ALLOWED_PULSE_WIDTHS } from "../../laser/pulseWidths";
+
+function freshConstraints(): ForwardSampleConstraints {
+  return {
+    ranges: {
+      power:       { min: 1, max: 100 },
+      speed:       { min: 2, max: 15000 },
+      frequency:   { min: 60, max: 500 },
+      density:     { min: 1, max: 5000 },
+      pulse_width: { min: ALLOWED_PULSE_WIDTHS[0],
+                     max: ALLOWED_PULSE_WIDTHS[ALLOWED_PULSE_WIDTHS.length - 1] },
+      passes:      { min: 1, max: 4 },
+    },
+    crosshatch: "varies",
+  };
+}
+
+describe("sampleParamHypercube", () => {
+  it("emits values inside the configured ranges", () => {
+    const c = freshConstraints();
+    for (let i = 0; i < 200; i++) {
+      const s = sampleParamHypercube(c)!;
+      expect(s.params.power).toBeGreaterThanOrEqual(1);
+      expect(s.params.power).toBeLessThanOrEqual(100);
+      expect(s.params.passes).toBeGreaterThanOrEqual(1);
+      expect(s.params.passes).toBeLessThanOrEqual(4);
+      expect(Number.isInteger(s.params.passes)).toBe(true);
+      expect(ALLOWED_PULSE_WIDTHS).toContain(s.params.pulse_width);
+    }
+  });
+
+  it("pins a param when min === max", () => {
+    const c = freshConstraints();
+    c.ranges.power = { min: 14.6, max: 14.6 };
+    for (let i = 0; i < 50; i++) {
+      expect(sampleParamHypercube(c)!.params.power).toBe(14.6);
+    }
+  });
+
+  it("respects crosshatch=on", () => {
+    const c = freshConstraints();
+    c.crosshatch = "on";
+    for (let i = 0; i < 50; i++) {
+      expect(sampleParamHypercube(c)!.crosshatch).toBe(true);
+    }
+  });
+
+  it("respects crosshatch=off", () => {
+    const c = freshConstraints();
+    c.crosshatch = "off";
+    for (let i = 0; i < 50; i++) {
+      expect(sampleParamHypercube(c)!.crosshatch).toBe(false);
+    }
+  });
+
+  it("varies crosshatch when crosshatch=varies (covers both values across many samples)", () => {
+    const c = freshConstraints();
+    const seen = new Set<boolean>();
+    for (let i = 0; i < 200 && seen.size < 2; i++) {
+      seen.add(sampleParamHypercube(c)!.crosshatch);
+    }
+    expect(seen.size).toBe(2);
+  });
+
+  it("returns null when pulse_width range admits no allowed presets", () => {
+    const c = freshConstraints();
+    // Range that's strictly between two allowed presets — should return null.
+    c.ranges.pulse_width = { min: 5, max: 5 };  // not an allowed value
+    expect(sampleParamHypercube(c)).toBeNull();
+  });
+});
+
+describe("FillCell shape", () => {
+  it("optionally carries passes and crosshatch", () => {
+    const cell: FillCell = {
+      paramValues: { power: 14.6 },
+      passes: 3,
+      crosshatch: true,
+      x: 100, y: 0.001,
+    };
+    expect(cell.passes).toBe(3);
+    expect(cell.crosshatch).toBe(true);
+  });
+
+  it("makes passes and crosshatch optional", () => {
+    const cell: FillCell = {
+      paramValues: { power: 14.6 },
+      x: 100, y: 0.001,
+    };
+    expect(cell.passes).toBeUndefined();
+    expect(cell.crosshatch).toBeUndefined();
+  });
+});
+
+import { farthestPointDownsample } from "./proposeTestMath";
+
+describe("farthestPointDownsample", () => {
+  const bbox = { minX: 0, maxX: 10, minY: 0, maxY: 10 };
+
+  it("returns all survivors when k >= survivors.length", () => {
+    const survivors = [
+      { x: 0, y: 0 }, { x: 5, y: 5 }, { x: 10, y: 10 },
+    ];
+    const out = farthestPointDownsample(survivors, 10, bbox);
+    expect(out.length).toBe(3);
+  });
+
+  it("returns exactly k points when k < survivors.length", () => {
+    const survivors = Array.from({ length: 50 }, (_, i) =>
+      ({ x: (i % 10), y: Math.floor(i / 10) }),
+    );
+    const out = farthestPointDownsample(survivors, 8, bbox);
+    expect(out.length).toBe(8);
+  });
+
+  it("picks points spread across the bbox (rough coverage)", () => {
+    // Clustered + spread mix: should pick the spread ones over duplicates.
+    const survivors = [
+      ...Array.from({ length: 40 }, () => ({ x: 0.1, y: 0.1 })),  // tight cluster
+      { x: 9, y: 9 },
+      { x: 9, y: 0 },
+      { x: 0, y: 9 },
+    ];
+    const out = farthestPointDownsample(survivors, 4, bbox);
+    // The four corners + cluster: farthest-point should pull one from
+    // the cluster + the three spread points.
+    const xs = out.map((p) => p.x);
+    const ys = out.map((p) => p.y);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(5);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(5);
+  });
+
+  it("returns [] when survivors is empty", () => {
+    expect(farthestPointDownsample([], 5, bbox)).toEqual([]);
+  });
+
+  it("returns [] when k === 0", () => {
+    expect(farthestPointDownsample([{ x: 0, y: 0 }], 0, bbox)).toEqual([]);
+  });
+});
+
+import { fillByForwardSample } from "./proposeTestMath";
+
+const FULL_LIMITS: ForwardSampleConstraints["ranges"] = {
+  power:       { min: 1, max: 100 },
+  speed:       { min: 2, max: 15000 },
+  frequency:   { min: 60, max: 500 },
+  density:     { min: 1, max: 5000 },
+  pulse_width: { min: ALLOWED_PULSE_WIDTHS[0],
+                 max: ALLOWED_PULSE_WIDTHS[ALLOWED_PULSE_WIDTHS.length - 1] },
+  passes:      { min: 1, max: 4 },
+};
+
+describe("fillByForwardSample", () => {
+  it("returns n cells for a wide-open polygon and constraints", () => {
+    // Polygon covering most of the reachable (TEi, PIi) plane in log space.
+    const polygon: Polygon = [
+      [100, 1e-4], [1e6, 1e-4], [1e6, 1e-2], [100, 1e-2],
+    ];
+    const out = fillByForwardSample({
+      polygon,
+      xKey: "total_exposure_index",
+      yKey: "pulse_intensity_index",
+      constraints: { ranges: FULL_LIMITS, crosshatch: "varies" },
+      n: 24,
+    });
+    expect(out.length).toBeGreaterThanOrEqual(20);
+    expect(out.length).toBeLessThanOrEqual(24);
+    for (const cell of out) {
+      expect(cell.x).toBeGreaterThanOrEqual(100);
+      expect(cell.x).toBeLessThanOrEqual(1e6);
+      expect(cell.y).toBeGreaterThanOrEqual(1e-4);
+      expect(cell.y).toBeLessThanOrEqual(1e-2);
+    }
+  });
+
+  it("populates per-cell passes and crosshatch when those vary", () => {
+    const polygon: Polygon = [
+      [100, 1e-4], [1e6, 1e-4], [1e6, 1e-2], [100, 1e-2],
+    ];
+    const out = fillByForwardSample({
+      polygon,
+      xKey: "total_exposure_index",
+      yKey: "pulse_intensity_index",
+      constraints: { ranges: FULL_LIMITS, crosshatch: "varies" },
+      n: 10,
+    });
+    for (const cell of out) {
+      expect(typeof cell.passes).toBe("number");
+      expect(typeof cell.crosshatch).toBe("boolean");
+    }
+  });
+
+  it("returns empty when the polygon is unreachable", () => {
+    // Impossible region — indices can't go negative.
+    const polygon: Polygon = [
+      [-2, -1], [-1, -1], [-1, -0.5], [-2, -0.5],
+    ];
+    const out = fillByForwardSample({
+      polygon,
+      xKey: "total_exposure_index",
+      yKey: "pulse_intensity_index",
+      constraints: { ranges: FULL_LIMITS, crosshatch: "varies" },
+      n: 10,
+    });
+    expect(out).toEqual([]);
+  });
+
+  it("respects pinned constraints (min === max)", () => {
+    const polygon: Polygon = [
+      [100, 1e-4], [1e6, 1e-4], [1e6, 1e-2], [100, 1e-2],
+    ];
+    const pinned = {
+      ...FULL_LIMITS,
+      power: { min: 14.6, max: 14.6 },
+    };
+    const out = fillByForwardSample({
+      polygon,
+      xKey: "total_exposure_index",
+      yKey: "pulse_intensity_index",
+      constraints: { ranges: pinned, crosshatch: "varies" },
+      n: 10,
+    });
+    for (const cell of out) {
+      expect(cell.paramValues.power).toBe(14.6);
     }
   });
 });

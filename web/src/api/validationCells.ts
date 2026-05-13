@@ -10,7 +10,12 @@ export interface ValidationCellPayload {
   palette_entry_id: number | null;
   expected_hex: string;
   expected_lab: number[];   // [L*, a*, b*]
-  params: Record<string, string | number>;
+  // ``boolean`` is included for ``crosshatch`` — the forward-sample
+  // propose-test path persists per-cell crosshatch so the validation
+  // cell carries its own toggle independent of the test-level default.
+  // The backend Pydantic schema coerces bools to numbers, and the
+  // renderer reads ``crosshatch`` back via ``bool(...)``.
+  params: Record<string, string | number | boolean>;
 }
 
 export async function patchValidationCells(

@@ -1,7 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ExposureProposeRail, type ParamRow, type BurnSettings } from "./ExposureProposeRail";
+import type { ParamLimitOverrides } from "./ExposureProposeRail";
 import type { ExposureRow } from "./exposureCorrelations";
+
+describe("ParamLimitOverrides type", () => {
+  it("accepts pulse_width and passes overrides", () => {
+    const o: ParamLimitOverrides = {
+      power: { min: 5, max: 30 },
+      pulse_width: { min: 60, max: 200 },
+      passes: { min: 1, max: 4 },
+    };
+    expect(o.power?.min).toBe(5);
+    expect(o.pulse_width?.max).toBe(200);
+    expect(o.passes?.min).toBe(1);
+  });
+});
 
 const ANCHOR: ExposureRow = {
   id: 1,
@@ -65,11 +79,37 @@ function defaultProps() {
     paramLimitOverrides: {},
     onParamLimitOverrideChange: vi.fn(),
     laserLimits: {
-      power:     { min: 1,  max: 100,   step: 1 },
-      speed:     { min: 2,  max: 15000, step: 1 },
-      frequency: { min: 60, max: 500,   step: 1 },
-      density:   { min: 1,  max: 5000,  step: 1 },
+      power:       { min: 1,  max: 100,   step: 1 },
+      speed:       { min: 2,  max: 15000, step: 1 },
+      frequency:   { min: 60, max: 500,   step: 1 },
+      density:     { min: 1,  max: 5000,  step: 1 },
+      pulse_width: { min: 2,  max: 500,   step: 1 },
+      passes:      { min: 1,  max: 99,    step: 1 },
     },
+    crosshatchPolicy: "varies" as "varies" | "on" | "off",
+    onCrosshatchPolicyChange: vi.fn(),
+    passesRange: { min: 1, max: 4 },
+    onPassesRangeChange: vi.fn(),
+    survivorCount: 16,
+    varyEnabled: {
+      power: true,
+      speed: true,
+      frequency: true,
+      density: true,
+      pulse_width: true,
+      passes: true,
+    },
+    onVaryChange: vi.fn(),
+    anchorParamValues: {
+      power: 14.6,
+      speed: 1152,
+      frequency: 100,
+      density: 5000,
+      pulse_width: 200,
+      passes: 1,
+    },
+    pinnedValueOverrides: {} as Partial<Record<import("./proposeTestMath").SampleableKey, number>>,
+    onPinnedOverrideChange: vi.fn(),
   };
 }
 
@@ -161,7 +201,7 @@ describe("ExposureProposeRail burn settings", () => {
   it("calls onBurnSettingChange when crosshatch toggles", () => {
     const onBurnSettingChange = vi.fn();
     render(<ExposureProposeRail {...defaultProps()} onBurnSettingChange={onBurnSettingChange} />);
-    const cb = screen.getByLabelText(/Crosshatch/) as HTMLInputElement;
+    const cb = screen.getByLabelText(/^Crosshatch$/) as HTMLInputElement;
     fireEvent.click(cb);
     expect(onBurnSettingChange).toHaveBeenCalledWith("crosshatch", true);
   });
@@ -198,5 +238,217 @@ describe("ExposureProposeRail burn settings", () => {
     const inc = container.querySelector('[data-row="angle_mode"] button:nth-of-type(2)');
     expect(fixed?.getAttribute("aria-pressed")).toBe("false");
     expect(inc?.getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+describe("ExposureProposeRail CONSTRAINTS — crosshatch / passes", () => {
+  it("renders the crosshatch tri-state", () => {
+    render(<ExposureProposeRail {...defaultProps()} crosshatchPolicy="varies" />);
+    expect(screen.getByLabelText(/crosshatch varies/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/crosshatch on/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/crosshatch off/i)).toBeInTheDocument();
+  });
+
+  it("calls onCrosshatchPolicyChange when a state is clicked", () => {
+    const onCrosshatchPolicyChange = vi.fn();
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      crosshatchPolicy="varies"
+      onCrosshatchPolicyChange={onCrosshatchPolicyChange}
+    />);
+    fireEvent.click(screen.getByLabelText(/crosshatch on/i));
+    expect(onCrosshatchPolicyChange).toHaveBeenCalledWith("on");
+  });
+
+  it("renders the passes min/max inputs in curve mode", () => {
+    // In curve mode, the legacy CONSTRAINTS section still has dedicated
+    // passes min/max boxes (PASSES isn't varied so a ParamRangeRow
+    // doesn't apply — the curve-mode PARAMS section sliders show the
+    // anchor's current passes value, not a range).
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      passesRange={{ min: 1, max: 4 }}
+    />);
+    expect(screen.getByLabelText(/passes minimum/i)).toHaveValue(1);
+    expect(screen.getByLabelText(/passes maximum/i)).toHaveValue(4);
+  });
+
+  it("in curve mode, keeps the legacy behaviour (only varied param has min/max)", () => {
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "curve", varyParam: "power" }}
+    />);
+    expect(screen.getByLabelText(/power minimum/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/speed minimum/i)).toBeNull();
+  });
+
+  it("cross-clamps passes min/max in curve mode (typing min > max bumps max)", () => {
+    const onPassesRangeChange = vi.fn();
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      passesRange={{ min: 1, max: 4 }}
+      onPassesRangeChange={onPassesRangeChange}
+    />);
+    fireEvent.change(screen.getByLabelText(/passes minimum/i), { target: { value: "8" } });
+    expect(onPassesRangeChange).toHaveBeenCalledWith({ min: 8, max: 8 });
+  });
+
+  it("renders 'Found N/M cells' hint when canCreate is true but cells fall short", () => {
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      cellCount={50}
+      survivorCount={31}
+    />);
+    expect(screen.getByText(/found 31 of 50 cells/i)).toBeInTheDocument();
+  });
+
+  it("renders 'No cells reachable' hint when survivors is 0", () => {
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      cellCount={50}
+      survivorCount={0}
+      canCreate={false}
+    />);
+    expect(screen.getByText(/no cells reachable/i)).toBeInTheDocument();
+  });
+});
+
+describe("ExposureProposeRail unified PARAMS — fill mode", () => {
+  it("renders a ParamRangeRow for each of the 6 sampleable params", () => {
+    const { container } = render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+    />);
+    const editor = container.querySelector('[data-role="propose-params-editor"]');
+    expect(editor).toBeTruthy();
+    const rows = Array.from(editor!.querySelectorAll("[data-row]"))
+      .map((el) => (el as HTMLElement).getAttribute("data-row"));
+    // Crosshatch is rendered as the last row inside the PARAMS section.
+    expect(rows).toEqual([
+      "power", "speed", "frequency", "density", "pulse_width", "passes",
+      "crosshatch-policy",
+    ]);
+  });
+
+  it("vary ON renders Radix slider thumbs + min + max text inputs", () => {
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+    />);
+    // Radix Slider renders thumbs as buttons with role="slider".
+    const thumbs = screen.getAllByRole("slider", { name: /power range/i });
+    expect(thumbs.length).toBe(2);
+    expect(screen.getByLabelText(/power minimum/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/power maximum/i)).toBeInTheDocument();
+  });
+
+  it("vary OFF collapses the row to an editable pinned value (no slider)", () => {
+    const { container } = render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+      varyEnabled={{
+        power: false,
+        speed: true,
+        frequency: true,
+        density: true,
+        pulse_width: true,
+        passes: true,
+      }}
+    />);
+    const row = container.querySelector('[data-row="power"]');
+    expect(row).toBeTruthy();
+    // Pinned value renders (anchor power = 14.6) — the editable input
+    // shows the bare value and the unit sits beside it as a span.
+    const valueInput = row!.querySelector('input[aria-label="power value"]') as HTMLInputElement | null;
+    expect(valueInput).toBeTruthy();
+    expect(valueInput!.value).toMatch(/14\.6/);
+    expect(row!.textContent).toMatch(/%/);
+    // No Radix slider thumb for power.
+    expect(row!.querySelector('[role="slider"]')).toBeNull();
+    // No min/max readouts for power — they only render when vary is ON.
+    expect(row!.querySelector('input[aria-label="power minimum"]')).toBeNull();
+    expect(row!.querySelector('input[aria-label="power maximum"]')).toBeNull();
+    // Vary toggle pill still present.
+    expect(row!.querySelector('button[role="switch"]')).toBeTruthy();
+  });
+
+  it("vary OFF: typing a new pinned value calls onPinnedOverrideChange", () => {
+    const onPinnedOverrideChange = vi.fn();
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+      varyEnabled={{
+        power: false,
+        speed: true,
+        frequency: true,
+        density: true,
+        pulse_width: true,
+        passes: true,
+      }}
+      onPinnedOverrideChange={onPinnedOverrideChange}
+    />);
+    fireEvent.change(screen.getByLabelText(/power value/i), { target: { value: "20" } });
+    expect(onPinnedOverrideChange).toHaveBeenCalledWith("power", 20);
+  });
+
+  it("vary OFF: clearing the pinned value calls onPinnedOverrideChange(undefined)", () => {
+    const onPinnedOverrideChange = vi.fn();
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+      varyEnabled={{
+        power: false,
+        speed: true,
+        frequency: true,
+        density: true,
+        pulse_width: true,
+        passes: true,
+      }}
+      pinnedValueOverrides={{ power: 20 }}
+      onPinnedOverrideChange={onPinnedOverrideChange}
+    />);
+    fireEvent.change(screen.getByLabelText(/power value/i), { target: { value: "" } });
+    expect(onPinnedOverrideChange).toHaveBeenCalledWith("power", undefined);
+  });
+
+  it("clicking the vary toggle flips state", () => {
+    const onVaryChange = vi.fn();
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+      onVaryChange={onVaryChange}
+    />);
+    fireEvent.click(screen.getByLabelText(/power vary/i));
+    expect(onVaryChange).toHaveBeenCalledWith("power", false);
+  });
+
+  it("typing a min greater than the current max bumps max", () => {
+    const onParamLimitOverrideChange = vi.fn();
+    render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+      paramLimitOverrides={{ power: { min: 10, max: 30 } }}
+      onParamLimitOverrideChange={onParamLimitOverrideChange}
+    />);
+    fireEvent.change(screen.getByLabelText(/power minimum/i), { target: { value: "50" } });
+    // The component fires two override callbacks per range update
+    // (one for "min", one for "max"). With user min=50 > current
+    // max=30, max must be bumped up to 50 to keep the range valid.
+    const maxCall = onParamLimitOverrideChange.mock.calls.find(
+      (c) => c[0] === "power" && c[1] === "max",
+    );
+    expect(maxCall).toBeTruthy();
+    expect(maxCall![2]).toBe(50);
+  });
+
+  it("does NOT render the legacy CONSTRAINTS per-param min/max in fill mode", () => {
+    const { container } = render(<ExposureProposeRail
+      {...defaultProps()}
+      mode={{ mode: "fill", varyParams: ["power", "speed"] }}
+    />);
+    // The old CONSTRAINTS section's per-param rows were keyed
+    // ``limits-${param}`` — none of those should be present anymore.
+    expect(container.querySelector('[data-row="limits-power"]')).toBeNull();
+    expect(container.querySelector('[data-row="passes-range"]')).toBeNull();
   });
 });
