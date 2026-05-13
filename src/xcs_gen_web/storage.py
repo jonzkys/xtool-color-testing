@@ -325,9 +325,6 @@ class DispatchingStorage:
     def save(self, **kw: Any) -> dict[str, Any]:
         return self._primary.save(**kw)
 
-    def save_at(self, path: str, data: bytes) -> None:
-        self._backend_for(path).save_at(path, data)
-
     def _backend_for(self, path: str) -> StorageBackend:
         if path.startswith(S3_URI_PREFIX):
             # Only the S3 backend can resolve this path. If the primary
