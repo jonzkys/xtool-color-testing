@@ -86,9 +86,30 @@ ENV PATH="/opt/venv/bin:$PATH" \
 EXPOSE 4000
 
 # The /api/health endpoint is public in any mode — safe for the LB to poll.
+# Hits gunicorn on :4000, which proxies to a uvicorn worker; if all workers
+# are blocked the request times out and the LB reaps the task.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request, sys; \
 r = urllib.request.urlopen('http://127.0.0.1:4000/api/health', timeout=3); \
 sys.exit(0 if r.status == 200 else 1)"
 
-CMD ["uvicorn", "xcs_gen_web.app:app", "--host", "0.0.0.0", "--port", "4000"]
+# gunicorn manages N uvicorn workers — process isolation means one
+# stuck capture pipeline can't block the others. 2 workers matches
+# the 2-vCPU ECS Fargate task spec; bump via XCS_GEN_WEB_WORKERS if
+# the task ever moves to bigger hardware. --timeout 90 covers the
+# worst-case capture (2-6s typical + S3 transfer headroom). --graceful-timeout
+# lets in-flight uploads finish before SIGKILL. --max-requests recycles
+# workers periodically to bound memory creep from OpenCV temporaries.
+# sh -c form so ${XCS_GEN_WEB_WORKERS:-2} is expanded at container start
+# rather than baked into the image; ECS task overrides can tune workers
+# without rebuilding.
+CMD ["sh", "-c", "gunicorn xcs_gen_web.app:app \
+    --workers ${XCS_GEN_WEB_WORKERS:-2} \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --bind 0.0.0.0:4000 \
+    --timeout 90 \
+    --graceful-timeout 30 \
+    --max-requests 500 \
+    --max-requests-jitter 50 \
+    --access-logfile - \
+    --error-logfile -"]

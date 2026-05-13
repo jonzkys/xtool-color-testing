@@ -378,7 +378,7 @@ def test_run_import_simple_materials_only(fresh_db):
 
 def test_run_import_remaps_test_to_new_material_id(fresh_db):
     m_src = _seed_material(SRC, "A")
-    t_src = _seed_test(SRC, m_src)
+    _seed_test(SRC, m_src)
     run_import(SRC, DST)
     src_m = [r for r in _list_rows(materials_t, owner_id=SRC)][0]
     dst_m = [r for r in _list_rows(materials_t, owner_id=DST)][0]
@@ -443,7 +443,7 @@ def test_run_import_remaps_palette_entries_full_fk_set(fresh_db):
 def test_run_import_remaps_palette_self_ref(fresh_db):
     m = _seed_material(SRC, "A")
     pa = _seed_palette_entry(SRC, m, hex_="#aa0000")
-    pb = _seed_palette_entry(
+    _seed_palette_entry(
         SRC, m, derived_from_entry_id=pa, hex_="#bb0000",
     )
     run_import(SRC, DST)

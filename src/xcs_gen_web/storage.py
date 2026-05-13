@@ -239,6 +239,9 @@ class S3Storage:
         """Write to an explicit ``s3://`` URI. Refuses URIs outside the
         configured bucket, same posture as :meth:`read` / :meth:`delete`."""
         key = self._check_bucket(path)
+        # Derive content-type from the path suffix so HEIC→JPEG sidecars
+        # serve as ``image/jpeg`` if a future code path streams them
+        # directly from S3.
         suffix = "." + path.rsplit(".", 1)[-1] if "." in path else ""
         self._client.put_object(
             Bucket=self.bucket,
@@ -337,6 +340,9 @@ class DispatchingStorage:
                 )
             return self._primary
         return self._fs
+
+    def save_at(self, path: str, data: bytes) -> None:
+        self._backend_for(path).save_at(path, data)
 
     def read(self, path: str) -> bytes:
         return self._backend_for(path).read(path)

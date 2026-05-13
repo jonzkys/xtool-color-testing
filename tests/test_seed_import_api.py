@@ -13,8 +13,6 @@ source. The second registration becomes the destination "fresh" user.
 
 from __future__ import annotations
 
-import json
-
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
