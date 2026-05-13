@@ -58,6 +58,7 @@ class StorageBackend(Protocol):
 
     def save(self, *, test_id: int, result_id: int, data: bytes,
              suffix: str, kind: str = "") -> dict[str, Any]: ...
+    def save_at(self, path: str, data: bytes) -> None: ...
     def read(self, path: str) -> bytes: ...
     def delete(self, path: str) -> None: ...
 
@@ -82,6 +83,15 @@ class FilesystemStorage:
         path = target_dir / f"{result_id}{suffix_kind}{suffix}"
         path.write_bytes(data)
         return {"path": str(path), "sha256": sha256_hex(data)}
+
+    def save_at(self, path: str, data: bytes) -> None:
+        """Write raw bytes to an explicit path. Used for path-convention
+        sidecars (e.g. the cached HEIC→JPEG transcode) whose location
+        is derived from a sibling path rather than ``(test_id,
+        result_id, kind)``."""
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(data)
 
     def read(self, path: str) -> bytes:
         return Path(path).read_bytes()
@@ -225,6 +235,22 @@ class S3Storage:
         )
         return {"path": self._uri(key), "sha256": sha256_hex(data)}
 
+    def save_at(self, path: str, data: bytes) -> None:
+        """Write to an explicit ``s3://`` URI. Refuses URIs outside the
+        configured bucket, same posture as :meth:`read` / :meth:`delete`."""
+        key = self._check_bucket(path)
+        # Derive content-type from the path suffix so HEIC→JPEG sidecars
+        # serve as ``image/jpeg`` if a future code path streams them
+        # directly from S3.
+        suffix = "." + path.rsplit(".", 1)[-1] if "." in path else ""
+        self._client.put_object(
+            Bucket=self.bucket,
+            Key=key,
+            Body=data,
+            ContentType=content_type_for(suffix),
+            ServerSideEncryption=_SSE_ALGORITHM,
+        )
+
     def read(self, path: str) -> bytes:
         import botocore.exceptions
 
@@ -311,6 +337,9 @@ class DispatchingStorage:
                 )
             return self._primary
         return self._fs
+
+    def save_at(self, path: str, data: bytes) -> None:
+        self._backend_for(path).save_at(path, data)
 
     def read(self, path: str) -> bytes:
         return self._backend_for(path).read(path)

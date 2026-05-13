@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import math
+import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
+import anyio
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -266,6 +269,56 @@ def _warn_about_mysql_charset(url: str) -> None:
     )
 
 
+def _configure_threadpool() -> int:
+    """Bound the anyio default threadpool size at app startup.
+
+    Starlette runs every ``def`` route handler — and any
+    ``anyio.to_thread.run_sync`` call — in this pool. The library
+    default is 40 threads, which is way too generous on a 2-vCPU box
+    where each capture/pipeline call burns a full core. We cap at 4:
+    the capture semaphore allows 2 simultaneous full-pipeline runs
+    (see ``services.capture``), so 4 leaves headroom for DB-only
+    routes and palette queries without inviting GIL thrashing.
+
+    Override at deploy time via ``XCS_GEN_THREADPOOL_SIZE`` if you
+    move to bigger hardware. Returns the resolved limit so callers
+    (e.g. the lifespan handler) can log it.
+
+    **Must be called from inside a running event loop** (the FastAPI
+    lifespan handler, where this lives today). Anyio's
+    ``current_default_thread_limiter()`` is event-loop-local: invoked
+    from bare ``create_app()`` or any other sync context, it silently
+    creates a transient limiter that is discarded when the loop later
+    starts, leaving the real per-loop limiter at its 40-thread default.
+    """
+    limit = int(os.environ.get("XCS_GEN_THREADPOOL_SIZE", "4"))
+    limit = max(1, limit)
+    anyio.to_thread.current_default_thread_limiter().total_tokens = limit
+    return limit
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Startup/shutdown hook. Currently used only to size the anyio
+    threadpool — see :func:`_configure_threadpool`. Kept here (rather
+    than as a plain startup callback) because the threadpool limiter
+    is process-global and we want the bound applied before the first
+    request can land in a ``def`` handler.
+
+    The resolved limit is mirrored onto ``app.state.threadpool_limit``
+    so tests (and future introspection endpoints) can observe the
+    value without re-entering the loop to query the limiter
+    directly."""
+    import logging
+    limit = _configure_threadpool()
+    app.state.threadpool_limit = limit
+    logging.getLogger("xcs_gen").info(
+        "anyio threadpool sized to %d (override with XCS_GEN_THREADPOOL_SIZE)",
+        limit,
+    )
+    yield
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the FastAPI app.
 
@@ -299,7 +352,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from . import images as _images
     _images.use_storage(settings)
     _log_storage_choice(settings)
-    app = FastAPI(title="xcs-gen", version="0.1.0")
+    app = FastAPI(title="xcs-gen", version="0.1.0", lifespan=_lifespan)
     app.state.settings = settings
 
     # Body-size cap applies to every endpoint. Ordered first so nothing
@@ -536,11 +589,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         the result against that user's matching test.
 
         IMPORTANT: this endpoint MUST NOT consult X-User-Id. The mid is
-        the only identity signal accepted here."""
+        the only identity signal accepted here.
+
+        Stays ``async def`` because the rate-limiter check needs the
+        request loop's lock; the heavy work (QR detect + capture +
+        DB persist) is offloaded to the anyio threadpool so it can't
+        block the event loop."""
         from .services import capture as capture_service
-        from .repositories import results as r_repo
-        from . import images, models
-        from .db import session_scope
 
         user = u_repo.get_by_mobile_id(mid)
         if user is None:
@@ -555,30 +610,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 headers={"Retry-After": str(retry)},
             )
 
-        data = await image.read()
-        try:
-            qr_id, _retest_idx = capture_service.detect_test_id(data)
-        except capture_service.CaptureError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        data = image.file.read()
 
-        from .repositories import tests as t_repo
-        t = t_repo.get(qr_id, owner_id=user["id"])
-        if t is None:
-            # Generic message — the mobile route is unauthenticated
-            # beyond the mid, so we deliberately don't echo the test
-            # id back or hint that it might exist in another account.
-            raise HTTPException(
-                status_code=404,
-                detail="test not found — it may have been deleted, or the QR is from a different account",
+        def _run_capture_and_persist() -> tuple[ResultResponse, int, str]:
+            try:
+                qr_id, _retest_idx = capture_service.detect_test_id(data)
+            except capture_service.CaptureError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+
+            from .repositories import tests as t_repo
+            t = t_repo.get(qr_id, owner_id=user["id"])
+            if t is None:
+                # Generic message — the mobile route is unauthenticated
+                # beyond the mid, so we deliberately don't echo the test
+                # id back or hint that it might exist in another account.
+                raise HTTPException(
+                    status_code=404,
+                    detail="test not found — it may have been deleted, or the QR is from a different account",
+                )
+
+            result = _persist_upload(
+                tid=qr_id, spec=capture_service.effective_spec(t),
+                data=data, filename=image.filename,
+                user_id=user["id"], via="mobile",
             )
+            return result, qr_id, t["name"]
 
-        result = _persist_upload(
-            tid=qr_id, spec=capture_service.effective_spec(t),
-            data=data, filename=image.filename,
-            user_id=user["id"], via="mobile",
+        result, qr_id, test_name = await anyio.to_thread.run_sync(
+            _run_capture_and_persist,
         )
         return MobileUploadResponse(
-            result_id=result.id, test_id=qr_id, test_name=t["name"],
+            result_id=result.id, test_id=qr_id, test_name=test_name,
         )
 
     @app.get(
@@ -670,12 +732,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # tracing, no more network round-trip, and the backend no longer
     # depends on the `vtracer` Python wheel.
 
+    # Threshold past which a single svg-layers conversion is unusual
+    # enough to log. The hatch generator caps at 50k segments and a
+    # cold path on a complex multi-layer SVG sits at <1s on a typical
+    # laptop — anything over 5s is either a pathological input or a
+    # regression worth seeing in CloudWatch.
+    _SVG_LAYERS_SLOW_THRESHOLD_S = 5.0
+
     @app.post("/api/svg-layers")
     def svg_layers(request: SvgLayersRequest) -> Response:
+        import time as _time
+        t0 = _time.perf_counter()
         try:
             body = svg_layers_to_xcs_bytes(request)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        elapsed = _time.perf_counter() - t0
+        if elapsed > _SVG_LAYERS_SLOW_THRESHOLD_S:
+            import logging as _logging
+            _logging.getLogger("xcs_gen").warning(
+                "slow /api/svg-layers: %.2fs, layers=%d, svg_bytes=%d",
+                elapsed, len(request.layers), len(request.svg_content),
+            )
 
         filename = f"{request.name or 'svg-layers'}.xcs"
         return Response(
@@ -1345,6 +1423,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         img.save(out, format="JPEG", quality=85, optimize=True)
         return out.getvalue()
 
+    def _cached_jpeg_path(original_path: str) -> str:
+        """Path convention for the transcoded JPEG sidecar of a HEIC
+        source. Co-located with the original — survives both the FS
+        and S3 storage backends (s3://bucket/.../4.heic →
+        s3://bucket/.../4.heic.cached.jpg is a valid key). Keeps the
+        cache out of the DB schema; ``delete`` invalidates by path
+        suffix."""
+        return f"{original_path}.cached.jpg"
+
     def _result_to_response(r: dict) -> ResultResponse:
         return ResultResponse(
             id=r["id"], test_id=r["test_id"],
@@ -1539,6 +1626,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 status_code=410,
                 detail="source image no longer available — cannot reingest",
             )
+        # Drop the cached warped PNG sidecar BEFORE running the pipeline:
+        # ``r_repo.replace_capture`` nulls ``warped_image_path`` further
+        # down, so without an explicit invalidate the previous sidecar
+        # would be orphaned on disk. Mirrors the ``results_delete`` path.
+        warped_cache.invalidate(rid, owner_id=user_id)
         from .repositories import materials as m_repo
         material = None
         if t.get("material_id") is not None:
@@ -1683,14 +1775,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return InspectCellResponse(**payload)
 
     @app.post("/api/tests/{tid}/results", response_model=ResultResponse, status_code=201)
-    async def results_upload(
+    def results_upload(
         tid: int, image: UploadFile = File(...),
         user_id: int = Depends(get_current_user),
     ) -> ResultResponse:
+        # Plain ``def`` — Starlette runs the body in the anyio
+        # threadpool so the capture pipeline doesn't pin the event
+        # loop. Read bytes via the underlying ``file`` (sync) rather
+        # than ``await image.read()``.
         t = t_repo.get(tid, owner_id=user_id)
         if t is None:
             raise HTTPException(status_code=404, detail="test not found")
-        data = await image.read()
+        data = image.file.read()
         return _persist_upload(
             tid=tid, spec=capture_service.effective_spec(t),
             data=data, filename=image.filename,
@@ -1698,7 +1794,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.post("/api/results/preflight")
-    async def results_upload_preflight(
+    def results_upload_preflight(
         image: UploadFile = File(...),
         user_id: int = Depends(get_current_user),
     ) -> dict:
@@ -1708,8 +1804,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         The upload modal calls this first so it can warn the user
         before re-processing, and short-circuit duplicate uploads
-        without sending the file twice."""
-        data = await image.read()
+        without sending the file twice. Plain ``def`` — the QR
+        detect step is CPU-heavy and runs under the capture
+        semaphore."""
+        data = image.file.read()
         try:
             qr_id, _retest_idx = capture_service.detect_test_id(data)
         except capture_service.CaptureError as e:
@@ -1735,7 +1833,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     @app.post("/api/results/upload", response_model=ResultResponse, status_code=201)
-    async def results_upload_auto(
+    def results_upload_auto(
         image: UploadFile = File(...),
         user_id: int = Depends(get_current_user),
     ) -> ResultResponse:
@@ -1743,8 +1841,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         Only the caller's own tests are considered — a QR whose id matches
         another user's test yields 404 (we don't want to silently leak the
-        existence of another account's tests)."""
-        data = await image.read()
+        existence of another account's tests). Plain ``def`` so the
+        full pipeline runs off the event loop."""
+        data = image.file.read()
         try:
             qr_id, _retest_idx = capture_service.detect_test_id(data)
         except capture_service.CaptureError as e:
@@ -1797,7 +1896,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if path is None:
             raise HTTPException(status_code=404, detail="result not found")
         images.delete(path)
+        # Drop the HEIC→JPEG transcode sidecar too; idempotent on the
+        # non-HEIC case (delete is a no-op when the path doesn't exist).
+        images.delete(_cached_jpeg_path(path))
         return Response(status_code=204)
+
+    # The source image on a result row is immutable once uploaded —
+    # reingest creates a new row with a new id, so the URL changes
+    # whenever the bytes would. Same posture for the warped sidecar
+    # (regenerated under a new key) and the debug overlays (pure
+    # functions of immutable inputs). ``immutable`` tells the browser
+    # not to revalidate; ``private`` keeps these out of any shared
+    # proxy cache since results are per-user.
+    _IMMUTABLE_IMAGE_CACHE = "private, max-age=86400, immutable"
 
     @app.get("/api/results/{rid}/image")
     def results_image(
@@ -1807,25 +1918,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         r = r_repo.get(rid, owner_id=user_id)
         if r is None:
             raise HTTPException(status_code=404, detail="result not found")
-        data = images.read(r["image_path"])
         suffix = Path(r["image_path"]).suffix.lower()
         # Browsers don't natively decode HEIC/HEIF, so the inline
         # preview on the test page broke for iPhone uploads. Transcode
-        # to JPEG on demand. The browser-side cache + the
-        # ``Cache-Control`` header below mean a typical session
-        # transcodes each image once.
+        # to JPEG on demand and cache the result as a sidecar — the
+        # first viewer pays the 200-800ms PIL decode + EXIF + encode
+        # tax, everyone else reads pre-encoded bytes. The browser cache
+        # still cuts most calls (see Cache-Control below), but server
+        # restarts, multi-tab opens, and S3-backed deployments all
+        # benefit from the on-disk hit too.
         if suffix in (".heic", ".heif"):
-            data = _transcode_heic_to_jpeg(data)
+            cached = _cached_jpeg_path(r["image_path"])
+            try:
+                jpeg = images.read(cached)
+            except FileNotFoundError:
+                heic = images.read(r["image_path"])
+                jpeg = _transcode_heic_to_jpeg(heic)
+                # Best-effort: a write failure must not break the
+                # response. Worst case is we re-transcode next time.
+                try:
+                    images.save_at(cached, jpeg)
+                except Exception:
+                    import logging as _logging
+                    _logging.getLogger("xcs_gen").exception(
+                        "failed to cache HEIC→JPEG sidecar",
+                    )
             return Response(
-                content=data,
+                content=jpeg,
                 media_type="image/jpeg",
-                headers={"Cache-Control": "private, max-age=3600"},
+                headers={"Cache-Control": _IMMUTABLE_IMAGE_CACHE},
             )
+        data = images.read(r["image_path"])
         # ``image/*`` is a wildcard only valid in Accept headers, not a real
         # Content-Type — browsers that MIME-sniff strictly (e.g. Safari
         # cross-origin) refuse to render it. Derive the real type from the
         # stored file's suffix so every browser displays the image.
-        return Response(content=data, media_type=content_type_for(suffix))
+        return Response(
+            content=data,
+            media_type=content_type_for(suffix),
+            headers={"Cache-Control": _IMMUTABLE_IMAGE_CACHE},
+        )
 
     def _warped_or_http(rid: int, user_id: int):
         """Adapt :mod:`warped_cache` exceptions to FastAPI HTTP errors.
@@ -1876,7 +2008,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=410, detail=msg)
         except warped_cache.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        return Response(content=png, media_type="image/png")
+        return Response(
+            content=png,
+            media_type="image/png",
+            headers={"Cache-Control": _IMMUTABLE_IMAGE_CACHE},
+        )
 
     @app.get("/api/results/{rid}/debug/warped-with-grid")
     def results_debug_warped_with_grid(
@@ -1891,7 +2027,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        return Response(content=png, media_type="image/png")
+        return Response(
+            content=png,
+            media_type="image/png",
+            headers={"Cache-Control": _IMMUTABLE_IMAGE_CACHE},
+        )
 
     @app.get("/api/results/{rid}/debug/row-count")
     def results_debug_row_count(
@@ -1920,7 +2060,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         except capture_service.CaptureError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        return Response(content=png, media_type="image/png")
+        return Response(
+            content=png,
+            media_type="image/png",
+            headers={"Cache-Control": _IMMUTABLE_IMAGE_CACHE},
+        )
 
     @app.get("/api/tests/{tid}/swatches", response_model=list[AveragedSwatch])
     def test_swatches(
