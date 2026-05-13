@@ -453,25 +453,27 @@ export const ExposureProposeRail: React.FC<Props> = ({
             </span>
           </label>
 
-          <label
-            className="flex items-start gap-2 cursor-pointer"
-            data-row="ignore-existing"
-            title="When ON, propose-test samples uniformly across the polygon without penalising targets near existing palette entries."
-          >
-            <input
-              type="checkbox"
-              checked={ignoreExistingCells}
-              onChange={(e) => onIgnoreExistingCellsChange(e.target.checked)}
-              className="mt-0.5"
-              aria-label="Ignore existing cells"
-            />
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] leading-snug">
-              Ignore existing cells
-              <span className="block text-[9px] text-[color:var(--color-ink-subtle)] tracking-normal normal-case">
-                Distribute new cells evenly across the polygon — don't avoid existing entries.
+          {mode.mode === "curve" && (
+            <label
+              className="flex items-start gap-2 cursor-pointer"
+              data-row="ignore-existing"
+              title="When ON, propose-test samples uniformly across the polygon without penalising targets near existing palette entries."
+            >
+              <input
+                type="checkbox"
+                checked={ignoreExistingCells}
+                onChange={(e) => onIgnoreExistingCellsChange(e.target.checked)}
+                className="mt-0.5"
+                aria-label="Ignore existing cells"
+              />
+              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] leading-snug">
+                Ignore existing cells
+                <span className="block text-[9px] text-[color:var(--color-ink-subtle)] tracking-normal normal-case">
+                  Distribute new cells evenly across the polygon — don't avoid existing entries.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+          )}
 
           {/* Per-param min/max overrides + crosshatch tri-state +
               passes range. CURVE-MODE ONLY — fill mode now folds these

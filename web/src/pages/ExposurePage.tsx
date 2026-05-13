@@ -827,7 +827,7 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
     if (!effective || preview.cells.length === 0) return [];
     const params: ParamKey[] = effective.mode === "curve"
       ? [effective.varyParam]
-      : [...effective.varyParams];
+      : [];  // Fill mode: per-row sliders already display ranges; the legacy 2-param Range section is misleading.
     return params.map((p) => {
       const values = preview.cells
         .map((c) => {
@@ -1401,9 +1401,11 @@ export function ExposurePage({ materialId: propMaterialId }: ExposurePageProps) 
                   ? "Polygon contains no entries"
                   : preview.cells.length === 0
                     ? "Couldn't fit any cells — try a different param or redraw"
-                    : preview.cells.length < cellCount
-                      ? `Only ${preview.cells.length} of ${cellCount} cells fit — region too small for the chosen params`
-                      : null
+                    : effective?.mode === "fill" && preview.cells.length < cellCount
+                      ? null   // survivorCount feedback line in the rail handles partial-fill in fill mode
+                      : preview.cells.length < cellCount
+                        ? `Only ${preview.cells.length} of ${cellCount} cells fit — region too small for the chosen params`
+                        : null
               }
               onCreate={handleCreateTest}
               onCancel={closeProposeWizard}
