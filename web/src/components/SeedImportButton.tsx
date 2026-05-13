@@ -54,9 +54,9 @@ export function SeedImportButton({ isSeedUser = false }: SeedImportButtonProps) 
         type="button"
         onClick={() => setOpen(true)}
         title="Copy curated demo data into your account"
-        aria-label="Load demo data"
+        aria-label="Seed Data"
         className={cn(
-          "inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[6px]",
+          "inline-flex items-center gap-1.5 h-7 px-3 rounded-[6px]",
           "border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]",
           "text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-primary)]",
           "hover:border-[color:var(--color-primary)]/50 hover:bg-[color:var(--color-primary-tint)]/40",
@@ -66,7 +66,7 @@ export function SeedImportButton({ isSeedUser = false }: SeedImportButtonProps) 
       >
         <Download className="h-3.5 w-3.5" strokeWidth={1.75} />
         <span className="font-mono text-[10.5px] tracking-[0.12em] uppercase font-semibold">
-          Load demo
+          Seed Data
         </span>
       </button>
       <SeedImportDialog open={open} onOpenChange={setOpen} />

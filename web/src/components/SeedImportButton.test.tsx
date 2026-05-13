@@ -94,13 +94,13 @@ describe("SeedImportButton", () => {
     const { container } = render(<>{false && <SeedImportButton />}</>);
     expect(container).toBeEmptyDOMElement();
     expect(
-      screen.queryByRole("button", { name: /load demo/i }),
+      screen.queryByRole("button", { name: /seed data/i }),
     ).not.toBeInTheDocument();
   });
 
   it("opens the modal with counts after clicking the pill", async () => {
     render(<SeedImportButton isSeedUser={false} />);
-    fireEvent.click(screen.getByRole("button", { name: /load demo/i }));
+    fireEvent.click(screen.getByRole("button", { name: /seed data/i }));
 
     // Title appears once the modal mounts; counts appear once the
     // preview fetch resolves.
@@ -116,7 +116,7 @@ describe("SeedImportButton", () => {
 
   it("disables the import button until the confirmation checkbox is checked", async () => {
     render(<SeedImportButton isSeedUser={false} />);
-    fireEvent.click(screen.getByRole("button", { name: /load demo/i }));
+    fireEvent.click(screen.getByRole("button", { name: /seed data/i }));
 
     // Wait for the preview to land so the Import button is rendered.
     const importBtn = await screen.findByRole("button", { name: /import/i });
@@ -130,7 +130,7 @@ describe("SeedImportButton", () => {
 
   it("posts to /api/seed/import when the user confirms and clicks Import", async () => {
     render(<SeedImportButton isSeedUser={false} />);
-    fireEvent.click(screen.getByRole("button", { name: /load demo/i }));
+    fireEvent.click(screen.getByRole("button", { name: /seed data/i }));
 
     await screen.findByText("8");
     fireEvent.click(screen.getByLabelText(/i understand/i));
@@ -154,7 +154,7 @@ describe("SeedImportButton", () => {
       ),
     );
     render(<SeedImportButton isSeedUser={false} />);
-    fireEvent.click(screen.getByRole("button", { name: /load demo/i }));
+    fireEvent.click(screen.getByRole("button", { name: /seed data/i }));
 
     expect(
       await screen.findByText(/already imported demo data/i),
@@ -201,7 +201,7 @@ describe("SeedImportButton", () => {
     );
 
     render(<SeedImportButton isSeedUser={false} />);
-    fireEvent.click(screen.getByRole("button", { name: /load demo/i }));
+    fireEvent.click(screen.getByRole("button", { name: /seed data/i }));
 
     await screen.findByText("8");
     fireEvent.click(screen.getByLabelText(/i understand/i));
