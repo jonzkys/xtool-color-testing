@@ -1,7 +1,21 @@
-"""Capture service: photo bytes + Test spec → sampled swatches."""
+"""Capture service: photo bytes + Test spec → sampled swatches.
+
+Concurrency: the full-pipeline entry points (:func:`run_capture`,
+:func:`detect_test_id`) each hold ~150 MB of transient image arrays while
+running ArUco detection, perspective warp, and swatch sampling. To keep
+the worker process from OOM-ing under a burst of simultaneous uploads,
+both entry points acquire a process-wide :class:`threading.Semaphore`
+sized by ``XCS_GEN_CAPTURE_CONCURRENCY`` (default ``2``). Beyond that
+limit, additional callers queue at the semaphore.
+
+This is per-process. Multi-worker gunicorn deploys naturally get
+``N_workers x N_captures`` total concurrency; size both to fit RAM.
+"""
 
 from __future__ import annotations
 
+import os
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -83,6 +97,45 @@ def effective_spec(test: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+# Per-process semaphore that bounds simultaneous full-pipeline runs.
+# Lazily initialized on first acquire so tests can override the env var
+# before the first capture happens. Multi-worker gunicorn deploys get
+# ``N_workers x permits`` total concurrency — size both to fit RAM.
+_CAPTURE_SEMAPHORE: threading.Semaphore | None = None
+_CAPTURE_SEMAPHORE_LOCK = threading.Lock()
+
+
+def _get_capture_semaphore() -> threading.Semaphore:
+    """Return the process-wide capture semaphore, creating it lazily.
+
+    Permits come from ``XCS_GEN_CAPTURE_CONCURRENCY`` (default ``2``).
+    Values below ``1`` are clamped to ``1``; the env var is read once
+    per process, on first use.
+    """
+    global _CAPTURE_SEMAPHORE
+    if _CAPTURE_SEMAPHORE is None:
+        with _CAPTURE_SEMAPHORE_LOCK:
+            if _CAPTURE_SEMAPHORE is None:
+                try:
+                    n = int(os.environ.get("XCS_GEN_CAPTURE_CONCURRENCY", "2"))
+                except ValueError:
+                    n = 2
+                _CAPTURE_SEMAPHORE = threading.Semaphore(max(1, n))
+    return _CAPTURE_SEMAPHORE
+
+
+def _reset_capture_semaphore_for_tests() -> None:
+    """Drop the cached semaphore so the next acquire re-reads the env var.
+
+    For test use only — production code never needs this. Resetting
+    while threads are queued at the old semaphore would race; tests
+    should call this between (not during) capture runs.
+    """
+    global _CAPTURE_SEMAPHORE
+    with _CAPTURE_SEMAPHORE_LOCK:
+        _CAPTURE_SEMAPHORE = None
+
+
 class CaptureError(Exception):
     """Raised by run_capture when the image can't be processed."""
 
@@ -91,16 +144,21 @@ def detect_test_id(image_bytes: bytes) -> tuple[int, int]:
     """Peek at an uploaded photo and return ``(test_id, retest_index)``
     encoded in its QR, without warping or sampling. Used by the
     auto-match upload route so we can route a photo to the right test
-    + retest purely from its registration QR."""
-    try:
-        img = decode_image_bytes(image_bytes)
-    except Exception as e:
-        raise CaptureError(f"could not decode image: {e}") from e
-    try:
-        qr_id, retest_index, _ = detect_fiducials(img)
-    except DetectionError as e:
-        raise CaptureError(str(e)) from e
-    return qr_id, retest_index
+    + retest purely from its registration QR.
+
+    Runs decode + fiducial detection, both expensive enough to count
+    against the per-process capture concurrency budget.
+    """
+    with _get_capture_semaphore():
+        try:
+            img = decode_image_bytes(image_bytes)
+        except Exception as e:
+            raise CaptureError(f"could not decode image: {e}") from e
+        try:
+            qr_id, retest_index, _ = detect_fiducials(img)
+        except DetectionError as e:
+            raise CaptureError(str(e)) from e
+        return qr_id, retest_index
 
 
 @dataclass
@@ -127,6 +185,25 @@ def run_capture(*, image_bytes: bytes, test_id: int,
                 material: dict[str, Any] | None = None,
                 prior_anchors_json: list[str | None] | None = None,
                 ) -> CaptureResult:
+    # Bound simultaneous full-pipeline runs per worker (see module
+    # docstring). The semaphore is released as soon as we return, so
+    # downstream callers that hold onto warped frames don't keep
+    # competing captures blocked.
+    with _get_capture_semaphore():
+        return _run_capture_locked(
+            image_bytes=image_bytes,
+            test_id=test_id,
+            spec=spec,
+            material=material,
+            prior_anchors_json=prior_anchors_json,
+        )
+
+
+def _run_capture_locked(*, image_bytes: bytes, test_id: int,
+                        spec: dict[str, Any],
+                        material: dict[str, Any] | None = None,
+                        prior_anchors_json: list[str | None] | None = None,
+                        ) -> CaptureResult:
     try:
         img = decode_image_bytes(image_bytes)
     except Exception as e:
