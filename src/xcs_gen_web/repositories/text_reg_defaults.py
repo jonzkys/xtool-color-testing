@@ -60,6 +60,7 @@ def _row_to_dict_machine(r) -> dict[str, Any]:
         **{f: getattr(r, f) for f in _PARAM_FIELDS},
         "created_at": r.created_at,
         "updated_at": r.updated_at,
+        "import_source": getattr(r, "import_source", None),
     }
 
 
@@ -72,6 +73,7 @@ def _row_to_dict_material(r) -> dict[str, Any]:
         **{f: getattr(r, f) for f in _PARAM_FIELDS},
         "created_at": r.created_at,
         "updated_at": r.updated_at,
+        "import_source": getattr(r, "import_source", None),
     }
 
 

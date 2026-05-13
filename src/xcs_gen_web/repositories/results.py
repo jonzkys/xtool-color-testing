@@ -37,6 +37,7 @@ def _row(r) -> dict[str, Any]:
         "notes": r.notes,
         "swatches": json.loads(r.swatches_json),
         "owner_id": r.owner_id,
+        "import_source": getattr(r, "import_source", None),
         "visibility": r.visibility,
         "via": r.via,
         # Pre-0006 rows lack the column — keep older test DBs loading.

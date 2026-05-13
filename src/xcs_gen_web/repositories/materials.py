@@ -31,6 +31,7 @@ def _row_to_dict(r) -> dict[str, Any]:
         "id": r.id, "name": r.name, "notes": r.notes or "",
         "created_at": r.created_at,
         "owner_id": r.owner_id,
+        "import_source": getattr(r, "import_source", None),
         "visibility": r.visibility,
         "shape": r.shape,
         "diameter_mm": r.diameter_mm,

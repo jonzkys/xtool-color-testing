@@ -426,6 +426,7 @@ class PaletteEntryResponse(BaseModel):
     y_value: float | None = None
     source_result_id: int | None = None
     owner_id: int
+    import_source: str | None = None
     visibility: str
     machine_id: str
     # Validated state. ``is_validated`` defaults to ``False`` so
@@ -730,6 +731,10 @@ class MaterialResponse(BaseModel):
     notes: str
     created_at: str
     owner_id: int
+    # Provenance tag — ``None`` for normal user rows, ``"seed"`` for
+    # rows created by the demo-import flow. Read-only on the API; the
+    # seed-import service is the only writer.
+    import_source: str | None = None
     visibility: str
     shape: MaterialShape | None = None
     diameter_mm: float | None = None
@@ -812,6 +817,7 @@ class PresetResponse(BaseModel):
     created_at: str
     updated_at: str
     owner_id: int
+    import_source: str | None = None
     visibility: str
     machine_id: str
 
@@ -908,6 +914,7 @@ class TestResponse(BaseModel):
     updated_at: str
     locked: bool
     owner_id: int
+    import_source: str | None = None
     visibility: str
     machine_id: str
     # Monotonic counter — each POST /api/tests/{id}/retest bumps by 1.
@@ -950,6 +957,7 @@ class ResultResponse(BaseModel):
     notes: str
     swatches: list[ResultSwatch]
     owner_id: int
+    import_source: str | None = None
     visibility: str
     # Copied from the QR at ingest. 0 for burns from pre-retest-era
     # XCS files (the implicit "first burn").
@@ -1104,6 +1112,7 @@ class SavedSpectrumResponse(BaseModel):
     machine_id: str
     material_id: int | None
     owner_id: int
+    import_source: str | None = None
     axis_param: str
     axis_min: float
     axis_max: float
@@ -1184,6 +1193,7 @@ class TextRegMachineDefault(TextRegParamsBody):
     machine_id: str
     created_at: str
     updated_at: str
+    import_source: str | None = None
 
 
 class TextRegMaterialDefault(TextRegParamsBody):
@@ -1193,6 +1203,7 @@ class TextRegMaterialDefault(TextRegParamsBody):
     material_id: int
     created_at: str
     updated_at: str
+    import_source: str | None = None
 
 
 class TextRegResolveResponse(BaseModel):
