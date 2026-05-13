@@ -58,6 +58,7 @@ class StorageBackend(Protocol):
 
     def save(self, *, test_id: int, result_id: int, data: bytes,
              suffix: str, kind: str = "") -> dict[str, Any]: ...
+    def save_at(self, path: str, data: bytes) -> None: ...
     def read(self, path: str) -> bytes: ...
     def delete(self, path: str) -> None: ...
 
@@ -82,6 +83,15 @@ class FilesystemStorage:
         path = target_dir / f"{result_id}{suffix_kind}{suffix}"
         path.write_bytes(data)
         return {"path": str(path), "sha256": sha256_hex(data)}
+
+    def save_at(self, path: str, data: bytes) -> None:
+        """Write raw bytes to an explicit path. Used for path-convention
+        sidecars (e.g. the cached HEIC→JPEG transcode, the seed-import
+        copies of either of the above) whose location is derived from
+        a sibling path rather than ``(test_id, result_id, kind)``."""
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(data)
 
     def read(self, path: str) -> bytes:
         return Path(path).read_bytes()
@@ -225,6 +235,19 @@ class S3Storage:
         )
         return {"path": self._uri(key), "sha256": sha256_hex(data)}
 
+    def save_at(self, path: str, data: bytes) -> None:
+        """Write to an explicit ``s3://`` URI. Refuses URIs outside the
+        configured bucket, same posture as :meth:`read` / :meth:`delete`."""
+        key = self._check_bucket(path)
+        suffix = "." + path.rsplit(".", 1)[-1] if "." in path else ""
+        self._client.put_object(
+            Bucket=self.bucket,
+            Key=key,
+            Body=data,
+            ContentType=content_type_for(suffix),
+            ServerSideEncryption=_SSE_ALGORITHM,
+        )
+
     def read(self, path: str) -> bytes:
         import botocore.exceptions
 
@@ -298,6 +321,9 @@ class DispatchingStorage:
 
     def save(self, **kw: Any) -> dict[str, Any]:
         return self._primary.save(**kw)
+
+    def save_at(self, path: str, data: bytes) -> None:
+        self._backend_for(path).save_at(path, data)
 
     def _backend_for(self, path: str) -> StorageBackend:
         if path.startswith(S3_URI_PREFIX):

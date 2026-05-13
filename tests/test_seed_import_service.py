@@ -113,13 +113,20 @@ def _seed_test(
         return int(res.inserted_primary_key[0])
 
 
-def _seed_result(owner_id: int, test_id: int, sha: str = "ab" * 32) -> int:
+def _seed_result(
+    owner_id: int,
+    test_id: int,
+    sha: str = "ab" * 32,
+    *,
+    image_path: str = "/tmp/seed.jpg",
+    warped_image_path: str | None = None,
+) -> int:
     with session_scope() as s:
         res = s.execute(
             results_t.insert().values(
                 test_id=test_id,
                 uploaded_at=_now(),
-                image_path="/tmp/seed.jpg",
+                image_path=image_path,
                 image_sha256=sha,
                 excluded=0,
                 notes="",
@@ -129,6 +136,7 @@ def _seed_result(owner_id: int, test_id: int, sha: str = "ab" * 32) -> int:
                 via="desktop",
                 retest_index=0,
                 missing_markers_json="[]",
+                warped_image_path=warped_image_path,
             )
         )
         return int(res.inserted_primary_key[0])
@@ -559,3 +567,150 @@ def test_run_import_copies_saved_spectrum_with_children(fresh_db):
         ).all()
     assert len(sw_rows) == 1
     assert len(co_rows) == 1
+
+
+# ── run_import — image bytes copy (B3) ───────────────────────────────────
+
+
+def _images_setup(monkeypatch, tmp_path):
+    """Point image storage at a fresh subdir of tmp_path so a) it doesn't
+    collide with the sqlite file `fresh_db` writes into the same dir,
+    and b) each test gets isolated bytes."""
+    images_root = tmp_path / "images"
+    images_root.mkdir(exist_ok=True)
+    monkeypatch.setenv("XCS_GEN_IMAGES_DIR", str(images_root))
+    from xcs_gen_web import images as images_module
+    images_module.reset_for_tests()
+    return images_module
+
+
+def _save_src_bytes(images_module, test_id: int, result_id: int,
+                    data: bytes, suffix: str = ".jpg", kind: str = "") -> str:
+    """Write source image bytes under the (test_id, result_id) key and
+    return the stored path — same path the DB row would carry."""
+    saved = images_module.save(
+        test_id=test_id, result_id=result_id,
+        data=data, suffix=suffix, kind=kind,
+    )
+    return saved["path"]
+
+
+def test_run_import_copies_image_bytes(fresh_db, monkeypatch, tmp_path):
+    im = _images_setup(monkeypatch, tmp_path)
+    m = _seed_material(SRC, "A")
+    t = _seed_test(SRC, m)
+    # Reserve a result id then put bytes under it.
+    r = _seed_result(SRC, t)
+    src_path = _save_src_bytes(im, t, r, b"hello-bytes", suffix=".jpg")
+    # Patch the result row to point at the real on-disk path.
+    with session_scope() as s:
+        s.execute(
+            results_t.update().where(results_t.c.id == r)
+            .values(image_path=src_path)
+        )
+
+    res = run_import(SRC, DST)
+    assert res.image_warnings == []
+
+    dst_r = [row for row in _list_rows(results_t, owner_id=DST)][0]
+    assert dst_r.image_path != src_path
+    # Bytes match.
+    assert im.read(dst_r.image_path) == b"hello-bytes"
+    # Source bytes untouched.
+    assert im.read(src_path) == b"hello-bytes"
+
+
+def test_run_import_copies_warped_sidecar(fresh_db, monkeypatch, tmp_path):
+    im = _images_setup(monkeypatch, tmp_path)
+    m = _seed_material(SRC, "A")
+    t = _seed_test(SRC, m)
+    r = _seed_result(SRC, t)
+    src_image = _save_src_bytes(im, t, r, b"original", suffix=".jpg")
+    src_warped = _save_src_bytes(
+        im, t, r, b"warped-png", suffix=".png", kind="warped",
+    )
+    with session_scope() as s:
+        s.execute(
+            results_t.update().where(results_t.c.id == r)
+            .values(image_path=src_image, warped_image_path=src_warped)
+        )
+
+    res = run_import(SRC, DST)
+    assert res.image_warnings == []
+
+    dst_r = [row for row in _list_rows(results_t, owner_id=DST)][0]
+    assert dst_r.warped_image_path is not None
+    assert dst_r.warped_image_path != src_warped
+    assert im.read(dst_r.warped_image_path) == b"warped-png"
+    # Original image also copied.
+    assert im.read(dst_r.image_path) == b"original"
+
+
+def test_run_import_handles_missing_source_image(fresh_db, monkeypatch, tmp_path):
+    _images_setup(monkeypatch, tmp_path)
+    m = _seed_material(SRC, "A")
+    t = _seed_test(SRC, m)
+    # Set image_path to a plausible-looking path but DON'T actually
+    # write bytes under it.
+    bogus = str(tmp_path / "images" / "does-not-exist.jpg")
+    _seed_result(SRC, t, image_path=bogus)
+
+    res = run_import(SRC, DST)
+
+    dst_r = [row for row in _list_rows(results_t, owner_id=DST)][0]
+    # Row exists (the result is still useful — cell readings etc.).
+    assert dst_r is not None
+    # image_path retained the source string (NOT NULL column) but no
+    # bytes were written under a new dst path.
+    assert dst_r.image_path == bogus
+    # Warning surfaced.
+    assert len(res.image_warnings) == 1
+    assert "source image missing" in res.image_warnings[0]
+
+
+def test_run_import_copies_heic_cache_sidecar(fresh_db, monkeypatch, tmp_path):
+    im = _images_setup(monkeypatch, tmp_path)
+    m = _seed_material(SRC, "A")
+    t = _seed_test(SRC, m)
+    r = _seed_result(SRC, t)
+    src_image = _save_src_bytes(im, t, r, b"heic-bytes", suffix=".heic")
+    # Write the HEIC cache sidecar at the path-convention location.
+    src_cache = f"{src_image}.cached.jpg"
+    im.save_at(src_cache, b"cached-jpeg-bytes")
+    with session_scope() as s:
+        s.execute(
+            results_t.update().where(results_t.c.id == r)
+            .values(image_path=src_image)
+        )
+
+    res = run_import(SRC, DST)
+    assert res.image_warnings == []
+
+    dst_r = [row for row in _list_rows(results_t, owner_id=DST)][0]
+    dst_cache = f"{dst_r.image_path}.cached.jpg"
+    assert im.read(dst_cache) == b"cached-jpeg-bytes"
+
+
+def test_run_import_skips_heic_cache_if_absent(fresh_db, monkeypatch, tmp_path):
+    im = _images_setup(monkeypatch, tmp_path)
+    m = _seed_material(SRC, "A")
+    t = _seed_test(SRC, m)
+    r = _seed_result(SRC, t)
+    src_image = _save_src_bytes(im, t, r, b"heic-bytes", suffix=".heic")
+    # NOTE: no cached.jpg sidecar exists.
+    with session_scope() as s:
+        s.execute(
+            results_t.update().where(results_t.c.id == r)
+            .values(image_path=src_image)
+        )
+
+    # Should succeed cleanly — the cache is derived, regenerated on view.
+    res = run_import(SRC, DST)
+    assert res.image_warnings == []
+
+    dst_r = [row for row in _list_rows(results_t, owner_id=DST)][0]
+    dst_cache = f"{dst_r.image_path}.cached.jpg"
+    # No cached sidecar was written under the dst path.
+    import pytest as _pytest
+    with _pytest.raises(FileNotFoundError):
+        im.read(dst_cache)

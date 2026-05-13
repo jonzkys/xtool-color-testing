@@ -28,6 +28,7 @@ from .storage import (
 __all__ = [
     "sha256_hex",
     "save",
+    "save_at",
     "read",
     "delete",
     "use_storage",
@@ -89,6 +90,10 @@ def save(*, test_id: int, result_id: int, data: bytes,
         test_id=test_id, result_id=result_id,
         data=data, suffix=suffix, kind=kind,
     )
+
+
+def save_at(path: str, data: bytes) -> None:
+    _backend().save_at(path, data)
 
 
 def read(path: str) -> bytes:

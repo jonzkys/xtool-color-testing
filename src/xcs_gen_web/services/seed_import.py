@@ -40,23 +40,25 @@ the whole copy and the route returns 409. We don't silently skip the
 text_reg_defaults rows; if your dst has any own data the import is
 the wrong tool — invite the user to a fresh account instead.
 
-Image bytes are NOT copied yet — Task B3. ``copy_results`` writes the
-source ``image_path`` / ``warped_image_path`` strings as-is, which
-means the copied rows point at the source's storage. That's broken
-for any deployment where the seed account's files aren't readable by
-the destination owner, and is fixed in B3 (which will copy the bytes
-to a new path under the destination owner's namespace + rewrite the
-columns). See ``TODO(b3)``.
+Image bytes ARE copied: ``_copy_results`` reads the source's stored
+image (and warped sidecar + HEIC transcode cache, if present) and
+writes them under the new ``(test_id, result_id)`` keys so the dst
+owner's namespace owns the bytes. Storage writes are not transactional
+— if the wrapping DB rollback fires after a storage write, the bytes
+become unreachable orphans under freshly-allocated keys. See the
+"Failure mode" comment in ``_copy_results``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import and_, func, insert, select
 
+from .. import images
 from ..db import session_scope
 from ..models import (
     materials,
@@ -250,8 +252,9 @@ def run_import(src_owner_id: int, dst_owner_id: int) -> SeedImportResult:
             s, src_owner_id, dst_owner_id, materials_map,
         )
         vc_count = _copy_validation_cells_pass_1(s, src_owner_id, tests_map)
+        image_warnings: list[str] = []
         results_map = _copy_results(
-            s, src_owner_id, dst_owner_id, tests_map,
+            s, src_owner_id, dst_owner_id, tests_map, image_warnings,
         )
         palette_map = _copy_palette_entries_pass_1(
             s, src_owner_id, dst_owner_id,
@@ -282,7 +285,7 @@ def run_import(src_owner_id: int, dst_owner_id: int) -> SeedImportResult:
             validation_cells=vc_count,
             text_reg_machine=trm_count,
             text_reg_material=trmat_count,
-            image_warnings=[],
+            image_warnings=image_warnings,
         )
 
 
@@ -389,7 +392,39 @@ def _copy_validation_cells_pass_1(
 
 def _copy_results(
     s, src: int, dst: int, tests_map: dict[int, int],
+    image_warnings: list[str],
 ) -> dict[int, int]:
+    """Copy result rows AND their on-disk image artefacts.
+
+    For each source result we:
+
+    1. Insert a new DB row to allocate ``new_rid``. We seed the
+       ``image_path`` column with a placeholder ("") because the column
+       is NOT NULL — we patch it with the real new path once the bytes
+       are written and we know what path the storage layer chose.
+    2. Read source bytes via ``images.read``. On ``FileNotFoundError``
+       we keep the source ``image_path`` verbatim on the new row and
+       record a warning — the row stays useful (cell readings, indices)
+       even without the image, and the NOT NULL constraint is satisfied.
+    3. Save bytes under ``(new_tid, new_rid)`` so they land in the
+       dst namespace, then UPDATE the row's ``image_path``.
+    4. Repeat for the optional warped sidecar (kind="warped"). Missing
+       warped bytes are silent — it's a derived cache that the
+       /api/results/{rid}/warped endpoint will regenerate.
+    5. Copy the HEIC→JPEG transcode sidecar if the source has one.
+       That cache lives at "<image_path>.cached.jpg" by convention
+       (see commit 42bc588) — we mirror the convention against the new
+       image_path so the dst's first /image GET serves the cached JPEG
+       rather than re-transcoding.
+
+    Failure mode note: storage writes are NOT transactional. If the DB
+    transaction wrapping ``run_import`` rolls back after this function
+    has already written some image bytes, those bytes are orphaned
+    under the dst owner's storage. That's acceptable because the keys
+    are ``(new_test_id, new_result_id)`` which never get re-issued
+    (autoincrement) — the orphans are unreachable rather than colliding
+    with future data, and the next successful run gets fresh ids.
+    """
     rows = s.execute(
         select(results).where(results.c.owner_id == src)
     ).all()
@@ -397,18 +432,88 @@ def _copy_results(
     for row in rows:
         d = _row_to_dict(row)
         old_id = d["id"]
+        src_image_path = d["image_path"]
+        src_warped_path = d["warped_image_path"]
+
         new_row = _strip(d, "id")
         new_row["owner_id"] = dst
         new_row["import_source"] = SEED_IMPORT_SOURCE
         new_row["test_id"] = tests_map[d["test_id"]]
-        # TODO(b3): image_path + warped_image_path still point at the
-        # source user's storage. B3 copies bytes to a new path under
-        # the dst owner's namespace and rewrites these columns. For
-        # now we copy the strings verbatim so the FK-remap test suite
-        # can run without needing image storage stubbed in.
         new_row["uploaded_at"] = _now()
+        # Placeholder — patched below once we know the new storage path.
+        # Kept as src path so the NOT NULL constraint is satisfied even
+        # if the storage write below blows up between the INSERT and the
+        # UPDATE (the outer session_scope would then rollback the row).
+        new_row["image_path"] = src_image_path
+        new_row["warped_image_path"] = None  # patched below if applicable
+
         res = s.execute(insert(results).values(**new_row))
-        id_map[old_id] = int(res.inserted_primary_key[0])
+        new_rid = int(res.inserted_primary_key[0])
+        id_map[old_id] = new_rid
+        new_tid = tests_map[d["test_id"]]
+
+        # Copy the original image bytes.
+        new_image_path: str | None = None
+        if src_image_path:
+            try:
+                src_bytes = images.read(src_image_path)
+            except FileNotFoundError:
+                image_warnings.append(
+                    f"source image missing for result {old_id}: {src_image_path}"
+                )
+                src_bytes = None
+            if src_bytes is not None:
+                suffix = Path(src_image_path).suffix or ".jpg"
+                saved = images.save(
+                    test_id=new_tid, result_id=new_rid,
+                    data=src_bytes, suffix=suffix, kind="",
+                )
+                new_image_path = saved["path"]
+
+        # Copy the warped-PNG sidecar if the source has one. Missing
+        # bytes are silent — it's a derived cache.
+        new_warped_path: str | None = None
+        if src_warped_path:
+            try:
+                warped_bytes = images.read(src_warped_path)
+            except FileNotFoundError:
+                warped_bytes = None
+            if warped_bytes is not None:
+                saved_warped = images.save(
+                    test_id=new_tid, result_id=new_rid,
+                    data=warped_bytes, suffix=".png", kind="warped",
+                )
+                new_warped_path = saved_warped["path"]
+
+        # Copy the HEIC→JPEG transcode cache sidecar (path convention
+        # from commit 42bc588 — see images.save_at). Only meaningful
+        # when the source is an HEIC; for other formats no sidecar exists.
+        if (
+            new_image_path
+            and src_image_path
+            and src_image_path.lower().endswith((".heic", ".heif"))
+        ):
+            src_cached = f"{src_image_path}.cached.jpg"
+            try:
+                cached_bytes = images.read(src_cached)
+            except FileNotFoundError:
+                cached_bytes = None
+            if cached_bytes is not None:
+                new_cached = f"{new_image_path}.cached.jpg"
+                images.save_at(new_cached, cached_bytes)
+
+        # Patch the row with the new paths now that storage writes are done.
+        update_values: dict[str, Any] = {}
+        if new_image_path is not None:
+            update_values["image_path"] = new_image_path
+        if new_warped_path is not None:
+            update_values["warped_image_path"] = new_warped_path
+        if update_values:
+            s.execute(
+                results.update()
+                .where(results.c.id == new_rid)
+                .values(**update_values)
+            )
     return id_map
 
 
