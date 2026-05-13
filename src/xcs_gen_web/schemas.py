@@ -1306,3 +1306,38 @@ class ResultWBState(BaseModel):
     # chromaticity: per-channel [sR, sG, sB] flat list.
     correction: list[dict] | list[float] | None = None
     canonical_id: str | None = None
+
+
+# Seed-import — one-click copy of a curated seed account's catalogue
+# into the empty workbench of a freshly-registered user. The routes are
+# only meaningful in multi_user mode; standalone returns 404.
+class SeedPreviewResponse(BaseModel):
+    """Read-only counts + idempotency flags shown in the import modal
+    before the user confirms the deep-copy."""
+
+    src_owner_id: int
+    src_has_data: bool
+    already_imported: bool
+    materials: int
+    presets: int
+    tests: int
+    results: int
+    palette_entries: int
+    saved_spectrums: int
+
+
+class SeedImportResponse(BaseModel):
+    """Row counts written by the actual import. ``image_warnings``
+    surfaces source-side missing image bytes — the row was copied but
+    the bytes couldn't be located on disk (storage drift)."""
+
+    materials: int
+    presets: int
+    tests: int
+    results: int
+    palette_entries: int
+    saved_spectrums: int
+    validation_cells: int
+    text_reg_machine: int
+    text_reg_material: int
+    image_warnings: list[str]
