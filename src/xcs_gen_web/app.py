@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import math
+import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
+import anyio
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -266,6 +269,49 @@ def _warn_about_mysql_charset(url: str) -> None:
     )
 
 
+def _configure_threadpool() -> int:
+    """Bound the anyio default threadpool size at app startup.
+
+    Starlette runs every ``def`` route handler — and any
+    ``anyio.to_thread.run_sync`` call — in this pool. The library
+    default is 40 threads, which is way too generous on a 2-vCPU box
+    where each capture/pipeline call burns a full core. We cap at 4:
+    the capture semaphore allows 2 simultaneous full-pipeline runs
+    (see ``services.capture``), so 4 leaves headroom for DB-only
+    routes and palette queries without inviting GIL thrashing.
+
+    Override at deploy time via ``XCS_GEN_THREADPOOL_SIZE`` if you
+    move to bigger hardware. Returns the resolved limit so callers
+    (e.g. the lifespan handler) can log it.
+    """
+    limit = int(os.environ.get("XCS_GEN_THREADPOOL_SIZE", "4"))
+    limit = max(1, limit)
+    anyio.to_thread.current_default_thread_limiter().total_tokens = limit
+    return limit
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Startup/shutdown hook. Currently used only to size the anyio
+    threadpool — see :func:`_configure_threadpool`. Kept here (rather
+    than as a plain startup callback) because the threadpool limiter
+    is process-global and we want the bound applied before the first
+    request can land in a ``def`` handler.
+
+    The resolved limit is mirrored onto ``app.state.threadpool_limit``
+    so tests (and future introspection endpoints) can observe the
+    value without re-entering the loop to query the limiter
+    directly."""
+    import logging
+    limit = _configure_threadpool()
+    app.state.threadpool_limit = limit
+    logging.getLogger("xcs_gen").info(
+        "anyio threadpool sized to %d (override with XCS_GEN_THREADPOOL_SIZE)",
+        limit,
+    )
+    yield
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the FastAPI app.
 
@@ -299,7 +345,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from . import images as _images
     _images.use_storage(settings)
     _log_storage_choice(settings)
-    app = FastAPI(title="xcs-gen", version="0.1.0")
+    app = FastAPI(title="xcs-gen", version="0.1.0", lifespan=_lifespan)
     app.state.settings = settings
 
     # Body-size cap applies to every endpoint. Ordered first so nothing
@@ -536,11 +582,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         the result against that user's matching test.
 
         IMPORTANT: this endpoint MUST NOT consult X-User-Id. The mid is
-        the only identity signal accepted here."""
+        the only identity signal accepted here.
+
+        Stays ``async def`` because the rate-limiter check needs the
+        request loop's lock; the heavy work (QR detect + capture +
+        DB persist) is offloaded to the anyio threadpool so it can't
+        block the event loop."""
         from .services import capture as capture_service
-        from .repositories import results as r_repo
-        from . import images, models
-        from .db import session_scope
 
         user = u_repo.get_by_mobile_id(mid)
         if user is None:
@@ -555,30 +603,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 headers={"Retry-After": str(retry)},
             )
 
-        data = await image.read()
-        try:
-            qr_id, _retest_idx = capture_service.detect_test_id(data)
-        except capture_service.CaptureError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        data = image.file.read()
 
-        from .repositories import tests as t_repo
-        t = t_repo.get(qr_id, owner_id=user["id"])
-        if t is None:
-            # Generic message — the mobile route is unauthenticated
-            # beyond the mid, so we deliberately don't echo the test
-            # id back or hint that it might exist in another account.
-            raise HTTPException(
-                status_code=404,
-                detail="test not found — it may have been deleted, or the QR is from a different account",
+        def _run_capture_and_persist() -> tuple[ResultResponse, int, str]:
+            try:
+                qr_id, _retest_idx = capture_service.detect_test_id(data)
+            except capture_service.CaptureError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+
+            from .repositories import tests as t_repo
+            t = t_repo.get(qr_id, owner_id=user["id"])
+            if t is None:
+                # Generic message — the mobile route is unauthenticated
+                # beyond the mid, so we deliberately don't echo the test
+                # id back or hint that it might exist in another account.
+                raise HTTPException(
+                    status_code=404,
+                    detail="test not found — it may have been deleted, or the QR is from a different account",
+                )
+
+            result = _persist_upload(
+                tid=qr_id, spec=capture_service.effective_spec(t),
+                data=data, filename=image.filename,
+                user_id=user["id"], via="mobile",
             )
+            return result, qr_id, t["name"]
 
-        result = _persist_upload(
-            tid=qr_id, spec=capture_service.effective_spec(t),
-            data=data, filename=image.filename,
-            user_id=user["id"], via="mobile",
+        result, qr_id, test_name = await anyio.to_thread.run_sync(
+            _run_capture_and_persist,
         )
         return MobileUploadResponse(
-            result_id=result.id, test_id=qr_id, test_name=t["name"],
+            result_id=result.id, test_id=qr_id, test_name=test_name,
         )
 
     @app.get(
@@ -1683,14 +1738,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return InspectCellResponse(**payload)
 
     @app.post("/api/tests/{tid}/results", response_model=ResultResponse, status_code=201)
-    async def results_upload(
+    def results_upload(
         tid: int, image: UploadFile = File(...),
         user_id: int = Depends(get_current_user),
     ) -> ResultResponse:
+        # Plain ``def`` — Starlette runs the body in the anyio
+        # threadpool so the capture pipeline doesn't pin the event
+        # loop. Read bytes via the underlying ``file`` (sync) rather
+        # than ``await image.read()``.
         t = t_repo.get(tid, owner_id=user_id)
         if t is None:
             raise HTTPException(status_code=404, detail="test not found")
-        data = await image.read()
+        data = image.file.read()
         return _persist_upload(
             tid=tid, spec=capture_service.effective_spec(t),
             data=data, filename=image.filename,
@@ -1698,7 +1757,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.post("/api/results/preflight")
-    async def results_upload_preflight(
+    def results_upload_preflight(
         image: UploadFile = File(...),
         user_id: int = Depends(get_current_user),
     ) -> dict:
@@ -1708,8 +1767,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         The upload modal calls this first so it can warn the user
         before re-processing, and short-circuit duplicate uploads
-        without sending the file twice."""
-        data = await image.read()
+        without sending the file twice. Plain ``def`` — the QR
+        detect step is CPU-heavy and runs under the capture
+        semaphore."""
+        data = image.file.read()
         try:
             qr_id, _retest_idx = capture_service.detect_test_id(data)
         except capture_service.CaptureError as e:
@@ -1735,7 +1796,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     @app.post("/api/results/upload", response_model=ResultResponse, status_code=201)
-    async def results_upload_auto(
+    def results_upload_auto(
         image: UploadFile = File(...),
         user_id: int = Depends(get_current_user),
     ) -> ResultResponse:
@@ -1743,8 +1804,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         Only the caller's own tests are considered — a QR whose id matches
         another user's test yields 404 (we don't want to silently leak the
-        existence of another account's tests)."""
-        data = await image.read()
+        existence of another account's tests). Plain ``def`` so the
+        full pipeline runs off the event loop."""
+        data = image.file.read()
         try:
             qr_id, _retest_idx = capture_service.detect_test_id(data)
         except capture_service.CaptureError as e:
