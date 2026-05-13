@@ -135,6 +135,21 @@ Look at existing entries before writing a new one.
 - `XCS_GEN_IMAGES_DIR` — where uploaded photos land (local FS)
 - `XCS_GEN_S3_BUCKET` + friends — enable S3 image storage (IAM-auth only)
 - `XCSGEN_LOG` — `WARNING` to quiet the dev server
+- **Server concurrency tunables (prod / Docker image)** — defaults are
+  sized for the 2-vCPU ECS Fargate task spec. Per-worker means each
+  gunicorn worker holds its own copy.
+  - `XCS_GEN_WEB_WORKERS` (default `2`) — uvicorn worker processes
+    gunicorn forks. One per vCPU is the right starting point.
+  - `XCS_GEN_THREADPOOL_SIZE` (default `4`, per worker) — anyio
+    threadpool used by sync route handlers; bound so a flurry of slow
+    sync work can't starve the event loop.
+  - `XCS_GEN_CAPTURE_CONCURRENCY` (default `2`, per worker) — semaphore
+    permits for the capture pipeline. Total simultaneous heavy uploads
+    in flight before queueing = `WORKERS × CAPTURE_CONCURRENCY` (i.e.
+    `2 × 2 = 4` on the default spec).
+  - `XCS_GEN_WARPED_CACHE_SIZE` (default `32` entries, per worker) —
+    in-memory warped-frame cache. ~5 MB per 800×600×3 uint8 frame, so
+    32 × 2 workers ≈ 320 MB resident if both caches fill.
 - **Sentry (BE)** — set `XCS_GEN_SENTRY_DSN` to enable error reporting;
   unset = no-op. Optional: `XCS_GEN_SENTRY_ENVIRONMENT` (default
   `production`), `XCS_GEN_SENTRY_RELEASE` (git sha or tag from CI),

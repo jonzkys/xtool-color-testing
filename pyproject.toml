@@ -21,6 +21,12 @@ dependencies = [
     # fastapi; listed explicitly so a clean `pip install .` works.
     "python-multipart>=0.0.9",
     "uvicorn[standard]>=0.27",
+    # gunicorn is the production process manager — `xcs-gen serve` (laptop
+    # dev) still runs a bare uvicorn, but the Docker image launches
+    # gunicorn with N uvicorn workers (see Dockerfile CMD). Listed here
+    # rather than as an optional extra so the runtime image installs it
+    # with the same `pip install .` invocation everything else uses.
+    "gunicorn>=22.0,<24",
     "svgelements>=1.9",
     "shapely>=2.0",
     "pyyaml>=6.0",
