@@ -4,10 +4,13 @@ import {
   Button,
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
+  DialogClose,
+  IconButton,
+  MetalBar,
   cn,
 } from "../ui";
+import { X } from "lucide-react";
 import {
   getSeedPreview,
   runSeedImport,
@@ -155,48 +158,76 @@ function SeedImportDialog({ open, onOpenChange }: DialogProps) {
         onOpenChange(o);
       }}
     >
-      <DialogContent width="md">
-        <DialogHeader>
-          <DialogTitle>Import demo data</DialogTitle>
-        </DialogHeader>
-
-        {previewLoading && (
-          <div className="flex items-center gap-2 text-[12px] text-[color:var(--color-ink-muted)] py-4">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Loading preview…
+      <DialogContent width="md" className="p-0 overflow-hidden">
+        {/* Masthead — mirrors WelcomeDialog's framing so the seed flow
+            reads as a peer of the welcome / claim experience rather
+            than a generic dialog. */}
+        <div className="relative px-6 pt-5 pb-4 bg-[color:var(--color-surface-elevated)]">
+          <div className="flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="inline-flex items-center gap-2 font-mono text-[10px] font-semibold tracking-[0.24em] uppercase text-[color:var(--color-ink-subtle)] mb-1.5">
+                <span
+                  className="h-px w-4 bg-[color:var(--color-border-strong)]"
+                  aria-hidden
+                />
+                Seed transfer · curated bench
+              </div>
+              <DialogTitle className="text-[18px] font-semibold text-[color:var(--color-ink)] leading-tight">
+                Import demo data
+              </DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <IconButton
+                aria-label="Close"
+                variant="ghost"
+                size="sm"
+                icon={<X className="h-4 w-4" />}
+              />
+            </DialogClose>
           </div>
-        )}
+        </div>
 
-        {previewError && (
-          <div className="text-[12px] text-[color:var(--color-destructive)] py-2">
-            {previewError}
-          </div>
-        )}
+        <MetalBar />
 
-        {preview && imported && (
-          <SuccessSummary result={imported} />
-        )}
+        <div className="p-5">
+          {previewLoading && (
+            <div className="flex items-center gap-2 text-[12px] text-[color:var(--color-ink-muted)] py-4 font-mono uppercase tracking-[0.14em]">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Reading source bench…
+            </div>
+          )}
 
-        {preview && !imported && alreadyImported && (
-          <AlreadyImportedBody onClose={() => onOpenChange(false)} />
-        )}
+          {previewError && (
+            <div className="text-[12px] text-[color:var(--color-destructive)] py-2 font-mono">
+              {previewError}
+            </div>
+          )}
 
-        {preview && !imported && !alreadyImported && !hasData && (
-          <EmptySeedBody onClose={() => onOpenChange(false)} />
-        )}
+          {preview && imported && (
+            <SuccessSummary result={imported} />
+          )}
 
-        {preview && !imported && !alreadyImported && hasData && (
-          <ConfirmBody
-            preview={preview}
-            confirmed={confirmed}
-            onConfirmedChange={setConfirmed}
-            importing={importing}
-            importError={importError}
-            canCancel={canCancel}
-            onCancel={() => onOpenChange(false)}
-            onImport={handleImport}
-          />
-        )}
+          {preview && !imported && alreadyImported && (
+            <AlreadyImportedBody onClose={() => onOpenChange(false)} />
+          )}
+
+          {preview && !imported && !alreadyImported && !hasData && (
+            <EmptySeedBody onClose={() => onOpenChange(false)} />
+          )}
+
+          {preview && !imported && !alreadyImported && hasData && (
+            <ConfirmBody
+              preview={preview}
+              confirmed={confirmed}
+              onConfirmedChange={setConfirmed}
+              importing={importing}
+              importError={importError}
+              canCancel={canCancel}
+              onCancel={() => onOpenChange(false)}
+              onImport={handleImport}
+            />
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -223,46 +254,58 @@ function ConfirmBody({
 }) {
   return (
     <>
-      <p className="text-[13px] text-[color:var(--color-ink)] mb-3">
-        This will copy data from the demo account into your account.
+      <p className="text-[12.5px] text-[color:var(--color-ink-muted)] leading-relaxed mb-4 max-w-[48ch]">
+        Copies a curated dataset from the demo bench onto yours — materials,
+        presets, tests, results, palette and saved spectrums. Existing data
+        is untouched; counts below are net-new rows.
       </p>
 
-      <div className="rounded-[6px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)] p-3 mb-3">
-        <CountRow label="materials" value={preview.materials} />
-        <CountRow label="presets" value={preview.presets} />
-        <CountRow label="tests" value={preview.tests} />
-        <CountRow label="results" value={preview.results} />
-        <CountRow label="palette entries" value={preview.palette_entries} />
-        <CountRow label="saved spectrums" value={preview.saved_spectrums} />
+      {/* Structured manifest — hairline rows, monospace labels in the
+          tracking-heavy uppercase style used across the workbench. */}
+      <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)] mb-2 flex items-center gap-2">
+        <span className="h-px w-4 bg-[color:var(--color-border-strong)]" aria-hidden />
+        Manifest
+      </div>
+      <div className="border border-[color:var(--color-border)] rounded-[6px] bg-[color:var(--color-surface-elevated)] mb-4 divide-y divide-[color:var(--color-border)]">
+        <CountRow label="Materials" value={preview.materials} />
+        <CountRow label="Presets" value={preview.presets} />
+        <CountRow label="Tests" value={preview.tests} />
+        <CountRow label="Results" value={preview.results} />
+        <CountRow label="Palette entries" value={preview.palette_entries} />
+        <CountRow label="Saved spectrums" value={preview.saved_spectrums} />
       </div>
 
-      <p className="text-[11.5px] text-[color:var(--color-ink-muted)] leading-snug mb-4">
-        Counts above are new rows that will be added to your account.
-        Existing data is untouched. Image bytes are duplicated — this may
-        take a minute on a large import.
+      <p className="text-[11px] text-[color:var(--color-ink-subtle)] leading-snug mb-4 font-mono uppercase tracking-[0.10em]">
+        Image bytes duplicated — large imports may run for ~1 min.
       </p>
 
-      <label className="flex items-start gap-2 mb-4 select-none cursor-pointer">
+      <label
+        className="flex items-start gap-2 mb-5 select-none cursor-pointer"
+        data-row="confirm"
+      >
         <input
           type="checkbox"
           checked={confirmed}
           disabled={importing}
           onChange={(e) => onConfirmedChange(e.target.checked)}
-          className="mt-0.5"
+          className="mt-[3px]"
           aria-label="I understand this will add rows to my account"
         />
-        <span className="text-[12.5px] text-[color:var(--color-ink)]">
-          I understand this will add rows to my account
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[color:var(--color-ink-muted)] leading-snug">
+          Add rows to my bench
+          <span className="block text-[9px] text-[color:var(--color-ink-subtle)] tracking-normal normal-case mt-0.5">
+            I understand this writes to my account.
+          </span>
         </span>
       </label>
 
       {importError && (
-        <div className="text-[12px] text-[color:var(--color-destructive)] mb-2">
+        <div className="text-[12px] text-[color:var(--color-destructive)] mb-3 font-mono">
           {importError}
         </div>
       )}
 
-      <div className="flex justify-end gap-2">
+      <div className="flex justify-end gap-2 items-center">
         <Button variant="ghost" disabled={!canCancel} onClick={onCancel}>
           Cancel
         </Button>
@@ -274,7 +317,7 @@ function ConfirmBody({
           {importing ? (
             <span className="inline-flex items-center gap-1.5">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Importing… (this can take a minute)
+              Transferring…
             </span>
           ) : (
             "Import →"
@@ -288,9 +331,9 @@ function ConfirmBody({
 function AlreadyImportedBody({ onClose }: { onClose: () => void }) {
   return (
     <>
-      <p className="text-[13px] text-[color:var(--color-ink)] mb-4">
-        You've already imported demo data. Delete the imported rows to
-        re-import.
+      <p className="text-[12.5px] text-[color:var(--color-ink-muted)] mb-5 leading-relaxed max-w-[48ch]">
+        You've already imported demo data on this bench. Delete the imported
+        rows from your library to re-import.
       </p>
       <div className="flex justify-end">
         <Button variant="primary" onClick={onClose}>
@@ -304,8 +347,8 @@ function AlreadyImportedBody({ onClose }: { onClose: () => void }) {
 function EmptySeedBody({ onClose }: { onClose: () => void }) {
   return (
     <>
-      <p className="text-[13px] text-[color:var(--color-ink)] mb-4">
-        Demo account has no data to import.
+      <p className="text-[12.5px] text-[color:var(--color-ink-muted)] mb-5 leading-relaxed">
+        Source bench is empty — nothing to import.
       </p>
       <div className="flex justify-end">
         <Button variant="primary" onClick={onClose}>
@@ -320,19 +363,41 @@ function SuccessSummary({ result }: { result: SeedImportResult }) {
   return (
     <div
       role="status"
-      className="rounded-[6px] border border-[color:var(--color-primary)]/40 bg-[color:var(--color-primary-tint)]/40 p-3 text-[13px] text-[color:var(--color-ink)]"
+      className="rounded-[6px] border border-[color:var(--color-primary)]/40 bg-[color:var(--color-primary-tint)]/40 p-4"
     >
-      <div className="font-semibold mb-1">Import complete.</div>
-      <div className="text-[12px] text-[color:var(--color-ink-muted)]">
-        Imported {result.materials} materials, {result.presets} presets,{" "}
-        {result.tests} tests, {result.results} results,{" "}
-        {result.palette_entries} palette entries, {result.saved_spectrums}{" "}
-        saved spectrums.
+      <div className="font-mono text-[10px] uppercase tracking-[0.20em] text-[color:var(--color-primary)] mb-2 flex items-center gap-2">
+        <span className="h-px w-4 bg-[color:var(--color-primary)]/60" aria-hidden />
+        Transfer complete
+      </div>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-1 font-mono text-[11px] uppercase tracking-[0.10em] text-[color:var(--color-ink-muted)]">
+        <span className="flex items-baseline justify-between">
+          <span>Materials</span>
+          <span className="tabular-nums text-[color:var(--color-ink)] font-semibold">{result.materials}</span>
+        </span>
+        <span className="flex items-baseline justify-between">
+          <span>Presets</span>
+          <span className="tabular-nums text-[color:var(--color-ink)] font-semibold">{result.presets}</span>
+        </span>
+        <span className="flex items-baseline justify-between">
+          <span>Tests</span>
+          <span className="tabular-nums text-[color:var(--color-ink)] font-semibold">{result.tests}</span>
+        </span>
+        <span className="flex items-baseline justify-between">
+          <span>Results</span>
+          <span className="tabular-nums text-[color:var(--color-ink)] font-semibold">{result.results}</span>
+        </span>
+        <span className="flex items-baseline justify-between">
+          <span>Palette</span>
+          <span className="tabular-nums text-[color:var(--color-ink)] font-semibold">{result.palette_entries}</span>
+        </span>
+        <span className="flex items-baseline justify-between">
+          <span>Spectrums</span>
+          <span className="tabular-nums text-[color:var(--color-ink)] font-semibold">{result.saved_spectrums}</span>
+        </span>
       </div>
       {result.image_warnings.length > 0 && (
-        <div className="mt-2 text-[11.5px] text-[color:var(--color-ink-muted)]">
-          {result.image_warnings.length} image bytes were missing on the
-          source and weren't copied.
+        <div className="mt-3 pt-3 border-t border-[color:var(--color-primary)]/20 text-[10px] font-mono uppercase tracking-[0.12em] text-[color:var(--color-ink-subtle)]">
+          {result.image_warnings.length} image bytes missing on source — skipped.
         </div>
       )}
     </div>
@@ -341,9 +406,13 @@ function SuccessSummary({ result }: { result: SeedImportResult }) {
 
 function CountRow({ label, value }: { label: string; value: number }) {
   return (
-    <div className="flex items-baseline justify-between py-0.5 text-[12.5px]">
-      <span className="text-[color:var(--color-ink-muted)]">{label}</span>
-      <span className="font-mono tabular-nums">{value}</span>
+    <div className="flex items-baseline justify-between px-3 py-1.5">
+      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[color:var(--color-ink-muted)]">
+        {label}
+      </span>
+      <span className="font-mono tabular-nums text-[12.5px] text-[color:var(--color-ink)] font-semibold">
+        {value}
+      </span>
     </div>
   );
 }

@@ -111,7 +111,11 @@ describe("SeedImportButton", () => {
     expect(screen.getByText("12")).toBeInTheDocument(); // presets
     expect(screen.getByText("23")).toBeInTheDocument(); // tests
     expect(screen.getByText("412")).toBeInTheDocument(); // palette entries
-    expect(screen.getByText(/materials/i)).toBeInTheDocument();
+    // The Manifest section uses the title-case label "Materials" in
+    // an uppercase mono font. Match by exact text — the body copy
+    // also mentions "materials" lower-case, so a broad regex would
+    // hit twice.
+    expect(screen.getByText("Materials")).toBeInTheDocument();
   });
 
   it("disables the import button until the confirmation checkbox is checked", async () => {
