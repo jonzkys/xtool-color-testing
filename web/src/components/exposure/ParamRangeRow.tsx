@@ -321,7 +321,7 @@ export const ParamRangeRow: React.FC<ParamRangeRowProps> = ({
           min={machineMin}
           max={machineMax}
           step={step}
-          minStepsBetweenThumbs={0}
+          minStepsBetweenThumbs={1}
           onValueChange={([lo, hi]: number[]) =>
             onRangeChange({ min: lo, max: hi })
           }
@@ -331,11 +331,40 @@ export const ParamRangeRow: React.FC<ParamRangeRowProps> = ({
           <Slider.Track className="relative grow h-[3px] rounded-full bg-[color:var(--color-border)]">
             <Slider.Range className="absolute h-full bg-[color:var(--color-primary)] rounded-full" />
           </Slider.Track>
+          {/* Radix v1 wraps each Slider.Thumb in its own absolute-positioned
+              <span> with no z-index, so when the two thumbs collide (e.g.
+              the user drags the max thumb left onto the min) the wrapper
+              rendered later wins hit-testing — and that's always the max.
+              The user clicks "on the min" but actually grabs the max,
+              which can't go below the min, so it looks frozen, and the
+              min appears un-draggable.
+              We can't put a z-index on the wrapper from JSX (Radix renders
+              it), so we promote it via a ref that bumps the parent's
+              z-index up. Min wins by default; whichever thumb is focused
+              wins outright so the user can always reach the one they're
+              targeting. */}
           <Slider.Thumb
+            ref={(el) => {
+              const wrap = el?.parentElement;
+              if (wrap) {
+                wrap.style.zIndex = "2";
+                // Focus-bump so the focused thumb is always on top.
+                el.onfocus = () => { wrap.style.zIndex = "3"; };
+                el.onblur = () => { wrap.style.zIndex = "2"; };
+              }
+            }}
             aria-label={`${paramKey} range minimum`}
             className="block w-3 h-3 rounded-full bg-[color:var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--color-primary)] focus:ring-offset-1"
           />
           <Slider.Thumb
+            ref={(el) => {
+              const wrap = el?.parentElement;
+              if (wrap) {
+                wrap.style.zIndex = "1";
+                el.onfocus = () => { wrap.style.zIndex = "3"; };
+                el.onblur = () => { wrap.style.zIndex = "1"; };
+              }
+            }}
             aria-label={`${paramKey} range maximum`}
             className="block w-3 h-3 rounded-full bg-[color:var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--color-primary)] focus:ring-offset-1"
           />
