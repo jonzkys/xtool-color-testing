@@ -137,14 +137,14 @@ def test_concurrent_run_capture_serialises_with_one_permit(monkeypatch):
     }
 
     results: list[object] = []
-    errors: list[BaseException] = []
+    errors: list[Exception] = []
 
     def worker():
         try:
             results.append(
                 cap.run_capture(image_bytes=b"fake", test_id=42, spec=spec),
             )
-        except BaseException as e:  # pragma: no cover — fail loudly
+        except Exception as e:  # pragma: no cover — fail loudly
             errors.append(e)
 
     t0 = time.perf_counter()

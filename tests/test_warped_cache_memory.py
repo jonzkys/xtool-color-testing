@@ -107,7 +107,7 @@ def test_invalid_env_falls_back_to_default(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_concurrent_get_put_does_not_crash(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("XCS_GEN_WARPED_CACHE_SIZE", "8")
-    errors: list[BaseException] = []
+    errors: list[Exception] = []
     stop = threading.Event()
 
     def worker(rid: int) -> None:
@@ -121,7 +121,7 @@ def test_concurrent_get_put_does_not_crash(monkeypatch: pytest.MonkeyPatch) -> N
                 wc._mem_cache_get(rid, "missing.png")
                 if i % 50 == 0:
                     wc._mem_cache_invalidate(rid)
-        except BaseException as e:  # pragma: no cover - reported via list
+        except Exception as e:  # pragma: no cover - reported via list
             errors.append(e)
 
     threads = [threading.Thread(target=worker, args=(rid,)) for rid in range(4)]

@@ -14,7 +14,6 @@ these tests exercise it inside an ``anyio.run`` block.
 from __future__ import annotations
 
 import anyio
-import pytest
 from fastapi.testclient import TestClient
 
 from xcs_gen_web.app import _configure_threadpool, create_app
