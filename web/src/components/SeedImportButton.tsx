@@ -67,8 +67,8 @@ export function SeedImportButton({ isSeedUser = false }: SeedImportButtonProps) 
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
         )}
       >
-        <Download className="h-3.5 w-3.5" strokeWidth={1.75} />
-        <span className="font-mono text-[10.5px] tracking-[0.12em] uppercase font-semibold">
+        <Download className="h-3.5 w-3.5 flex-none" strokeWidth={1.75} />
+        <span className="font-mono text-[10.5px] tracking-[0.12em] uppercase font-semibold whitespace-nowrap">
           Seed Data
         </span>
       </button>

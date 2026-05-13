@@ -164,14 +164,6 @@ export function TopBar({ route, onNavigate }: Props) {
     <header className="shrink-0 bg-[color:var(--color-surface)] border-b border-[color:var(--color-border)]">
       <PageContainer bleed={false}>
         <div className="flex items-center gap-6 h-14">
-          <div className="flex items-baseline gap-2">
-            <span className="font-mono text-[15px] font-semibold tracking-tight text-[color:var(--color-ink)]">
-              xcs-gen
-            </span>
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[color:var(--color-ink-subtle)]">
-              workbench
-            </span>
-          </div>
           <nav
             className="flex items-stretch h-14"
             onPointerLeave={scheduleClose}

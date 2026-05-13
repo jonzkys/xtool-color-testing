@@ -74,16 +74,13 @@ export function AccountMenu() {
     window.location.reload();
   };
 
-  // Display name resolution. Empty first_name falls back to a masked
-  // hint of the api_key; if the key is also empty (or me hasn't
-  // resolved yet) we use a generic "User" so the trigger is always
-  // clickable. The previous loading-state placeholder was a <div>
-  // (non-interactive), which left the user stranded with no way to
-  // sign out when getMe failed silently.
-  const display =
-    (me?.first_name && me.first_name.trim()) ||
-    (me?.api_key ? maskKey(me.api_key) : "") ||
-    "User";
+  // Display name resolution. Empty first_name falls back to a generic
+  // "User" so the trigger is always clickable (the previous loading-
+  // state placeholder was a non-interactive <div>, which left the
+  // user stranded with no way to sign out when getMe failed silently).
+  // We deliberately do NOT show a masked api_key here — it's noisy and
+  // reads like an account-name to first-time users.
+  const display = (me?.first_name && me.first_name.trim()) || "User";
 
   return (
     <DropdownMenu.Root>
@@ -241,7 +238,3 @@ function MenuItem({
   );
 }
 
-function maskKey(key: string): string {
-  if (key.length <= 6) return key;
-  return `${key.slice(0, 3)}…${key.slice(-3)}`;
-}
