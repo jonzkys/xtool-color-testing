@@ -20,6 +20,10 @@ if (typeof URL.revokeObjectURL === "undefined") {
 // Provide a noop polyfill so the components render in tests.
 if (typeof globalThis.ResizeObserver === "undefined") {
   class MockResizeObserver {
+    // Real ResizeObserver requires a callback argument; mirror that
+    // signature here so callers (e.g. `new ResizeObserver(cb)`) don't
+    // look like they're passing a superfluous argument.
+    constructor(_callback?: ResizeObserverCallback) { /* no-op */ }
     observe(): void { /* no-op */ }
     unobserve(): void { /* no-op */ }
     disconnect(): void { /* no-op */ }
