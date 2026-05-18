@@ -56,6 +56,9 @@ const GuidePage = lazy(() =>
 const ChangelogPage = lazy(() =>
   import("./pages/ChangelogPage").then((m) => ({ default: m.ChangelogPage })),
 );
+const GcodeViewerPage = lazy(() =>
+  import("./pages/GcodeViewerPage").then((m) => ({ default: m.GcodeViewerPage })),
+);
 const SavedSpectrumsPage = lazy(() =>
   import("./pages/SavedSpectrumsPage").then((m) => ({ default: m.SavedSpectrumsPage })),
 );
@@ -165,6 +168,7 @@ export default function App() {
     : route.name === "exposure"   ? "Exposure"
     : route.name === "guide"      ? "Guide"
     : route.name === "changelog"  ? "Changelog"
+    : route.name === "gcode"      ? "Gcode"
     : route.name === "demo"       ? "Demo"
     : "Palette";
 
@@ -204,6 +208,7 @@ export default function App() {
           {gate === "ready" && route.name === "styleguide"   && <StyleguidePage />}
           {gate === "ready" && route.name === "guide"        && <GuidePage />}
           {gate === "ready" && route.name === "changelog"    && <ChangelogPage />}
+          {gate === "ready" && route.name === "gcode"        && <GcodeViewerPage />}
           {gate === "ready" && route.name === "saved-spectrums" && <SavedSpectrumsPage />}
           {gate === "ready" && route.name === "exposure"       && <ExposurePage materialId={route.materialId ?? null} />}
         </Suspense>
