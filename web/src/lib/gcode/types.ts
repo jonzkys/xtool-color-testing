@@ -31,6 +31,26 @@ export interface Block {
   config: BlockConfig;
   segments: Segment[];
   bbox: BBox;
+  /** Maximum non-zero S (laser power) observed in the block's
+   * burn segments. 0 if the block has no burn segments. Used to
+   * detect cleanup passes — blocks whose peak S falls well below
+   * the layer's configured peak power. */
+  peakS: number;
+  /** First F (feed rate, mm/min) seen on a G1 line in this block.
+   * F is modal so the first value is representative. 0 if no F
+   * appeared on a G1. (G0 Z-descent rapids use a slow F=600 that
+   * would otherwise shadow the cutting feed; we skip those.) */
+  feedF: number;
+  /** Z-axis movements inside this block (xTool emits these as
+   * `G0Z<abs>F<feed>` rapids between scan-strips to keep the head
+   * focused). `z` is the absolute Z target; `delta` is the change
+   * from the previous Z value (modal across the file). Empty array
+   * when no Z movement happened in this block. */
+  zMoves: Array<{ z: number; delta: number }>;
+  /** Modal Z value at the end of this block — equals the last Z
+   * seen so far in the file. Lets the UI surface the running head
+   * position on every block, even ones without their own Z events. */
+  zAtEnd: number;
 }
 
 export interface Layer {
