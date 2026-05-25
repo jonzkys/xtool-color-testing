@@ -197,11 +197,20 @@ export function generateCleanPaths(
   const wallOffset = cfg.beamWidthMm; // walls one beam-width either side of centreline
 
   const walls: Array<{ c: Contour; offsetMm: number; side: SideMode }> = [];
+  // offsetContour can return [] if a wall pass shrinks a small pocket to
+  // nothing — guard against indexing an empty result (would emit an undefined
+  // ring and crash the renderer/export).
   if (cfg.clean.offsetSelection !== "inner") {
-    walls.push({ c: offsetContour(contour, wallOffset, outSign)[0], offsetMm: wallOffset, side: "outside" });
+    const outer = offsetContour(contour, wallOffset, outSign);
+    if (outer.length > 0) {
+      walls.push({ c: outer[0], offsetMm: wallOffset, side: "outside" });
+    }
   }
   if (cfg.clean.offsetSelection !== "outer") {
-    walls.push({ c: offsetContour(contour, wallOffset, inSign)[0], offsetMm: wallOffset, side: "inside" });
+    const inner = offsetContour(contour, wallOffset, inSign);
+    if (inner.length > 0) {
+      walls.push({ c: inner[0], offsetMm: wallOffset, side: "inside" });
+    }
   }
 
   const out: GeneratedPath[] = [];

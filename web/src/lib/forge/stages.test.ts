@@ -89,4 +89,22 @@ describe("generateCleanPaths", () => {
     const cfg = { ...DEFAULT_CONFIG, clean: { ...DEFAULT_CONFIG.clean, enabled: false } };
     expect(generateCleanPaths(square, cfg, SRC)).toEqual([]);
   });
+  it("does not throw when an inward wall offset collapses the contour to nothing", () => {
+    // A contour far smaller than the wall offset: the inward (inner) wall pass
+    // shrinks it to an empty Clipper result. Must skip gracefully, not crash.
+    const tiny: Contour = {
+      points: [{ x: 0, y: 0 }, { x: 0.02, y: 0 }, { x: 0.02, y: 0.02 }, { x: 0, y: 0.02 }],
+      closed: true,
+    };
+    const cfg = {
+      ...DEFAULT_CONFIG,
+      beamWidthMm: 0.5, // wall offset (0.5mm) >> the 0.02mm contour
+      clean: { ...DEFAULT_CONFIG.clean, offsetSelection: "inner" as const },
+    };
+    expect(() => generateCleanPaths(tiny, cfg, SRC)).not.toThrow();
+    // every emitted path (if any) has real geometry
+    for (const p of generateCleanPaths(tiny, cfg, SRC)) {
+      expect(Array.isArray(p.points)).toBe(true);
+    }
+  });
 });
