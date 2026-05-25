@@ -194,3 +194,99 @@ export function inferWindingAndOutside(c: Contour): WindingInfo {
   if (Math.abs(area) < 1e-9) return { outsideSign: 1, confident: false };
   return { outsideSign: area > 0 ? 1 : -1, confident: true };
 }
+
+/** Walk the contour and emit a point every `stepMm` of arc length (endpoints kept). */
+export function resampleByArcLength(c: Contour, stepMm: number): Pt[] {
+  const pts = c.points;
+  if (pts.length < 2 || stepMm <= 0) return [...pts];
+  const loop = c.closed ? [...pts, pts[0]] : pts;
+  const out: Pt[] = [loop[0]];
+  // Track the next emission target as an absolute arc-length distance from the
+  // start. Using integer step count avoids accumulated floating-point drift in
+  // positions derived from repeated additions of stepMm.
+  let nextTarget = stepMm;
+  let arcSoFar = 0;
+  for (let i = 0; i < loop.length - 1; i++) {
+    const a = loop[i];
+    const b = loop[i + 1];
+    const segLen = dist(a, b);
+    if (segLen < EPS) continue;
+    const segEnd = arcSoFar + segLen;
+    while (nextTarget <= segEnd + EPS) {
+      const t = (nextTarget - arcSoFar) / segLen;
+      const tc = Math.min(Math.max(t, 0), 1);
+      out.push({ x: a.x + (b.x - a.x) * tc, y: a.y + (b.y - a.y) * tc });
+      nextTarget += stepMm;
+    }
+    arcSoFar = segEnd;
+  }
+  return out;
+}
+
+/**
+ * Split a contour into consecutive short polyline segments, each roughly
+ * `segmentLengthMm` long, covering the whole perimeter. Returned segments are
+ * always open polylines (they are the pieces between cut breaks).
+ */
+export function segmentContour(c: Contour, segmentLengthMm: number): Contour[] {
+  const norm = normaliseContour(c);
+  const loop = norm.closed ? [...norm.points, norm.points[0]] : norm.points;
+  const segs: Contour[] = [];
+  let cur: Pt[] = [loop[0]];
+  let acc = 0;
+  for (let i = 0; i < loop.length - 1; i++) {
+    const a = loop[i];
+    const b = loop[i + 1];
+    let segLen = dist(a, b);
+    let from = a;
+    while (acc + segLen >= segmentLengthMm - EPS) {
+      const need = segmentLengthMm - acc;
+      const t = need / segLen;
+      const split = { x: from.x + (b.x - from.x) * t, y: from.y + (b.y - from.y) * t };
+      cur.push(split);
+      segs.push({ points: cur, closed: false });
+      cur = [split];
+      from = split;
+      segLen = dist(from, b);
+      acc = 0;
+    }
+    // Only add b if it is not already the last point in cur (avoids duplicates
+    // when the split landed exactly on b, leaving segLen ≈ 0).
+    if (segLen > EPS) {
+      cur.push(b);
+      acc += segLen;
+    }
+  }
+  // Only keep the trailing partial segment if it has actual arc length.
+  if (cur.length >= 2 && contourPerimeter({ points: cur, closed: false }) > EPS) {
+    segs.push({ points: cur, closed: false });
+  }
+  return segs;
+}
+
+/**
+ * Return indices of vertices where the turn angle exceeds `angleThresholdDeg`
+ * (a sharp corner / high-curvature region). Used to inject extra perforations.
+ */
+export function detectCorners(c: Contour, angleThresholdDeg: number): number[] {
+  const p = normaliseContour(c).points;
+  const n = p.length;
+  if (n < 3) return [];
+  const out: number[] = [];
+  const limit = (angleThresholdDeg * Math.PI) / 180;
+  const range = c.closed ? n : n - 1;
+  for (let i = c.closed ? 0 : 1; i < range; i++) {
+    const prev = p[(i - 1 + n) % n];
+    const curP = p[i];
+    const next = p[(i + 1) % n];
+    const v1 = { x: curP.x - prev.x, y: curP.y - prev.y };
+    const v2 = { x: next.x - curP.x, y: next.y - curP.y };
+    const m1 = Math.hypot(v1.x, v1.y);
+    const m2 = Math.hypot(v2.x, v2.y);
+    if (m1 < EPS || m2 < EPS) continue;
+    const cos = (v1.x * v2.x + v1.y * v2.y) / (m1 * m2);
+    const turn = Math.acos(Math.max(-1, Math.min(1, cos))); // deviation from straight
+    if (turn > limit) out.push(i);
+  }
+  return out;
+}

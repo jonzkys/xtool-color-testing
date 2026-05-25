@@ -94,3 +94,47 @@ describe("inferWindingAndOutside", () => {
     expect(inferWindingAndOutside(open).confident).toBe(false);
   });
 });
+
+import { segmentContour, detectCorners, resampleByArcLength } from "./contour";
+import type { Pt } from "./types";
+
+describe("resampleByArcLength", () => {
+  it("places points every step along a straight line", () => {
+    const line = { points: [{ x: 0, y: 0 }, { x: 10, y: 0 }], closed: false };
+    const r = resampleByArcLength(line, 2);
+    expect(r.length).toBe(6); // 0,2,4,6,8,10
+    expect(r[3]).toEqual({ x: 6, y: 0 });
+  });
+});
+
+describe("segmentContour", () => {
+  it("splits a 40mm closed square into ~4 segments of 10mm at segLen=10", () => {
+    const sq = { points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }], closed: true };
+    const segs = segmentContour(sq, 10);
+    expect(segs.length).toBe(4);
+    // each segment is a short polyline
+    expect(segs[0].points.length).toBeGreaterThanOrEqual(2);
+  });
+  it("covers the whole perimeter (segment lengths sum ≈ perimeter)", () => {
+    const sq = { points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }], closed: true };
+    const segs = segmentContour(sq, 7);
+    const total = segs.reduce((s, seg) => s + contourPerimeter({ points: seg.points, closed: false }), 0);
+    expect(total).toBeCloseTo(40, 2);
+  });
+});
+
+describe("detectCorners", () => {
+  it("flags the 4 corners of a square above a 45° threshold", () => {
+    const sq = { points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }], closed: true };
+    const idx = detectCorners(sq, 45);
+    expect(idx.sort((a, b) => a - b)).toEqual([0, 1, 2, 3]);
+  });
+  it("flags nothing on a gently sampled circle at a high threshold", () => {
+    const pts: Pt[] = [];
+    for (let i = 0; i < 64; i++) {
+      const t = (i / 64) * Math.PI * 2;
+      pts.push({ x: Math.cos(t) * 10, y: Math.sin(t) * 10 });
+    }
+    expect(detectCorners({ points: pts, closed: true }, 45)).toEqual([]);
+  });
+});
