@@ -215,6 +215,25 @@ export function TopBar({ route, onNavigate }: Props) {
                 Guide
               </span>
             </button>
+            <button
+              type="button"
+              onClick={() => onNavigate({ name: "forge" })}
+              title="Open Contour Forge"
+              aria-label="Open Contour Forge"
+              className={cn(
+                "inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[6px]",
+                "border border-[color:var(--color-border)] bg-[color:var(--color-surface-elevated)]",
+                route.name === "forge"
+                  ? "text-[color:var(--color-primary)] border-[color:var(--color-primary)]/50 bg-[color:var(--color-primary-tint)]/40"
+                  : "text-[color:var(--color-ink-muted)] hover:text-[color:var(--color-primary)] hover:border-[color:var(--color-primary)]/50 hover:bg-[color:var(--color-primary-tint)]/40",
+                "transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/60",
+              )}
+            >
+              <span className="font-mono text-[10.5px] tracking-[0.12em] uppercase font-semibold">
+                Forge
+              </span>
+            </button>
             <ChangelogButton
               active={route.name === "changelog"}
               unseen={unseenChanges}
