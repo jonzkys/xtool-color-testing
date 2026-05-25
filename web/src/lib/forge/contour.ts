@@ -265,6 +265,25 @@ export function segmentContour(c: Contour, segmentLengthMm: number): Contour[] {
 }
 
 /**
+ * Split an SVG dPath into one Contour per subpath (each M…[Z] group),
+ * flattening + normalising each. Drops degenerate subpaths (<3 points).
+ */
+export function splitSubpaths(d: string): Contour[] {
+  // Split at every M/m boundary. The regex keeps the delimiter by using a
+  // lookahead so each piece starts with its own M/m command.
+  const pieces = d.split(/(?=[Mm])/).filter((s) => s.trim().length > 0);
+  const result: Contour[] = [];
+  for (const piece of pieces) {
+    const raw = flattenDPath(piece);
+    const normalised = normaliseContour(raw);
+    if (normalised.points.length >= 3) {
+      result.push(normalised);
+    }
+  }
+  return result;
+}
+
+/**
  * Return indices of vertices where the turn angle exceeds `angleThresholdDeg`
  * (a sharp corner / high-curvature region). Used to inject extra perforations.
  */

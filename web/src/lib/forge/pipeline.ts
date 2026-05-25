@@ -8,7 +8,7 @@ import type {
   ParsedXcs,
   PipelineResult,
 } from "./types";
-import { extractContourGeometry, calibrateMmPerUnit } from "./xcs";
+import { extractContourSubpaths, calibrateMmPerUnit } from "./xcs";
 import { inferWindingAndOutside } from "./contour";
 import {
   generateCleanPaths,
@@ -35,7 +35,6 @@ export function runPipeline(
 ): PipelineResult {
   const obj = parsed.objects.find((o) => o.id === inciseId);
   if (!obj) throw new Error(`incise object ${inciseId} not found`);
-  if (!obj.dPath) throw new Error(`incise object ${inciseId} is not a usable vector/path contour`);
 
   const warnings: string[] = [];
 
@@ -45,19 +44,28 @@ export function runPipeline(
     warnings.push("Could not calibrate path units → mm from the file; using 1.0. Set a manual mm/unit.");
   }
 
-  const contour = toMm(extractContourGeometry(obj), mmPerUnit);
+  const rawSubpaths = extractContourSubpaths(obj);
+  if (rawSubpaths.length === 0) {
+    throw new Error(`incise object ${inciseId} is not a usable vector/path contour`);
+  }
+  const subpaths = rawSubpaths.map((c) => toMm(c, mmPerUnit));
 
-  const winding = inferWindingAndOutside(contour);
-  if (!winding.confident) {
-    warnings.push("Inside/outside could not be inferred with confidence — choose a side (flip) before export.");
+  // Winding check — run per subpath; warn once if any is not confident.
+  let windingWarned = false;
+  for (const c of subpaths) {
+    const winding = inferWindingAndOutside(c);
+    if (!winding.confident && !windingWarned) {
+      warnings.push("Inside/outside could not be inferred with confidence — choose a side (flip) before export.");
+      windingWarned = true;
+    }
   }
 
-  // Physical process order. Each generator stamps its own operationOrder
-  // locally; we re-stamp a global monotonic order here.
-  const seed = generateSeedPaths(contour, cfg, inciseId);
-  const perf = generatePerforationPaths(contour, cfg, inciseId);
-  const deepen = generateDeepenPaths(contour, cfg, inciseId);
-  const clean = generateCleanPaths(contour, cfg, inciseId);
+  // Physical process order: generate stages for ALL subpaths, then interleave
+  // globally as seed → perforate → deepen → clean across the whole part.
+  const seed = subpaths.flatMap((c) => generateSeedPaths(c, cfg, inciseId));
+  const perf = subpaths.flatMap((c) => generatePerforationPaths(c, cfg, inciseId));
+  const deepen = subpaths.flatMap((c) => generateDeepenPaths(c, cfg, inciseId));
+  const clean = subpaths.flatMap((c) => generateCleanPaths(c, cfg, inciseId));
 
   const ordered: GeneratedPath[] = [...seed, ...perf, ...deepen, ...clean];
   ordered.forEach((p, i) => (p.operationOrder = i));

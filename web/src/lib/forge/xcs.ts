@@ -1,6 +1,6 @@
 // web/src/lib/forge/xcs.ts
 import type { Contour, GeneratedPath, ParsedXcs, XcsObject } from "./types";
-import { flattenDPath, normaliseContour, contourPerimeter } from "./contour";
+import { flattenDPath, normaliseContour, contourPerimeter, splitSubpaths } from "./contour";
 
 const INCISE_TYPES = new Set(["INTAGLIO", "VECTOR_CUTTING"]);
 const EMBOSS_TYPES = new Set(["RELIEF", "VECTOR_ENGRAVING", "FILL_VECTOR_ENGRAVING", "COLOR_FILL_ENGRAVE"]);
@@ -92,6 +92,18 @@ export function extractContourGeometry(obj: XcsObject): Contour {
   return normaliseContour(flattenDPath(obj.dPath));
 }
 
+/**
+ * Split the object's dPath into one Contour per subpath (each M…[Z] group),
+ * flattening + normalising each. Returns the same error as extractContourGeometry
+ * when dPath is missing.
+ */
+export function extractContourSubpaths(obj: XcsObject): Contour[] {
+  if (!obj.dPath) {
+    throw new Error(`object ${obj.id} has no dPath — not a usable vector contour`);
+  }
+  return splitSubpaths(obj.dPath);
+}
+
 export interface Calibration {
   mmPerUnit: number;
   confident: boolean;
@@ -112,7 +124,7 @@ export function calibrateMmPerUnit(p: ParsedXcs, incise: XcsObject): Calibration
       break;
     }
   }
-  const units = contourPerimeter(extractContourGeometry(incise));
+  const units = extractContourSubpaths(incise).reduce((sum, c) => sum + contourPerimeter(c), 0);
   if (perimeterMm > 0 && units > 0) {
     return { mmPerUnit: perimeterMm / units, confident: true };
   }

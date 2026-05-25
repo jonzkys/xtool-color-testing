@@ -18,20 +18,20 @@ interface BBox {
   maxY: number;
 }
 
-function bboxOf(paths: GeneratedPath[], source: Contour | null): BBox {
+function bboxOf(paths: GeneratedPath[], source: Contour[] | null): BBox {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const eat = (x: number, y: number) => {
     minX = Math.min(minX, x); minY = Math.min(minY, y);
     maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
   };
-  source?.points.forEach((p) => eat(p.x, p.y));
+  source?.forEach((c) => c.points.forEach((p) => eat(p.x, p.y)));
   paths.forEach((pa) => pa.points.forEach((p) => eat(p.x, p.y)));
   if (!isFinite(minX)) return { minX: 0, minY: 0, maxX: 1, maxY: 1 };
   return { minX, minY, maxX, maxY };
 }
 
 export interface ForgeCanvasProps {
-  source: Contour | null;
+  source: Contour[] | null;
   paths: GeneratedPath[];
   /** which classes to draw */
   visible: Record<GeneratedClass, boolean>;
@@ -74,10 +74,12 @@ export function ForgeCanvas({ source, paths, visible, width, height }: ForgeCanv
       ctx.stroke();
     };
 
-    // source contour first (faint dashed)
-    if (source) {
+    // source contours first (faint dashed) — one per subpath
+    if (source && source.length > 0) {
       ctx.setLineDash([4, 3]);
-      stroke(source.points, source.closed, SOURCE_COLOR, 1);
+      for (const c of source) {
+        stroke(c.points, c.closed, SOURCE_COLOR, 1);
+      }
       ctx.setLineDash([]);
     }
     // generated paths, class-coloured

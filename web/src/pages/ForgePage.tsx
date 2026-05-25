@@ -22,7 +22,7 @@ import type {
   XcsObject,
 } from "../lib/forge/types";
 import { DEFAULT_CONFIG } from "../lib/forge/defaults";
-import { flattenDPath, normaliseContour } from "../lib/forge/contour";
+import { splitSubpaths } from "../lib/forge/contour";
 import { ForgeCanvas } from "../components/forge/ForgeCanvas";
 import { ForgeControls } from "../components/forge/ForgeControls";
 import { ForgeDebugPanel } from "../components/forge/ForgeDebugPanel";
@@ -106,19 +106,21 @@ export function ForgePage() {
     return () => ro.disconnect();
   }, [state.kind]);
 
-  // source contour scaled to mm space so it aligns with generated paths in preview
-  const sourceContour: Contour | null = useMemo(() => {
+  // source contours (one per subpath) scaled to mm space so they align with
+  // generated paths in the preview canvas
+  const sourceContour: Contour[] | null = useMemo(() => {
     if (state.kind !== "ready" || !selectedIncise) return null;
     const obj = state.objects.find((o) => o.id === selectedIncise);
     if (!obj?.dPath) return null;
-    const raw = normaliseContour(flattenDPath(obj.dPath));
+    const subpaths = splitSubpaths(obj.dPath);
+    if (subpaths.length === 0) return null;
     // scale raw path units → mm so both source and generated paths share mm space
     const mmPerUnit = result?.stats.mmPerUnit ?? 1;
-    if (mmPerUnit === 1) return raw;
-    return {
-      points: raw.points.map((p) => ({ x: p.x * mmPerUnit, y: p.y * mmPerUnit })),
-      closed: raw.closed,
-    };
+    if (mmPerUnit === 1) return subpaths;
+    return subpaths.map((c) => ({
+      points: c.points.map((p) => ({ x: p.x * mmPerUnit, y: p.y * mmPerUnit })),
+      closed: c.closed,
+    }));
   }, [state, selectedIncise, result?.stats.mmPerUnit]);
 
   // debounced regenerate on config / selection change

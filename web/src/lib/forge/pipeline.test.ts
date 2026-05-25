@@ -44,4 +44,15 @@ describe("runPipeline", () => {
     const { stats } = runPipeline(parsed, inciseId, DEFAULT_CONFIG);
     expect(Array.isArray(stats.warnings)).toBe(true);
   });
+
+  it("compound (4-subpath) real sample produces a sane path count (<1500)", () => {
+    // Before the fix, the merged-subpath path sent clipper into thousands of
+    // tiny rings (seed alone was ~1239). After treating each subpath independently
+    // the total should be well below 1500.
+    const parsed = parseXcsFile(loadSample());
+    const inciseId = findInciseObjects(parsed)[0].id;
+    const { stats } = runPipeline(parsed, inciseId, DEFAULT_CONFIG);
+    expect(stats.totalPaths).toBeLessThan(1500);
+    expect(stats.totalPaths).toBeGreaterThan(0);
+  });
 });

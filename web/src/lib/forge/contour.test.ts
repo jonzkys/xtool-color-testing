@@ -95,7 +95,7 @@ describe("inferWindingAndOutside", () => {
   });
 });
 
-import { segmentContour, detectCorners, resampleByArcLength } from "./contour";
+import { segmentContour, detectCorners, resampleByArcLength, splitSubpaths } from "./contour";
 import type { Pt } from "./types";
 
 describe("resampleByArcLength", () => {
@@ -136,5 +136,45 @@ describe("detectCorners", () => {
       pts.push({ x: Math.cos(t) * 10, y: Math.sin(t) * 10 });
     }
     expect(detectCorners({ points: pts, closed: true }, 45)).toEqual([]);
+  });
+});
+
+describe("splitSubpaths", () => {
+  // Two separate squares as a compound path (M…Z M…Z)
+  const TWO_SQUARES =
+    "M0,0 L10,0 L10,10 L0,10 Z M20,0 L30,0 L30,10 L20,10 Z";
+  const ONE_SQUARE = "M0,0 L10,0 L10,10 L0,10 Z";
+
+  it("returns 2 contours for a 2-subpath compound path", () => {
+    const result = splitSubpaths(TWO_SQUARES);
+    expect(result.length).toBe(2);
+  });
+
+  it("each subpath is closed and has the right points", () => {
+    const result = splitSubpaths(TWO_SQUARES);
+    // both are closed squares with 4 distinct points (normaliseContour removes the closing dup)
+    expect(result[0].closed).toBe(true);
+    expect(result[0].points.length).toBe(4);
+    expect(result[1].closed).toBe(true);
+    expect(result[1].points.length).toBe(4);
+    // first subpath anchored at (0,0)
+    expect(result[0].points[0]).toEqual({ x: 0, y: 0 });
+    // second subpath anchored at (20,0)
+    expect(result[1].points[0]).toEqual({ x: 20, y: 0 });
+  });
+
+  it("returns 1 contour for a single-subpath path", () => {
+    const result = splitSubpaths(ONE_SQUARE);
+    expect(result.length).toBe(1);
+    expect(result[0].closed).toBe(true);
+    expect(result[0].points.length).toBe(4);
+  });
+
+  it("drops degenerate subpaths with fewer than 3 points", () => {
+    // A compound path where second subpath has only 2 points (a line, not a polygon)
+    const degenerate = "M0,0 L10,0 L10,10 L0,10 Z M50,50 L60,60";
+    const result = splitSubpaths(degenerate);
+    expect(result.length).toBe(1);
+    expect(result[0].points[0]).toEqual({ x: 0, y: 0 });
   });
 });
