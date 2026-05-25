@@ -34,6 +34,7 @@ Thumbs.db
 output/
 *.xcs
 !samples/*.xcs
+!samples/xcs/*.xcs
 .superpowers/
 
 # Frontend build artifacts
