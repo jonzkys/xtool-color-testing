@@ -133,4 +133,32 @@ describe("buildGeneratedXcs round-trip", () => {
     // and the document still re-parses
     expect(() => parseXcsFile(exportXcs(out))).not.toThrow();
   });
+
+  it("gives each generated display its OWN bbox, not the source's full bbox", () => {
+    const parsed = parseXcsFile(loadSample());
+    const incise = findInciseObjects(parsed)[0];
+    const srcDisplay = (parsed.raw as { canvas: { displays: Array<Record<string, unknown>> }[] })
+      .canvas[0].displays.find((d) => d.id === incise.id)!;
+    const srcWidth = srcDisplay.width as number;
+    const { paths, stats } = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+    const out = buildGeneratedXcs(parsed, incise.id, paths, stats.mmPerUnit) as {
+      canvas: Array<{ displays: Array<Record<string, unknown>> }>;
+    };
+    const displays = out.canvas[0].displays.filter((d) => String(d.id).startsWith("forge-"));
+
+    // A perforation pocket is a ~0.2mm feature — its display width must be tiny,
+    // NOT the full-pendant source width (the old bug blew pockets up).
+    const pocket = displays.find((d) => d.name === "CUT_02_PERFORATE")!;
+    expect(pocket.width as number).toBeLessThan(srcWidth / 5);
+    expect(pocket.width as number).toBeGreaterThan(0);
+
+    // Every generated display's width/height matches its own dPath extent.
+    for (const d of displays) {
+      const nums = ((d.dPath as string).match(/-?\d*\.?\d+(?:e-?\d+)?/g) ?? []).map(Number);
+      const xs = nums.filter((_, i) => i % 2 === 0);
+      const scale = (srcDisplay.scale as { x: number }).x;
+      const expectedW = (Math.max(...xs) - Math.min(...xs)) * scale;
+      expect(Math.abs((d.width as number) - expectedW)).toBeLessThan(0.05);
+    }
+  });
 });

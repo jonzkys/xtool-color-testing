@@ -164,6 +164,26 @@ export function ringsToDPath(rings: { x: number; y: number }[][], mmPerUnit: num
     .join(" ");
 }
 
+/** Bounding box (in path units) of all rings, after the mm→units conversion. */
+function ringsBoundsUnits(
+  rings: { x: number; y: number }[][],
+  mmPerUnit: number,
+): { minX: number; minY: number; maxX: number; maxY: number } {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const r of rings) {
+    for (const p of r) {
+      const x = p.x / mmPerUnit;
+      const y = p.y / mmPerUnit;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (!isFinite(minX)) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  return { minX, minY, maxX, maxY };
+}
+
 /**
  * Per-stage layer colour palette, keyed by groupName in first-seen order. xTool
  * uses the colour string itself as the layerTag, so each distinct stage becomes
@@ -220,6 +240,23 @@ export function buildGeneratedXcs(
   const sourceTemplateDisplay = canvas.displays.find((d) => d.id === inciseId);
   const sourceEntryPair = groupPair?.[1].displays.value.find(([id]) => id === inciseId);
 
+  // The source display defines the dPath-units → canvas mapping:
+  //   canvasX = dPathX * scale.x + offsetX,  canvasY = dPathY * scale.y + offsetY
+  // We reuse that exact mapping (scale + offset) for every generated display so
+  // geometry lands in the same place, then recompute each display's own
+  // x/y/width/height from its geometry bbox. Cloning the source's full-pendant
+  // bbox (the previous behaviour) made tiny pockets get fitted into a 26×33mm
+  // box → blown up / misplaced, and shifted the bands.
+  const srcT = (sourceTemplateDisplay ?? {}) as Record<string, unknown>;
+  const srcScale =
+    srcT.scale && typeof srcT.scale === "object"
+      ? (srcT.scale as { x: number; y: number })
+      : { x: 1, y: 1 };
+  const offX = typeof srcT.offsetX === "number" ? srcT.offsetX : 0;
+  const offY = typeof srcT.offsetY === "number" ? srcT.offsetY : 0;
+  const gX = typeof srcT.graphicX === "number" ? srcT.graphicX : offX;
+  const gY = typeof srcT.graphicY === "number" ? srcT.graphicY : offY;
+
   // remove source incise from canvas + device.data
   canvas.displays = canvas.displays.filter((d) => d.id !== inciseId);
   if (groupPair) {
@@ -247,6 +284,9 @@ export function buildGeneratedXcs(
     const dPath = ringsToDPath(path.rings, mmPerUnit);
     const tag = layerTagForGroup(path.groupName);
 
+    // Recompute this display's own canvas bbox from its geometry, reusing the
+    // source's scale + offset mapping so it stays aligned with the emboss.
+    const b = ringsBoundsUnits(path.rings, mmPerUnit);
     const display: RawDisplay = {
       ...(sourceTemplateDisplay ?? ({} as RawDisplay)),
       id,
@@ -258,6 +298,17 @@ export function buildGeneratedXcs(
       fillRule: "evenodd",
       layerTag: tag,
       layerColor: tag,
+      scale: srcScale,
+      angle: 0,
+      pivot: { x: 0, y: 0 },
+      offsetX: offX,
+      offsetY: offY,
+      graphicX: gX,
+      graphicY: gY,
+      x: b.minX * srcScale.x + offX,
+      y: b.minY * srcScale.y + offY,
+      width: (b.maxX - b.minX) * srcScale.x,
+      height: (b.maxY - b.minY) * srcScale.y,
     };
     canvas.displays.push(display);
 
