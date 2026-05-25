@@ -10,6 +10,7 @@ import type {
 } from "./types";
 import { extractContourSubpaths, calibrateMmPerUnit } from "./xcs";
 import { inferWindingAndOutside } from "./contour";
+import { buildPartRegion } from "./offset";
 import {
   generateCleanPaths,
   generateDeepenPaths,
@@ -60,12 +61,31 @@ export function runPipeline(
     }
   }
 
-  // Physical process order: generate stages for ALL subpaths, then interleave
-  // globally as seed → perforate → deepen → clean across the whole part.
-  const seed = subpaths.flatMap((c) => generateSeedPaths(c, cfg, inciseId));
-  const perf = subpaths.flatMap((c) => generatePerforationPaths(c, cfg, inciseId));
-  const deepen = subpaths.flatMap((c) => generateDeepenPaths(c, cfg, inciseId));
-  const clean = subpaths.flatMap((c) => generateCleanPaths(c, cfg, inciseId));
+  // Reconstruct the part-solid region ONCE from the nested loops. Every stage's
+  // kerf is a scrap-side band around this region (the part body is a hole in
+  // each band), so there are no per-subpath tiny displays.
+  const part = buildPartRegion(subpaths);
+  if (part.length === 0) {
+    warnings.push("Could not reconstruct a part region from the incise contour; no paths generated.");
+    const empty: Record<GeneratedClass, number> = { seed: 0, perforate: 0, deepen: 0, clean: 0 };
+    return {
+      paths: [],
+      stats: {
+        mmPerUnit,
+        mmPerUnitConfident: cal.confident || cfg.mmPerUnitOverride != null,
+        pathCounts: empty,
+        totalPaths: 0,
+        warnings,
+      },
+    };
+  }
+
+  // Physical process order: seed → perforate → deepen → clean across the whole
+  // part, then re-stamp a global operationOrder.
+  const seed = generateSeedPaths(part, cfg, inciseId);
+  const perf = generatePerforationPaths(part, cfg, inciseId);
+  const deepen = generateDeepenPaths(part, cfg, inciseId);
+  const clean = generateCleanPaths(part, cfg, inciseId);
 
   const ordered: GeneratedPath[] = [...seed, ...perf, ...deepen, ...clean];
   ordered.forEach((p, i) => (p.operationOrder = i));

@@ -10,30 +10,31 @@
 //   clean     — removes recast/oxide from the trench WALLS without trying to
 //               force more depth (a separate path class, not another deepen).
 //
-// Every generated pass is an incise (INTAGLIO) sliver-band: a compound path of
-// concentric closed loops emitted even-odd so the fill lands only in the kerf.
-// Perforation pockets are the exception — single solid loops (a starter pocket
-// is meant to be filled solid).
+// Every generated pass operates on the reconstructed PART REGION (a polygon with
+// holes). A band is the scrap-side ring set Difference(Inflate(part,±w), part):
+// the part body is a hole in every band (even-odd / non-zero), so the emboss is
+// never engraved. One whole-part band per stage keeps the cloned display
+// transform/bbox correct. Perforation pockets are the exception — single solid
+// loops walked along the part's outer silhouette.
 //
-import type { Contour, ForgeConfig, GeneratedPath, Pt, SideMode } from "./types";
-import { generateBand } from "./offset";
+import type { ForgeConfig, GeneratedPath, Pt, SideMode } from "./types";
+import { bandFromRegion, partOuterLoop } from "./offset";
 import {
   detectCorners,
   inferWindingAndOutside,
-  normaliseContour,
   resampleByArcLength,
 } from "./contour";
 
 /** Stage 1 — seed. Shallow scrap-side conditioning band, one operation. */
 export function generateSeedPaths(
-  contour: Contour,
+  part: Pt[][],
   cfg: ForgeConfig,
   sourceObjectId: string,
 ): GeneratedPath[] {
   if (!cfg.seed.enabled) return [];
   const side: SideMode = cfg.seed.outsideOnly ? "outside" : cfg.sideMode;
   const widthMm = cfg.seed.widthMultiplier * cfg.beamWidthMm;
-  const rings = generateBand(contour, widthMm, side);
+  const rings = bandFromRegion(part, widthMm, side);
   return [
     {
       sourceObjectId,
@@ -53,22 +54,24 @@ export function generateSeedPaths(
 
 /** Stage 2 — perforate. Tiny solid scrap-side pockets at intervals + corners. */
 export function generatePerforationPaths(
-  contour: Contour,
+  part: Pt[][],
   cfg: ForgeConfig,
   sourceObjectId: string,
 ): GeneratedPath[] {
   if (!cfg.perforate.enabled) return [];
-  const norm = normaliseContour(contour);
-  const winding = inferWindingAndOutside(norm);
+  const outerLoop = partOuterLoop(part);
+  if (outerLoop.length < 3) return [];
+  const outerContour = { points: outerLoop, closed: true };
+  const winding = inferWindingAndOutside(outerContour);
   const outSign: 1 | -1 = winding.outsideSign;
 
-  // base perforation anchor points spaced along the contour
-  const anchors: Pt[] = resampleByArcLength(norm, cfg.perforate.spacingMm);
+  // base perforation anchor points spaced along the part's outer silhouette
+  const anchors: Pt[] = resampleByArcLength(outerContour, cfg.perforate.spacingMm);
 
   // extra anchors at sharp corners
   if (cfg.perforate.cornerBoost) {
-    for (const idx of detectCorners(norm, cfg.perforate.cornerAngleThresholdDeg)) {
-      anchors.push(norm.points[idx]);
+    for (const idx of detectCorners(outerContour, cfg.perforate.cornerAngleThresholdDeg)) {
+      anchors.push(outerLoop[idx]);
     }
   }
 
@@ -105,7 +108,7 @@ export function generatePerforationPaths(
 
 /** Stage 3 — deepen. One progressively-wider scrap-side band per pass-group. */
 export function generateDeepenPaths(
-  contour: Contour,
+  part: Pt[][],
   cfg: ForgeConfig,
   sourceObjectId: string,
 ): GeneratedPath[] {
@@ -116,7 +119,7 @@ export function generateDeepenPaths(
   for (const group of cfg.deepen.groups) {
     if (!group.enabled) continue;
     const widthMm = group.widthMultiplier * cfg.beamWidthMm;
-    const rings = generateBand(contour, widthMm, side);
+    const rings = bandFromRegion(part, widthMm, side);
     out.push({
       sourceObjectId,
       generatedClass: "deepen",
@@ -136,7 +139,7 @@ export function generateDeepenPaths(
 
 /** Stage 4 — clean. Thin wall band(s) one beam-width wide, low-energy placeholder. */
 export function generateCleanPaths(
-  contour: Contour,
+  part: Pt[][],
   cfg: ForgeConfig,
   sourceObjectId: string,
 ): GeneratedPath[] {
@@ -155,9 +158,9 @@ export function generateCleanPaths(
   const out: GeneratedPath[] = [];
   let order = 0;
   for (const side of sides) {
-    const rings = generateBand(contour, wallWidth, side);
-    // Skip a degenerate wall (e.g. an inner band that collapsed to one loop on
-    // a tiny contour) rather than emitting a single-loop flood fill.
+    const rings = bandFromRegion(part, wallWidth, side);
+    // Skip a degenerate wall (e.g. an inner band that collapsed on a tiny part)
+    // rather than emitting a single-loop flood fill.
     if (rings.length < 2) continue;
     out.push({
       sourceObjectId,

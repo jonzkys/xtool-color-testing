@@ -45,13 +45,24 @@ describe("runPipeline", () => {
     expect(Array.isArray(stats.warnings)).toBe(true);
   });
 
-  it("compound (4-subpath) real sample produces a sane path count (<500)", () => {
-    // The sliver-band model emits ONE band per stage per subpath plus a handful
-    // of perforation pockets — far fewer paths than the old traced-line stack.
+  it("compound (4-subpath) real sample produces a sane path count (<200)", () => {
+    // The part-region model emits ONE band per stage for the WHOLE part plus a
+    // handful of perforation pockets — far fewer paths than the old stacks.
     const parsed = parseXcsFile(loadSample());
     const inciseId = findInciseObjects(parsed)[0].id;
     const { stats } = runPipeline(parsed, inciseId, DEFAULT_CONFIG);
-    expect(stats.totalPaths).toBeLessThan(500);
+    expect(stats.totalPaths).toBeLessThan(200);
     expect(stats.totalPaths).toBeGreaterThan(0);
+  });
+
+  it("each deepen band is a compound region with the part body as a hole (≥2 rings)", () => {
+    const parsed = parseXcsFile(loadSample());
+    const inciseId = findInciseObjects(parsed)[0].id;
+    const { paths } = runPipeline(parsed, inciseId, DEFAULT_CONFIG);
+    const deepen = paths.filter((p) => p.generatedClass === "deepen");
+    expect(deepen.length).toBeGreaterThan(0);
+    for (const p of deepen) {
+      expect(p.rings.length).toBeGreaterThanOrEqual(2);
+    }
   });
 });

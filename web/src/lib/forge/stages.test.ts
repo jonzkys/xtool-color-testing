@@ -6,6 +6,7 @@ import {
   generateDeepenPaths,
   generateCleanPaths,
 } from "./stages";
+import { buildPartRegion } from "./offset";
 import { DEFAULT_CONFIG } from "./defaults";
 import type { Contour, Pt } from "./types";
 
@@ -13,6 +14,7 @@ const square: Contour = {
   points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }],
   closed: true,
 };
+const PART = buildPartRegion([square]); // solid 10x10 region
 const SRC = "src-id";
 
 /** Axis-aligned bbox diagonal of a ring set's outermost extent. */
@@ -27,7 +29,7 @@ function bboxSpan(rings: Pt[][]): number {
 
 describe("generateSeedPaths", () => {
   it("emits ONE seed band (≥2 rings) tagged CUT_01_SEED", () => {
-    const paths = generateSeedPaths(square, DEFAULT_CONFIG, SRC);
+    const paths = generateSeedPaths(PART, DEFAULT_CONFIG, SRC);
     expect(paths.length).toBe(1);
     expect(paths[0].generatedClass).toBe("seed");
     expect(paths[0].groupName).toBe("CUT_01_SEED");
@@ -35,13 +37,13 @@ describe("generateSeedPaths", () => {
   });
   it("returns nothing when disabled", () => {
     const cfg = { ...DEFAULT_CONFIG, seed: { ...DEFAULT_CONFIG.seed, enabled: false } };
-    expect(generateSeedPaths(square, cfg, SRC)).toEqual([]);
+    expect(generateSeedPaths(PART, cfg, SRC)).toEqual([]);
   });
 });
 
 describe("generatePerforationPaths", () => {
   it("emits small single-ring pockets at spacing, more with cornerBoost", () => {
-    const paths = generatePerforationPaths(square, DEFAULT_CONFIG, SRC);
+    const paths = generatePerforationPaths(PART, DEFAULT_CONFIG, SRC);
     expect(paths.length).toBeGreaterThan(0);
     expect(paths.every((p) => p.generatedClass === "perforate")).toBe(true);
     expect(paths.every((p) => p.groupName === "CUT_02_PERFORATE")).toBe(true);
@@ -52,7 +54,7 @@ describe("generatePerforationPaths", () => {
     }
     // corner boost adds extra pockets
     const noBoost = generatePerforationPaths(
-      square,
+      PART,
       { ...DEFAULT_CONFIG, perforate: { ...DEFAULT_CONFIG.perforate, cornerBoost: false } },
       SRC,
     );
@@ -60,13 +62,13 @@ describe("generatePerforationPaths", () => {
   });
   it("returns nothing when disabled", () => {
     const cfg = { ...DEFAULT_CONFIG, perforate: { ...DEFAULT_CONFIG.perforate, enabled: false } };
-    expect(generatePerforationPaths(square, cfg, SRC)).toEqual([]);
+    expect(generatePerforationPaths(PART, cfg, SRC)).toEqual([]);
   });
 });
 
 describe("generateDeepenPaths", () => {
   it("emits one band per enabled group in A→B→C→D order with correct names", () => {
-    const paths = generateDeepenPaths(square, DEFAULT_CONFIG, SRC);
+    const paths = generateDeepenPaths(PART, DEFAULT_CONFIG, SRC);
     const enabled = DEFAULT_CONFIG.deepen.groups.filter((g) => g.enabled);
     expect(paths.length).toBe(enabled.length);
     expect(paths.every((p) => p.generatedClass === "deepen")).toBe(true);
@@ -74,7 +76,7 @@ describe("generateDeepenPaths", () => {
     expect(paths.every((p) => p.rings.length >= 2)).toBe(true);
   });
   it("a wider group has a larger outer-ring bbox than a narrower one", () => {
-    const paths = generateDeepenPaths(square, DEFAULT_CONFIG, SRC);
+    const paths = generateDeepenPaths(PART, DEFAULT_CONFIG, SRC);
     const a = paths.find((p) => p.groupName.includes("DEEPEN_A"))!;
     const d = paths.find((p) => p.groupName.includes("DEEPEN_D"))!;
     expect(bboxSpan(d.rings)).toBeGreaterThan(bboxSpan(a.rings));
@@ -87,14 +89,14 @@ describe("generateDeepenPaths", () => {
         groups: DEFAULT_CONFIG.deepen.groups.map((g, i) => ({ ...g, enabled: i === 0 })),
       },
     };
-    const paths = generateDeepenPaths(square, cfg, SRC);
+    const paths = generateDeepenPaths(PART, cfg, SRC);
     expect(paths.length).toBe(1);
   });
 });
 
 describe("generateCleanPaths", () => {
   it("emits wall band(s) tagged CUT_07_CLEAN", () => {
-    const paths = generateCleanPaths(square, DEFAULT_CONFIG, SRC);
+    const paths = generateCleanPaths(PART, DEFAULT_CONFIG, SRC);
     expect(paths.every((p) => p.generatedClass === "clean")).toBe(true);
     expect(paths.every((p) => p.groupName === "CUT_07_CLEAN")).toBe(true);
     expect(paths.every((p) => p.rings.length >= 2)).toBe(true);
@@ -102,7 +104,7 @@ describe("generateCleanPaths", () => {
   });
   it("outer-only / inner-only emit a single wall band", () => {
     const outer = generateCleanPaths(
-      square,
+      PART,
       { ...DEFAULT_CONFIG, clean: { ...DEFAULT_CONFIG.clean, offsetSelection: "outer" } },
       SRC,
     );
@@ -111,21 +113,23 @@ describe("generateCleanPaths", () => {
   });
   it("returns nothing when disabled", () => {
     const cfg = { ...DEFAULT_CONFIG, clean: { ...DEFAULT_CONFIG.clean, enabled: false } };
-    expect(generateCleanPaths(square, cfg, SRC)).toEqual([]);
+    expect(generateCleanPaths(PART, cfg, SRC)).toEqual([]);
   });
-  it("does not throw when an inward wall offset collapses the contour to nothing", () => {
-    const tiny: Contour = {
-      points: [{ x: 0, y: 0 }, { x: 0.02, y: 0 }, { x: 0.02, y: 0.02 }, { x: 0, y: 0.02 }],
-      closed: true,
-    };
+  it("does not throw when an inward wall offset collapses a tiny part to nothing", () => {
+    const tinyPart = buildPartRegion([
+      {
+        points: [{ x: 0, y: 0 }, { x: 0.02, y: 0 }, { x: 0.02, y: 0.02 }, { x: 0, y: 0.02 }],
+        closed: true,
+      },
+    ]);
     const cfg = {
       ...DEFAULT_CONFIG,
-      beamWidthMm: 0.5, // wall offset (0.5mm) >> the 0.02mm contour
+      beamWidthMm: 0.5, // wall offset (0.5mm) >> the 0.02mm part
       clean: { ...DEFAULT_CONFIG.clean, offsetSelection: "inner" as const },
     };
-    expect(() => generateCleanPaths(tiny, cfg, SRC)).not.toThrow();
+    expect(() => generateCleanPaths(tinyPart, cfg, SRC)).not.toThrow();
     // any emitted band is a real ≥2-loop band, never a single-loop flood fill
-    for (const p of generateCleanPaths(tiny, cfg, SRC)) {
+    for (const p of generateCleanPaths(tinyPart, cfg, SRC)) {
       expect(p.rings.length).toBeGreaterThanOrEqual(2);
     }
   });
