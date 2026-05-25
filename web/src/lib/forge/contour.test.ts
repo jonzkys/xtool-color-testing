@@ -69,3 +69,28 @@ describe("contourPerimeter", () => {
     expect(contourPerimeter(sq)).toBeCloseTo(4, 6);
   });
 });
+
+import { signedArea, inferWindingAndOutside } from "./contour";
+
+describe("signedArea / winding", () => {
+  it("is positive for CCW, negative for CW (screen coords, y-down)", () => {
+    const ccw = { points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }], closed: true };
+    const cw = { points: [...ccw.points].reverse(), closed: true };
+    expect(Math.sign(signedArea(ccw))).toBe(1);
+    expect(Math.sign(signedArea(cw))).toBe(-1);
+  });
+});
+
+describe("inferWindingAndOutside", () => {
+  it("is confident for a clean closed polygon", () => {
+    const sq = { points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }], closed: true };
+    const r = inferWindingAndOutside(sq);
+    expect(r.confident).toBe(true);
+    // outsideSign is +1 or -1, the delta sign that inflates away from the interior
+    expect(Math.abs(r.outsideSign)).toBe(1);
+  });
+  it("is not confident for an open contour", () => {
+    const open = { points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }], closed: false };
+    expect(inferWindingAndOutside(open).confident).toBe(false);
+  });
+});

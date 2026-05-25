@@ -156,3 +156,41 @@ export function contourPerimeter(c: Contour): number {
   if (c.closed) total += dist(c.points[n - 1], c.points[0]);
   return total;
 }
+
+/** Shoelace signed area. >0 CCW, <0 CW in screen (y-down) coords. */
+export function signedArea(c: Contour): number {
+  const p = c.points;
+  const n = p.length;
+  let a = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    a += p[i].x * p[j].y - p[j].x * p[i].y;
+  }
+  return a / 2;
+}
+
+export interface WindingInfo {
+  /**
+   * The sign to multiply a positive clipper delta by so the offset moves to
+   * the OUTSIDE (scrap side) of the contour. For a closed polygon, outside =
+   * inflate, so this encodes winding handedness.
+   */
+  outsideSign: 1 | -1;
+  confident: boolean;
+}
+
+/**
+ * Infer which side is "outside" (scrap). For a closed polygon we use winding:
+ * Clipper inflates a positive-area (CCW) polygon outward with a positive delta,
+ * so outsideSign = +1 for CCW and -1 for CW. Open contours can't be classified
+ * by winding, so we report not-confident and the caller must require a manual
+ * side choice (the UI "flip" control).
+ */
+export function inferWindingAndOutside(c: Contour): WindingInfo {
+  if (!detectClosedContour(c) || c.points.length < 3) {
+    return { outsideSign: 1, confident: false };
+  }
+  const area = signedArea(c);
+  if (Math.abs(area) < 1e-9) return { outsideSign: 1, confident: false };
+  return { outsideSign: area > 0 ? 1 : -1, confident: true };
+}
