@@ -18,12 +18,13 @@
 // loops walked along the part's outer silhouette.
 //
 import type { ForgeConfig, GeneratedPath, Pt, SideMode } from "./types";
-import { bandFromRegion, partOuterLoop } from "./offset";
 import {
-  detectCorners,
-  inferWindingAndOutside,
-  resampleByArcLength,
-} from "./contour";
+  bandFromRegion,
+  partOuterLoop,
+  sampleLoopWithNormals,
+  outwardNormalAt,
+} from "./offset";
+import { detectCorners } from "./contour";
 
 /** Stage 1 — seed. Shallow scrap-side conditioning band, one operation. */
 export function generateSeedPaths(
@@ -61,33 +62,33 @@ export function generatePerforationPaths(
   if (!cfg.perforate.enabled) return [];
   const outerLoop = partOuterLoop(part);
   if (outerLoop.length < 3) return [];
-  const outerContour = { points: outerLoop, closed: true };
-  const winding = inferWindingAndOutside(outerContour);
-  const outSign: 1 | -1 = winding.outsideSign;
 
-  // base perforation anchor points spaced along the part's outer silhouette
-  const anchors: Pt[] = resampleByArcLength(outerContour, cfg.perforate.spacingMm);
+  // Anchors along the part silhouette, each with its OUTWARD normal so pockets
+  // can be pushed onto the scrap side regardless of edge orientation.
+  const anchors = sampleLoopWithNormals(outerLoop, cfg.perforate.spacingMm);
 
-  // extra anchors at sharp corners
+  // extra anchors at sharp corners (high heat-accumulation spots)
   if (cfg.perforate.cornerBoost) {
-    for (const idx of detectCorners(outerContour, cfg.perforate.cornerAngleThresholdDeg)) {
-      anchors.push(outerLoop[idx]);
+    for (const idx of detectCorners({ points: outerLoop, closed: true }, cfg.perforate.cornerAngleThresholdDeg)) {
+      const norm = outwardNormalAt(outerLoop, idx);
+      anchors.push({ pt: outerLoop[idx], nx: norm.nx, ny: norm.ny });
     }
   }
 
   const half = cfg.perforate.pocketSizeMm / 2;
+  // Push the pocket centre one pocket-width onto the scrap side so the whole
+  // pocket clears the part edge (its inner edge lands ~half a pocket out).
+  const biasDist = cfg.perforate.outsideBias ? cfg.perforate.pocketSizeMm : 0;
   const out: GeneratedPath[] = [];
   let order = 0;
   for (const a of anchors) {
-    // Bias the pocket centre to the scrap side by pocketSizeMm along the
-    // outward normal estimate (the same simple nudge the old code used).
-    const biasMm = cfg.perforate.outsideBias ? cfg.perforate.pocketSizeMm * outSign : 0;
-    const cy = a.y + biasMm;
+    const cx = a.pt.x + a.nx * biasDist;
+    const cy = a.pt.y + a.ny * biasDist;
     const square: Pt[] = [
-      { x: a.x - half, y: cy - half },
-      { x: a.x + half, y: cy - half },
-      { x: a.x + half, y: cy + half },
-      { x: a.x - half, y: cy + half },
+      { x: cx - half, y: cy - half },
+      { x: cx + half, y: cy - half },
+      { x: cx + half, y: cy + half },
+      { x: cx - half, y: cy + half },
     ];
     out.push({
       sourceObjectId,
@@ -96,7 +97,7 @@ export function generatePerforationPaths(
       layerStart: 0,
       layerEnd: 0,
       widthMultiplier: 1,
-      offsetMm: biasMm,
+      offsetMm: biasDist,
       sideMode: cfg.perforate.outsideBias ? "outside" : cfg.sideMode,
       operationOrder: order++,
       enabled: true,

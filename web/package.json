@@ -21,7 +21,7 @@
     "@sentry/react": "^8.55.1",
     "@tailwindcss/vite": "^4.2.4",
     "class-variance-authority": "^0.7.1",
-    "clipper2-js": "^1.2.4",
+    "clipper-lib": "^6.4.2",
     "clsx": "^2.1.1",
     "lucide-react": "^1.8.0",
     "qrcode": "^1.5.4",
