@@ -247,3 +247,65 @@ Canvas/preview verified manually in Chrome MCP per project convention (UI isn't
 - Backend persistence of strategies.
 - Multi-incise simultaneous generation (one selected target at a time).
 - The colour-window/parameter-prediction modelling from other pages.
+
+---
+
+## Addendum v2 (2026-05-25) — incise sliver-band model
+
+Browser testing in xTool Creative Space revealed the original "traced offset
+line stack" export model is wrong for the actual workflow:
+
+- In **Embossment** mode the F2 Ultra only offers **emboss / incise / score** —
+  there is no VECTOR_CUTTING. So generated passes must be **incise (INTAGLIO)**.
+- **INTAGLIO engraves the enclosed area of a closed path.** Emitting closed
+  offset *rings* made xTool flood-fill each interior → one solid blob, and all
+  paths shared one `layerTag` so they collapsed into a single operation.
+
+### New model: each pass is a filled **sliver-band**, not a traced line
+
+This mirrors the user's manual boolean workflow (offset the contour, subtract
+the engraving object, leaving a thin sliver). We express it **directly as
+geometry** — no boolean needed — because INTAGLIO already fills with
+`fillRule: "evenodd"`:
+
+- A band = a **compound path of two concentric closed loops**: the outer offset
+  loop + the original contour loop (or inner offset loop), emitted as one
+  display with `isFill: true`, `fillRule: "evenodd"`. Even-odd fills only the
+  sliver between them = the kerf. (The source incise is itself a compound
+  even-odd path, so this is the file's native representation.)
+- **seed** → thin band ~2× beam on the scrap side, shallow.
+- **deepen A–D** → progressively wider scrap-side bands (1×→8× beam).
+- **clean** → thin band along the wall(s).
+- **perforate** → small filled incise pockets at intervals/corners (single
+  loop each — a tiny starter pocket is meant to be solid).
+
+### Each stage is its own xTool layer/operation
+
+Generated displays are grouped by stage via a distinct `layerTag` per
+`CUT_01_SEED … CUT_07_CLEAN`, with a matching `canvas.layerData` entry
+(`{ name, order, visible }`) and a distinct `layerColor`. This makes each stage
+a separate operation in xTool's Settings overview, so power / speed / passes /
+depth can be tuned per stage. Depth ranges (0–50 … 200–256) become the layer
+**name + metadata**; actual depth is tuned per-layer in Studio (params remain
+placeholders copied from the source incise entry).
+
+### Dropped: thermal interlacing / segmentation / direction reversal
+
+These only make sense for a *traced* line cut. An incise band is an **area
+fill**; xTool controls the scan pattern, so segment ordering / interlace /
+reverse-alternate / stagger are inert and are **removed** from the model,
+config, and UI. `schedule.ts` and the segment/interlace controls are deleted.
+
+### Geometry/type changes
+
+- `GeneratedPath` geometry becomes `rings: Pt[][]` (one or more closed loops;
+  even-odd defines the filled region) instead of `points: Pt[]; closed: bool`.
+- `offset.ts` gains `generateBand(contour, widthMm, beamWidthMm, sideMode)`
+  returning the loop set (`[outer, inner]` for outside/inside; `[outer(+w/2),
+  inner(−w/2)]` for symmetric). `generateOffsetStack` is removed.
+- `buildGeneratedXcs` emits a compound `dPath` (one `M…Z` per ring), sets
+  `isFill: true` + `fillRule: "evenodd"` + `processingType: "INTAGLIO"`, assigns
+  per-stage `layerTag`, and adds `layerData` entries.
+- Round-trip test additionally asserts: N distinct stage layers in `layerData`,
+  each generated display fills (isFill true / evenodd / ≥2 rings for bands), and
+  the source incise is removed with emboss/model preserved.
