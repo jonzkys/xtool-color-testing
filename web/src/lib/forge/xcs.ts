@@ -1,5 +1,5 @@
 // web/src/lib/forge/xcs.ts
-import type { Contour, ParsedXcs, XcsObject } from "./types";
+import type { Contour, GeneratedPath, ParsedXcs, XcsObject } from "./types";
 import { flattenDPath, normaliseContour, contourPerimeter } from "./contour";
 
 const INCISE_TYPES = new Set(["INTAGLIO", "VECTOR_CUTTING"]);
@@ -117,4 +117,86 @@ export function calibrateMmPerUnit(p: ParsedXcs, incise: XcsObject): Calibration
     return { mmPerUnit: perimeterMm / units, confident: true };
   }
   return { mmPerUnit: 1, confident: false };
+}
+
+/** Serialise a mm-space contour back to a dPath string in path units. */
+export function contourToDPath(points: { x: number; y: number }[], closed: boolean, mmPerUnit: number): string {
+  if (points.length === 0) return "";
+  const u = (v: number) => +(v / mmPerUnit).toFixed(4);
+  const cmds = points.map((p, i) => `${i === 0 ? "M" : "L"}${u(p.x)},${u(p.y)}`);
+  if (closed) cmds.push("Z");
+  return cmds.join(" ");
+}
+
+interface MutableMap<V> {
+  dataType: "Map";
+  value: Array<[string, V]>;
+}
+
+/**
+ * Build a new XCS document: deep-clone the original, REMOVE the source incise
+ * display + its device.data entry, and APPEND one new PATH display + INTAGLIO
+ * processing entry per generated path (params copied from the source incise
+ * object). Emboss + model objects are left untouched. Generated ids are
+ * `forge-<operationOrder>` so tests/preview can find them. Returns the new
+ * raw JSON object (not yet serialised).
+ */
+export function buildGeneratedXcs(
+  parsed: ParsedXcs,
+  inciseId: string,
+  paths: GeneratedPath[],
+  mmPerUnit: number,
+): unknown {
+  const raw = JSON.parse(JSON.stringify(parsed.raw)) as {
+    canvas: Array<{ displays: RawDisplay[] }>;
+    device: { data: MutableMap<RawGroup & { displays: MutableMap<RawEntry & Record<string, unknown>> }> };
+  };
+
+  const incise = parsed.objects.find((o) => o.id === inciseId)!;
+  const groupKey = incise.groupKey;
+
+  // locate the process group + the source display template
+  const groupPair = raw.device.data.value.find(([k]) => k === groupKey);
+  const sourceTemplateDisplay = raw.canvas[0].displays.find((d) => d.id === inciseId);
+  const sourceEntryPair = groupPair?.[1].displays.value.find(([id]) => id === inciseId);
+
+  // remove source incise from canvas + device.data
+  raw.canvas[0].displays = raw.canvas[0].displays.filter((d) => d.id !== inciseId);
+  if (groupPair) {
+    groupPair[1].displays.value = groupPair[1].displays.value.filter(([id]) => id !== inciseId);
+  }
+
+  // append generated displays + processing entries
+  for (const path of paths) {
+    const id = `forge-${path.operationOrder}`;
+    const dPath = contourToDPath(path.points, path.closed, mmPerUnit);
+
+    const display: RawDisplay = {
+      ...(sourceTemplateDisplay ?? ({} as RawDisplay)),
+      id,
+      type: "PATH",
+      name: path.groupName,
+      dPath,
+      isClosePath: path.closed,
+    };
+    raw.canvas[0].displays.push(display);
+
+    if (groupPair) {
+      // clone the source INTAGLIO entry so params/processingType carry over
+      const baseEntry = sourceEntryPair
+        ? JSON.parse(JSON.stringify(sourceEntryPair[1]))
+        : { isFill: true, type: "PATH", processingType: "INTAGLIO" };
+      baseEntry.processingType = "INTAGLIO";
+      baseEntry.type = "PATH";
+      groupPair[1].displays.value.push([id, baseEntry]);
+    }
+  }
+
+  return raw;
+}
+
+/** Serialise a built XCS document to UTF-8 bytes (compact JSON, like write_xcs). */
+export function exportXcs(xcs: unknown): ArrayBuffer {
+  const text = JSON.stringify(xcs);
+  return new TextEncoder().encode(text).buffer;
 }

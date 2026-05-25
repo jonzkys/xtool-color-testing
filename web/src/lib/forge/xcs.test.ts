@@ -48,3 +48,36 @@ describe("parseXcsFile (errors)", () => {
     expect(() => parseXcsFile(bad)).toThrow();
   });
 });
+
+import { buildGeneratedXcs, exportXcs } from "./xcs";
+import { runPipeline } from "./pipeline";
+import { DEFAULT_CONFIG } from "./defaults";
+
+describe("buildGeneratedXcs round-trip", () => {
+  it("removes the source incise object and adds generated INTAGLIO entries", () => {
+    const parsed = parseXcsFile(loadSample());
+    const incise = findInciseObjects(parsed)[0];
+    const embossId = findEmbossObjects(parsed)[0].id;
+    const { paths, stats } = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+
+    const out = buildGeneratedXcs(parsed, incise.id, paths, stats.mmPerUnit);
+    const reparsed = parseXcsFile(exportXcs(out));
+
+    // source incise gone
+    expect(reparsed.objects.find((o) => o.id === incise.id)).toBeUndefined();
+    // emboss preserved
+    expect(reparsed.objects.find((o) => o.id === embossId)).toBeDefined();
+    // generated cut entries present and all INTAGLIO
+    const generated = reparsed.objects.filter((o) => o.id.startsWith("forge-"));
+    expect(generated.length).toBe(paths.length);
+    expect(generated.every((o) => o.processingType === "INTAGLIO")).toBe(true);
+  });
+
+  it("produces JSON that re-parses (valid document)", () => {
+    const parsed = parseXcsFile(loadSample());
+    const incise = findInciseObjects(parsed)[0];
+    const { paths, stats } = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+    const out = buildGeneratedXcs(parsed, incise.id, paths, stats.mmPerUnit);
+    expect(() => JSON.parse(new TextDecoder().decode(exportXcs(out)))).not.toThrow();
+  });
+});
