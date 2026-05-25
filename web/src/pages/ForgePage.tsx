@@ -26,6 +26,34 @@ import { splitSubpaths } from "../lib/forge/contour";
 import { ForgeCanvas } from "../components/forge/ForgeCanvas";
 import { ForgeControls } from "../components/forge/ForgeControls";
 import { ForgeDebugPanel } from "../components/forge/ForgeDebugPanel";
+import { ForgeStageParams } from "../components/forge/ForgeStageParams";
+
+const CONFIG_LS_KEY = "forge.config.v1";
+
+/** Load the saved config from localStorage, merged onto defaults so new fields
+ *  (and the deepen group list) survive older saves. */
+function loadConfig(): ForgeConfig {
+  try {
+    const raw = localStorage.getItem(CONFIG_LS_KEY);
+    if (!raw) return DEFAULT_CONFIG;
+    const p = JSON.parse(raw) as Partial<ForgeConfig>;
+    return {
+      ...DEFAULT_CONFIG,
+      ...p,
+      seed: { ...DEFAULT_CONFIG.seed, ...(p.seed ?? {}) },
+      perforate: { ...DEFAULT_CONFIG.perforate, ...(p.perforate ?? {}) },
+      deepen: {
+        ...DEFAULT_CONFIG.deepen,
+        ...(p.deepen ?? {}),
+        groups: p.deepen?.groups ?? DEFAULT_CONFIG.deepen.groups,
+      },
+      clean: { ...DEFAULT_CONFIG.clean, ...(p.clean ?? {}) },
+      stageParams: p.stageParams ?? {},
+    };
+  } catch {
+    return DEFAULT_CONFIG;
+  }
+}
 
 type State =
   | { kind: "idle" }
@@ -48,7 +76,7 @@ const ALL_VISIBLE: Record<GeneratedClass, boolean> = {
 
 export function ForgePage() {
   const [state, setState] = useState<State>({ kind: "idle" });
-  const [config, setConfig] = useState<ForgeConfig>(DEFAULT_CONFIG);
+  const [config, setConfig] = useState<ForgeConfig>(loadConfig);
   const [selectedIncise, setSelectedIncise] = useState<string | null>(null);
   const [result, setResult] = useState<PipelineResult | null>(null);
   const [visible, setVisible] = useState<Record<GeneratedClass, boolean>>(ALL_VISIBLE);
@@ -61,6 +89,15 @@ export function ForgePage() {
   // capture the current file name for use in the worker response handler
   const stateRef = useRef<State>(state);
   stateRef.current = state;
+
+  // persist config (incl. per-stage params) to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(CONFIG_LS_KEY, JSON.stringify(config));
+    } catch {
+      /* ignore quota / private-mode errors */
+    }
+  }, [config]);
 
   // one persistent worker for the page lifetime
   useEffect(() => {
@@ -308,6 +345,11 @@ export function ForgePage() {
                 onToggleVisible={(c) => setVisible((v) => ({ ...v, [c]: !v[c] }))}
               />
               <ForgeDebugPanel stats={result?.stats ?? null} />
+            </div>
+
+            {/* BOTTOM (full width): per-stage laser params */}
+            <div className="col-span-3">
+              <ForgeStageParams config={config} onChange={setConfig} />
             </div>
           </div>
         )}

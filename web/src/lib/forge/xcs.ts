@@ -225,6 +225,7 @@ export function buildGeneratedXcs(
   inciseId: string,
   paths: GeneratedPath[],
   mmPerUnit: number,
+  stageParams: Record<string, import("./types").StageParams> = {},
 ): unknown {
   const raw = JSON.parse(JSON.stringify(parsed.raw)) as {
     canvas: Array<{ displays: RawDisplay[]; layerData?: Record<string, LayerDataEntry> }>;
@@ -320,11 +321,33 @@ export function buildGeneratedXcs(
       baseEntry.processingType = "INTAGLIO";
       baseEntry.type = "PATH";
       baseEntry.isFill = true;
+      applyStageParams(baseEntry, stageParams[path.groupName]);
       groupPair[1].displays.value.push([id, baseEntry]);
     }
   }
 
   return raw;
+}
+
+/** Apply per-stage param overrides onto a cloned INTAGLIO entry's customize
+ *  block. Undefined fields are left at the source value. */
+function applyStageParams(
+  entry: Record<string, unknown>,
+  params: import("./types").StageParams | undefined,
+): void {
+  if (!params) return;
+  const data = entry.data as Record<string, { parameter?: { customize?: Record<string, unknown> } }> | undefined;
+  const customize = data?.INTAGLIO?.parameter?.customize;
+  if (!customize) return;
+  const set = (key: string, v: number | undefined) => {
+    if (typeof v === "number" && Number.isFinite(v)) customize[key] = v;
+  };
+  set("power", params.power);
+  set("speed", params.speed);
+  set("repeat", params.passes);
+  set("zLayers", params.zLayers);
+  set("pulseWidth", params.pulseWidth);
+  set("mopaFrequency", params.frequency);
 }
 
 /** Serialise a built XCS document to UTF-8 bytes (compact JSON, like write_xcs). */

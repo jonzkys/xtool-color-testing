@@ -34,4 +34,5 @@ export const DEFAULT_CONFIG: ForgeConfig = {
     offsetSelection: "walls",
     passes: 1,
   },
+  stageParams: {},
 };

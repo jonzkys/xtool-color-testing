@@ -1,6 +1,7 @@
 // web/src/components/forge/ForgeControls.tsx
 import { Card, CardHeader, CardTitle, Field, NumberField, Select } from "../../ui";
 import type { DeepenGroup, ForgeConfig, GeneratedClass, SideMode } from "../../lib/forge/types";
+import { CLASS_COLOR } from "./ForgeCanvas";
 
 const CLASSES: GeneratedClass[] = ["seed", "perforate", "deepen", "clean"];
 
@@ -45,13 +46,18 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
         </div>
       </Card>
 
-      {/* Stage visibility toggles */}
+      {/* Stage visibility toggles — double as the render legend (colour swatch). */}
       <Card>
         <CardHeader><CardTitle>Preview layers</CardTitle></CardHeader>
-        <div className="flex flex-wrap gap-2 p-2">
+        <div className="flex flex-wrap gap-3 p-2">
           {CLASSES.map((c) => (
-            <label key={c} className="flex items-center gap-1 font-mono uppercase">
+            <label key={c} className="flex items-center gap-1.5 font-mono uppercase">
               <input type="checkbox" checked={visible[c]} onChange={() => onToggleVisible(c)} />
+              <span
+                className="inline-block h-3 w-3 rounded-[2px] border border-black/10"
+                style={{ backgroundColor: CLASS_COLOR[c] }}
+                aria-hidden
+              />
               {c}
             </label>
           ))}

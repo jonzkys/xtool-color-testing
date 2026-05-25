@@ -88,6 +88,19 @@ export interface ForgeConfig {
   perforate: PerforateConfig;
   deepen: DeepenConfig;
   clean: CleanConfig;
+  /** Per-stage laser-param overrides, keyed by groupName (e.g. CUT_01_SEED).
+   *  Any field left undefined inherits the source incise object's value. */
+  stageParams: Record<string, StageParams>;
+}
+
+/** Rough per-stage laser params. All optional — undefined = inherit source. */
+export interface StageParams {
+  power?: number; // %
+  speed?: number; // mm/s
+  passes?: number; // → customize.repeat
+  zLayers?: number; // depth slices (→ customize.zLayers)
+  pulseWidth?: number; // ns (MOPA)
+  frequency?: number; // kHz (→ customize.mopaFrequency)
 }
 
 /** One object detected inside the uploaded XCS. */

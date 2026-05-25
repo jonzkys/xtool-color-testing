@@ -161,4 +161,28 @@ describe("buildGeneratedXcs round-trip", () => {
       expect(Math.abs((d.width as number) - expectedW)).toBeLessThan(0.05);
     }
   });
+
+  it("applies per-stage param overrides onto the exported INTAGLIO entry", () => {
+    const parsed = parseXcsFile(loadSample());
+    const incise = findInciseObjects(parsed)[0];
+    const { paths, stats } = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+    const seedPath = paths.find((p) => p.groupName === "CUT_01_SEED")!;
+    const stageParams = {
+      CUT_01_SEED: { power: 42, speed: 333, passes: 7, frequency: 55 },
+    };
+    const out = buildGeneratedXcs(parsed, incise.id, paths, stats.mmPerUnit, stageParams) as {
+      device: { data: { value: Array<[string, { displays: { value: Array<[string, { processingType: string; data: { INTAGLIO: { parameter: { customize: Record<string, number> } } } }]> } }]> } };
+    };
+    // find the seed display's device entry and check overrides took
+    const entries = out.device.data.value.flatMap(([, g]) => g.displays.value);
+    const seedEntry = entries.find(([id]) => id === `forge-${seedPath.operationOrder}`)![1];
+    const c = seedEntry.data.INTAGLIO.parameter.customize;
+    expect(c.power).toBe(42);
+    expect(c.speed).toBe(333);
+    expect(c.repeat).toBe(7);
+    expect(c.mopaFrequency).toBe(55);
+    // a non-overridden field keeps the source value (source power was 100)
+    const deepEntry = entries.find(([id]) => id === `forge-${paths.find((p) => p.generatedClass === "deepen")!.operationOrder}`)![1];
+    expect(deepEntry.data.INTAGLIO.parameter.customize.power).toBe(100);
+  });
 });
