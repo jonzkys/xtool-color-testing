@@ -76,13 +76,11 @@ export function runPipeline(
     deepen: deepen.length,
     clean: clean.length,
   };
-  const segmentCount = deepen.filter((p) => p.segmentIndex !== undefined).length;
 
   const stats: DebugStats = {
     mmPerUnit,
     mmPerUnitConfident: cal.confident || cfg.mmPerUnitOverride != null,
     pathCounts,
-    segmentCount,
     totalPaths: ordered.length,
     warnings,
   };

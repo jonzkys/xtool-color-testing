@@ -29,6 +29,17 @@ interface RawDisplay {
   name?: string | null;
   dPath?: string;
   isClosePath?: boolean;
+  isFill?: boolean;
+  fillRule?: string;
+  layerTag?: string;
+  layerColor?: string;
+  [key: string]: unknown;
+}
+
+interface LayerDataEntry {
+  name: string;
+  order: number;
+  visible: boolean;
 }
 interface RawEntry {
   type?: string;
@@ -140,6 +151,35 @@ export function contourToDPath(points: { x: number; y: number }[], closed: boole
   return cmds.join(" ");
 }
 
+/**
+ * Serialise a set of closed loops (rings) into one compound dPath: each ring is
+ * its own `M…Z` subpath, joined with a space. INTAGLIO fills the compound path
+ * with `fillRule: "evenodd"`, so two concentric rings fill only the sliver
+ * between them = the kerf.
+ */
+export function ringsToDPath(rings: { x: number; y: number }[][], mmPerUnit: number): string {
+  return rings
+    .map((r) => contourToDPath(r, true, mmPerUnit))
+    .filter((s) => s.length > 0)
+    .join(" ");
+}
+
+/**
+ * Per-stage layer colour palette, keyed by groupName in first-seen order. xTool
+ * uses the colour string itself as the layerTag, so each distinct stage becomes
+ * a separate operation in the Settings overview. Cycles if a run produces more
+ * distinct stage names than palette entries.
+ */
+const STAGE_PALETTE = [
+  "#38bdf8", // seed
+  "#f59e0b", // perforate
+  "#fb923c", // deepen A
+  "#f97316", // deepen B
+  "#ea580c", // deepen C
+  "#c2410c", // deepen D
+  "#84cc16", // clean
+];
+
 interface MutableMap<V> {
   dataType: "Map";
   value: Array<[string, V]>;
@@ -148,10 +188,17 @@ interface MutableMap<V> {
 /**
  * Build a new XCS document: deep-clone the original, REMOVE the source incise
  * display + its device.data entry, and APPEND one new PATH display + INTAGLIO
- * processing entry per generated path (params copied from the source incise
- * object). Emboss + model objects are left untouched. Generated ids are
- * `forge-<operationOrder>` so tests/preview can find them. Returns the new
- * raw JSON object (not yet serialised).
+ * processing entry per generated path. Each generated display is a compound
+ * even-odd sliver-band (or solid pocket) emitted with `isFill: true`,
+ * `fillRule: "evenodd"`, so INTAGLIO fills only the kerf.
+ *
+ * Each distinct stage groupName becomes its own xTool layer/operation: it gets
+ * a stable colour from STAGE_PALETTE (keyed by groupName, first-seen order), a
+ * matching `canvas.layerData` entry, and the display's `layerTag`/`layerColor`
+ * are set to that colour. The existing `#00befe` layerData entry is preserved
+ * (the emboss BITMAP still uses it). Params/processingType are copied from the
+ * source incise entry. Emboss + model objects are left untouched. Generated ids
+ * are `forge-<operationOrder>`. Returns the new raw JSON object (not serialised).
  */
 export function buildGeneratedXcs(
   parsed: ParsedXcs,
@@ -160,28 +207,45 @@ export function buildGeneratedXcs(
   mmPerUnit: number,
 ): unknown {
   const raw = JSON.parse(JSON.stringify(parsed.raw)) as {
-    canvas: Array<{ displays: RawDisplay[] }>;
+    canvas: Array<{ displays: RawDisplay[]; layerData?: Record<string, LayerDataEntry> }>;
     device: { data: MutableMap<RawGroup & { displays: MutableMap<RawEntry & Record<string, unknown>> }> };
   };
 
   const incise = parsed.objects.find((o) => o.id === inciseId)!;
   const groupKey = incise.groupKey;
+  const canvas = raw.canvas[0];
 
   // locate the process group + the source display template
   const groupPair = raw.device.data.value.find(([k]) => k === groupKey);
-  const sourceTemplateDisplay = raw.canvas[0].displays.find((d) => d.id === inciseId);
+  const sourceTemplateDisplay = canvas.displays.find((d) => d.id === inciseId);
   const sourceEntryPair = groupPair?.[1].displays.value.find(([id]) => id === inciseId);
 
   // remove source incise from canvas + device.data
-  raw.canvas[0].displays = raw.canvas[0].displays.filter((d) => d.id !== inciseId);
+  canvas.displays = canvas.displays.filter((d) => d.id !== inciseId);
   if (groupPair) {
     groupPair[1].displays.value = groupPair[1].displays.value.filter(([id]) => id !== inciseId);
   }
 
+  // assign a stable colour per distinct stage groupName (first-seen order) and
+  // register it as its own layer. Keep the existing #00befe entry (emboss).
+  canvas.layerData = canvas.layerData ?? {};
+  const existingLayers = Object.keys(canvas.layerData).length;
+  const tagFor = new Map<string, string>();
+  let nextLayerOrder = existingLayers;
+  const layerTagForGroup = (groupName: string): string => {
+    const existing = tagFor.get(groupName);
+    if (existing) return existing;
+    const tag = STAGE_PALETTE[tagFor.size % STAGE_PALETTE.length];
+    tagFor.set(groupName, tag);
+    canvas.layerData![tag] = { name: groupName, order: ++nextLayerOrder, visible: true };
+    return tag;
+  };
+
   // append generated displays + processing entries
   for (const path of paths) {
     const id = `forge-${path.operationOrder}`;
-    const dPath = contourToDPath(path.points, path.closed, mmPerUnit);
+    const dPath = ringsToDPath(path.rings, mmPerUnit);
+    const tag = layerTagForGroup(path.groupName);
 
     const display: RawDisplay = {
       ...(sourceTemplateDisplay ?? ({} as RawDisplay)),
@@ -189,9 +253,13 @@ export function buildGeneratedXcs(
       type: "PATH",
       name: path.groupName,
       dPath,
-      isClosePath: path.closed,
+      isClosePath: true,
+      isFill: true,
+      fillRule: "evenodd",
+      layerTag: tag,
+      layerColor: tag,
     };
-    raw.canvas[0].displays.push(display);
+    canvas.displays.push(display);
 
     if (groupPair) {
       // clone the source INTAGLIO entry so params/processingType carry over
@@ -200,6 +268,7 @@ export function buildGeneratedXcs(
         : { isFill: true, type: "PATH", processingType: "INTAGLIO" };
       baseEntry.processingType = "INTAGLIO";
       baseEntry.type = "PATH";
+      baseEntry.isFill = true;
       groupPair[1].displays.value.push([id, baseEntry]);
     }
   }

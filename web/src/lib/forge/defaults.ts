@@ -27,12 +27,6 @@ export const DEFAULT_CONFIG: ForgeConfig = {
       { name: "CUT_05_DEEPEN_C_100_200_4X", fromLayer: 100, toLayer: 200, widthMultiplier: 4, enabled: true },
       { name: "CUT_06_DEEPEN_D_200_256_8X", fromLayer: 200, toLayer: 256, widthMultiplier: 8, enabled: true },
     ],
-    interlaceEnabled: true,
-    segmentLengthMm: 8,
-    interlaceStride: 3,
-    reverseAlternatePasses: true,
-    staggerStartPoint: true,
-    avoidSameStartPoint: true,
     outsideOnly: true,
   },
   clean: {

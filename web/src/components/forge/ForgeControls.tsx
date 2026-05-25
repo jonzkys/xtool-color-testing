@@ -142,17 +142,6 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
             </tbody>
           </table>
           <div className="grid grid-cols-2 gap-2 mt-2">
-            <Field label="Segment length (mm)">
-              <NumberField value={config.deepen.segmentLengthMm} step={1} min={1}
-                onChange={(v) => patch({ deepen: { ...config.deepen, segmentLengthMm: v } })} />
-            </Field>
-            <Field label="Interlace stride">
-              <NumberField value={config.deepen.interlaceStride} step={1} min={1}
-                onChange={(v) => patch({ deepen: { ...config.deepen, interlaceStride: v } })} />
-            </Field>
-            <label className="flex items-center gap-2"><input type="checkbox" checked={config.deepen.interlaceEnabled} onChange={(e) => patch({ deepen: { ...config.deepen, interlaceEnabled: e.target.checked } })} /> Interlace</label>
-            <label className="flex items-center gap-2"><input type="checkbox" checked={config.deepen.reverseAlternatePasses} onChange={(e) => patch({ deepen: { ...config.deepen, reverseAlternatePasses: e.target.checked } })} /> Reverse alt</label>
-            <label className="flex items-center gap-2"><input type="checkbox" checked={config.deepen.staggerStartPoint} onChange={(e) => patch({ deepen: { ...config.deepen, staggerStartPoint: e.target.checked } })} /> Stagger start</label>
             <label className="flex items-center gap-2"><input type="checkbox" checked={config.deepen.outsideOnly} onChange={(e) => patch({ deepen: { ...config.deepen, outsideOnly: e.target.checked } })} /> Outside-only</label>
           </div>
         </div>

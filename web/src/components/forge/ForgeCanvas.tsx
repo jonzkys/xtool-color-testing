@@ -25,7 +25,7 @@ function bboxOf(paths: GeneratedPath[], source: Contour[] | null): BBox {
     maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
   };
   source?.forEach((c) => c.points.forEach((p) => eat(p.x, p.y)));
-  paths.forEach((pa) => pa.points.forEach((p) => eat(p.x, p.y)));
+  paths.forEach((pa) => pa.rings.forEach((r) => r.forEach((p) => eat(p.x, p.y))));
   if (!isFinite(minX)) return { minX: 0, minY: 0, maxX: 1, maxY: 1 };
   return { minX, minY, maxX, maxY };
 }
@@ -82,10 +82,13 @@ export function ForgeCanvas({ source, paths, visible, width, height }: ForgeCanv
       }
       ctx.setLineDash([]);
     }
-    // generated paths, class-coloured
+    // generated paths, class-coloured — each ring drawn as a closed loop so the
+    // even-odd sliver-band reads as two concentric outlines.
     for (const p of paths) {
       if (!visible[p.generatedClass]) continue;
-      stroke(p.points, p.closed, CLASS_COLOR[p.generatedClass], p.generatedClass === "deepen" ? 1.5 : 1);
+      const color = CLASS_COLOR[p.generatedClass];
+      const wpx = p.generatedClass === "deepen" ? 1.5 : 1;
+      for (const r of p.rings) stroke(r, true, color, wpx);
     }
   }, [source, paths, visible, width, height]);
 

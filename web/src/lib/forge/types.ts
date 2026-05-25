@@ -19,11 +19,13 @@ export type SideMode = "outside" | "inside" | "symmetric" | "flip";
 /** The four functional path classes the tool emits. */
 export type GeneratedClass = "seed" | "perforate" | "deepen" | "clean";
 
-export type Direction = "forward" | "reverse";
-
 /**
  * One generated path with full provenance metadata. Kept internally for
  * preview/debug even where the .xcs format cannot represent every field.
+ *
+ * Geometry is a set of closed loops (`rings`) in mm space. Even-odd across the
+ * rings defines the filled region: a band is two concentric loops (the sliver
+ * between them = the kerf); a perforation pocket is a single solid loop.
  */
 export interface GeneratedPath {
   sourceObjectId: string;
@@ -34,13 +36,10 @@ export interface GeneratedPath {
   widthMultiplier: number;
   offsetMm: number;
   sideMode: SideMode;
-  direction: Direction;
-  segmentIndex?: number;
   operationOrder: number;
   enabled: boolean;
-  /** Geometry in mm space. */
-  points: Pt[];
-  closed: boolean;
+  /** Closed loops in mm space; even-odd fill defines the engraved region. */
+  rings: Pt[][];
 }
 
 /** One editable deepen pass-group row. */
@@ -70,12 +69,6 @@ export interface PerforateConfig {
 
 export interface DeepenConfig {
   groups: DeepenGroup[];
-  interlaceEnabled: boolean;
-  segmentLengthMm: number;
-  interlaceStride: number;
-  reverseAlternatePasses: boolean;
-  staggerStartPoint: boolean;
-  avoidSameStartPoint: boolean;
   outsideOnly: boolean;
 }
 
@@ -122,7 +115,6 @@ export interface DebugStats {
   mmPerUnit: number;
   mmPerUnitConfident: boolean;
   pathCounts: Record<GeneratedClass, number>;
-  segmentCount: number;
   totalPaths: number;
   warnings: string[];
 }

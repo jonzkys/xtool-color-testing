@@ -42,45 +42,39 @@ export function offsetContour(c: Contour, distanceMm: number, outsideSign: 1 | -
 }
 
 /**
- * Build the offset stack for a deepen/seed width.
- * Width multiplier semantics (kerf = widthMultiplier × beamWidthMm):
- *   1x → centreline only
- *   2x → centreline + 1 ring
- *   4x → centreline + multiple rings
- *   8x → centreline + a wider ring stack
- * One ring per beam-width step out to the target half-kerf, scrap-side biased.
- * sideMode: outside (all outward), inside (all inward), symmetric (split),
- * flip (outward with the inverted side sign).
+ * Build the loop set for an even-odd sliver-band of total width `widthMm`.
+ *
+ * INTAGLIO fills the enclosed area of a closed path, so a kerf is expressed as
+ * a compound path of two concentric closed loops emitted with
+ * `fillRule: "evenodd"`: even-odd fills only the thin band between them. We
+ * always include the original `contour.points` loop, so a band is never a
+ * single loop (which would flood-fill the whole interior).
+ *
+ * sideMode:
+ *   outside / flip → outer offset loop(s) + original contour as the inner loop.
+ *                    `flip` inverts the side sign (widen on the opposite side).
+ *   inside         → original contour + inner offset loop(s).
+ *   symmetric      → outer offset (w/2) + inner offset (w/2), split either side.
+ *
+ * Any offsetContour that returns [] (e.g. a small pocket shrunk to nothing) is
+ * simply omitted. Loops with <3 points are filtered out.
  */
-export function generateOffsetStack(
-  contour: Contour,
-  widthMultiplier: number,
-  beamWidthMm: number,
-  sideMode: SideMode,
-): Contour[] {
-  const stack: Contour[] = [contour]; // index 0 = centreline
-  if (widthMultiplier <= 1 || beamWidthMm <= 0) return stack;
-
+export function generateBand(contour: Contour, widthMm: number, sideMode: SideMode): Pt[][] {
   const winding = inferWindingAndOutside(contour);
   const outSign: 1 | -1 = sideMode === "flip" ? (winding.outsideSign === 1 ? -1 : 1) : winding.outsideSign;
   const inSign: 1 | -1 = outSign === 1 ? -1 : 1;
 
-  // total widening beyond the centreline, in mm
-  const totalWiden = (widthMultiplier - 1) * beamWidthMm;
-  const steps = Math.max(1, Math.round(totalWiden / beamWidthMm));
-
-  for (let i = 1; i <= steps; i++) {
-    const d = i * beamWidthMm;
-    if (sideMode === "outside" || sideMode === "flip") {
-      stack.push(...offsetContour(contour, d, outSign));
-    } else if (sideMode === "inside") {
-      stack.push(...offsetContour(contour, d, inSign));
-    } else {
-      // symmetric: alternate outward/inward at half the distance
-      const half = d / 2;
-      stack.push(...offsetContour(contour, half, outSign));
-      stack.push(...offsetContour(contour, half, inSign));
-    }
+  let loops: Pt[][];
+  if (sideMode === "outside" || sideMode === "flip") {
+    loops = [...offsetContour(contour, widthMm, outSign).map((c) => c.points), contour.points];
+  } else if (sideMode === "inside") {
+    loops = [contour.points, ...offsetContour(contour, widthMm, inSign).map((c) => c.points)];
+  } else {
+    // symmetric: split the width either side of the contour
+    loops = [
+      ...offsetContour(contour, widthMm / 2, outSign).map((c) => c.points),
+      ...offsetContour(contour, widthMm / 2, inSign).map((c) => c.points),
+    ];
   }
-  return stack;
+  return loops.filter((r) => r.length >= 3);
 }

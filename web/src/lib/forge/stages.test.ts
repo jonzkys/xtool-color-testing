@@ -7,8 +7,7 @@ import {
   generateCleanPaths,
 } from "./stages";
 import { DEFAULT_CONFIG } from "./defaults";
-import { contourPerimeter } from "./contour";
-import type { Contour } from "./types";
+import type { Contour, Pt } from "./types";
 
 const square: Contour = {
   points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }],
@@ -16,15 +15,23 @@ const square: Contour = {
 };
 const SRC = "src-id";
 
+/** Axis-aligned bbox diagonal of a ring set's outermost extent. */
+function bboxSpan(rings: Pt[][]): number {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const r of rings) for (const p of r) {
+    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+  }
+  return Math.hypot(maxX - minX, maxY - minY);
+}
+
 describe("generateSeedPaths", () => {
-  it("emits paths tagged seed with CUT_01_SEED group and layerCount clamped to ≤5", () => {
-    const cfg = { ...DEFAULT_CONFIG, seed: { ...DEFAULT_CONFIG.seed, layerCount: 9 } };
-    const paths = generateSeedPaths(square, cfg, SRC);
-    expect(paths.length).toBeGreaterThan(0);
-    expect(paths.every((p) => p.generatedClass === "seed")).toBe(true);
-    expect(paths.every((p) => p.groupName === "CUT_01_SEED")).toBe(true);
-    // layer count clamped to 5
-    expect(new Set(paths.map((p) => p.layerStart)).size).toBeLessThanOrEqual(5);
+  it("emits ONE seed band (≥2 rings) tagged CUT_01_SEED", () => {
+    const paths = generateSeedPaths(square, DEFAULT_CONFIG, SRC);
+    expect(paths.length).toBe(1);
+    expect(paths[0].generatedClass).toBe("seed");
+    expect(paths[0].groupName).toBe("CUT_01_SEED");
+    expect(paths[0].rings.length).toBeGreaterThanOrEqual(2);
   });
   it("returns nothing when disabled", () => {
     const cfg = { ...DEFAULT_CONFIG, seed: { ...DEFAULT_CONFIG.seed, enabled: false } };
@@ -33,15 +40,23 @@ describe("generateSeedPaths", () => {
 });
 
 describe("generatePerforationPaths", () => {
-  it("emits perforate-class micro features at spacing, with extra at corners", () => {
+  it("emits small single-ring pockets at spacing, more with cornerBoost", () => {
     const paths = generatePerforationPaths(square, DEFAULT_CONFIG, SRC);
     expect(paths.length).toBeGreaterThan(0);
     expect(paths.every((p) => p.generatedClass === "perforate")).toBe(true);
     expect(paths.every((p) => p.groupName === "CUT_02_PERFORATE")).toBe(true);
-    // each perforation is a tiny segment (pocketSize-scale), not the full contour
+    // each pocket is a single solid loop, pocketSize-scale (small bbox)
     for (const p of paths) {
-      expect(contourPerimeter({ points: p.points, closed: false })).toBeLessThan(2);
+      expect(p.rings.length).toBe(1);
+      expect(bboxSpan(p.rings)).toBeLessThan(2);
     }
+    // corner boost adds extra pockets
+    const noBoost = generatePerforationPaths(
+      square,
+      { ...DEFAULT_CONFIG, perforate: { ...DEFAULT_CONFIG.perforate, cornerBoost: false } },
+      SRC,
+    );
+    expect(paths.length).toBeGreaterThan(noBoost.length);
   });
   it("returns nothing when disabled", () => {
     const cfg = { ...DEFAULT_CONFIG, perforate: { ...DEFAULT_CONFIG.perforate, enabled: false } };
@@ -50,48 +65,55 @@ describe("generatePerforationPaths", () => {
 });
 
 describe("generateDeepenPaths", () => {
-  it("emits deepen paths grouped by pass-group in A→B→C→D order", () => {
+  it("emits one band per enabled group in A→B→C→D order with correct names", () => {
     const paths = generateDeepenPaths(square, DEFAULT_CONFIG, SRC);
+    const enabled = DEFAULT_CONFIG.deepen.groups.filter((g) => g.enabled);
+    expect(paths.length).toBe(enabled.length);
     expect(paths.every((p) => p.generatedClass === "deepen")).toBe(true);
-    const names = paths.map((p) => p.groupName);
-    expect(names.indexOf("CUT_03_DEEPEN_A_0_50_1X")).toBeLessThan(names.lastIndexOf("CUT_06_DEEPEN_D_200_256_8X"));
+    expect(paths.map((p) => p.groupName)).toEqual(enabled.map((g) => g.name));
+    expect(paths.every((p) => p.rings.length >= 2)).toBe(true);
   });
-  it("group A (1x) has a single offset ring per segment; D (8x) has more", () => {
+  it("a wider group has a larger outer-ring bbox than a narrower one", () => {
     const paths = generateDeepenPaths(square, DEFAULT_CONFIG, SRC);
-    const a = paths.filter((p) => p.groupName.includes("DEEPEN_A"));
-    const d = paths.filter((p) => p.groupName.includes("DEEPEN_D"));
-    expect(d.length).toBeGreaterThan(a.length);
+    const a = paths.find((p) => p.groupName.includes("DEEPEN_A"))!;
+    const d = paths.find((p) => p.groupName.includes("DEEPEN_D"))!;
+    expect(bboxSpan(d.rings)).toBeGreaterThan(bboxSpan(a.rings));
   });
-  it("interlaced order means consecutive deepen paths in a group aren't adjacent segments", () => {
-    // Use a larger 40mm square so segmentation produces enough segments to be meaningful
-    const bigSquare: Contour = {
-      points: [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 40 }, { x: 0, y: 40 }],
-      closed: true,
+  it("skips disabled groups", () => {
+    const cfg = {
+      ...DEFAULT_CONFIG,
+      deepen: {
+        ...DEFAULT_CONFIG.deepen,
+        groups: DEFAULT_CONFIG.deepen.groups.map((g, i) => ({ ...g, enabled: i === 0 })),
+      },
     };
-    const paths = generateDeepenPaths(bigSquare, DEFAULT_CONFIG, SRC).filter((p) =>
-      p.groupName.includes("DEEPEN_A"),
-    );
-    // segmentIndex present and not strictly 0,1,2,...
-    const segs = paths.map((p) => p.segmentIndex ?? -1).filter((s) => s >= 0);
-    const isSequential = segs.every((s, i) => i === 0 || s === segs[i - 1] + 1);
-    expect(isSequential).toBe(false);
+    const paths = generateDeepenPaths(square, cfg, SRC);
+    expect(paths.length).toBe(1);
   });
 });
 
 describe("generateCleanPaths", () => {
-  it("emits clean-class paths following walls (inner+outer)", () => {
+  it("emits wall band(s) tagged CUT_07_CLEAN", () => {
     const paths = generateCleanPaths(square, DEFAULT_CONFIG, SRC);
     expect(paths.every((p) => p.generatedClass === "clean")).toBe(true);
     expect(paths.every((p) => p.groupName === "CUT_07_CLEAN")).toBe(true);
-    expect(paths.length).toBeGreaterThanOrEqual(2); // walls = 2 sides
+    expect(paths.every((p) => p.rings.length >= 2)).toBe(true);
+    expect(paths.length).toBeGreaterThanOrEqual(2); // both walls
+  });
+  it("outer-only / inner-only emit a single wall band", () => {
+    const outer = generateCleanPaths(
+      square,
+      { ...DEFAULT_CONFIG, clean: { ...DEFAULT_CONFIG.clean, offsetSelection: "outer" } },
+      SRC,
+    );
+    expect(outer.length).toBe(1);
+    expect(outer[0].sideMode).toBe("outside");
   });
   it("returns nothing when disabled", () => {
     const cfg = { ...DEFAULT_CONFIG, clean: { ...DEFAULT_CONFIG.clean, enabled: false } };
     expect(generateCleanPaths(square, cfg, SRC)).toEqual([]);
   });
   it("does not throw when an inward wall offset collapses the contour to nothing", () => {
-    // A contour far smaller than the wall offset: the inward (inner) wall pass
-    // shrinks it to an empty Clipper result. Must skip gracefully, not crash.
     const tiny: Contour = {
       points: [{ x: 0, y: 0 }, { x: 0.02, y: 0 }, { x: 0.02, y: 0.02 }, { x: 0, y: 0.02 }],
       closed: true,
@@ -102,9 +124,9 @@ describe("generateCleanPaths", () => {
       clean: { ...DEFAULT_CONFIG.clean, offsetSelection: "inner" as const },
     };
     expect(() => generateCleanPaths(tiny, cfg, SRC)).not.toThrow();
-    // every emitted path (if any) has real geometry
+    // any emitted band is a real ≥2-loop band, never a single-loop flood fill
     for (const p of generateCleanPaths(tiny, cfg, SRC)) {
-      expect(Array.isArray(p.points)).toBe(true);
+      expect(p.rings.length).toBeGreaterThanOrEqual(2);
     }
   });
 });
