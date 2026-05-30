@@ -1,5 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { kMeansLab, greedyRectCover, capFit } from "./pixelArtMath";
+import { kMeansLab, greedyRectCover, capFit, clampGridToBudget } from "./pixelArtMath";
+
+describe("clampGridToBudget", () => {
+  it("leaves a within-budget grid unchanged", () => {
+    expect(clampGridToBudget(100, 100, 65536)).toEqual({ cols: 100, rows: 100 });
+  });
+  it("scales a huge square grid under the cell budget, preserving aspect", () => {
+    const { cols, rows } = clampGridToBudget(2500, 2500, 65536);
+    expect(cols * rows).toBeLessThanOrEqual(65536);
+    expect(cols).toBeGreaterThanOrEqual(1);
+    expect(Math.abs(cols - rows)).toBeLessThanOrEqual(1);
+  });
+  it("bounds a tall, narrow grid (the crop-explosion case)", () => {
+    const { cols, rows } = clampGridToBudget(256, 4000, 65536);
+    expect(cols * rows).toBeLessThanOrEqual(65536);
+    expect(rows).toBeGreaterThan(cols); // aspect preserved
+  });
+});
 
 describe("kMeansLab", () => {
   it("returns K labels for K clearly-separated colour clusters", () => {
@@ -10,6 +27,18 @@ describe("kMeansLab", () => {
     expect(result.labels[2]).toBe(result.labels[3]);
     expect(result.labels[0]).not.toBe(result.labels[2]);
     expect(result.centroidsHex).toHaveLength(2);
+  });
+
+  it("is deterministic across repeated runs on identical input", () => {
+    // 12 spread hues with K=3 make the clustering genuinely seed-sensitive, so
+    // an unseeded k-means++ yields different centroids run-to-run.
+    const cells: (string | null)[] = [
+      "#ff0000", "#ff8000", "#ffff00", "#80ff00",
+      "#00ff00", "#00ff80", "#00ffff", "#0080ff",
+      "#0000ff", "#8000ff", "#ff00ff", "#ff0080",
+    ];
+    const runs = Array.from({ length: 20 }, () => JSON.stringify(kMeansLab(cells, 3)));
+    expect(new Set(runs).size).toBe(1);
   });
 
   it("propagates skip cells (null) as label = -1", () => {

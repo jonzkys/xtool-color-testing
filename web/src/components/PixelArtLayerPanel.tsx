@@ -112,7 +112,9 @@ export function PixelArtLayerPanel({
   }
 
   const hasRows = rows.length > 0;
-  const downloadsDisabled = !hasRows || generating === true;
+  // Also block downloads when every colour is disabled: the request would carry
+  // rects: [] and 422 at the backend after the click, instead of being prevented.
+  const downloadsDisabled = !hasRows || enabledCount === 0 || generating === true;
 
   // Click-to-expand: at most one tile is open at a time. The expanded
   // panel shows the picker controls without crowding every tile with
