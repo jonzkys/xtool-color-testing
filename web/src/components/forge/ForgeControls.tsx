@@ -1,6 +1,7 @@
 // web/src/components/forge/ForgeControls.tsx
 import { Card, CardHeader, CardTitle, Field, NumberField, Select } from "../../ui";
 import type { DeepenGroup, ForgeConfig, GeneratedClass, SideMode } from "../../lib/forge/types";
+import { renameDeepenGroup } from "../../lib/forge/config";
 import { CLASS_COLOR } from "./ForgeCanvas";
 
 const CLASSES: GeneratedClass[] = ["seed", "perforate", "deepen", "clean"];
@@ -137,9 +138,12 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
             </thead>
             <tbody>
               {config.deepen.groups.map((g, i) => (
-                <tr key={g.name}>
+                // Key by the stable index, NOT the user-editable name: keying by
+                // `g.name` remounts the row on every keystroke (focus loss) and
+                // collides when two groups share a name.
+                <tr key={i}>
                   <td><input type="checkbox" checked={g.enabled} onChange={(e) => setGroup(i, { enabled: e.target.checked })} /></td>
-                  <td><input className="w-40 bg-transparent border-b" value={g.name} onChange={(e) => setGroup(i, { name: e.target.value })} /></td>
+                  <td><input className="w-40 bg-transparent border-b" value={g.name} onChange={(e) => onChange(renameDeepenGroup(config, i, e.target.value))} /></td>
                   <td><input className="w-12 bg-transparent border-b" type="number" value={g.fromLayer} onChange={(e) => setGroup(i, { fromLayer: Number(e.target.value) })} /></td>
                   <td><input className="w-12 bg-transparent border-b" type="number" value={g.toLayer} onChange={(e) => setGroup(i, { toLayer: Number(e.target.value) })} /></td>
                   <td><input className="w-12 bg-transparent border-b" type="number" value={g.widthMultiplier} onChange={(e) => setGroup(i, { widthMultiplier: Number(e.target.value) })} /></td>

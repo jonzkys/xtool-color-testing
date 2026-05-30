@@ -36,8 +36,12 @@ const FIELDS: Array<{ key: keyof StageParams; label: string; step: number }> = [
 
 export function ForgeStageParams({ config, onChange }: ForgeStageParamsProps) {
   const stages = stageList(config);
-  const [active, setActive] = useState(stages[0]?.group ?? "");
-  const current = stages.find((s) => s.group === active) ?? stages[0];
+  // Track the active stage by POSITION, not its (user-editable) group name, so a
+  // deepen-group rename keeps the tab on that group instead of silently falling
+  // back to Seed.
+  const [activeIdx, setActiveIdx] = useState(0);
+  const idx = activeIdx < stages.length ? activeIdx : 0;
+  const current = stages[idx];
   const params: StageParams = config.stageParams[current?.group ?? ""] ?? {};
 
   const setParam = (key: keyof StageParams, v: number) => {
@@ -60,13 +64,13 @@ export function ForgeStageParams({ config, onChange }: ForgeStageParamsProps) {
       <div className="p-2">
         {/* tabs */}
         <div className="flex flex-wrap gap-1 mb-3">
-          {stages.map((s) => (
+          {stages.map((s, i) => (
             <button
-              key={s.group}
-              onClick={() => setActive(s.group)}
+              key={i}
+              onClick={() => setActiveIdx(i)}
               className={cn(
                 "px-2 py-1 text-[11px] font-mono uppercase rounded transition-colors",
-                s.group === current.group
+                i === idx
                   ? "bg-[var(--color-primary)] text-[var(--color-on-primary,#fff)]"
                   : "text-[var(--color-ink-muted)] hover:text-[var(--color-fg)] border border-[var(--color-border)]",
               )}
