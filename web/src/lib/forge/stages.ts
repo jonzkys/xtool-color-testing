@@ -36,6 +36,9 @@ export function generateSeedPaths(
   const side: SideMode = cfg.seed.outsideOnly ? "outside" : cfg.sideMode;
   const widthMm = cfg.seed.widthMultiplier * cfg.beamWidthMm;
   const rings = bandFromRegion(part, widthMm, side);
+  // Drop a degenerate band (collapsed / single-ring) rather than emitting a
+  // flood fill or an empty-ring phantom display — same guard as the clean stage.
+  if (rings.length < 2) return [];
   return [
     {
       sourceObjectId,
@@ -121,6 +124,9 @@ export function generateDeepenPaths(
     if (!group.enabled) continue;
     const widthMm = group.widthMultiplier * cfg.beamWidthMm;
     const rings = bandFromRegion(part, widthMm, side);
+    // Skip a degenerate band (collapsed inward offset, or width ≤ 0) so it never
+    // becomes a single-ring flood fill or an empty-ring phantom display.
+    if (rings.length < 2) continue;
     out.push({
       sourceObjectId,
       generatedClass: "deepen",

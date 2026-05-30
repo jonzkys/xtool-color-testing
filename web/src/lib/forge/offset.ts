@@ -212,7 +212,13 @@ export function bandFromRegion(part: Pt[][], widthMm: number, sideMode: SideMode
     inner = offsetRegion(part, -widthMm / 2);
   }
 
-  if (outer.length === 0) return [];
+  // A valid band needs BOTH boundaries: the part interior must remain a HOLE
+  // between two concentric ring sets. If the inner boundary collapsed (thin part
+  // / large width on inside|symmetric|flip), the band would degrade to a single
+  // solid ring → even-odd flood-fills the whole part, engraving over the emboss.
+  // Drop it instead. (outside mode keeps inner = part, so this only bites the
+  // inward-offset modes.)
+  if (outer.length === 0 || inner.length === 0) return [];
   return [...outer, ...inner];
 }
 

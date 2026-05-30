@@ -6,7 +6,7 @@ import {
   generateDeepenPaths,
   generateCleanPaths,
 } from "./stages";
-import { buildPartRegion } from "./offset";
+import { buildPartRegion, bandFromRegion } from "./offset";
 import { DEFAULT_CONFIG } from "./defaults";
 import type { Contour, Pt } from "./types";
 
@@ -91,6 +91,58 @@ describe("generateDeepenPaths", () => {
     };
     const paths = generateDeepenPaths(PART, cfg, SRC);
     expect(paths.length).toBe(1);
+  });
+});
+
+describe("degenerate-band guards (no flood-fill, no empty-ring paths)", () => {
+  // A 0.4mm square SURVIVES buildPartRegion (features >> the 0.02mm DP epsilon),
+  // but a ≥0.25mm inward offset collapses its interior → the band would degrade
+  // to a single solid ring (the real flood-fill hazard, not just an empty part).
+  const thinPart = buildPartRegion([
+    { points: [{ x: 0, y: 0 }, { x: 0.4, y: 0 }, { x: 0.4, y: 0.4 }, { x: 0, y: 0.4 }], closed: true },
+  ]);
+
+  it("thinPart survives region reconstruction (precondition for a real flood-fill test)", () => {
+    expect(thinPart.length).toBeGreaterThan(0);
+  });
+
+  it("bandFromRegion returns [] when the inner boundary collapses (would-be flood fill)", () => {
+    // inside/symmetric: the inward offset collapses the 0.4mm part's interior,
+    // leaving a single solid ring — which even-odd would flood-fill the part.
+    expect(bandFromRegion(thinPart, 0.5, "inside")).toEqual([]);
+    expect(bandFromRegion(thinPart, 0.5, "symmetric")).toEqual([]);
+  });
+
+  it("seed drops a collapsed inward band instead of emitting a single-ring flood fill", () => {
+    const cfg = {
+      ...DEFAULT_CONFIG,
+      beamWidthMm: 0.5,
+      sideMode: "inside" as const,
+      seed: { ...DEFAULT_CONFIG.seed, outsideOnly: false },
+    };
+    expect(generateSeedPaths(thinPart, cfg, SRC)).toEqual([]);
+  });
+
+  it("deepen drops a collapsed inward band and a zero-width group (no empty-ring paths)", () => {
+    const collapse = {
+      ...DEFAULT_CONFIG,
+      beamWidthMm: 0.5,
+      sideMode: "inside" as const,
+      deepen: {
+        outsideOnly: false,
+        groups: [{ name: "CUT_03_X", fromLayer: 0, toLayer: 50, widthMultiplier: 1, enabled: true }],
+      },
+    };
+    expect(generateDeepenPaths(thinPart, collapse, SRC)).toEqual([]);
+
+    const zeroWidth = {
+      ...DEFAULT_CONFIG,
+      deepen: {
+        ...DEFAULT_CONFIG.deepen,
+        groups: [{ name: "CUT_03_X", fromLayer: 0, toLayer: 50, widthMultiplier: 0, enabled: true }],
+      },
+    };
+    expect(generateDeepenPaths(PART, zeroWidth, SRC)).toEqual([]);
   });
 });
 
