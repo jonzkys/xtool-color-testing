@@ -34,7 +34,13 @@ Thumbs.db
 output/
 *.xcs
 !samples/*.xcs
+!samples/xcs/*.xcs
 .superpowers/
+
+# Large G-code machine exports — regenerable, never version (some are >100MB
+# and were stripped from history; GitHub rejects files over 100MB). The whole
+# dir is machine output, so ignore it wholesale (nothing here is tracked).
+samples/xcode/
 
 # Frontend build artifacts
 web/node_modules/

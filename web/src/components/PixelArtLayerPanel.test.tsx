@@ -55,6 +55,13 @@ describe("PixelArtLayerPanel", () => {
     expect(screen.getByText(/Colours · 3\/3/)).toBeInTheDocument();
   });
 
+  it("disables the .xcs/.svg downloads when every colour is turned off", () => {
+    const rows = [row("#ff0000", 0.6, false), row("#00ff00", 0.4, false)];
+    render(<PixelArtLayerPanel {...baseProps} rows={rows} />);
+    expect(screen.getByRole("button", { name: /\.xcs/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /\.svg/ })).toBeDisabled();
+  });
+
   it("shows the path-count badge equal to enabled colours", () => {
     const rows = [
       row("#aaaaaa", 0.5),

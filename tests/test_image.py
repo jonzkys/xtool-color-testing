@@ -86,6 +86,35 @@ def test_image_rgba_transparency():
     assert all(val > 0.99 for row in grid for val in row)
 
 
+def test_image_la_transparency(tmp_path):
+    """LA (grayscale+alpha): fully-transparent dark pixels composite to white,
+    not full-burn black."""
+    img = Image.new("LA", (10, 10), (0, 0))  # black, fully transparent
+    path = str(tmp_path / "la.png")
+    img.save(path)
+
+    grid = image_to_grid(path, cols=5, rows=5)
+    assert all(val > 0.99 for row in grid for val in row)
+
+
+def test_resolve_grid_dims_caps_rows_for_tall_image():
+    """Auto-resolution must cap BOTH axes — a tall, narrow image can't explode
+    rows into a billion-cell project."""
+    from xcs_gen.generators import _resolve_grid_dims
+
+    cols, rows = _resolve_grid_dims(aspect=0.0001, cols=None, rows=None, total_width=50.0)
+    assert cols <= 1000
+    assert rows <= 1000
+
+
+def test_resolve_grid_dims_preserves_aspect_when_one_axis_given():
+    """Explicit cols + auto rows keeps the existing derivation (no behaviour change)."""
+    from xcs_gen.generators import _resolve_grid_dims
+
+    assert _resolve_grid_dims(aspect=2.0, cols=20, rows=None, total_width=40.0) == (20, 10)
+    assert _resolve_grid_dims(aspect=2.0, cols=None, rows=10, total_width=40.0) == (20, 10)
+
+
 def test_generate_from_image_element_count():
     """Black image with no skip produces cols*rows elements."""
     path = _make_test_image(50, 50, color=0)  # all black

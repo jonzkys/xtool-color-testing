@@ -15,6 +15,7 @@ export type Route =
   | { name: "stability"; id?: number; cell?: number }
   | { name: "styleguide" }
   | { name: "guide" }
+  | { name: "forge" }
   | { name: "changelog" }
   | { name: "gcode" }
   | { name: "demo"; next?: string }
@@ -59,6 +60,7 @@ export function parseRoute(hash: string): Route {
   if (mst) return { name: "stability", id: Number(mst[1]) };
   if (h === "styleguide") return { name: "styleguide" };
   if (h === "guide") return { name: "guide" };
+  if (h === "forge") return { name: "forge" };
   if (h === "changelog") return { name: "changelog" };
   if (h === "gcode") return { name: "gcode" };
   // ``#/demo`` accepts an optional ``?next=<hash>`` so a deep link
@@ -94,6 +96,7 @@ export function formatRoute(r: Route): string {
     case "saved-spectrums": return "#/saved-spectrums";
     case "styleguide":  return "#/styleguide";
     case "guide":       return "#/guide";
+    case "forge":       return "#/forge";
     case "changelog":   return "#/changelog";
     case "gcode":       return "#/gcode";
     case "demo":        return r.next ? `#/demo?next=${encodeURIComponent(r.next)}` : "#/demo";

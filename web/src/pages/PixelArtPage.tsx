@@ -42,6 +42,7 @@ import {
 } from "../components/PixelArtLayerPanel";
 import {
   kMeansLab,
+  clampGridToBudget,
   type KMeansResult,
 } from "../components/pixelArtMath";
 import { sampleCellGrid } from "../components/pixelArtImage";
@@ -85,6 +86,9 @@ const DEBOUNCE_MS = 150;
  *  pipeline doesn't fight the drag. The dedicated re-render button
  *  forces an immediate run when this longer wait is in the way. */
 const CROP_DEBOUNCE_MS = 600;
+/** Hard ceiling on (cols × rows) fed to the synchronous k-means so a huge width
+ *  or a tall crop can't freeze / OOM the tab. 256×256. */
+const MAX_GRID_CELLS = 65536;
 
 export function PixelArtPage() {
   const { machine } = useCurrentMachine();
@@ -204,7 +208,7 @@ export function PixelArtPage() {
   }, [machine]);
 
   const cellsAcrossMax = useMemo(
-    () => Math.max(8, Math.floor(widthMm / (2 * laserSpotMm))),
+    () => Math.min(256, Math.max(8, Math.floor(widthMm / (2 * laserSpotMm)))),
     [widthMm, laserSpotMm],
   );
 
@@ -257,7 +261,10 @@ export function PixelArtPage() {
     // should drive the cell grid so a tall portrait crop doesn't
     // collapse to a wide raster.
     const cropAspect = crop.w > 0 && crop.h > 0 ? crop.w / crop.h : 1;
-    const derivedRows = Math.max(1, Math.round(cellsAcross / cropAspect));
+    const wantRows = Math.max(1, Math.round(cellsAcross / cropAspect));
+    // Bound total cells: k-means runs synchronously on the main thread, so a
+    // huge width / tall crop would otherwise freeze or OOM the tab.
+    const { cols, rows: derivedRows } = clampGridToBudget(cellsAcross, wantRows, MAX_GRID_CELLS);
     let cancelled = false;
     // The crop drag fires at every pointer move; bump the debounce
     // so we're not running k-means on every frame. ``renderTick`` is
@@ -266,7 +273,7 @@ export function PixelArtPage() {
     const handle = window.setTimeout(() => {
       try {
         const cells = sampleCellGrid(imageData, {
-          cols: cellsAcross,
+          cols,
           rows: derivedRows,
           cropX: crop.x,
           cropY: crop.y,
@@ -278,7 +285,7 @@ export function PixelArtPage() {
           setPipelineResult({
             labels: result.labels,
             centroidsHex: result.centroidsHex,
-            cols: cellsAcross,
+            cols,
             rows: derivedRows,
             cellMeansHex: cells,
           });
@@ -459,7 +466,9 @@ export function PixelArtPage() {
   // ── Download builders ───────────────────────────────────────────────
   const buildRequest = useCallback((): PixelArtRequest | null => {
     if (!pipelineResult || !materialId) return null;
-    const cellMm = widthMm / cellsAcross;
+    // Derive cell size from the ACTUAL grid (may have been clamped down) so the
+    // burn stays physically widthMm wide.
+    const cellMm = widthMm / pipelineResult.cols;
     const enabledColors = new Set(rows.filter((r) => r.enabled).map((r) => r.color));
     const { labels, centroidsHex, cols, rows: pRows } = pipelineResult;
     // One PixelArtRectSpec per cell (not merged). The backend groups
