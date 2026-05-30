@@ -20,6 +20,10 @@ if (typeof URL.revokeObjectURL === "undefined") {
 // Provide a noop polyfill so the components render in tests.
 if (typeof globalThis.ResizeObserver === "undefined") {
   class MockResizeObserver {
+    // Match the real ResizeObserver(callback) signature so call sites that pass
+    // a callback aren't flagged as superfluous. jsdom never fires resizes, so
+    // the callback is intentionally retained-but-unused.
+    constructor(_callback: ResizeObserverCallback) { /* no-op in jsdom */ }
     observe(): void { /* no-op */ }
     unobserve(): void { /* no-op */ }
     disconnect(): void { /* no-op */ }

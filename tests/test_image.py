@@ -86,11 +86,11 @@ def test_image_rgba_transparency():
     assert all(val > 0.99 for row in grid for val in row)
 
 
-def test_image_la_transparency():
+def test_image_la_transparency(tmp_path):
     """LA (grayscale+alpha): fully-transparent dark pixels composite to white,
     not full-burn black."""
     img = Image.new("LA", (10, 10), (0, 0))  # black, fully transparent
-    path = tempfile.mktemp(suffix=".png")
+    path = str(tmp_path / "la.png")
     img.save(path)
 
     grid = image_to_grid(path, cols=5, rows=5)
