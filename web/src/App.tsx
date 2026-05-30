@@ -59,6 +59,9 @@ const ForgePage = lazy(() =>
 const ChangelogPage = lazy(() =>
   import("./pages/ChangelogPage").then((m) => ({ default: m.ChangelogPage })),
 );
+const GcodeViewerPage = lazy(() =>
+  import("./pages/GcodeViewerPage").then((m) => ({ default: m.GcodeViewerPage })),
+);
 const SavedSpectrumsPage = lazy(() =>
   import("./pages/SavedSpectrumsPage").then((m) => ({ default: m.SavedSpectrumsPage })),
 );
@@ -169,6 +172,7 @@ export default function App() {
     : route.name === "guide"      ? "Guide"
     : route.name === "forge"      ? "Contour Forge"
     : route.name === "changelog"  ? "Changelog"
+    : route.name === "gcode"      ? "Gcode"
     : route.name === "demo"       ? "Demo"
     : "Palette";
 
@@ -209,6 +213,7 @@ export default function App() {
           {gate === "ready" && route.name === "guide"        && <GuidePage />}
           {gate === "ready" && route.name === "forge"        && <ForgePage />}
           {gate === "ready" && route.name === "changelog"    && <ChangelogPage />}
+          {gate === "ready" && route.name === "gcode"        && <GcodeViewerPage />}
           {gate === "ready" && route.name === "saved-spectrums" && <SavedSpectrumsPage />}
           {gate === "ready" && route.name === "exposure"       && <ExposurePage materialId={route.materialId ?? null} />}
         </Suspense>

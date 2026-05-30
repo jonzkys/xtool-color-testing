@@ -17,6 +17,7 @@ export type Route =
   | { name: "guide" }
   | { name: "forge" }
   | { name: "changelog" }
+  | { name: "gcode" }
   | { name: "demo"; next?: string }
   | { name: "saved-spectrums" }
   | { name: "mobile-upload"; mid: string };
@@ -61,6 +62,7 @@ export function parseRoute(hash: string): Route {
   if (h === "guide") return { name: "guide" };
   if (h === "forge") return { name: "forge" };
   if (h === "changelog") return { name: "changelog" };
+  if (h === "gcode") return { name: "gcode" };
   // ``#/demo`` accepts an optional ``?next=<hash>`` so a deep link
   // (e.g. someone shared #/changelog) survives the welcome → demo
   // detour. Anything else stays at the default landing page.
@@ -96,6 +98,7 @@ export function formatRoute(r: Route): string {
     case "guide":       return "#/guide";
     case "forge":       return "#/forge";
     case "changelog":   return "#/changelog";
+    case "gcode":       return "#/gcode";
     case "demo":        return r.next ? `#/demo?next=${encodeURIComponent(r.next)}` : "#/demo";
     case "mobile-upload": return `#/m/${r.mid}`;
   }
