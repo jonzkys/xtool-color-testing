@@ -173,10 +173,17 @@ export function ForgePage() {
   function handleFile(f: File) {
     setState({ kind: "loading", fileName: f.name });
     setResult(null);
-    f.arrayBuffer().then((buf) => {
-      const req: ForgeRequest = { type: "parse", buf };
-      workerRef.current?.postMessage(req, [buf]);
-    });
+    f.arrayBuffer()
+      .then((buf) => {
+        const req: ForgeRequest = { type: "parse", buf };
+        workerRef.current?.postMessage(req, [buf]);
+      })
+      .catch((err: unknown) => {
+        // A failed read (revoked blob, OS error) rejects before any worker
+        // message, so without this the page would hang on "Parsing…" forever.
+        const message = err instanceof Error ? err.message : String(err);
+        setState({ kind: "error", message: `Could not read ${f.name}: ${message}` });
+      });
   }
 
   function downloadBuf(buf: ArrayBuffer) {

@@ -8,6 +8,7 @@ import {
   findInciseObjects,
   extractContourGeometry,
   calibrateMmPerUnit,
+  contourToDPath,
 } from "./xcs";
 
 const SAMPLE = resolve(__dirname, "../../../../samples/xcs/incise_emboss.xcs");
@@ -46,6 +47,17 @@ describe("parseXcsFile (errors)", () => {
   it("throws on non-JSON input", () => {
     const bad = new TextEncoder().encode("not json").buffer;
     expect(() => parseXcsFile(bad)).toThrow();
+  });
+});
+
+describe("contourToDPath", () => {
+  it("never emits Infinity/NaN when mmPerUnit is non-positive", () => {
+    const pts = [{ x: 1, y: 2 }, { x: 3, y: 4 }];
+    for (const bad of [0, -1]) {
+      const d = contourToDPath(pts, true, bad);
+      expect(d).not.toContain("Infinity");
+      expect(d).not.toContain("NaN");
+    }
   });
 });
 

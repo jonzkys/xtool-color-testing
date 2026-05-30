@@ -40,8 +40,12 @@ export function runPipeline(
   const warnings: string[] = [];
 
   const cal = calibrateMmPerUnit(parsed, obj);
-  const mmPerUnit = cfg.mmPerUnitOverride ?? cal.mmPerUnit;
-  if (!cal.confident && cfg.mmPerUnitOverride == null) {
+  // A valid override is a positive number. `0 ?? x` slips 0 through (?? only
+  // catches null/undefined) — and a 0 unit scale poisons every exported
+  // coordinate with Infinity. Treat non-positive overrides as absent.
+  const override = cfg.mmPerUnitOverride != null && cfg.mmPerUnitOverride > 0 ? cfg.mmPerUnitOverride : null;
+  const mmPerUnit = override ?? cal.mmPerUnit;
+  if (!cal.confident && override == null) {
     warnings.push("Could not calibrate path units → mm from the file; using 1.0. Set a manual mm/unit.");
   }
 
@@ -72,7 +76,7 @@ export function runPipeline(
       paths: [],
       stats: {
         mmPerUnit,
-        mmPerUnitConfident: cal.confident || cfg.mmPerUnitOverride != null,
+        mmPerUnitConfident: cal.confident || override != null,
         pathCounts: empty,
         totalPaths: 0,
         warnings,

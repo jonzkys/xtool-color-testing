@@ -55,6 +55,16 @@ describe("runPipeline", () => {
     expect(stats.totalPaths).toBeGreaterThan(0);
   });
 
+  it("a zero mm/unit override falls back to calibration instead of 0/Infinity", () => {
+    const parsed = parseXcsFile(loadSample());
+    const inciseId = findInciseObjects(parsed)[0].id;
+    // `0 ?? cal` evaluates to 0 (?? only catches null/undefined); a corrupt
+    // persisted override of 0 must not poison the unit scale.
+    const { stats } = runPipeline(parsed, inciseId, { ...DEFAULT_CONFIG, mmPerUnitOverride: 0 });
+    expect(Number.isFinite(stats.mmPerUnit)).toBe(true);
+    expect(stats.mmPerUnit).toBeGreaterThan(0);
+  });
+
   it("each deepen band is a compound region with the part body as a hole (≥2 rings)", () => {
     const parsed = parseXcsFile(loadSample());
     const inciseId = findInciseObjects(parsed)[0].id;

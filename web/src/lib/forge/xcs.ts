@@ -145,7 +145,8 @@ export function calibrateMmPerUnit(p: ParsedXcs, incise: XcsObject): Calibration
 /** Serialise a mm-space contour back to a dPath string in path units. */
 export function contourToDPath(points: { x: number; y: number }[], closed: boolean, mmPerUnit: number): string {
   if (points.length === 0) return "";
-  const u = (v: number) => +(v / mmPerUnit).toFixed(4);
+  const m = mmPerUnit > 0 ? mmPerUnit : 1; // non-positive would divide to Infinity
+  const u = (v: number) => +(v / m).toFixed(4);
   const cmds = points.map((p, i) => `${i === 0 ? "M" : "L"}${u(p.x)},${u(p.y)}`);
   if (closed) cmds.push("Z");
   return cmds.join(" ");
@@ -170,10 +171,11 @@ function ringsBoundsUnits(
   mmPerUnit: number,
 ): { minX: number; minY: number; maxX: number; maxY: number } {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const m = mmPerUnit > 0 ? mmPerUnit : 1; // non-positive would divide to Infinity
   for (const r of rings) {
     for (const p of r) {
-      const x = p.x / mmPerUnit;
-      const y = p.y / mmPerUnit;
+      const x = p.x / m;
+      const y = p.y / m;
       if (x < minX) minX = x;
       if (y < minY) minY = y;
       if (x > maxX) maxX = x;
