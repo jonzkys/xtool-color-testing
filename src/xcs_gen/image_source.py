@@ -20,8 +20,12 @@ def image_to_grid(path: str, cols: int, rows: int) -> list[list[float]]:
     """
     img = Image.open(path)
 
-    # Composite RGBA onto white background so transparency → white (skip)
-    if img.mode == "RGBA":
+    # Composite any alpha-bearing mode (RGBA, LA, PA, or palette-with-transparency)
+    # onto white so transparent pixels → white (skip) regardless of their stored
+    # colour. A bare convert("L") would drop the alpha and keep a transparent
+    # black pixel as brightness 0.0 = maximum laser energy.
+    if img.mode in ("RGBA", "LA", "PA") or (img.mode == "P" and "transparency" in img.info):
+        img = img.convert("RGBA")
         bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
         bg.paste(img, mask=img.split()[3])
         img = bg

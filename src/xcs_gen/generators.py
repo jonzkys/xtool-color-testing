@@ -878,17 +878,7 @@ def generate_from_image(
 
     # Resolve grid resolution
     aspect = image_aspect_ratio(image_path)
-    if cols is None and rows is None:
-        # Default: compute from width at beam-width resolution, cap at 1000
-        cols = min(1000, int(total_width / 0.03))
-        rows = int(cols / aspect)
-    elif cols is None:
-        cols = int(rows * aspect)
-    elif rows is None:
-        rows = int(cols / aspect)
-
-    cols = max(1, cols)
-    rows = max(1, rows)
+    cols, rows = _resolve_grid_dims(aspect, cols, rows, total_width)
 
     # Load image and convert to brightness grid
     grid = image_to_grid(image_path, cols, rows)
@@ -941,6 +931,25 @@ def generate_from_image(
             project.elements.append(elem)
 
     return project
+
+
+def _resolve_grid_dims(
+    aspect: float, cols: int | None, rows: int | None, total_width: float
+) -> tuple[int, int]:
+    """Resolve (cols, rows) for the image grid from whichever axis the caller gave.
+
+    Auto (both None) derives a beam-width resolution from the output width.
+    """
+    if cols is None and rows is None:
+        # Cap BOTH axes: a tall, narrow image (tiny aspect) would otherwise blow
+        # rows up to millions and build a billion-cell project (OOM/hang).
+        cols = min(1000, int(total_width / 0.03))
+        rows = min(1000, int(cols / aspect))
+    elif cols is None:
+        cols = int(rows * aspect)
+    elif rows is None:
+        rows = int(cols / aspect)
+    return max(1, cols), max(1, rows)
 
 
 def _label_indices(n: int) -> list[int]:
