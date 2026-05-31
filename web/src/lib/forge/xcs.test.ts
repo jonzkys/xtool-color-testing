@@ -10,6 +10,7 @@ import {
   extractContourGeometry,
   calibrateMmPerUnit,
   contourToDPath,
+  primitiveDPath,
 } from "./xcs";
 
 const SAMPLE = resolve(__dirname, "../../../../samples/xcs/incise_emboss.xcs");
@@ -190,6 +191,47 @@ describe("applyStageParams (new fields)", () => {
     expect(c.zLayers).toBe(8);
     expect(c.zDecline).toBe(0.05);
     expect(c.sliceNumber).toBe(256);
+  });
+});
+
+describe("primitiveDPath geometry", () => {
+  // bbox over ALL numeric coords (on-curve + control points all lie within the
+  // shape's extent for these constructions)
+  const bbox = (dp: string) => {
+    const nums = (dp.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+    const xs = nums.filter((_, i) => i % 2 === 0);
+    const ys = nums.filter((_, i) => i % 2 === 1);
+    return { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+  };
+  const disp = (o: Record<string, unknown>) => o as unknown as Parameters<typeof primitiveDPath>[0];
+
+  it("sharp rect at scale 1 → local bbox = w×h, closed", () => {
+    const dp = primitiveDPath(disp({ type: "RECT", width: 5, height: 10, scale: { x: 1, y: 1 } }))!;
+    expect(dp.endsWith("Z")).toBe(true);
+    expect(bbox(dp).w).toBeCloseTo(5, 3);
+    expect(bbox(dp).h).toBeCloseTo(10, 3);
+  });
+  it("scale ≠ 1 → path authored in units = mm / scale", () => {
+    const dp = primitiveDPath(disp({ type: "RECT", width: 5, height: 10, scale: { x: 0.5, y: 0.5 } }))!;
+    expect(bbox(dp).w).toBeCloseTo(10, 3);  // 5 / 0.5
+    expect(bbox(dp).h).toBeCloseTo(20, 3);  // 10 / 0.5
+  });
+  it("rounded rect uses cubic beziers, stays within bbox, closed", () => {
+    const dp = primitiveDPath(disp({ type: "RECT", width: 10, height: 10, radius: 2, scale: { x: 1, y: 1 } }))!;
+    expect(dp).toContain("C");
+    expect(dp.endsWith("Z")).toBe(true);
+    expect(bbox(dp).w).toBeCloseTo(10, 2);
+    expect(bbox(dp).h).toBeCloseTo(10, 2);
+  });
+  it("ellipse/circle → cubic beziers, bbox = w×h", () => {
+    const dp = primitiveDPath(disp({ type: "CIRCLE", width: 8, height: 8, scale: { x: 1, y: 1 } }))!;
+    expect(dp).toContain("C");
+    expect(bbox(dp).w).toBeCloseTo(8, 2);
+    expect(bbox(dp).h).toBeCloseTo(8, 2);
+  });
+  it("zero-size / unknown type → undefined", () => {
+    expect(primitiveDPath(disp({ type: "RECT", width: 0, height: 5 }))).toBeUndefined();
+    expect(primitiveDPath(disp({ type: "STAR", width: 5, height: 5 }))).toBeUndefined();
   });
 });
 

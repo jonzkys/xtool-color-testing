@@ -36,22 +36,32 @@ const KAPPA = 0.5522847498307936; // bezier circle constant
 const fmtNum = (v: number) => String(Number(v.toFixed(4)));
 
 /**
- * Synthesize a closed dPath (in the display's local mm space) for primitive
- * shapes (RECT / CIRCLE / ELLIPSE) that carry no `dPath`. The display's
- * x/y/offset + scale already place this local geometry on the canvas, exactly
- * as for a PATH's dPath. Returns undefined for unknown / zero-size shapes.
+ * Synthesize a closed dPath (in the display's path-unit space) for primitive
+ * shapes (RECT / CIRCLE / ELLIPSE) that carry no `dPath`. The pipeline treats
+ * a dPath as path-units that get multiplied by the display's `scale.x` to
+ * reach canvas-mm (`canvasX = unit·scale.x + offsetX`). `width`/`height` are
+ * canvas-mm (post-scale), so the synthesized path must be authored in
+ * path-units = canvas-mm ÷ scale. Returns undefined for unknown / zero-size shapes.
  * NOTE: circle/ellipse use the width/height bounding box (inferred — no sample
  * to verify against yet); rotation (`angle`) is not applied (a known limit,
  * same as for PATH displays).
  */
-function primitiveDPath(disp: RawDisplay): string | undefined {
-  const w = typeof disp.width === "number" ? disp.width : 0;
-  const h = typeof disp.height === "number" ? disp.height : 0;
-  if (!(w > 0) || !(h > 0)) return undefined;
+export function primitiveDPath(disp: RawDisplay): string | undefined {
+  const wMm = typeof disp.width === "number" ? disp.width : 0;
+  const hMm = typeof disp.height === "number" ? disp.height : 0;
+  if (!(wMm > 0) || !(hMm > 0)) return undefined;
+  // width/height/radius are canvas-mm (post-scale); the pipeline treats a dPath
+  // as path-units multiplied by the display's scale to reach mm. So author the
+  // synthesized path in path-units = canvas-mm / scale.
+  const sc = disp.scale as { x?: number; y?: number } | undefined;
+  const sx = typeof sc?.x === "number" && sc.x !== 0 ? sc.x : 1;
+  const sy = typeof sc?.y === "number" && sc.y !== 0 ? sc.y : 1;
+  const w = wMm / sx;
+  const h = hMm / sy;
   const type = (disp.type ?? "").toUpperCase();
   const f = fmtNum;
   if (type === "RECT") {
-    let r = typeof disp.radius === "number" ? disp.radius : 0;
+    let r = typeof disp.radius === "number" ? disp.radius / sx : 0;
     r = Math.max(0, Math.min(r, Math.min(w, h) / 2));
     if (r <= 0) return `M0,0 L${f(w)},0 L${f(w)},${f(h)} L0,${f(h)} Z`;
     const k = r * KAPPA;
