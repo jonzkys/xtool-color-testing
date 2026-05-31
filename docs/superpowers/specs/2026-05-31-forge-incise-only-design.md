@@ -38,7 +38,9 @@ change.**
   `perimeter`.
 - The left-panel object lists reflect reality: no phantom (no-geometry)
   objects, no mislabeling.
-- `samples/xcs/incise_emboss.xcs` (emboss + incise) keeps working unchanged.
+- `samples/xcs/incise_emboss.xcs` (emboss + incise) keeps working — emboss
+  preserved, source incise removed — with **corrected kerf calibration**
+  (`mmPerUnit ≈ 0.848` via `scale.x`, not the buggy `0.2375`).
 
 ## Non-goals (this change)
 
@@ -67,12 +69,24 @@ canvas path** (`73b08ff7`, a 17-subpath compound). Consequences:
 | 5 | silent scale risk | `xcs.ts:129-143` | Calibration needs a job `perimeter`; `test-text.xcs` has `perimeter: null` (`material: 0`), so it falls back to `mmPerUnit = 1.0`, **not confident** + a warning (`pipeline.ts:48-49`). |
 | 6 | stale copy | `ForgePage.tsx:264` | Idle screen says the file "must contain one emboss (RELIEF) object". |
 
-**Scale recovery.** The canvas is already in mm and `canvasX = unit·scale +
-offset` (`xcs.ts:246-247`). The selected display's `scale.x` is therefore
-the authoritative units→mm factor. `test-text.xcs` has `scale = (1.0, 1.0)`
-(so `1.0` is in fact correct); the confident-calibration reference
-`incise_emboss.xcs` has `scale.x = 0.848`, matching its perimeter-derived
-value. This gives an always-available calibration fallback.
+**Scale recovery (and a calibration bug found during planning).** The canvas
+is in mm and `canvasX = unit·scale + offset` (`xcs.ts:246-247`), so the
+selected display's `scale.x` IS the units→mm factor — confirmed by
+`width / flattened-bbox-width` (`incise_emboss.xcs`: both `= 0.848`, agreeing
+to 4 sig figs). The **current perimeter-based calibration is geometrically
+wrong**: on `incise_emboss.xcs` it yields `0.2375` (3.57× off), because
+`RELIEF_PROCESS.perimeter` (59.69 mm) measures the *emboss*, not the incise
+contour — 59.69 mm is too short to even be a 27×33 mm outline's perimeter.
+Since an exported offset lands physically as `(beamWidth / mmPerUnit)·scale.x`
+mm, the correct `mmPerUnit` is `scale.x`; the perimeter method makes
+emboss-file kerf bands **~3.57× too wide**. `test-text.xcs` is unaffected
+(`scale.x = 1.0`, no perimeter → `1.0` is correct under any method).
+
+**Decision (2026-05-31, during planning): fix calibration globally.**
+`scale.x` (with a `width/bbox` cross-check fallback) becomes the **primary**
+source; the perimeter method is **removed**. This corrects emboss-file band
+widths and requires re-verification in xTool Creative Space before cutting
+brass.
 
 **Disjoint-island handling.** All 17 subpaths (incl. `sub#8 ⊃ sub#11` ring+dot
 @ ~36,47 and `sub#9 ⊃ sub#12` @ ~80,47) belong to the one target.
@@ -125,20 +139,22 @@ display lists from it.
   longer selectable, so it becomes belt-and-braces.
 - `canExport` (`:215-219`) is unchanged and clears automatically.
 
-### 4. Calibration fallback — `xcs.ts:129-143`
+### 4. Calibration — `xcs.ts:129-143` (rewritten; global fix)
 
-Resolve `mmPerUnit` via the first source that yields a positive value, all
-marked **confident** except the last:
+`calibrateMmPerUnit` looks up the selected canvas display by `incise.id` in
+`raw.canvas[0].displays` and resolves `mmPerUnit` from the first usable
+source (all **confident** except the last). The **perimeter method is
+removed** — it conflated the emboss perimeter with the incise contour:
 
-1. job `perimeter / flattened-path-perimeter` (current behaviour);
-2. **selected display's `scale.x`** (when uniform and positive);
-3. **display `width` / flattened-bbox width** (curve-aware bbox from the
-   already-flattened contour);
-4. `1.0`, **not confident** + existing warning.
+1. **selected display's `scale.x`** — path-units → bed-mm; used when positive
+   and uniform (`scale.y` absent or `≈ scale.x`);
+2. **display `width` / flattened-bbox width** — curve-aware bbox from the
+   already-flattened contour subpaths; handles a missing/anisotropic scale;
+3. `1.0`, **not confident** + existing warning + manual override.
 
-`calibrateMmPerUnit` gains access to the selected canvas display (look up by
-`incise.id` in `raw.canvas[0].displays`). A unit test asserts (2) reproduces
-(1) on `incise_emboss.xcs` before we rely on it.
+A unit test asserts (1) and (2) agree on `incise_emboss.xcs` (`≈ 0.848`,
+within 1%) and that `incise_emboss` calibrates to `≈ 0.848` (not the old
+`0.2375`). The `mmPerUnitOverride` path (`pipeline.ts:46-47`) is unchanged.
 
 ### 5. UI panels + labels — `ForgePage.tsx:303-332`
 
@@ -173,16 +189,19 @@ regardless of emboss; for an incise-only cut it keeps the part body unburned).
   bands whose geometry includes loops near **both** circle centroids
   (~36,47 and ~80,47); Export is enabled; round-trip preserves the
   non-target device entries.
-- **`incise_emboss.xcs`:** behaviour unchanged — still exports, emboss
-  BITMAP + model preserved, calibration still confident from `perimeter`.
+- **`incise_emboss.xcs`:** still exports, emboss BITMAP + model preserved,
+  source incise removed; calibration now confident at `mmPerUnit ≈ 0.848`
+  (`scale.x`), **not** the old `0.2375` — kerf bands resize accordingly
+  (re-verify in xTool).
 
 ## Testing (vitest, colocated)
 
 - `xcs.test.ts`: parse `test-text.xcs` → assert 1 geometry-bearing incise
   target, 0 emboss, score layers classified `score`, phantom entries absent
-  from target/preserved lists. Calibration: fallback 2 (`scale.x`) reproduces
-  the `perimeter`-based value on `incise_emboss.xcs`; `test-text.xcs`
-  calibrates **confident**.
+  from target/preserved lists. Calibration: `incise_emboss.xcs` calibrates
+  **confident at `≈ 0.848`** (replacing the old perimeter assertion), and the
+  `width/bbox` value agrees within 1%; `test-text.xcs` calibrates **confident
+  at `≈ 1.0`** with no not-confident warning.
 - `pipeline.test.ts`: run on `test-text.xcs`'s target → assert non-empty
   seed/deepen/clean and that generated ring sets contain loops near each
   circle centroid (the disjoint-island guard). No `mmPerUnit=1.0/not-confident`
@@ -204,15 +223,20 @@ regardless of emboss; for an incise-only cut it keeps the part body unburned).
   centroids + the browser preview review. If it fails, fixing region
   reconstruction is **in scope** ("cuts every black element" is the success
   criterion).
-- **`scale.x` ≠ `mmPerUnit` assumption.** Guarded by the cross-check test on
-  `incise_emboss.xcs` before fallback 2 is trusted; if it diverges, prefer
-  fallback 3 (width/bbox).
+- **Global calibration change resizes existing output.** Switching to
+  `scale.x` makes emboss-file kerf bands ~3.57× narrower than the shipped
+  (buggy) behaviour. The `width/bbox` cross-check test guards that `scale.x`
+  is right (both `≈ 0.848`), but the *physical* result must be re-verified in
+  xTool Creative Space on brass before relying on it. Flagged in the
+  changelog so the change isn't silent.
 
 ## Changelog
 
-Minor entry `changelog/2026-05-31-forge-incise-only.md`: "Forge accepts
-incise-only files" — short summary, no body (visible enhancement to an
-existing page).
+Minor entry `changelog/2026-05-31-forge-incise-only.md` covering **both**
+visible changes: (1) Forge now accepts incise-only files (no emboss
+required); (2) kerf calibration corrected to the object's true scale — bands
+on emboss files are no longer ~3.57× too wide (re-verify cuts). A short body
+is warranted here because the calibration fix changes existing output.
 
 ## Follow-ups (deferred, not this change)
 
