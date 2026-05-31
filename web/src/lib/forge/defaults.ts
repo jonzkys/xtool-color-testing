@@ -3,7 +3,7 @@ import type { ForgeConfig } from "./types";
 
 /** Sensible default profile per the spec. Layer ranges span 0..256. */
 export const DEFAULT_CONFIG: ForgeConfig = {
-  beamWidthMm: 0.05,
+  beamWidthMm: 0.03, // F2 Ultra spot ≈ 30µm
   sideMode: "outside",
   mmPerUnitOverride: null,
   seed: {
