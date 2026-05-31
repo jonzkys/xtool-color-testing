@@ -10,7 +10,7 @@ export type ForgeRequest =
   | { type: "export"; inciseId: string; config: ForgeConfig };
 
 export type ForgeResponse =
-  | { type: "parsed"; objects: XcsObject[]; embossIds: string[]; inciseIds: string[] }
+  | { type: "parsed"; objects: XcsObject[]; targetIds: string[]; preservedIds: string[] }
   | { type: "generated"; result: PipelineResult }
   | { type: "exported"; buf: ArrayBuffer }
   | { type: "error"; message: string };
@@ -27,8 +27,8 @@ self.onmessage = (e: MessageEvent<ForgeRequest>) => {
       post({
         type: "parsed",
         objects: parsed.objects,
-        embossIds: parsed.emboss.map((o) => o.id),
-        inciseIds: parsed.incise.map((o) => o.id),
+        targetIds: parsed.targets.map((o) => o.id),
+        preservedIds: parsed.preserved.map((o) => o.id),
       });
       return;
     }
