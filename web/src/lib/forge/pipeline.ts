@@ -103,7 +103,7 @@ export function runPipeline(
 
   const stats: DebugStats = {
     mmPerUnit,
-    mmPerUnitConfident: cal.confident || cfg.mmPerUnitOverride != null,
+    mmPerUnitConfident: cal.confident || override != null,
     pathCounts,
     totalPaths: ordered.length,
     warnings,

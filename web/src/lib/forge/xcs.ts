@@ -54,7 +54,6 @@ interface RawEntry {
 }
 interface RawGroup {
   mode?: string;
-  data?: Record<string, { perimeter?: number }>;
   displays?: unknown;
 }
 
