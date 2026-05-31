@@ -241,6 +241,119 @@ git commit -m "feat(forge): pure depth-stat helper for Z-descent"
 
 ---
 
+## Task 2B: Lib — deepen param linking (copy from first deepen)
+
+**Files:** Modify `web/src/lib/forge/types.ts`, `web/src/lib/forge/defaults.ts`, `web/src/lib/forge/config.ts`, `web/src/lib/forge/forge.worker.ts`, `web/src/lib/forge/xcs.ts` (1-line comment); Test `web/src/lib/forge/config.test.ts`.
+
+- [ ] **Step 1: Write the failing test** (add to `config.test.ts`)
+
+```ts
+import { resolveStageParams } from "./config";
+import { DEFAULT_CONFIG } from "./defaults";
+
+describe("resolveStageParams (deepen linking)", () => {
+  const names = DEFAULT_CONFIG.deepen.groups.map((g) => g.name);
+  const [A, B, C, D] = names;
+
+  it("copies the first deepen group's params to later linked groups", () => {
+    const cfg = { ...DEFAULT_CONFIG, stageParams: { [A]: { power: 77, speed: 120 } } };
+    const r = resolveStageParams(cfg);
+    expect(r[B]).toEqual({ power: 77, speed: 120 });
+    expect(r[C]).toEqual({ power: 77, speed: 120 });
+    expect(r[D]).toEqual({ power: 77, speed: 120 });
+    expect(r[A]).toEqual({ power: 77, speed: 120 }); // first group unchanged
+  });
+
+  it("leaves an unlinked deepen group with its own params", () => {
+    const groups = DEFAULT_CONFIG.deepen.groups.map((g, i) =>
+      i === 1 ? { ...g, copyParamsFromFirst: false } : g);
+    const cfg = {
+      ...DEFAULT_CONFIG,
+      deepen: { ...DEFAULT_CONFIG.deepen, groups },
+      stageParams: { [A]: { power: 77 }, [B]: { power: 5 } },
+    };
+    const r = resolveStageParams(cfg);
+    expect(r[B]).toEqual({ power: 5 });   // kept its own
+    expect(r[C]).toEqual({ power: 77 });  // still linked → A's
+  });
+
+  it("a linked group with no first-group overrides resolves to empty", () => {
+    const r = resolveStageParams(DEFAULT_CONFIG);
+    expect(r[B]).toEqual({});
+  });
+});
+```
+
+- [ ] **Step 2: Run → expect FAIL** — `cd web && npx vitest run src/lib/forge/config.test.ts -t "resolveStageParams"`
+
+- [ ] **Step 3: `types.ts` — add the flag to `DeepenGroup`**
+
+```ts
+export interface DeepenGroup {
+  name: string;
+  fromLayer: number;
+  toLayer: number;
+  widthMultiplier: number;
+  enabled: boolean;
+  /** Deepen groups after the first default to copying the first group's
+   *  laser params; undefined is treated as true for non-first groups. */
+  copyParamsFromFirst?: boolean;
+}
+```
+
+- [ ] **Step 4: `defaults.ts` — set the flag on B/C/D**
+
+In `DEFAULT_CONFIG.deepen.groups`, add `copyParamsFromFirst: true` to the three groups after the first (CUT_04/05/06). Leave the first (CUT_03) without it.
+
+- [ ] **Step 5: `config.ts` — add `resolveStageParams`**
+
+```ts
+import type { ForgeConfig, StageParams } from "./types";
+
+/**
+ * Expand the per-stage override map for export: every deepen group after the
+ * first whose `copyParamsFromFirst` is set (default true) inherits the FIRST
+ * deepen group's overrides. Pure — returns a new map; never mutates config.
+ */
+export function resolveStageParams(config: ForgeConfig): Record<string, StageParams> {
+  const out: Record<string, StageParams> = { ...config.stageParams };
+  const groups = config.deepen.groups;
+  if (groups.length === 0) return out;
+  const firstName = groups[0].name;
+  for (let i = 1; i < groups.length; i++) {
+    const g = groups[i];
+    if (g.copyParamsFromFirst ?? true) out[g.name] = config.stageParams[firstName] ?? {};
+  }
+  return out;
+}
+```
+
+(Update the existing `import type { ForgeConfig } from "./types";` to also import `StageParams`.)
+
+- [ ] **Step 6: `forge.worker.ts` — use resolved params on export**
+
+Change the `export` handler's `buildGeneratedXcs(...)` call to pass `resolveStageParams(config)` instead of `config.stageParams`:
+
+```ts
+      const doc = buildGeneratedXcs(parsed, msg.inciseId, paths, stats.mmPerUnit, resolveStageParams(msg.config));
+```
+
+Add the import: `import { resolveStageParams } from "./config";`
+
+- [ ] **Step 7: `xcs.ts` — document the INTAGLIO-key assumption** (review nit)
+
+Add a one-line comment to `readStageParams` noting it reads the `INTAGLIO` customize block; `VECTOR_CUTTING` incise targets (not used in the current F2 Ultra Embossment workflow) would yield `undefined` params.
+
+- [ ] **Step 8: Verify + commit**
+
+Run: `cd web && npx tsc --noEmit && npx vitest run src/lib/forge/`
+```bash
+git add web/src/lib/forge/types.ts web/src/lib/forge/defaults.ts web/src/lib/forge/config.ts web/src/lib/forge/config.test.ts web/src/lib/forge/forge.worker.ts web/src/lib/forge/xcs.ts
+git commit -m "feat(forge): deepen groups copy params from the first deepen group"
+```
+
+---
+
 ## Task 3: UI — ForgeStageParams overhaul + ForgePage wiring
 
 **Files:** Modify `web/src/components/forge/ForgeStageParams.tsx`, `web/src/pages/ForgePage.tsx`; Test `web/src/components/forge/ForgeStageParams.test.tsx`.
@@ -304,6 +417,7 @@ Implement per the Context above:
 - When `profile` is null, fall back to the current `FIELDS` NumberField grid (minus zLayers — see below) so nothing breaks off-F2.
 - Replace the single "Z layers" NumberField with a **Z-descent group**: a checkbox "Descend at Z-axis" (`zAxisMove`, value = override ?? source ?? false); when true, show "Every N layers" (`zLayers`), "By mm" (`zDecline`, step 0.01), "Slices" (`sliceNumber`) as numeric fields, and two read-only stats computed with `descentDepthMm` (import from `../../lib/forge/depth`): **Total depth** = `descentDepthMm(slices, everyN, byMm)` and **Depth @ 256** = `descentDepthMm(256, everyN, byMm)`, formatted to 2–3 dp + " mm".
 - Add a **"Reset to source"** button per stage that does `onChange({ ...config, stageParams: { ...config.stageParams, [group]: {} } })` (or deletes the key).
+- **Deepen linking:** when the active stage is a deepen group **after the first** (its index in `config.deepen.groups` > 0), render a checkbox **"Copy from first deepen stage"** whose checked state = `group.copyParamsFromFirst ?? true`. While checked: the param widgets show the FIRST deepen group's effective values (`config.stageParams[firstDeepenName]?.[field] ?? sourceParams?.[field]`) and are **disabled**; the "Reset to source" button is hidden. Toggling the checkbox writes `copyParamsFromFirst` onto that group via `onChange` (update `config.deepen.groups[i]`); unchecked → widgets editable against the stage's own overrides. (Export already honours this via `resolveStageParams` from Task 2B — the UI only needs to reflect/drive the flag.)
 - Update the caption: "overrides apply on export; cleared fields use the source incise value."
 
 - [ ] **Step 4: Wire ForgePage to pass the selected target's source params**
@@ -364,6 +478,10 @@ The opaque "Z layers" field is gone. In its place is xStudio's actual model —
 **Descend at Z-axis** with **every N layers** and **by N mm** — plus two live
 readouts: **total depth** and **depth @ 256 layers**, so you can sanity-check
 the expected engraving depth before cutting.
+
+And the deepen stages now share settings by default: B–D copy the first deepen
+stage's params (uncheck "Copy from first deepen stage" on any of them to dial
+it in separately).
 ```
 
 - [ ] **Step 2: Verify build + commit**

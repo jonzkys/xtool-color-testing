@@ -155,6 +155,28 @@ the robust way: widgets *display* source-seeded values but storage stays
 newly-uploaded file's source. "Reset to source" clears a stage's overrides.
 (Approach A — a per-field override toggle — was the alternative; not chosen.)
 
+### 7. Deepen param linking (added 2026-05-31)
+
+The deepen stages (`CUT_03_DEEPEN_A` … `CUT_06_DEEPEN_D`) usually want the same
+laser params — only the width multiplier differs. So each deepen group **after
+the first** gets a **"Copy from first deepen stage"** checkbox, **checked by
+default**:
+
+- **Checked (default):** the stage's param widgets are pre-populated from — and
+  locked to — the **first** deepen group's effective params (its overrides over
+  the source). The widgets render disabled; the checkbox is the only control.
+- **Unchecked:** the stage edits its own params independently (override ↔
+  source, like any other stage).
+
+**Model.** Add `copyParamsFromFirst?: boolean` to `DeepenGroup` (default `true`
+for B/C/D, absent/`false` for A in `DEFAULT_CONFIG`). On **export**, a pure
+`resolveStageParams(config)` helper expands the links — for each later deepen
+group with the flag set, `effective[group.name] = config.stageParams[firstDeepenName] ?? {}`
+— and the worker passes the resolved map to `buildGeneratedXcs`
+(`buildGeneratedXcs` itself is unchanged). In the **UI**, when the active stage
+is a linked deepen group, `ForgeStageParams` shows the first deepen group's
+values in disabled widgets and renders the checkbox.
+
 ## Non-goals
 
 - No change to geometry/stages or the deepen layer-range table.
