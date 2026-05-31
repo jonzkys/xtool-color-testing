@@ -29,9 +29,10 @@ import { ForgeDebugPanel } from "../components/forge/ForgeDebugPanel";
 import { ForgeStageParams } from "../components/forge/ForgeStageParams";
 
 // Bumped v1 → v2 when the default config shape/values changed (beam width
-// 0.05→0.03, deepen groups dropped `fromLayer`, renamed default groups). A new
-// key discards stale saved configs so users pick up the corrected defaults.
-const CONFIG_LS_KEY = "forge.config.v2";
+// 0.05→0.03, deepen groups dropped `fromLayer`, renamed default groups), then
+// v2 → v3 for the new `optimizeScanAngle` field. A new key discards stale saved
+// configs so users pick up the corrected defaults.
+const CONFIG_LS_KEY = "forge.config.v3";
 
 /** Load the saved config from localStorage, merged onto defaults so new fields
  *  (and the deepen group list) survive older saves. */
@@ -369,7 +370,7 @@ export function ForgePage() {
                 visible={visible}
                 onToggleVisible={(c) => setVisible((v) => ({ ...v, [c]: !v[c] }))}
               />
-              <ForgeDebugPanel stats={result?.stats ?? null} />
+              <ForgeDebugPanel stats={result?.stats ?? null} optimizeScanAngle={config.optimizeScanAngle} />
             </div>
 
             {/* BOTTOM (full width): per-stage laser params */}

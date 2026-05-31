@@ -95,6 +95,10 @@ export interface ForgeConfig {
   /** Per-stage laser-param overrides, keyed by groupName (e.g. CUT_01_SEED).
    *  Any field left undefined inherits the source incise object's value. */
   stageParams: Record<string, StageParams>;
+  /** When true, write the speed-optimal raster scan angle to each generated
+   *  INTAGLIO entry's `customize.processAngle` on export. Opt-in (experimental
+   *  — the exact processAngle convention is xTool's). */
+  optimizeScanAngle: boolean;
 }
 
 /** Rough per-stage laser params. All optional — undefined = inherit source. */
@@ -148,6 +152,9 @@ export interface DebugStats {
   pathCounts: Record<GeneratedClass, number>;
   totalPaths: number;
   warnings: string[];
+  /** Speed-optimal raster scan angle (deg) computed from the source contour;
+   *  written to `processAngle` on export only when `optimizeScanAngle` is on. */
+  scanAngleDeg: number;
 }
 
 export interface PipelineResult {

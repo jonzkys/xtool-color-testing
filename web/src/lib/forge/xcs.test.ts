@@ -370,6 +370,32 @@ describe("buildGeneratedXcs round-trip", () => {
   });
 });
 
+describe("scan-angle on export", () => {
+  it("writes processAngle on generated entries when an angle is supplied", () => {
+    const parsed = parseXcsFile(loadSample());
+    const incise = findInciseObjects(parsed)[0];
+    const { paths, stats } = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+    expect(typeof stats.scanAngleDeg).toBe("number");
+    const out = buildGeneratedXcs(parsed, incise.id, paths, stats.mmPerUnit, resolveStageParams(DEFAULT_CONFIG), 37) as {
+      device: { data: { value: Array<[string, { displays: { value: Array<[string, { data: { INTAGLIO: { parameter: { customize: Record<string, number> } } } }]> } }]> } };
+    };
+    const entries = out.device.data.value.flatMap(([, g]) => g.displays.value).filter(([id]) => id.startsWith("forge-"));
+    expect(entries.length).toBeGreaterThan(0);
+    for (const [, e] of entries) expect(e.data.INTAGLIO.parameter.customize.processAngle).toBe(37);
+  });
+  it("leaves processAngle untouched (source value) when no angle is supplied", () => {
+    const parsed = parseXcsFile(loadSample());
+    const incise = findInciseObjects(parsed)[0];
+    const { paths, stats } = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+    const out = buildGeneratedXcs(parsed, incise.id, paths, stats.mmPerUnit, resolveStageParams(DEFAULT_CONFIG)) as {
+      device: { data: { value: Array<[string, { displays: { value: Array<[string, { data: { INTAGLIO: { parameter: { customize: Record<string, number> } } } }]> } }]> } };
+    };
+    const entries = out.device.data.value.flatMap(([, g]) => g.displays.value).filter(([id]) => id.startsWith("forge-"));
+    // source incise_emboss INTAGLIO processAngle is 15
+    for (const [, e] of entries) expect(e.data.INTAGLIO.parameter.customize.processAngle).toBe(15);
+  });
+});
+
 describe("deepen layer count on export", () => {
   it("each deepen display's sliceNumber is its own toLayer (not the source's slice count)", () => {
     const parsed = parseXcsFile(loadSample());

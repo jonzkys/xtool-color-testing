@@ -44,6 +44,11 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
             <NumberField value={config.mmPerUnitOverride ?? 0} step={0.0001} min={0}
               onChange={(v) => patch({ mmPerUnitOverride: v > 0 ? v : null })} />
           </Field>
+          <label className="col-span-2 flex items-center gap-2">
+            <input type="checkbox" checked={config.optimizeScanAngle}
+              onChange={(e) => patch({ optimizeScanAngle: e.target.checked })} />
+            Optimize scan angle (experimental)
+          </label>
         </div>
       </Card>
 

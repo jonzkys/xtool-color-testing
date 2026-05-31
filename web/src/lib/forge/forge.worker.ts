@@ -40,7 +40,14 @@ self.onmessage = (e: MessageEvent<ForgeRequest>) => {
     }
     if (msg.type === "export") {
       const { paths, stats } = runPipeline(parsed, msg.inciseId, msg.config);
-      const doc = buildGeneratedXcs(parsed, msg.inciseId, paths, stats.mmPerUnit, resolveStageParams(msg.config));
+      const doc = buildGeneratedXcs(
+        parsed,
+        msg.inciseId,
+        paths,
+        stats.mmPerUnit,
+        resolveStageParams(msg.config),
+        msg.config.optimizeScanAngle ? stats.scanAngleDeg : undefined,
+      );
       const buf = exportXcs(doc);
       post({ type: "exported", buf }, [buf]);
       return;

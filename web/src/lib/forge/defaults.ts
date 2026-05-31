@@ -35,4 +35,5 @@ export const DEFAULT_CONFIG: ForgeConfig = {
     passes: 1,
   },
   stageParams: {},
+  optimizeScanAngle: false,
 };

@@ -352,6 +352,7 @@ export function buildGeneratedXcs(
   paths: GeneratedPath[],
   mmPerUnit: number,
   stageParams: Record<string, import("./types").StageParams> = {},
+  scanAngleDeg?: number,
 ): unknown {
   const raw = JSON.parse(JSON.stringify(parsed.raw)) as {
     canvas: Array<{ displays: RawDisplay[]; layerData?: Record<string, LayerDataEntry> }>;
@@ -448,6 +449,12 @@ export function buildGeneratedXcs(
       baseEntry.type = "PATH";
       baseEntry.isFill = true;
       applyStageParams(baseEntry, stageParams[path.groupName]);
+      // Global speed-optimal scan angle (same for every generated display).
+      if (typeof scanAngleDeg === "number" && Number.isFinite(scanAngleDeg)) {
+        const customize = (baseEntry.data as Record<string, { parameter?: { customize?: Record<string, unknown> } }> | undefined)
+          ?.INTAGLIO?.parameter?.customize;
+        if (customize) customize.processAngle = Math.round(scanAngleDeg);
+      }
       groupPair[1].displays.value.push([id, baseEntry]);
     }
   }
