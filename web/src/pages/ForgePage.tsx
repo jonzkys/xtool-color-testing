@@ -28,7 +28,12 @@ import { ForgeControls } from "../components/forge/ForgeControls";
 import { ForgeDebugPanel } from "../components/forge/ForgeDebugPanel";
 import { ForgeStageParams } from "../components/forge/ForgeStageParams";
 
-const CONFIG_LS_KEY = "forge.config.v1";
+// Bumped v1 → v2 when the default config shape/values changed (beam width
+// 0.05→0.03, deepen groups dropped `fromLayer`, renamed default groups), then
+// v2 → v3 for the new `optimizeScanAngle` field, v3 → v4 for the new
+// `manualScanAngleDeg` field. A new key discards stale saved configs so users
+// pick up the corrected defaults.
+const CONFIG_LS_KEY = "forge.config.v4";
 
 /** Load the saved config from localStorage, merged onto defaults so new fields
  *  (and the deepen group list) survive older saves. */
@@ -62,8 +67,8 @@ type State =
       kind: "ready";
       fileName: string;
       objects: XcsObject[];
-      embossIds: string[];
-      inciseIds: string[];
+      targetIds: string[];
+      preservedIds: string[];
     }
   | { kind: "error"; message: string };
 
@@ -112,10 +117,10 @@ export function ForgePage() {
           kind: "ready",
           fileName,
           objects: msg.objects,
-          embossIds: msg.embossIds,
-          inciseIds: msg.inciseIds,
+          targetIds: msg.targetIds,
+          preservedIds: msg.preservedIds,
         });
-        setSelectedIncise(msg.inciseIds.length === 1 ? msg.inciseIds[0] : null);
+        setSelectedIncise(msg.targetIds.length === 1 ? msg.targetIds[0] : null);
       } else if (msg.type === "generated") {
         setResult(msg.result);
       } else if (msg.type === "exported") {
@@ -200,13 +205,13 @@ export function ForgePage() {
   const validation = useMemo(() => {
     const errors: string[] = [];
     if (state.kind === "ready") {
-      if (state.embossIds.length === 0) errors.push("No emboss-mode (RELIEF) object found.");
-      if (state.inciseIds.length === 0) errors.push("No incise-mode (INTAGLIO) object found.");
-      if (state.inciseIds.length > 1 && !selectedIncise)
-        errors.push("Multiple incise objects — select a target contour.");
+      if (state.targetIds.length === 0)
+        errors.push("No incise contour with usable geometry found.");
+      if (state.targetIds.length > 1 && !selectedIncise)
+        errors.push("Multiple incise contours — select a target.");
       const obj = selectedIncise ? state.objects.find((o) => o.id === selectedIncise) : null;
       if (selectedIncise && !obj?.dPath)
-        errors.push("Selected incise object is not a usable vector/path contour.");
+        errors.push("Selected target is not a usable vector/path contour.");
     }
     const warnings = result?.stats.warnings ?? [];
     return { errors, warnings };
@@ -261,7 +266,7 @@ export function ForgePage() {
         {state.kind === "idle" && (
           <EmptyState
             title="Upload an xTool .xcs"
-            description="The file must contain one emboss (RELIEF) object and one incise (INTAGLIO) contour. The incise contour is used as source geometry to generate staged seed / perforate / deepen / clean cut paths."
+            description="The file needs at least one incise (INTAGLIO) contour — the cut target. Forge converts the selected contour into staged seed / perforate / deepen / clean cut paths; any emboss or score layers are preserved untouched."
           />
         )}
         {state.kind === "loading" && (
@@ -276,7 +281,7 @@ export function ForgePage() {
         )}
 
         {state.kind === "ready" && (
-          <div className="grid grid-cols-[260px_1fr_320px] gap-3">
+          <div className="grid grid-cols-[260px_1fr_320px] items-start gap-3">
             {/* LEFT: validation + object lists */}
             <div className="flex flex-col gap-3 text-xs">
               <Card>
@@ -302,32 +307,45 @@ export function ForgePage() {
               </Card>
               <Card>
                 <CardHeader>
-                  <CardTitle>Emboss objects</CardTitle>
+                  <CardTitle>Cut target</CardTitle>
                 </CardHeader>
-                <div className="p-2 font-mono">
-                  {state.embossIds.map((id) => (
-                    <div key={id}>
-                      {id.slice(0, 8)} · RELIEF
-                    </div>
-                  ))}
+                <div className="p-2 font-mono flex flex-col gap-1">
+                  {state.targetIds.map((id) => {
+                    const o = state.objects.find((x) => x.id === id);
+                    return (
+                      <label key={id} className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="incise"
+                          checked={selectedIncise === id}
+                          onChange={() => setSelectedIncise(id)}
+                        />
+                        {id.slice(0, 8)} · {o?.processingType ?? "INTAGLIO"}
+                      </label>
+                    );
+                  })}
                 </div>
               </Card>
               <Card>
                 <CardHeader>
-                  <CardTitle>Incise objects</CardTitle>
+                  <CardTitle>Preserved layers</CardTitle>
                 </CardHeader>
-                <div className="p-2 font-mono flex flex-col gap-1">
-                  {state.inciseIds.map((id) => (
-                    <label key={id} className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="incise"
-                        checked={selectedIncise === id}
-                        onChange={() => setSelectedIncise(id)}
-                      />
-                      {id.slice(0, 8)} · INTAGLIO
-                    </label>
-                  ))}
+                <div className="p-2 font-mono flex flex-col gap-1 text-[var(--color-ink-muted)]">
+                  {state.preservedIds.length === 0 ? (
+                    <span>None — only the cut target is present.</span>
+                  ) : (
+                    <>
+                      {state.preservedIds.map((id) => {
+                        const o = state.objects.find((x) => x.id === id);
+                        return (
+                          <div key={id}>
+                            {id.slice(0, 8)} · {o?.processingType ?? "—"}
+                          </div>
+                        );
+                      })}
+                      <span className="mt-1 text-[10px]">passed through untouched</span>
+                    </>
+                  )}
                 </div>
               </Card>
             </div>
@@ -343,20 +361,30 @@ export function ForgePage() {
               />
             </div>
 
-            {/* RIGHT: controls + debug */}
-            <div className="flex flex-col gap-3 overflow-y-auto max-h-[calc(100vh-160px)]">
+            {/* RIGHT: controls + debug. No internal scroll/height cap — the
+                page scrolls as one document (main is the scroller), so the
+                full-width Stage-parameters row below is always reachable. */}
+            <div className="flex flex-col gap-3">
               <ForgeControls
                 config={config}
                 onChange={setConfig}
                 visible={visible}
                 onToggleVisible={(c) => setVisible((v) => ({ ...v, [c]: !v[c] }))}
               />
-              <ForgeDebugPanel stats={result?.stats ?? null} />
+              <ForgeDebugPanel stats={result?.stats ?? null} optimizeScanAngle={config.optimizeScanAngle} />
             </div>
 
             {/* BOTTOM (full width): per-stage laser params */}
             <div className="col-span-3">
-              <ForgeStageParams config={config} onChange={setConfig} />
+              <ForgeStageParams
+                config={config}
+                onChange={setConfig}
+                sourceParams={
+                  state.kind === "ready" && selectedIncise
+                    ? state.objects.find((o) => o.id === selectedIncise)?.params
+                    : undefined
+                }
+              />
             </div>
           </div>
         )}

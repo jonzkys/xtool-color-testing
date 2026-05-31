@@ -1,0 +1,830 @@
+{
+  "version": "1.7.24",
+  "name": "Untitled",
+  "canvasId": "01f033f8-6d9b-4ea1-8a1f-7e12bcaae55e",
+  "canvas": [
+    {
+      "id": "01f033f8-6d9b-4ea1-8a1f-7e12bcaae55e",
+      "title": "{panel}1",
+      "hidden": false,
+      "displays": [
+        {
+          "id": "dfd3b3ca-213b-42cf-b5fa-c211e72f6005",
+          "name": null,
+          "type": "RECT",
+          "x": 45.91585419474118,
+          "y": 73.3228712619912,
+          "angle": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          },
+          "skew": {
+            "x": 0,
+            "y": 0
+          },
+          "pivot": {
+            "x": 0,
+            "y": 0
+          },
+          "localSkew": {
+            "x": 0,
+            "y": 0
+          },
+          "offsetX": 45.91585419474118,
+          "offsetY": 73.3228712619912,
+          "lockRatio": false,
+          "isClosePath": true,
+          "zOrder": 5,
+          "sourceId": "f51c78f4-6f76-4179-8d91-a4137ede03c5",
+          "groupTags": [],
+          "groupTag": "9c76bb3f-488a-43ac-9b0f-470fab7a75d2",
+          "layerTag": "#00befe",
+          "layerColor": "#00befe",
+          "visible": true,
+          "originColor": "#000000",
+          "enableTransform": true,
+          "visibleState": true,
+          "lockState": false,
+          "resourceOrigin": "",
+          "customData": {
+            "tabBreaks": {},
+            "startPoint": {}
+          },
+          "rootComponentId": "",
+          "minCanvasVersion": "0.0.0",
+          "alpha": 1,
+          "fill": {
+            "paintType": "color",
+            "visible": false,
+            "color": 0,
+            "alpha": 1
+          },
+          "stroke": {
+            "paintType": "color",
+            "visible": true,
+            "color": 0,
+            "alpha": 1,
+            "width": 1,
+            "cap": "butt",
+            "join": "miter",
+            "miterLimit": 4,
+            "alignment": 0.5
+          },
+          "effects": [],
+          "width": 5.000000000000037,
+          "height": 10,
+          "isFill": true,
+          "lineColor": 16421416,
+          "fillColor": "#f9932b",
+          "radius": 0,
+          "maxRadius": 2.5000000000000187,
+          "data": {
+            "INTAGLIO": {
+              "materialType": "customize",
+              "parameter": {
+                "customize": {
+                  "bitmapEngraveMode": "normal",
+                  "speed": 80,
+                  "density": 100,
+                  "processingLightSource": "blue",
+                  "power": 1,
+                  "repeat": 1,
+                  "bitmapScanMode": "zMode",
+                  "sliceNumber": 100,
+                  "processAngle": 15,
+                  "zAxisMove": false,
+                  "zLayers": 1,
+                  "zDecline": 0.01,
+                  "pulseWidth": 200,
+                  "mopaFrequency": 65
+                }
+              }
+            }
+          },
+          "processingType": "INTAGLIO"
+        },
+        {
+          "id": "f51c78f4-6f76-4179-8d91-a4137ede03c5",
+          "name": null,
+          "type": "RECT",
+          "x": 43.449554576122786,
+          "y": 73.3228712619912,
+          "angle": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          },
+          "skew": {
+            "x": 0,
+            "y": 0
+          },
+          "pivot": {
+            "x": 0,
+            "y": 0
+          },
+          "localSkew": {
+            "x": 0,
+            "y": 0
+          },
+          "offsetX": 43.449554576122786,
+          "offsetY": 73.3228712619912,
+          "lockRatio": false,
+          "isClosePath": true,
+          "zOrder": 4,
+          "sourceId": "8409bacf-2ec3-4199-ab50-78a021ddca33",
+          "groupTags": [],
+          "groupTag": "e43da5bc-5c33-4f40-9029-9fea72b0dd3d",
+          "layerTag": "#00befe",
+          "layerColor": "#00befe",
+          "visible": true,
+          "originColor": "#000000",
+          "enableTransform": true,
+          "visibleState": true,
+          "lockState": false,
+          "resourceOrigin": "",
+          "customData": {
+            "tabBreaks": {},
+            "startPoint": {}
+          },
+          "rootComponentId": "",
+          "minCanvasVersion": "0.0.0",
+          "alpha": 1,
+          "fill": {
+            "paintType": "color",
+            "visible": false,
+            "color": 0,
+            "alpha": 1
+          },
+          "stroke": {
+            "paintType": "color",
+            "visible": true,
+            "color": 0,
+            "alpha": 1,
+            "width": 1,
+            "cap": "butt",
+            "join": "miter",
+            "miterLimit": 4,
+            "alignment": 0.5
+          },
+          "effects": [],
+          "width": 0.9999999999999933,
+          "height": 10,
+          "isFill": true,
+          "lineColor": 16421416,
+          "fillColor": "#f9932b",
+          "radius": 0,
+          "maxRadius": 0.49999999999999667,
+          "data": {
+            "INTAGLIO": {
+              "materialType": "customize",
+              "parameter": {
+                "customize": {
+                  "bitmapEngraveMode": "normal",
+                  "speed": 80,
+                  "density": 100,
+                  "processingLightSource": "blue",
+                  "power": 1,
+                  "repeat": 1,
+                  "bitmapScanMode": "zMode",
+                  "sliceNumber": 100,
+                  "processAngle": 15,
+                  "zAxisMove": false,
+                  "zLayers": 1,
+                  "zDecline": 0.01,
+                  "pulseWidth": 200,
+                  "mopaFrequency": 65
+                }
+              }
+            }
+          },
+          "processingType": "INTAGLIO"
+        },
+        {
+          "id": "8409bacf-2ec3-4199-ab50-78a021ddca33",
+          "name": null,
+          "type": "RECT",
+          "x": 41.537118852532565,
+          "y": 73.3228712619912,
+          "angle": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          },
+          "skew": {
+            "x": 0,
+            "y": 0
+          },
+          "pivot": {
+            "x": 0,
+            "y": 0
+          },
+          "localSkew": {
+            "x": 0,
+            "y": 0
+          },
+          "offsetX": 41.537118852532565,
+          "offsetY": 73.3228712619912,
+          "lockRatio": false,
+          "isClosePath": true,
+          "zOrder": 3,
+          "sourceId": "95c5c9b3-8810-49c7-8a8d-cb4aacf54e28",
+          "groupTags": [],
+          "groupTag": "e3adfa1b-6363-4ac2-8cc9-4ee81ef21733",
+          "layerTag": "#00befe",
+          "layerColor": "#00befe",
+          "visible": true,
+          "originColor": "#000000",
+          "enableTransform": true,
+          "visibleState": true,
+          "lockState": false,
+          "resourceOrigin": "",
+          "customData": {
+            "tabBreaks": {},
+            "startPoint": {}
+          },
+          "rootComponentId": "",
+          "minCanvasVersion": "0.0.0",
+          "alpha": 1,
+          "fill": {
+            "paintType": "color",
+            "visible": false,
+            "color": 0,
+            "alpha": 1
+          },
+          "stroke": {
+            "paintType": "color",
+            "visible": true,
+            "color": 0,
+            "alpha": 1,
+            "width": 1,
+            "cap": "butt",
+            "join": "miter",
+            "miterLimit": 4,
+            "alignment": 0.5
+          },
+          "effects": [],
+          "width": 0.800000000000006,
+          "height": 10,
+          "isFill": true,
+          "lineColor": 16421416,
+          "fillColor": "#f9932b",
+          "radius": 0,
+          "maxRadius": 0.400000000000003,
+          "data": {
+            "INTAGLIO": {
+              "materialType": "customize",
+              "parameter": {
+                "customize": {
+                  "bitmapEngraveMode": "normal",
+                  "speed": 80,
+                  "density": 100,
+                  "processingLightSource": "blue",
+                  "power": 1,
+                  "repeat": 1,
+                  "bitmapScanMode": "zMode",
+                  "sliceNumber": 100,
+                  "processAngle": 15,
+                  "zAxisMove": false,
+                  "zLayers": 1,
+                  "zDecline": 0.01,
+                  "pulseWidth": 200,
+                  "mopaFrequency": 65
+                }
+              }
+            }
+          },
+          "processingType": "INTAGLIO"
+        },
+        {
+          "id": "95c5c9b3-8810-49c7-8a8d-cb4aacf54e28",
+          "name": null,
+          "type": "RECT",
+          "x": 39.5771593176437,
+          "y": 73.3228712619912,
+          "angle": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          },
+          "skew": {
+            "x": 0,
+            "y": 0
+          },
+          "pivot": {
+            "x": 0,
+            "y": 0
+          },
+          "localSkew": {
+            "x": 0,
+            "y": 0
+          },
+          "offsetX": 39.5771593176437,
+          "offsetY": 73.3228712619912,
+          "lockRatio": false,
+          "isClosePath": true,
+          "zOrder": 2,
+          "sourceId": "7be4b4bf-39c4-4fd7-8dd8-df8883304981",
+          "groupTags": [],
+          "groupTag": "a6b1e95e-fa62-4fd5-8928-0e6da0e5d13d",
+          "layerTag": "#00befe",
+          "layerColor": "#00befe",
+          "visible": true,
+          "originColor": "#000000",
+          "enableTransform": true,
+          "visibleState": true,
+          "lockState": false,
+          "resourceOrigin": "",
+          "customData": {
+            "tabBreaks": {},
+            "startPoint": {}
+          },
+          "rootComponentId": "",
+          "minCanvasVersion": "0.0.0",
+          "alpha": 1,
+          "fill": {
+            "paintType": "color",
+            "visible": false,
+            "color": 0,
+            "alpha": 1
+          },
+          "stroke": {
+            "paintType": "color",
+            "visible": true,
+            "color": 0,
+            "alpha": 1,
+            "width": 1,
+            "cap": "butt",
+            "join": "miter",
+            "miterLimit": 4,
+            "alignment": 0.5
+          },
+          "effects": [],
+          "width": 0.39999999999999447,
+          "height": 10,
+          "isFill": true,
+          "lineColor": 16421416,
+          "fillColor": "#f9932b",
+          "radius": 0,
+          "maxRadius": 0.19999999999999724,
+          "data": {
+            "INTAGLIO": {
+              "materialType": "customize",
+              "parameter": {
+                "customize": {
+                  "bitmapEngraveMode": "normal",
+                  "speed": 80,
+                  "density": 100,
+                  "processingLightSource": "blue",
+                  "power": 1,
+                  "repeat": 1,
+                  "bitmapScanMode": "zMode",
+                  "sliceNumber": 100,
+                  "processAngle": 15,
+                  "zAxisMove": false,
+                  "zLayers": 1,
+                  "zDecline": 0.01,
+                  "pulseWidth": 200,
+                  "mopaFrequency": 65
+                }
+              }
+            }
+          },
+          "processingType": "INTAGLIO"
+        },
+        {
+          "id": "7be4b4bf-39c4-4fd7-8dd8-df8883304981",
+          "name": null,
+          "type": "RECT",
+          "x": 37.6886099075858,
+          "y": 73.3228712619912,
+          "angle": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          },
+          "skew": {
+            "x": 0,
+            "y": 0
+          },
+          "pivot": {
+            "x": 0,
+            "y": 0
+          },
+          "localSkew": {
+            "x": 0,
+            "y": 0
+          },
+          "offsetX": 37.6886099075858,
+          "offsetY": 73.3228712619912,
+          "lockRatio": false,
+          "isClosePath": true,
+          "zOrder": 1,
+          "groupTags": [],
+          "groupTag": "764902ee-7772-43c1-8e2c-87a58b4a6b00",
+          "layerTag": "#00befe",
+          "layerColor": "#00befe",
+          "visible": true,
+          "originColor": "#000000",
+          "enableTransform": true,
+          "visibleState": true,
+          "lockState": false,
+          "resourceOrigin": "",
+          "customData": {
+            "tabBreaks": {},
+            "startPoint": {}
+          },
+          "rootComponentId": "",
+          "minCanvasVersion": "0.0.0",
+          "alpha": 1,
+          "fill": {
+            "paintType": "color",
+            "visible": false,
+            "color": 0,
+            "alpha": 1
+          },
+          "stroke": {
+            "paintType": "color",
+            "visible": true,
+            "color": 0,
+            "alpha": 1,
+            "width": 1,
+            "cap": "butt",
+            "join": "miter",
+            "miterLimit": 4,
+            "alignment": 0.5
+          },
+          "effects": [],
+          "width": 0.20000000000000007,
+          "height": 10,
+          "isFill": true,
+          "lineColor": 16421416,
+          "fillColor": "#f9932b",
+          "radius": 0,
+          "maxRadius": 0.10000000000000003,
+          "data": {
+            "INTAGLIO": {
+              "materialType": "customize",
+              "parameter": {
+                "customize": {
+                  "bitmapEngraveMode": "normal",
+                  "speed": 80,
+                  "density": 100,
+                  "processingLightSource": "blue",
+                  "power": 1,
+                  "repeat": 1,
+                  "bitmapScanMode": "zMode",
+                  "sliceNumber": 100,
+                  "processAngle": 15,
+                  "zAxisMove": false,
+                  "zLayers": 1,
+                  "zDecline": 0.01,
+                  "pulseWidth": 200,
+                  "mopaFrequency": 65
+                }
+              }
+            }
+          },
+          "processingType": "INTAGLIO"
+        }
+      ],
+      "extendInfo": {
+        "version": "2.16.1",
+        "minCanvasVersion": "0.0.0",
+        "displayProcessConfigMap": {},
+        "rulerPluginData": {
+          "rulerGuide": []
+        },
+        "type": "2d"
+      },
+      "layerData": {
+        "#00befe": {
+          "name": "#00BEFE",
+          "order": 1,
+          "visible": true
+        }
+      },
+      "groupData": {}
+    }
+  ],
+  "projectTraceID": "77dc4e5c-f629-4dbe-ae88-b5f7290cd91b",
+  "projectID": "77dc4e5c-f629-4dbe-ae88-b5f7290cd91b",
+  "created": 1780238300682,
+  "modify": 1780238300682,
+  "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) xToolStudio/1.7.24 Chrome/136.0.7103.49 Electron/36.2.0 Safari/537.36",
+  "cover": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZEAAAEvCAYAAACE4fxSAAAAAXNSR0IArs4c6QAAD+ZJREFUeF7t1T+OVQUchuFzQk0i7sElEOshLoFF2FO5CXvXwAZsHFoKVuAiSEyoNMw1sR/kvskE5uOZds7v/vny5j7ncXt3Oe77O8+nx8354d7/P5Z/3N69P47j2VUf9zyfHzfnu6tuvoaH31xeH5fLy4f9KJffjhdPfn7Y9/ifV//j7s/jPH74Mp/h8up48eTXL/PeV77r7eXH47i8vfLK4xb43AU+np9A5J/jPL//RhH56zjPnyByX0ffMCKX4+/jvPzyyBD5/TiO7z73V8FzFrhiAYjcMxZEPlkRRCByxc+MR5cXgAhESt8QgUjpxs3gAhCBSMkaIhAp3bgZXAAiEClZQwQipRs3gwtABCIla4hApHTjZnABiECkZA0RiJRu3AwuABGIlKwhApHSjZvBBSACkZI1RCBSunEzuABEIFKyhghESjduBheACERK1hCBSOnGzeACEIFIyRoiECnduBlcACIQKVlDBCKlGzeDC0AEIiVriECkdONmcAGIQKRkDRGIlG7cDC4AEYiUrCECkdKNm8EFIAKRkjVEIFK6cTO4AEQgUrKGCERKN24GF4AIRErWEIFI6cbN4AIQgUjJGiIQKd24GVwAIhApWUMEIqUbN4MLQAQiJWuIQKR042ZwAYhApGQNEYiUbtwMLgARiJSsIQKR0o2bwQUgApGSNUQgUrpxM7gARCBSsoYIREo3bgYXgAhEStYQgUjpxs3gAhCBSMkaIhAp3bgZXAAiEClZQwQipRs3gwtABCIla4hApHTjZnABiECkZA0RiJRu3AwuABGIlKwhApHSjZvBBSACkZI1RCBSunEzuABEIFKyhghESjduBheACERK1hCBSOnGzeACEIFIyRoiECnduBlcACIQKVlDBCKlGzeDC0AEIiVriECkdONmcAGIQKRkDRGIlG7cDC4AEYiUrCECkdKNm8EFIAKRkjVEIFK6cTO4AEQgUrKGCERKN24GF4AIRErWEIFI6cbN4AIQgUjJGiIQKd24GVwAIhApWUMEIqUbN4MLQAQiJWuIQKR042ZwAYhApGQNEYiUbtwMLgARiJSsIQKR0o2bwQUgApGSNUQgUrpxM7gARCBSsoYIREo3bgYXgAhEStYQgUjpxs3gAhCBSMkaIhAp3bgZXAAiEClZQwQipRs3gwtABCIla4hApHTjZnABiECkZA0RiJRu3AwuABGIlKwhApHSjZvBBSACkZI1RCBSunEzuABEIFKyhghESjduBheACERK1hCBSOnGzeACEIFIyRoiECnduBlcACIQKVlDBCKlGzeDC0AEIiVriECkdONmcAGIQKRkDRGIlG7cDC4AEYiUrCECkdKNm8EFIAKRkjVEIFK6cTO4AEQgUrKGCERKN24GF4AIRErWEIFI6cbN4AIQgUjJGiIQKd24GVwAIhApWUMEIqUbN4MLQAQiJWuIQKR042ZwAYhApGQNEYiUbtwMLgARiJSsIQKR0o2bwQUgApGSNUQgUrpxM7gARCBSsoYIREo3bgYXgAhEStYQgUjpxs3gAhCBSMkaIhAp3bgZXAAiEClZQwQipRs3gwtABCIla4hApHTjZnABiECkZA0RiJRu3AwuABGIlKwhApHSjZvBBSACkZI1RCBSunEzuABEIFKyhghESjduBheACERK1hCBSOnGzeACEIFIyRoiECnduBlcACIQKVlDBCKlGzeDC0AEIiVriECkdONmcAGIQKRkDRGIlG7cDC4AEYiUrCECkdKNm8EFIAKRkjVEIFK6cTO4AEQgUrKGCERKN24GF4AIRErWEIFI6cbN4AIQgUjJGiIQKd24GVwAIhApWUMEIqUbN4MLQAQiJWuIQKR042ZwAYhApGQNEYiUbtwMLgARiJSsIQKR0o2bwQUgApGSNUQgUrpxM7gARCBSsoYIREo3bgYXgAhEStYQgUjpxs3gAhCBSMkaIhAp3bgZXAAiEClZQwQipRs3gwtABCIla4hApHTjZnABiECkZA0RiJRu3AwuABGIlKwhApHSjZvBBSACkZI1RCBSunEzuABEIFKyhghESjduBheACERK1hCBSOnGzeACEIFIyRoiECnduBlcACIQKVlDBCKlGzeDC0AEIiVriECkdONmcAGIQKRkDRGIlG7cDC4AEYiUrCECkdKNm8EFIAKRkjVEIFK6cTO4AEQgUrKGCERKN24GF4AIRErWEIFI6cbN4AIQgUjJGiIQKd24GVwAIhApWUMEIqUbN4MLQAQiJWuIQKR042ZwAYhApGQNEYiUbtwMLgARiJSsIQKR0o2bwQUgApGSNUQgUrpxM7gARCBSsoYIREo3bgYXgAhEStYQgUjpxs3gAhCBSMkaIhAp3bgZXAAiEClZQwQipRs3gwtABCIla4hApHTjZnABiECkZA0RiJRu3AwuABGIlKwhApHSjZvBBSACkZI1RCBSunEzuABEIFKyhghESjduBheACERK1hCBSOnGzeACEIFIyRoiECnduBlcACIQKVlDBCKlGzeDC0AEIiVriECkdONmcAGIQKRkDRGIlG7cDC4AEYiUrCECkdKNm8EFIAKRkjVEIFK6cTO4AEQgUrKGCERKN24GF4AIRErWEIFI6cbN4AIQgUjJGiIQKd24GVwAIhApWUMEIqUbN4MLQAQiJWuIQKR042ZwAYhApGQNEYiUbtwMLgARiJSsIQKR0o2bwQUgApGSNUQgUrpxM7gARCBSsoYIREo3bgYXgAhEStYQgUjpxs3gAhCBSMkaIhAp3bgZXAAiEClZQwQipRs3gwtABCIla4hApHTjZnABiECkZA0RiJRu3AwuABGIlKwhApHSjZvBBSACkZI1RCBSunEzuABEIFKyhghESjduBheACERK1hCBSOnGzeACEIFIyRoiECnduBlcACIQKVlDBCKlGzeDC0AEIiVriECkdONmcAGIQKRkDRGIlG7cDC4AEYiUrCECkdKNm8EFIAKRkjVEIFK6cTO4AEQgUrKGCERKN24GF4AIRErWEIFI6cbN4AIQgUjJGiIQKd24GVwAIhApWUMEIqUbN4MLQAQiJWuIQKR042ZwAYhApGQNEYiUbtwMLgARiJSsIQKR0o2bwQUgApGSNUQgUrpxM7gARCBSsoYIREo3bgYXgAhEStYQgUjpxs3gAhCBSMkaIhAp3bgZXAAiEClZQwQipRs3gwtABCIla4hApHTjZnABiECkZA0RiJRu3AwuABGIlKwhApHSjZvBBSACkZI1RCBSunEzuABEIFKyhghESjduBheACERK1hCBSOnGzeACEIFIyRoiECnduBlcACIQKVlDBCKlGzeDC0AEIiVriECkdONmcAGIQKRkDRGIlG7cDC4AEYiUrCECkdKNm8EFIAKRkjVEIFK6cTO4AEQgUrKGCERKN24GF4AIRErWEIFI6cbN4AIQgUjJGiIQKd24GVwAIhApWUMEIqUbN4MLQAQiJWuIQKR042ZwAYhApGQNEYiUbtwMLgARiJSsIQKR0o2bwQUgApGSNUQgUrpxM7gARCBSsoYIREo3bgYXgAhEStYQgUjpxs3gAhCBSMkaIhAp3bgZXAAiEClZQwQipRs3gwtABCIla4hApHTjZnABiECkZA0RiJRu3AwuABGIlKwhApHSjZvBBSACkZI1RCBSunEzuABEIFKyhghESjduBheACERK1hCBSOnGzeACEIFIyRoiECnduBlcACIQKVlDBCKlGzeDC0AEIiVriECkdONmcAGIQKRkDRGIlG7cDC4AEYiUrCECkdKNm8EFIAKRkjVEIFK6cTO4AEQgUrKGCERKN24GF4AIRErWEIFI6cbN4AIQgUjJGiIQKd24GVwAIhApWUMEIqUbN4MLQAQiJWuIQKR042ZwAYhApGQNEYiUbtwMLgARiJSsIQKR0o2bwQUgApGSNUQgUrpxM7gARCBSsoYIREo3bgYXgAhEStYQgUjpxs3gAhCBSMkaIhAp3bgZXAAiEClZQwQipRs3gwtABCIla4hApHTjZnABiECkZA0RiJRu3AwuABGIlKwhApHSjZvBBSACkZI1RCBSunEzuABEIFKyhghESjduBheACERK1hCBSOnGzeACEIFIyRoiECnduBlcACIQKVlDBCKlGzeDC0AEIiVriECkdONmcAGIQKRkDRGIlG7cDC4AEYiUrCECkdKNm8EFIAKRkjVEIFK6cTO4AEQgUrKGCERKN24GF4AIRErWEIFI6cbN4AIQgUjJGiIQKd24GVwAIhApWUMEIqUbN4MLQAQiJWuIQKR042ZwAYhApGQNEYiUbtwMLgARiJSsIQKR0o2bwQUgApGSNUQgUrpxM7gARCBSsoYIREo3bgYXgAhEStYQgUjpxs3gAhCBSMkaIhAp3bgZXAAiEClZQwQipRs3gwtABCIla4hApHTjZnABiECkZA0RiJRu3AwuABGIlKwhApHSjZvBBSACkZI1RCBSunEzuABEIFKyhghESjduBheACERK1hCBSOnGzeACEIFIyRoiECnduBlcACIQKVlDBCKlGzeDC0AEIiVriECkdONmcAGIQKRkDRGIlG7cDC4AEYiUrCECkdKNm8EFIAKRkjVEIFK6cTO4AEQgUrKGCERKN24GF4AIRErWEIFI6cbN4AIQgUjJGiIQKd24GVwAIhApWUMEIqUbN4MLQAQiJWuIQKR042ZwAYhApGQNEYiUbtwMLgARiJSsIQKR0o2bwQUgApGSNUQgUrpxM7gARCBSsoYIREo3bgYXgAhEStYQgUjpxs3gAhCBSMkaIhAp3bgZXAAiEClZQwQipRs3gwtABCIla4hApHTjZnABiECkZA0RiJRu3AwuABGIlKwhApHSjZvBBSACkZI1RCBSunEzuABEIFKyhghESjduBheACERK1hCBSOnGzeACEIFIyRoiECnduBlcACIQKVlDBCKlGzeDC0AEIiVriECkdONmcAGIQKRkDRGIlG7cDC4AEYiUrCECkdKNm8EFIAKRkjVEIFK6cTO4AEQgUrKGCERKN24GF4AIRErWEIFI6cbN4AIQgUjJGiIQKd24GVwAIhApWUMEIqUbN4MLQAQiJWuIQKR042ZwAYhApGQNEYiUbtwMLgARiJSsIQKR0o2bwQUgApGSNUQgUrpxM7gARCBSsoYIREo3bgYXgAhEStYQgUjpxs3gAhCBSMkaIhAp3bgZXAAiEClZQwQipRs3gwtABCIla4hApHTjZnABiECkZA0RiJRu3AwuABGIlKwhApHSjZvBBSACkZI1RCBSunEzuABEIFKyhghESjduBheACERK1hCBSOnGzeACEIFIyRoiECnduBlcACIQKVlDBCKlGzeDC3wSkeM4z6fHzfnh0X/x27v3x3E8u+p7nOfz4+Z8d9XN1/Dwm8vr43J5+bAf5RtG5L9hL68eGSJvH7YHr/4NL/DxX964+OeKUJdgAAAAAElFTkSuQmCC",
+  "minRequiredVersion": "2.6.0",
+  "appMinRequiredVersion": "",
+  "webMinRequiredVersion": "",
+  "extId": "GS004-CLASS-4",
+  "extName": "F2 Ultra",
+  "device": {
+    "id": "GS004-CLASS-4-1",
+    "deviceCode": "GS004-CLASS-4",
+    "extId": "GS004-CLASS-4",
+    "extName": "F2 Ultra",
+    "power": [
+      60,
+      40
+    ],
+    "data": {
+      "dataType": "Map",
+      "value": [
+        [
+          "01f033f8-6d9b-4ea1-8a1f-7e12bcaae55e",
+          {
+            "mode": "RELIEF_PROCESS",
+            "displays": {
+              "dataType": "Map",
+              "value": [
+                [
+                  "7be4b4bf-39c4-4fd7-8dd8-df8883304981",
+                  {
+                    "type": "RECT",
+                    "isFill": true,
+                    "processingType": "INTAGLIO",
+                    "processIgnore": false,
+                    "data": {
+                      "INTAGLIO": {
+                        "materialType": "customize",
+                        "parameter": {
+                          "customize": {
+                            "bitmapEngraveMode": "normal",
+                            "speed": 80,
+                            "density": 100,
+                            "processingLightSource": "blue",
+                            "power": 1,
+                            "repeat": 1,
+                            "bitmapScanMode": "zMode",
+                            "sliceNumber": 100,
+                            "processAngle": 15,
+                            "zAxisMove": false,
+                            "zLayers": 1,
+                            "zDecline": 0.01,
+                            "pulseWidth": 200,
+                            "mopaFrequency": 65
+                          }
+                        }
+                      },
+                      "VECTOR_ENGRAVING": {
+                        "materialType": "customize",
+                        "materialId": 0,
+                        "paramSource": "customParams",
+                        "parameter": {
+                          "customize": {
+                            "speed": 20,
+                            "processingLightSource": "blue",
+                            "power": 1,
+                            "repeat": 1,
+                            "defocus": false,
+                            "defocus_distance": 3,
+                            "pulseWidth": 200,
+                            "mopaFrequency": 65,
+                            "enableKerf": false,
+                            "kerfDistance": 0
+                          }
+                        }
+                      }
+                    }
+                  }
+                ],
+                [
+                  "95c5c9b3-8810-49c7-8a8d-cb4aacf54e28",
+                  {
+                    "type": "RECT",
+                    "isFill": true,
+                    "sourceId": "7be4b4bf-39c4-4fd7-8dd8-df8883304981",
+                    "processingType": "INTAGLIO",
+                    "processIgnore": false,
+                    "data": {
+                      "INTAGLIO": {
+                        "materialType": "customize",
+                        "parameter": {
+                          "customize": {
+                            "bitmapEngraveMode": "normal",
+                            "speed": 80,
+                            "density": 100,
+                            "processingLightSource": "blue",
+                            "power": 1,
+                            "repeat": 1,
+                            "bitmapScanMode": "zMode",
+                            "sliceNumber": 100,
+                            "processAngle": 15,
+                            "zAxisMove": false,
+                            "zLayers": 1,
+                            "zDecline": 0.01,
+                            "pulseWidth": 200,
+                            "mopaFrequency": 65
+                          }
+                        }
+                      },
+                      "VECTOR_ENGRAVING": {
+                        "materialType": "customize",
+                        "materialId": 0,
+                        "paramSource": "customParams",
+                        "parameter": {
+                          "customize": {
+                            "speed": 20,
+                            "processingLightSource": "blue",
+                            "power": 1,
+                            "repeat": 1,
+                            "defocus": false,
+                            "defocus_distance": 3,
+                            "pulseWidth": 200,
+                            "mopaFrequency": 65,
+                            "enableKerf": false,
+                            "kerfDistance": 0
+                          }
+                        }
+                      }
+                    }
+                  }
+                ],
+                [
+                  "8409bacf-2ec3-4199-ab50-78a021ddca33",
+                  {
+                    "type": "RECT",
+                    "isFill": true,
+                    "sourceId": "95c5c9b3-8810-49c7-8a8d-cb4aacf54e28",
+                    "processingType": "INTAGLIO",
+                    "processIgnore": false,
+                    "data": {
+                      "INTAGLIO": {
+                        "materialType": "customize",
+                        "parameter": {
+                          "customize": {
+                            "bitmapEngraveMode": "normal",
+                            "speed": 80,
+                            "density": 100,
+                            "processingLightSource": "blue",
+                            "power": 1,
+                            "repeat": 1,
+                            "bitmapScanMode": "zMode",
+                            "sliceNumber": 100,
+                            "processAngle": 15,
+                            "zAxisMove": false,
+                            "zLayers": 1,
+                            "zDecline": 0.01,
+                            "pulseWidth": 200,
+                            "mopaFrequency": 65
+                          }
+                        }
+                      },
+                      "VECTOR_ENGRAVING": {
+                        "materialType": "customize",
+                        "materialId": 0,
+                        "paramSource": "customParams",
+                        "parameter": {
+                          "customize": {
+                            "speed": 20,
+                            "processingLightSource": "blue",
+                            "power": 1,
+                            "repeat": 1,
+                            "defocus": false,
+                            "defocus_distance": 3,
+                            "pulseWidth": 200,
+                            "mopaFrequency": 65,
+                            "enableKerf": false,
+                            "kerfDistance": 0
+                          }
+                        }
+                      }
+                    }
+                  }
+                ],
+                [
+                  "f51c78f4-6f76-4179-8d91-a4137ede03c5",
+                  {
+                    "type": "RECT",
+                    "isFill": true,
+                    "sourceId": "8409bacf-2ec3-4199-ab50-78a021ddca33",
+                    "processingType": "INTAGLIO",
+                    "processIgnore": false,
+                    "data": {
+                      "INTAGLIO": {
+                        "materialType": "customize",
+                        "parameter": {
+                          "customize": {
+                            "bitmapEngraveMode": "normal",
+                            "speed": 80,
+                            "density": 100,
+                            "processingLightSource": "blue",
+                            "power": 1,
+                            "repeat": 1,
+                            "bitmapScanMode": "zMode",
+                            "sliceNumber": 100,
+                            "processAngle": 15,
+                            "zAxisMove": false,
+                            "zLayers": 1,
+                            "zDecline": 0.01,
+                            "pulseWidth": 200,
+                            "mopaFrequency": 65
+                          }
+                        }
+                      },
+                      "VECTOR_ENGRAVING": {
+                        "materialType": "customize",
+                        "materialId": 0,
+                        "paramSource": "customParams",
+                        "parameter": {
+                          "customize": {
+                            "speed": 20,
+                            "processingLightSource": "blue",
+                            "power": 1,
+                            "repeat": 1,
+                            "defocus": false,
+                            "defocus_distance": 3,
+                            "pulseWidth": 200,
+                            "mopaFrequency": 65,
+                            "enableKerf": false,
+                            "kerfDistance": 0
+                          }
+                        }
+                      }
+                    }
+                  }
+                ],
+                [
+                  "dfd3b3ca-213b-42cf-b5fa-c211e72f6005",
+                  {
+                    "type": "RECT",
+                    "isFill": true,
+                    "sourceId": "f51c78f4-6f76-4179-8d91-a4137ede03c5",
+                    "processingType": "INTAGLIO",
+                    "processIgnore": false,
+                    "data": {
+                      "INTAGLIO": {
+                        "materialType": "customize",
+                        "parameter": {
+                          "customize": {
+                            "bitmapEngraveMode": "normal",
+                            "speed": 80,
+                            "density": 100,
+                            "processingLightSource": "blue",
+                            "power": 1,
+                            "repeat": 1,
+                            "bitmapScanMode": "zMode",
+                            "sliceNumber": 100,
+                            "processAngle": 15,
+                            "zAxisMove": false,
+                            "zLayers": 1,
+                            "zDecline": 0.01,
+                            "pulseWidth": 200,
+                            "mopaFrequency": 65
+                          }
+                        }
+                      },
+                      "VECTOR_ENGRAVING": {
+                        "materialType": "customize",
+                        "materialId": 0,
+                        "paramSource": "customParams",
+                        "parameter": {
+                          "customize": {
+                            "speed": 20,
+                            "processingLightSource": "blue",
+                            "power": 1,
+                            "repeat": 1,
+                            "defocus": false,
+                            "defocus_distance": 3,
+                            "pulseWidth": 200,
+                            "mopaFrequency": 65,
+                            "enableKerf": false,
+                            "kerfDistance": 0
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              ]
+            },
+            "data": {
+              "RELIEF_PROCESS": {
+                "material": 0,
+                "lightSourceMode": "blue",
+                "thickness": null,
+                "perimeter": null,
+                "diameter": null,
+                "isProcessByLayer": false,
+                "processPath": "auto",
+                "pathPlanning": "auto",
+                "fillPlanning": "separate",
+                "avoidSmokeModal": false,
+                "enableOddEvenKerf": true,
+                "focalLen": null,
+                "focalLength": null
+              }
+            }
+          }
+        ]
+      ]
+    }
+  },
+  "meta": [
+    {
+      "date": 1780238300682,
+      "version": "1.7.24",
+      "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) xToolStudio/1.7.24 Chrome/136.0.7103.49 Electron/36.2.0 Safari/537.36"
+    }
+  ]
+}

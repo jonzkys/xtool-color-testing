@@ -12,6 +12,12 @@ function loadSample(): ArrayBuffer {
   return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
 }
 
+const TEXT_SAMPLE = resolve(__dirname, "../../../../samples/xcs/test-text.xcs");
+function loadText(): ArrayBuffer {
+  const b = readFileSync(TEXT_SAMPLE);
+  return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+}
+
 describe("runPipeline", () => {
   it("returns paths in physical process order seed→perforate→deepen→clean", () => {
     const parsed = parseXcsFile(loadSample());
@@ -74,5 +80,53 @@ describe("runPipeline", () => {
     for (const p of deepen) {
       expect(p.rings.length).toBeGreaterThanOrEqual(2);
     }
+  });
+});
+
+const SIZES_SAMPLE = resolve(__dirname, "../../../../samples/xcs/sizes_ex.xcs");
+function loadSizes(): ArrayBuffer {
+  const b = readFileSync(SIZES_SAMPLE);
+  return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+}
+
+describe("runPipeline (RECT primitive target)", () => {
+  it("produces a non-empty staged cut from a rect", () => {
+    const parsed = parseXcsFile(loadSizes());
+    const { paths, stats } = runPipeline(parsed, parsed.targets[0].id, DEFAULT_CONFIG);
+    expect(stats.mmPerUnitConfident).toBe(true);
+    expect(paths.length).toBeGreaterThan(0);
+  });
+});
+
+describe("scan-angle metric", () => {
+  it("reports the optimal angle + reduction vs the source angle (test-text)", () => {
+    const parsed = parseXcsFile(loadText());
+    const { stats } = runPipeline(parsed, parsed.targets[0].id, DEFAULT_CONFIG);
+    expect(stats.scanAngleDeg).toBe(0);            // wide word → horizontal optimal
+    expect(stats.scanAngleBaselineDeg).toBe(15);   // source processAngle
+    expect(stats.scanAngleReductionPct).toBeGreaterThan(15); // ~26% fewer lines
+  });
+});
+
+describe("runPipeline (incise-only sample: test-text.xcs)", () => {
+  it("calibrates confidently at ~1.0 with no warning", () => {
+    const parsed = parseXcsFile(loadText());
+    const { stats } = runPipeline(parsed, parsed.targets[0].id, DEFAULT_CONFIG);
+    expect(stats.mmPerUnit).toBeCloseTo(1.0, 3);
+    expect(stats.mmPerUnitConfident).toBe(true);
+    expect(stats.warnings.some((w) => w.includes("calibrate"))).toBe(false);
+  });
+
+  it("cuts every black island, including both disjoint ring+dot circles", () => {
+    const parsed = parseXcsFile(loadText());
+    const { paths } = runPipeline(parsed, parsed.targets[0].id, DEFAULT_CONFIG);
+    expect(paths.length).toBeGreaterThan(0);
+    // A generated ring point must land near each circle centre (within 4mm).
+    const near = (cx: number, cy: number) =>
+      paths.some((p) =>
+        p.rings.some((r) => r.some((pt) => Math.hypot(pt.x - cx, pt.y - cy) < 4)),
+      );
+    expect(near(36, 47)).toBe(true); // left ring+dot
+    expect(near(80, 47)).toBe(true); // right ring+dot
   });
 });

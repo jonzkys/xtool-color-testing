@@ -45,10 +45,14 @@ export interface GeneratedPath {
 /** One editable deepen pass-group row. */
 export interface DeepenGroup {
   name: string;
-  fromLayer: number;
+  /** End depth of this deepen pass (0..256). Deepen passes always start at the
+   *  surface (0), so there is no `fromLayer`. */
   toLayer: number;
   widthMultiplier: number;
   enabled: boolean;
+  /** Deepen groups after the first default to copying the first group's
+   *  laser params; undefined is treated as true for non-first groups. */
+  copyParamsFromFirst?: boolean;
 }
 
 export interface SeedConfig {
@@ -82,7 +86,7 @@ export interface CleanConfig {
 export interface ForgeConfig {
   beamWidthMm: number;
   sideMode: SideMode;
-  /** Manual unit override; null = use perimeter-derived calibration. */
+  /** Manual unit override; null = use the display-scale calibration. */
   mmPerUnitOverride: number | null;
   seed: SeedConfig;
   perforate: PerforateConfig;
@@ -91,6 +95,14 @@ export interface ForgeConfig {
   /** Per-stage laser-param overrides, keyed by groupName (e.g. CUT_01_SEED).
    *  Any field left undefined inherits the source incise object's value. */
   stageParams: Record<string, StageParams>;
+  /** When true, write the speed-optimal raster scan angle to each generated
+   *  INTAGLIO entry's `customize.processAngle` on export. Opt-in (experimental
+   *  — the exact processAngle convention is xTool's). */
+  optimizeScanAngle: boolean;
+  /** Manual scan-angle override (deg) written to `customize.processAngle` on
+   *  export. null = inherit the source value. Ignored while `optimizeScanAngle`
+   *  is on (that takes precedence). */
+  manualScanAngleDeg: number | null;
 }
 
 /** Rough per-stage laser params. All optional — undefined = inherit source. */
@@ -98,9 +110,14 @@ export interface StageParams {
   power?: number; // %
   speed?: number; // mm/s
   passes?: number; // → customize.repeat
-  zLayers?: number; // depth slices (→ customize.zLayers)
   pulseWidth?: number; // ns (MOPA)
   frequency?: number; // kHz (→ customize.mopaFrequency)
+  density?: number; // lines/cm (→ customize.density)
+  laser?: "red" | "blue"; // → customize.processingLightSource
+  zAxisMove?: boolean; // "Descend at Z-axis" (→ customize.zAxisMove)
+  zLayers?: number; // descend every N layers (→ customize.zLayers)
+  zDecline?: number; // mm per descent step (→ customize.zDecline)
+  sliceNumber?: number; // total layers/slices (→ customize.sliceNumber)
 }
 
 /** One object detected inside the uploaded XCS. */
@@ -109,8 +126,16 @@ export interface XcsObject {
   type: string; // PATH | BITMAP | CIRCLE | ...
   name: string | null;
   processingType: string | null; // INTAGLIO | RELIEF | VECTOR_CUTTING | ...
-  modeClass: "incise" | "emboss" | "other";
+  modeClass: "incise" | "emboss" | "score" | "other";
   dPath?: string;
+  /** True when this object carries a vector path (a forge-able contour). */
+  hasGeometry: boolean;
+  /** Source laser params read from this object's INTAGLIO customize (cut
+   *  targets only); used to pre-fill the per-stage param widgets. */
+  params?: StageParams;
+  /** Source `processAngle` from this object's INTAGLIO customize — the
+   *  baseline the optimizer improves on. */
+  sourceScanAngleDeg?: number;
   /** id of the device.data process group this object belongs to. */
   groupKey: string;
 }
@@ -121,6 +146,10 @@ export interface ParsedXcs {
   objects: XcsObject[];
   emboss: XcsObject[];
   incise: XcsObject[];
+  /** Incise objects with usable geometry — the forge-able cut targets. */
+  targets: XcsObject[];
+  /** Real non-incise objects (emboss / score / other) preserved untouched. */
+  preserved: XcsObject[];
 }
 
 /** Stats + warnings surfaced in the debug panel. */
@@ -130,6 +159,14 @@ export interface DebugStats {
   pathCounts: Record<GeneratedClass, number>;
   totalPaths: number;
   warnings: string[];
+  /** Speed-optimal raster scan angle (deg) computed from the source contour;
+   *  written to `processAngle` on export only when `optimizeScanAngle` is on. */
+  scanAngleDeg: number;
+  /** The source object's `processAngle` — the baseline the optimizer compares against. */
+  scanAngleBaselineDeg?: number;
+  /** Percentage reduction in scan lines from using the optimal angle vs the
+   *  source angle (0–100). Undefined when the source angle is not known. */
+  scanAngleReductionPct?: number;
 }
 
 export interface PipelineResult {

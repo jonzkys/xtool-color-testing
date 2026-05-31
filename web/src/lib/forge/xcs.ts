@@ -1,13 +1,102 @@
 // web/src/lib/forge/xcs.ts
 import type { Contour, GeneratedPath, ParsedXcs, XcsObject } from "./types";
-import { flattenDPath, normaliseContour, contourPerimeter, splitSubpaths } from "./contour";
+import { flattenDPath, normaliseContour, splitSubpaths } from "./contour";
 
 const INCISE_TYPES = new Set(["INTAGLIO", "VECTOR_CUTTING"]);
-const EMBOSS_TYPES = new Set(["RELIEF", "VECTOR_ENGRAVING", "FILL_VECTOR_ENGRAVING", "COLOR_FILL_ENGRAVE"]);
+const EMBOSS_TYPES = new Set(["RELIEF"]);
+const SCORE_TYPES = new Set([
+  "VECTOR_ENGRAVING",
+  "FILL_VECTOR_ENGRAVING",
+  "COLOR_FILL_ENGRAVE",
+]);
 
-function classify(pt: string | null): XcsObject["modeClass"] {
+/** Map an INTAGLIO `customize` block to the StageParams we expose.
+ *  Reads from the `INTAGLIO` customize block; VECTOR_CUTTING incise targets
+ *  (not used in the current F2 Ultra Embossment workflow) would yield `undefined`. */
+function readStageParams(customize: Record<string, unknown> | undefined): import("./types").StageParams | undefined {
+  if (!customize) return undefined;
+  const num = (k: string) => (typeof customize[k] === "number" ? (customize[k] as number) : undefined);
+  const laser = customize.processingLightSource;
+  return {
+    power: num("power"),
+    speed: num("speed"),
+    passes: num("repeat"),
+    pulseWidth: num("pulseWidth"),
+    frequency: num("mopaFrequency"),
+    density: num("density"),
+    laser: laser === "red" || laser === "blue" ? laser : undefined,
+    zAxisMove: typeof customize.zAxisMove === "boolean" ? customize.zAxisMove : undefined,
+    zLayers: num("zLayers"),
+    zDecline: num("zDecline"),
+    sliceNumber: num("sliceNumber"),
+  };
+}
+
+const KAPPA = 0.5522847498307936; // bezier circle constant
+const fmtNum = (v: number) => String(Number(v.toFixed(4)));
+
+/**
+ * Synthesize a closed dPath (in the display's path-unit space) for primitive
+ * shapes (RECT / CIRCLE / ELLIPSE) that carry no `dPath`. The pipeline treats
+ * a dPath as path-units that get multiplied by the display's `scale.x` to
+ * reach canvas-mm (`canvasX = unit·scale.x + offsetX`). `width`/`height` are
+ * canvas-mm (post-scale), so the synthesized path must be authored in
+ * path-units = canvas-mm ÷ scale. Returns undefined for unknown / zero-size shapes.
+ * NOTE: circle/ellipse use the width/height bounding box (inferred — no sample
+ * to verify against yet); rotation (`angle`) is not applied (a known limit,
+ * same as for PATH displays).
+ */
+export function primitiveDPath(disp: RawDisplay): string | undefined {
+  const wMm = typeof disp.width === "number" ? disp.width : 0;
+  const hMm = typeof disp.height === "number" ? disp.height : 0;
+  if (!(wMm > 0) || !(hMm > 0)) return undefined;
+  // width/height/radius are canvas-mm (post-scale); the pipeline treats a dPath
+  // as path-units multiplied by the display's scale to reach mm. So author the
+  // synthesized path in path-units = canvas-mm / scale.
+  const sc = disp.scale as { x?: number; y?: number } | undefined;
+  const sx = typeof sc?.x === "number" && sc.x !== 0 ? sc.x : 1;
+  const sy = typeof sc?.y === "number" && sc.y !== 0 ? sc.y : 1;
+  const w = wMm / sx;
+  const h = hMm / sy;
+  const type = (disp.type ?? "").toUpperCase();
+  const f = fmtNum;
+  if (type === "RECT") {
+    let r = typeof disp.radius === "number" ? disp.radius / sx : 0;
+    r = Math.max(0, Math.min(r, Math.min(w, h) / 2));
+    if (r <= 0) return `M0,0 L${f(w)},0 L${f(w)},${f(h)} L0,${f(h)} Z`;
+    const k = r * KAPPA;
+    return [
+      `M${f(r)},0`,
+      `L${f(w - r)},0`,
+      `C${f(w - r + k)},0 ${f(w)},${f(r - k)} ${f(w)},${f(r)}`,
+      `L${f(w)},${f(h - r)}`,
+      `C${f(w)},${f(h - r + k)} ${f(w - r + k)},${f(h)} ${f(w - r)},${f(h)}`,
+      `L${f(r)},${f(h)}`,
+      `C${f(r - k)},${f(h)} 0,${f(h - r + k)} 0,${f(h - r)}`,
+      `L0,${f(r)}`,
+      `C0,${f(r - k)} ${f(r - k)},0 ${f(r)},0`,
+      "Z",
+    ].join(" ");
+  }
+  if (type === "CIRCLE" || type === "ELLIPSE") {
+    const rx = w / 2, ry = h / 2, kx = (w / 2) * KAPPA, ky = (h / 2) * KAPPA;
+    return [
+      `M${f(rx)},0`,
+      `C${f(rx + kx)},0 ${f(w)},${f(ry - ky)} ${f(w)},${f(ry)}`,
+      `C${f(w)},${f(ry + ky)} ${f(rx + kx)},${f(h)} ${f(rx)},${f(h)}`,
+      `C${f(rx - kx)},${f(h)} 0,${f(ry + ky)} 0,${f(ry)}`,
+      `C0,${f(ry - ky)} ${f(rx - kx)},0 ${f(rx)},0`,
+      "Z",
+    ].join(" ");
+  }
+  return undefined;
+}
+
+/** Classify a layer by its device-map processingType. Exported for testing. */
+export function classify(pt: string | null): XcsObject["modeClass"] {
   if (pt && INCISE_TYPES.has(pt)) return "incise";
   if (pt && EMBOSS_TYPES.has(pt)) return "emboss";
+  if (pt && SCORE_TYPES.has(pt)) return "score";
   return "other";
 }
 
@@ -47,7 +136,6 @@ interface RawEntry {
 }
 interface RawGroup {
   mode?: string;
-  data?: Record<string, { perimeter?: number }>;
   displays?: unknown;
 }
 
@@ -66,14 +154,31 @@ export function parseXcsFile(buf: ArrayBuffer): ParsedXcs {
   for (const [groupKey, group] of mapEntries<RawGroup>(raw.device?.data)) {
     for (const [displayId, entry] of mapEntries<RawEntry>(group.displays)) {
       const disp = byId.get(displayId);
+      // Device-map entries can reference displays that no longer exist on the
+      // canvas (orphan sub-entries of a compound path). They carry no geometry
+      // and can be neither a cut target nor a visible layer — skip them. They
+      // remain byte-intact in `raw`, so export still preserves them.
+      if (!disp) continue;
       const processingType = entry.processingType ?? null;
+      const modeClass = classify(processingType);
+      const entryData = (entry as { data?: Record<string, { parameter?: { customize?: Record<string, unknown> } }> }).data;
+      const customize = entryData?.INTAGLIO?.parameter?.customize;
+      const params = modeClass === "incise" ? readStageParams(customize) : undefined;
+      const sourceScanAngleDeg =
+        modeClass === "incise" && typeof customize?.processAngle === "number"
+          ? (customize.processAngle as number)
+          : undefined;
+      const dPath = disp.dPath ?? primitiveDPath(disp);
       objects.push({
         id: displayId,
-        type: disp?.type ?? entry.type ?? "UNKNOWN",
-        name: disp?.name ?? null,
+        type: disp.type ?? entry.type ?? "UNKNOWN",
+        name: disp.name ?? null,
         processingType,
-        modeClass: classify(processingType),
-        dPath: disp?.dPath,
+        modeClass,
+        dPath,
+        hasGeometry: !!dPath,
+        params,
+        sourceScanAngleDeg,
         groupKey,
       });
     }
@@ -84,6 +189,8 @@ export function parseXcsFile(buf: ArrayBuffer): ParsedXcs {
     objects,
     emboss: objects.filter((o) => o.modeClass === "emboss"),
     incise: objects.filter((o) => o.modeClass === "incise"),
+    targets: objects.filter((o) => o.modeClass === "incise" && o.hasGeometry),
+    preserved: objects.filter((o) => o.modeClass !== "incise"),
   };
   return parsed;
 }
@@ -121,24 +228,45 @@ export interface Calibration {
 }
 
 /**
- * Derive path-units → mm. The RELIEF_PROCESS group records the real-world
- * `perimeter` (mm) of its contour; dividing by the flattened path perimeter
- * (units) gives mm-per-unit. If the field is missing/zero we fall back to 1.0
- * and report not-confident (caller surfaces a warning + manual override).
+ * Derive path-units → mm for the selected incise contour.
+ *
+ * The xTool canvas is in millimetres and a display maps its path units to the
+ * canvas via `canvasX = unit·scale.x + offsetX` — so the display's own
+ * `scale.x` IS the units→mm factor (cross-checked by `width / bbox-width`).
+ * The old `RELIEF_PROCESS.perimeter` method was wrong: that perimeter
+ * describes the emboss, not the incise contour, and made kerf bands ~3.57×
+ * too wide. Falls back to 1.0 + not-confident only when neither scale nor
+ * width is available (caller surfaces a warning + manual override).
  */
 export function calibrateMmPerUnit(p: ParsedXcs, incise: XcsObject): Calibration {
-  const raw = p.raw as { device?: { data?: unknown } };
-  let perimeterMm = 0;
-  for (const [, group] of mapEntries<RawGroup>(raw.device?.data)) {
-    if (group.mode && group.data?.[group.mode]?.perimeter) {
-      perimeterMm = group.data[group.mode]!.perimeter!;
-      break;
+  const raw = p.raw as { canvas?: Array<{ displays?: Array<Record<string, unknown>> }> };
+  const disp = (raw.canvas?.[0]?.displays ?? []).find((d) => d.id === incise.id) as
+    | { scale?: { x?: number; y?: number }; width?: number }
+    | undefined;
+
+  // 1. Uniform display scale = path-units → bed-mm. Authoritative.
+  const sx = disp?.scale?.x;
+  const sy = disp?.scale?.y;
+  if (typeof sx === "number" && sx > 0 && (typeof sy !== "number" || Math.abs(sx - sy) < 1e-6)) {
+    return { mmPerUnit: sx, confident: true };
+  }
+
+  // 2. Real-world width ÷ flattened-bbox width (missing/anisotropic scale).
+  const w = disp?.width;
+  if (typeof w === "number" && w > 0) {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    for (const c of extractContourSubpaths(incise)) {
+      for (const pt of c.points) {
+        if (pt.x < minX) minX = pt.x;
+        if (pt.x > maxX) maxX = pt.x;
+      }
     }
+    const bboxW = maxX - minX;
+    if (Number.isFinite(bboxW) && bboxW > 0) return { mmPerUnit: w / bboxW, confident: true };
   }
-  const units = extractContourSubpaths(incise).reduce((sum, c) => sum + contourPerimeter(c), 0);
-  if (perimeterMm > 0 && units > 0) {
-    return { mmPerUnit: perimeterMm / units, confident: true };
-  }
+
+  // 3. No usable signal.
   return { mmPerUnit: 1, confident: false };
 }
 
@@ -217,8 +345,9 @@ interface MutableMap<V> {
  * Each distinct stage groupName becomes its own xTool layer/operation: it gets
  * a stable colour from STAGE_PALETTE (keyed by groupName, first-seen order), a
  * matching `canvas.layerData` entry, and the display's `layerTag`/`layerColor`
- * are set to that colour. The existing `#00befe` layerData entry is preserved
- * (the emboss BITMAP still uses it). Params/processingType are copied from the
+ * are set to that colour. Any pre-existing layerData entries (e.g. an emboss
+ * BITMAP's `#00befe`) are preserved if present. Params/processingType are
+ * copied from the
  * source incise entry. Emboss + model objects are left untouched. Generated ids
  * are `forge-<operationOrder>`. Returns the new raw JSON object (not serialised).
  */
@@ -228,6 +357,7 @@ export function buildGeneratedXcs(
   paths: GeneratedPath[],
   mmPerUnit: number,
   stageParams: Record<string, import("./types").StageParams> = {},
+  scanAngleDeg?: number,
 ): unknown {
   const raw = JSON.parse(JSON.stringify(parsed.raw)) as {
     canvas: Array<{ displays: RawDisplay[]; layerData?: Record<string, LayerDataEntry> }>;
@@ -288,7 +418,7 @@ export function buildGeneratedXcs(
     const tag = layerTagForGroup(path.groupName);
 
     // Recompute this display's own canvas bbox from its geometry, reusing the
-    // source's scale + offset mapping so it stays aligned with the emboss.
+    // source's scale + offset mapping so it stays aligned with the source contour.
     const b = ringsBoundsUnits(path.rings, mmPerUnit);
     const display: RawDisplay = {
       ...(sourceTemplateDisplay ?? ({} as RawDisplay)),
@@ -324,6 +454,12 @@ export function buildGeneratedXcs(
       baseEntry.type = "PATH";
       baseEntry.isFill = true;
       applyStageParams(baseEntry, stageParams[path.groupName]);
+      // Global speed-optimal scan angle (same for every generated display).
+      if (typeof scanAngleDeg === "number" && Number.isFinite(scanAngleDeg)) {
+        const customize = (baseEntry.data as Record<string, { parameter?: { customize?: Record<string, unknown> } }> | undefined)
+          ?.INTAGLIO?.parameter?.customize;
+        if (customize) customize.processAngle = Math.round(scanAngleDeg);
+      }
       groupPair[1].displays.value.push([id, baseEntry]);
     }
   }
@@ -344,12 +480,23 @@ function applyStageParams(
   const set = (key: string, v: number | undefined) => {
     if (typeof v === "number" && Number.isFinite(v)) customize[key] = v;
   };
+  const setStr = (key: string, v: string | undefined) => {
+    if (typeof v === "string" && v) customize[key] = v;
+  };
+  const setBool = (key: string, v: boolean | undefined) => {
+    if (typeof v === "boolean") customize[key] = v;
+  };
   set("power", params.power);
   set("speed", params.speed);
   set("repeat", params.passes);
-  set("zLayers", params.zLayers);
   set("pulseWidth", params.pulseWidth);
   set("mopaFrequency", params.frequency);
+  set("density", params.density);
+  setStr("processingLightSource", params.laser);
+  setBool("zAxisMove", params.zAxisMove);
+  set("zLayers", params.zLayers);
+  set("zDecline", params.zDecline);
+  set("sliceNumber", params.sliceNumber);
 }
 
 /** Serialise a built XCS document to UTF-8 bytes (compact JSON, like write_xcs). */

@@ -4,17 +4,25 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   parseXcsFile,
+  classify,
   findEmbossObjects,
   findInciseObjects,
   extractContourGeometry,
   calibrateMmPerUnit,
   contourToDPath,
+  primitiveDPath,
 } from "./xcs";
 
 const SAMPLE = resolve(__dirname, "../../../../samples/xcs/incise_emboss.xcs");
 function loadSample(): ArrayBuffer {
   const buf = readFileSync(SAMPLE);
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+}
+
+const TEXT_SAMPLE = resolve(__dirname, "../../../../samples/xcs/test-text.xcs");
+function loadText(): ArrayBuffer {
+  const b = readFileSync(TEXT_SAMPLE);
+  return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
 }
 
 describe("parseXcsFile (real sample)", () => {
@@ -34,12 +42,60 @@ describe("parseXcsFile (real sample)", () => {
     expect(contour.closed).toBe(true);
   });
 
-  it("calibrates mmPerUnit confidently from the RELIEF_PROCESS perimeter", () => {
+  it("calibrates mmPerUnit confidently from the display scale (≈0.848)", () => {
     const parsed = parseXcsFile(loadSample());
     const incise = findInciseObjects(parsed)[0];
     const cal = calibrateMmPerUnit(parsed, incise);
     expect(cal.confident).toBe(true);
-    expect(cal.mmPerUnit).toBeGreaterThan(0);
+    // scale.x (0.84813), NOT the buggy perimeter-derived 0.2375.
+    expect(cal.mmPerUnit).toBeCloseTo(0.848, 2);
+  });
+});
+
+describe("classify", () => {
+  it("maps processingType tokens to the right mode class", () => {
+    expect(classify("INTAGLIO")).toBe("incise");
+    expect(classify("VECTOR_CUTTING")).toBe("incise");
+    expect(classify("RELIEF")).toBe("emboss");
+    expect(classify("VECTOR_ENGRAVING")).toBe("score");
+    expect(classify("FILL_VECTOR_ENGRAVING")).toBe("score");
+    expect(classify("COLOR_FILL_ENGRAVE")).toBe("score");
+    expect(classify("SOMETHING_ELSE")).toBe("other");
+    expect(classify(null)).toBe("other");
+  });
+});
+
+describe("parseXcsFile (incise-only sample: test-text.xcs)", () => {
+  it("yields exactly one geometry-bearing cut target and no emboss", () => {
+    const parsed = parseXcsFile(loadText());
+    expect(parsed.targets.length).toBe(1);
+    expect(parsed.targets[0].processingType).toBe("INTAGLIO");
+    expect(parsed.targets[0].hasGeometry).toBe(true);
+    expect(parsed.emboss.length).toBe(0);
+  });
+
+  it("skips phantom device entries (no canvas display) entirely", () => {
+    const parsed = parseXcsFile(loadText());
+    expect(parsed.objects.length).toBe(1);
+    expect(parsed.objects.every((o) => o.hasGeometry)).toBe(true);
+    expect(parsed.preserved.length).toBe(0);
+  });
+
+  it("calibrates confidently at ≈1.0 (scale.x) with no perimeter", () => {
+    const parsed = parseXcsFile(loadText());
+    const cal = calibrateMmPerUnit(parsed, parsed.targets[0]);
+    expect(cal.confident).toBe(true);
+    expect(cal.mmPerUnit).toBeCloseTo(1.0, 3);
+  });
+});
+
+describe("parseXcsFile (real sample: targets/preserved)", () => {
+  it("splits the emboss+incise sample into one target and one preserved layer", () => {
+    const parsed = parseXcsFile(loadSample());
+    expect(parsed.targets.length).toBe(1);
+    expect(parsed.targets[0].processingType).toBe("INTAGLIO");
+    expect(parsed.preserved.length).toBe(1);
+    expect(parsed.preserved[0].processingType).toBe("RELIEF");
   });
 });
 
@@ -61,9 +117,124 @@ describe("contourToDPath", () => {
   });
 });
 
-import { buildGeneratedXcs, exportXcs } from "./xcs";
+import { buildGeneratedXcs, exportXcs, extractContourSubpaths } from "./xcs";
 import { runPipeline } from "./pipeline";
 import { DEFAULT_CONFIG } from "./defaults";
+import { resolveStageParams } from "./config";
+
+const SIZES_SAMPLE = resolve(__dirname, "../../../../samples/xcs/sizes_ex.xcs");
+function loadSizes(): ArrayBuffer {
+  const b = readFileSync(SIZES_SAMPLE);
+  return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+}
+
+describe("primitive shapes (sizes_ex.xcs — RECT primitives)", () => {
+  it("treats RECT primitives as geometry-bearing cut targets", () => {
+    const parsed = parseXcsFile(loadSizes());
+    expect(parsed.targets.length).toBe(5);
+    expect(parsed.targets.every((t) => t.hasGeometry)).toBe(true);
+    expect(parsed.targets.every((t) => t.processingType === "INTAGLIO")).toBe(true);
+  });
+
+  it("calibrates each rect to its true real-world width", () => {
+    const parsed = parseXcsFile(loadSizes());
+    const widths = parsed.targets
+      .map((t) => {
+        const cal = calibrateMmPerUnit(parsed, t);
+        const subs = extractContourSubpaths(t);
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const c of subs) for (const p of c.points) {
+          if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+          if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+        }
+        return Math.min(maxX - minX, maxY - minY) * cal.mmPerUnit; // short side = rect width
+      })
+      .sort((a, b) => a - b);
+    [0.2, 0.4, 0.8, 1, 5].forEach((exp, i) => expect(widths[i]).toBeCloseTo(exp, 2));
+  });
+});
+
+describe("source params (incise customize → StageParams)", () => {
+  it("attaches mapped params to the cut target (test-text.xcs)", () => {
+    const parsed = parseXcsFile(loadText());
+    const p = parsed.targets[0].params!;
+    expect(p.power).toBe(1);
+    expect(p.speed).toBe(80);
+    expect(p.passes).toBe(1);          // customize.repeat
+    expect(p.pulseWidth).toBe(200);
+    expect(p.frequency).toBe(65);      // customize.mopaFrequency
+    expect(p.density).toBe(100);
+    expect(p.laser).toBe("blue");      // customize.processingLightSource
+    expect(p.zAxisMove).toBe(false);
+    expect(p.zLayers).toBe(1);
+    expect(p.zDecline).toBeCloseTo(0.01, 4);
+    expect(p.sliceNumber).toBe(100);
+  });
+});
+
+describe("applyStageParams (new fields)", () => {
+  it("writes density, laser, and the z-descent fields into the INTAGLIO customize", () => {
+    const parsed = parseXcsFile(loadSample());
+    const incise = findInciseObjects(parsed)[0];
+    const { paths, stats } = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+    const seed = paths.find((p) => p.groupName === "CUT_01_SEED")!;
+    const stageParams = {
+      CUT_01_SEED: { density: 222, laser: "red" as const, zAxisMove: true, zLayers: 8, zDecline: 0.05, sliceNumber: 256 },
+    };
+    const out = buildGeneratedXcs(parsed, incise.id, paths, stats.mmPerUnit, stageParams) as {
+      device: { data: { value: Array<[string, { displays: { value: Array<[string, { data: { INTAGLIO: { parameter: { customize: Record<string, unknown> } } } }]> } }]> } };
+    };
+    const entries = out.device.data.value.flatMap(([, g]) => g.displays.value);
+    const c = entries.find(([id]) => id === `forge-${seed.operationOrder}`)![1].data.INTAGLIO.parameter.customize;
+    expect(c.density).toBe(222);
+    expect(c.processingLightSource).toBe("red");
+    expect(c.zAxisMove).toBe(true);
+    expect(c.zLayers).toBe(8);
+    expect(c.zDecline).toBe(0.05);
+    expect(c.sliceNumber).toBe(256);
+  });
+});
+
+describe("primitiveDPath geometry", () => {
+  // bbox over ALL numeric coords (on-curve + control points all lie within the
+  // shape's extent for these constructions)
+  const bbox = (dp: string) => {
+    const nums = (dp.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+    const xs = nums.filter((_, i) => i % 2 === 0);
+    const ys = nums.filter((_, i) => i % 2 === 1);
+    return { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+  };
+  const disp = (o: Record<string, unknown>) => o as unknown as Parameters<typeof primitiveDPath>[0];
+
+  it("sharp rect at scale 1 → local bbox = w×h, closed", () => {
+    const dp = primitiveDPath(disp({ type: "RECT", width: 5, height: 10, scale: { x: 1, y: 1 } }))!;
+    expect(dp.endsWith("Z")).toBe(true);
+    expect(bbox(dp).w).toBeCloseTo(5, 3);
+    expect(bbox(dp).h).toBeCloseTo(10, 3);
+  });
+  it("scale ≠ 1 → path authored in units = mm / scale", () => {
+    const dp = primitiveDPath(disp({ type: "RECT", width: 5, height: 10, scale: { x: 0.5, y: 0.5 } }))!;
+    expect(bbox(dp).w).toBeCloseTo(10, 3);  // 5 / 0.5
+    expect(bbox(dp).h).toBeCloseTo(20, 3);  // 10 / 0.5
+  });
+  it("rounded rect uses cubic beziers, stays within bbox, closed", () => {
+    const dp = primitiveDPath(disp({ type: "RECT", width: 10, height: 10, radius: 2, scale: { x: 1, y: 1 } }))!;
+    expect(dp).toContain("C");
+    expect(dp.endsWith("Z")).toBe(true);
+    expect(bbox(dp).w).toBeCloseTo(10, 2);
+    expect(bbox(dp).h).toBeCloseTo(10, 2);
+  });
+  it("ellipse/circle → cubic beziers, bbox = w×h", () => {
+    const dp = primitiveDPath(disp({ type: "CIRCLE", width: 8, height: 8, scale: { x: 1, y: 1 } }))!;
+    expect(dp).toContain("C");
+    expect(bbox(dp).w).toBeCloseTo(8, 2);
+    expect(bbox(dp).h).toBeCloseTo(8, 2);
+  });
+  it("zero-size / unknown type → undefined", () => {
+    expect(primitiveDPath(disp({ type: "RECT", width: 0, height: 5 }))).toBeUndefined();
+    expect(primitiveDPath(disp({ type: "STAR", width: 5, height: 5 }))).toBeUndefined();
+  });
+});
 
 interface RawCanvasDoc {
   canvas: Array<{
@@ -196,5 +367,61 @@ describe("buildGeneratedXcs round-trip", () => {
     // a non-overridden field keeps the source value (source power was 100)
     const deepEntry = entries.find(([id]) => id === `forge-${paths.find((p) => p.generatedClass === "deepen")!.operationOrder}`)![1];
     expect(deepEntry.data.INTAGLIO.parameter.customize.power).toBe(100);
+  });
+});
+
+describe("scan-angle on export", () => {
+  it("writes processAngle on generated entries when an angle is supplied", () => {
+    const parsed = parseXcsFile(loadSample());
+    const incise = findInciseObjects(parsed)[0];
+    const { paths, stats } = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+    expect(typeof stats.scanAngleDeg).toBe("number");
+    const out = buildGeneratedXcs(parsed, incise.id, paths, stats.mmPerUnit, resolveStageParams(DEFAULT_CONFIG), 37) as {
+      device: { data: { value: Array<[string, { displays: { value: Array<[string, { data: { INTAGLIO: { parameter: { customize: Record<string, number> } } } }]> } }]> } };
+    };
+    const entries = out.device.data.value.flatMap(([, g]) => g.displays.value).filter(([id]) => id.startsWith("forge-"));
+    expect(entries.length).toBeGreaterThan(0);
+    for (const [, e] of entries) expect(e.data.INTAGLIO.parameter.customize.processAngle).toBe(37);
+  });
+  it("leaves processAngle untouched (source value) when no angle is supplied", () => {
+    const parsed = parseXcsFile(loadSample());
+    const incise = findInciseObjects(parsed)[0];
+    const { paths, stats } = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+    const out = buildGeneratedXcs(parsed, incise.id, paths, stats.mmPerUnit, resolveStageParams(DEFAULT_CONFIG)) as {
+      device: { data: { value: Array<[string, { displays: { value: Array<[string, { data: { INTAGLIO: { parameter: { customize: Record<string, number> } } } }]> } }]> } };
+    };
+    const entries = out.device.data.value.flatMap(([, g]) => g.displays.value).filter(([id]) => id.startsWith("forge-"));
+    // source incise_emboss INTAGLIO processAngle is 15
+    for (const [, e] of entries) expect(e.data.INTAGLIO.parameter.customize.processAngle).toBe(15);
+  });
+});
+
+describe("deepen layer count on export", () => {
+  it("each deepen display's sliceNumber is its own toLayer (not the source's slice count)", () => {
+    const parsed = parseXcsFile(loadSample());
+    const incise = findInciseObjects(parsed)[0];
+    const { paths, stats } = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+    // The worker passes resolveStageParams(config) to buildGeneratedXcs.
+    const out = buildGeneratedXcs(
+      parsed,
+      incise.id,
+      paths,
+      stats.mmPerUnit,
+      resolveStageParams(DEFAULT_CONFIG),
+    ) as {
+      device: { data: { value: Array<[string, { displays: { value: Array<[string, { data: { INTAGLIO: { parameter: { customize: Record<string, number> } } } }]> } }]> } };
+    };
+    const entries = out.device.data.value.flatMap(([, g]) => g.displays.value);
+    const toByName = Object.fromEntries(DEFAULT_CONFIG.deepen.groups.map((g) => [g.name, g.toLayer]));
+
+    const deepenPaths = paths.filter((p) => p.generatedClass === "deepen");
+    expect(deepenPaths.length).toBeGreaterThan(0);
+    // The deepen passes span more than one distinct toLayer (so a regression to
+    // "all the same slice count" would actually be caught).
+    expect(new Set(deepenPaths.map((p) => toByName[p.groupName])).size).toBeGreaterThan(1);
+    for (const p of deepenPaths) {
+      const entry = entries.find(([id]) => id === `forge-${p.operationOrder}`)![1];
+      expect(entry.data.INTAGLIO.parameter.customize.sliceNumber).toBe(toByName[p.groupName]);
+    }
   });
 });

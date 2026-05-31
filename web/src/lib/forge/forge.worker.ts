@@ -3,6 +3,7 @@ import type { ForgeConfig, ParsedXcs, PipelineResult, XcsObject } from "./types"
 import { parseXcsFile } from "./xcs";
 import { runPipeline } from "./pipeline";
 import { buildGeneratedXcs, exportXcs } from "./xcs";
+import { resolveStageParams, effectiveScanAngle } from "./config";
 
 export type ForgeRequest =
   | { type: "parse"; buf: ArrayBuffer }
@@ -10,7 +11,7 @@ export type ForgeRequest =
   | { type: "export"; inciseId: string; config: ForgeConfig };
 
 export type ForgeResponse =
-  | { type: "parsed"; objects: XcsObject[]; embossIds: string[]; inciseIds: string[] }
+  | { type: "parsed"; objects: XcsObject[]; targetIds: string[]; preservedIds: string[] }
   | { type: "generated"; result: PipelineResult }
   | { type: "exported"; buf: ArrayBuffer }
   | { type: "error"; message: string };
@@ -27,8 +28,8 @@ self.onmessage = (e: MessageEvent<ForgeRequest>) => {
       post({
         type: "parsed",
         objects: parsed.objects,
-        embossIds: parsed.emboss.map((o) => o.id),
-        inciseIds: parsed.incise.map((o) => o.id),
+        targetIds: parsed.targets.map((o) => o.id),
+        preservedIds: parsed.preserved.map((o) => o.id),
       });
       return;
     }
@@ -39,7 +40,14 @@ self.onmessage = (e: MessageEvent<ForgeRequest>) => {
     }
     if (msg.type === "export") {
       const { paths, stats } = runPipeline(parsed, msg.inciseId, msg.config);
-      const doc = buildGeneratedXcs(parsed, msg.inciseId, paths, stats.mmPerUnit, msg.config.stageParams);
+      const doc = buildGeneratedXcs(
+        parsed,
+        msg.inciseId,
+        paths,
+        stats.mmPerUnit,
+        resolveStageParams(msg.config),
+        effectiveScanAngle(msg.config, stats.scanAngleDeg),
+      );
       const buf = exportXcs(doc);
       post({ type: "exported", buf }, [buf]);
       return;

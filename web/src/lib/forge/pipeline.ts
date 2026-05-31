@@ -9,6 +9,7 @@ import type {
   PipelineResult,
 } from "./types";
 import { extractContourSubpaths, calibrateMmPerUnit } from "./xcs";
+import { optimalScanAngle, perpendicularExtentAt } from "./scanangle";
 import { inferWindingAndOutside } from "./contour";
 import { buildPartRegion } from "./offset";
 import {
@@ -55,6 +56,17 @@ export function runPipeline(
   }
   const subpaths = rawSubpaths.map((c) => toMm(c, mmPerUnit));
 
+  // Speed-optimal raster scan angle from the mm-space geometry. Computed
+  // always (shown in the debug panel); applied to export only behind the toggle.
+  const scanAngleDeg = optimalScanAngle(subpaths);
+  const baselineDeg = obj.sourceScanAngleDeg;
+  const optimalExtent = perpendicularExtentAt(subpaths, scanAngleDeg);
+  const baselineExtent = baselineDeg != null ? perpendicularExtentAt(subpaths, baselineDeg) : undefined;
+  const scanAngleReductionPct =
+    baselineExtent && baselineExtent > 0
+      ? Math.max(0, Math.round((1 - optimalExtent / baselineExtent) * 100))
+      : undefined;
+
   // Winding check — run per subpath; warn once if any is not confident.
   let windingWarned = false;
   for (const c of subpaths) {
@@ -80,6 +92,9 @@ export function runPipeline(
         pathCounts: empty,
         totalPaths: 0,
         warnings,
+        scanAngleDeg,
+        scanAngleBaselineDeg: baselineDeg,
+        scanAngleReductionPct,
       },
     };
   }
@@ -103,10 +118,13 @@ export function runPipeline(
 
   const stats: DebugStats = {
     mmPerUnit,
-    mmPerUnitConfident: cal.confident || cfg.mmPerUnitOverride != null,
+    mmPerUnitConfident: cal.confident || override != null,
     pathCounts,
     totalPaths: ordered.length,
     warnings,
+    scanAngleDeg,
+    scanAngleBaselineDeg: baselineDeg,
+    scanAngleReductionPct,
   };
   return { paths: ordered, stats };
 }

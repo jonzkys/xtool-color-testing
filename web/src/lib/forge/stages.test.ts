@@ -130,7 +130,7 @@ describe("degenerate-band guards (no flood-fill, no empty-ring paths)", () => {
       sideMode: "inside" as const,
       deepen: {
         outsideOnly: false,
-        groups: [{ name: "CUT_03_X", fromLayer: 0, toLayer: 50, widthMultiplier: 1, enabled: true }],
+        groups: [{ name: "CUT_03_X", toLayer: 50, widthMultiplier: 1, enabled: true }],
       },
     };
     expect(generateDeepenPaths(thinPart, collapse, SRC)).toEqual([]);
@@ -139,7 +139,7 @@ describe("degenerate-band guards (no flood-fill, no empty-ring paths)", () => {
       ...DEFAULT_CONFIG,
       deepen: {
         ...DEFAULT_CONFIG.deepen,
-        groups: [{ name: "CUT_03_X", fromLayer: 0, toLayer: 50, widthMultiplier: 0, enabled: true }],
+        groups: [{ name: "CUT_03_X", toLayer: 50, widthMultiplier: 0, enabled: true }],
       },
     };
     expect(generateDeepenPaths(PART, zeroWidth, SRC)).toEqual([]);

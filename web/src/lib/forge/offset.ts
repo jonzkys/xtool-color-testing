@@ -193,8 +193,9 @@ export function buildPartRegion(subpaths: Contour[]): Pt[][] {
  *
  * The band is the union of the outer-boundary rings and the inner-boundary rings
  * emitted as one compound ring set: even-odd across them fills only the kerf,
- * leaving the part body (the inner region) a HOLE so the emboss is never
- * engraved. Returns rings (Pt[][]); empty if the outer boundary vanished.
+ * leaving the part body (the inner region) a HOLE, so only the kerf sliver is
+ * engraved — not the whole part. Returns rings (Pt[][]); empty if a boundary
+ * vanished.
  */
 export function bandFromRegion(part: Pt[][], widthMm: number, sideMode: SideMode): Pt[][] {
   if (part.length === 0 || widthMm <= 0) return [];
@@ -215,7 +216,7 @@ export function bandFromRegion(part: Pt[][], widthMm: number, sideMode: SideMode
   // A valid band needs BOTH boundaries: the part interior must remain a HOLE
   // between two concentric ring sets. If the inner boundary collapsed (thin part
   // / large width on inside|symmetric|flip), the band would degrade to a single
-  // solid ring → even-odd flood-fills the whole part, engraving over the emboss.
+  // solid ring → even-odd flood-filling the whole part, engraves the whole part body.
   // Drop it instead. (outside mode keeps inner = part, so this only bites the
   // inward-offset modes.)
   if (outer.length === 0 || inner.length === 0) return [];
