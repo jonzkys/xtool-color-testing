@@ -152,7 +152,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
   // depth uses the range span.
   const sliceNumber = override.sliceNumber ?? sourceParams?.sliceNumber ?? Z_DEFAULTS.sliceNumber;
   const depthLayers = isDeepen
-    ? Math.max(1, config.deepen.groups[deepenIdx].toLayer - config.deepen.groups[deepenIdx].fromLayer)
+    ? Math.max(1, config.deepen.groups[deepenIdx].toLayer) // deepen passes run 0→toLayer
     : sliceNumber;
   const totalDepth = descentDepthMm(depthLayers, zLayers, zDecline);
   const depthAt256 = descentDepthMm(256, zLayers, zDecline);

@@ -28,7 +28,10 @@ import { ForgeControls } from "../components/forge/ForgeControls";
 import { ForgeDebugPanel } from "../components/forge/ForgeDebugPanel";
 import { ForgeStageParams } from "../components/forge/ForgeStageParams";
 
-const CONFIG_LS_KEY = "forge.config.v1";
+// Bumped v1 → v2 when the default config shape/values changed (beam width
+// 0.05→0.03, deepen groups dropped `fromLayer`, renamed default groups). A new
+// key discards stale saved configs so users pick up the corrected defaults.
+const CONFIG_LS_KEY = "forge.config.v2";
 
 /** Load the saved config from localStorage, merged onto defaults so new fields
  *  (and the deepen group list) survive older saves. */

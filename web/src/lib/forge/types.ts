@@ -45,7 +45,8 @@ export interface GeneratedPath {
 /** One editable deepen pass-group row. */
 export interface DeepenGroup {
   name: string;
-  fromLayer: number;
+  /** End depth of this deepen pass (0..256). Deepen passes always start at the
+   *  surface (0), so there is no `fromLayer`. */
   toLayer: number;
   widthMultiplier: number;
   enabled: boolean;

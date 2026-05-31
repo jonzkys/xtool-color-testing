@@ -131,7 +131,7 @@ export function generateDeepenPaths(
       sourceObjectId,
       generatedClass: "deepen",
       groupName: group.name,
-      layerStart: group.fromLayer,
+      layerStart: 0,
       layerEnd: group.toLayer,
       widthMultiplier: group.widthMultiplier,
       offsetMm: widthMm,

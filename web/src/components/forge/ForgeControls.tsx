@@ -138,12 +138,11 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
               <col className="w-5" />
               <col />
               <col className="w-12" />
-              <col className="w-12" />
               <col className="w-10" />
             </colgroup>
             <thead>
               <tr className="text-left text-[var(--color-muted)]">
-                <th></th><th>name</th><th className="text-right pr-1">from</th><th className="text-right pr-1">to</th><th className="text-right">×b</th>
+                <th></th><th>name</th><th className="text-right pr-1">to</th><th className="text-right">×b</th>
               </tr>
             </thead>
             <tbody>
@@ -154,7 +153,6 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
                 <tr key={i}>
                   <td><input type="checkbox" checked={g.enabled} onChange={(e) => setGroup(i, { enabled: e.target.checked })} /></td>
                   <td className="pr-2"><input className="w-full min-w-0 bg-transparent border-b" value={g.name} onChange={(e) => onChange(renameDeepenGroup(config, i, e.target.value))} /></td>
-                  <td className="pr-1"><input className="w-full min-w-0 bg-transparent border-b text-right" type="number" value={g.fromLayer} onChange={(e) => setGroup(i, { fromLayer: Number(e.target.value) })} /></td>
                   <td className="pr-1"><input className="w-full min-w-0 bg-transparent border-b text-right" type="number" value={g.toLayer} onChange={(e) => setGroup(i, { toLayer: Number(e.target.value) })} /></td>
                   <td><input className="w-full min-w-0 bg-transparent border-b text-right" type="number" value={g.widthMultiplier} onChange={(e) => setGroup(i, { widthMultiplier: Number(e.target.value) })} /></td>
                 </tr>
