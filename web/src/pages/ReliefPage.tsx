@@ -26,6 +26,7 @@ import { Button, Card, EmptyState, PageContainer, Section, Toolbar } from "../ui
 import { ReliefCompare2D } from "../components/relief/ReliefCompare2D";
 import { ReliefControls } from "../components/relief/ReliefControls";
 import { ReliefInspect } from "../components/relief/ReliefInspect";
+import { ReliefSurface3D } from "../components/relief/ReliefSurface3D";
 import {
   DEFAULT_RELIEF_PARAMS,
   downscaleForPreview,
@@ -42,6 +43,10 @@ const DEBOUNCE_MS = 250;
 const PREVIEW_MAX_EDGE = 800;
 
 type Status = "idle" | "smoothing" | "ready" | "error";
+/** Centre-preview view mode. */
+type PreviewView = "2d" | "3d";
+/** Which height-field the 3D surface displays. */
+type SurfaceShow = "original" | "cleaned";
 
 export function ReliefPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -56,6 +61,12 @@ export function ReliefPage() {
   // Bumping forces the preview effect to re-run even when nothing else
   // changed — drives the manual "Re-render" button.
   const [renderTick, setRenderTick] = useState(0);
+
+  // Centre preview: 2D wipe-compare vs. orbitable 3D surface. The 3D
+  // surface flips between the source and cleaned height-fields via `show`
+  // (default cleaned — the result is what the user is dialling in).
+  const [view, setView] = useState<PreviewView>("2d");
+  const [show, setShow] = useState<SurfaceShow>("cleaned");
 
   // Object-URL bookkeeping so we can revoke on replace / unmount and
   // never leak. ``cleanedUrl`` is also stored in a ref so the async
@@ -376,13 +387,55 @@ export function ReliefPage() {
           <div className="flex min-h-0 min-w-0">
             <Card padded={false} className="flex min-h-0 flex-1 flex-col p-3">
               {bitmap ? (
-                <div ref={hostCallbackRef} className="min-h-0 min-w-0 flex-1">
-                  <ReliefCompare2D
-                    originalUrl={originalUrl}
-                    cleanedUrl={cleanedUrl}
-                    width={hostW}
-                    height={hostH}
-                  />
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+                  {/* View chrome: 2D split ↔ 3D surface, plus the 3D
+                      orig/clean flip. */}
+                  <div className="flex shrink-0 flex-wrap items-center gap-3">
+                    <SegmentedControl<PreviewView>
+                      label="preview view"
+                      value={view}
+                      onChange={setView}
+                      options={[
+                        { id: "2d", label: "2D split" },
+                        { id: "3d", label: "3D surface" },
+                      ]}
+                    />
+                    {view === "3d" && (
+                      <SegmentedControl<SurfaceShow>
+                        label="surface source"
+                        value={show}
+                        onChange={setShow}
+                        className="ml-auto"
+                        options={[
+                          { id: "original", label: "Original" },
+                          { id: "cleaned", label: "Cleaned" },
+                        ]}
+                      />
+                    )}
+                  </div>
+
+                  <div
+                    ref={hostCallbackRef}
+                    className="min-h-0 min-w-0 flex-1"
+                  >
+                    {view === "2d" ? (
+                      <ReliefCompare2D
+                        originalUrl={originalUrl}
+                        cleanedUrl={cleanedUrl}
+                        width={hostW}
+                        height={hostH}
+                      />
+                    ) : (
+                      <ReliefSurface3D
+                        heightData={
+                          show === "cleaned" ? cleanedData : originalData
+                        }
+                        show={show}
+                        width={hostW}
+                        height={hostH}
+                      />
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="flex min-h-0 flex-1 items-center justify-center">
@@ -458,6 +511,64 @@ export function ReliefPage() {
           </div>
         </div>
       </PageContainer>
+    </div>
+  );
+}
+
+/**
+ * SegmentedControl — on-brand pill toggle.
+ *
+ * Matches the Workshop-instrument register used elsewhere (Exposure
+ * toolbar, lens pills): a hairline-bordered ``inline-flex`` of mono
+ * uppercase segments, the active one filled with the ember primary. A
+ * 1-px metallic seam separates segments so the control reads as a milled
+ * bar rather than plain buttons. ``role="radiogroup"`` for a11y.
+ */
+function SegmentedControl<Id extends string>({
+  label,
+  value,
+  onChange,
+  options,
+  className,
+}: {
+  label: string;
+  value: Id;
+  onChange: (id: Id) => void;
+  options: { id: Id; label: string }[];
+  className?: string;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className={
+        "inline-flex overflow-hidden rounded-sm border border-[color:var(--color-border)] bg-[color:var(--color-surface)]" +
+        (className ? " " + className : "")
+      }
+    >
+      {options.map((opt, i) => {
+        const active = opt.id === value;
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(opt.id)}
+            className={
+              "relative whitespace-nowrap px-3 py-1.5 font-mono text-[10.5px] uppercase tracking-[0.16em] transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--color-primary)]/50 " +
+              (i > 0
+                ? "border-l border-[color:var(--color-border)] "
+                : "") +
+              (active
+                ? "bg-[color:var(--color-primary)] text-white"
+                : "text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)] hover:text-[color:var(--color-ink)]")
+            }
+          >
+            {opt.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
