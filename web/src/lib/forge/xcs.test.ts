@@ -120,6 +120,7 @@ describe("contourToDPath", () => {
 import { buildGeneratedXcs, exportXcs, extractContourSubpaths } from "./xcs";
 import { runPipeline } from "./pipeline";
 import { DEFAULT_CONFIG } from "./defaults";
+import { resolveStageParams } from "./config";
 
 const SIZES_SAMPLE = resolve(__dirname, "../../../../samples/xcs/sizes_ex.xcs");
 function loadSizes(): ArrayBuffer {
@@ -366,5 +367,35 @@ describe("buildGeneratedXcs round-trip", () => {
     // a non-overridden field keeps the source value (source power was 100)
     const deepEntry = entries.find(([id]) => id === `forge-${paths.find((p) => p.generatedClass === "deepen")!.operationOrder}`)![1];
     expect(deepEntry.data.INTAGLIO.parameter.customize.power).toBe(100);
+  });
+});
+
+describe("deepen layer count on export", () => {
+  it("each deepen display's sliceNumber is its own toLayer (not the source's slice count)", () => {
+    const parsed = parseXcsFile(loadSample());
+    const incise = findInciseObjects(parsed)[0];
+    const { paths, stats } = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+    // The worker passes resolveStageParams(config) to buildGeneratedXcs.
+    const out = buildGeneratedXcs(
+      parsed,
+      incise.id,
+      paths,
+      stats.mmPerUnit,
+      resolveStageParams(DEFAULT_CONFIG),
+    ) as {
+      device: { data: { value: Array<[string, { displays: { value: Array<[string, { data: { INTAGLIO: { parameter: { customize: Record<string, number> } } } }]> } }]> } };
+    };
+    const entries = out.device.data.value.flatMap(([, g]) => g.displays.value);
+    const toByName = Object.fromEntries(DEFAULT_CONFIG.deepen.groups.map((g) => [g.name, g.toLayer]));
+
+    const deepenPaths = paths.filter((p) => p.generatedClass === "deepen");
+    expect(deepenPaths.length).toBeGreaterThan(0);
+    // The deepen passes span more than one distinct toLayer (so a regression to
+    // "all the same slice count" would actually be caught).
+    expect(new Set(deepenPaths.map((p) => toByName[p.groupName])).size).toBeGreaterThan(1);
+    for (const p of deepenPaths) {
+      const entry = entries.find(([id]) => id === `forge-${p.operationOrder}`)![1];
+      expect(entry.data.INTAGLIO.parameter.customize.sliceNumber).toBe(toByName[p.groupName]);
+    }
   });
 });
