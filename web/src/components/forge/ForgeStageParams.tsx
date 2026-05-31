@@ -145,8 +145,16 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
   const zEnabled = override.zAxisMove ?? sourceParams?.zAxisMove ?? false;
   const zLayers = override.zLayers ?? sourceParams?.zLayers ?? Z_DEFAULTS.zLayers;
   const zDecline = override.zDecline ?? sourceParams?.zDecline ?? Z_DEFAULTS.zDecline;
+  // Layer count (slices) is a per-stage property INDEPENDENT of Z-descent — a
+  // design can be sliced into N layers with no Z descent at all. Deepen groups
+  // get their layer count from their from→to range (shown in the deepen table),
+  // so only non-deepen stages expose an editable "Layer count" field; deepen
+  // depth uses the range span.
   const sliceNumber = override.sliceNumber ?? sourceParams?.sliceNumber ?? Z_DEFAULTS.sliceNumber;
-  const totalDepth = descentDepthMm(sliceNumber, zLayers, zDecline);
+  const depthLayers = isDeepen
+    ? Math.max(1, config.deepen.groups[deepenIdx].toLayer - config.deepen.groups[deepenIdx].fromLayer)
+    : sliceNumber;
+  const totalDepth = descentDepthMm(depthLayers, zLayers, zDecline);
   const depthAt256 = descentDepthMm(256, zLayers, zDecline);
 
   return (
@@ -278,6 +286,23 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
           </div>
         )}
 
+        {/* Layer count — how many slices the engrave is divided into.
+            Independent of Z-descent. Deepen groups derive it from their from→to
+            range, so they don't get this field. */}
+        {!isDeepen && (
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <Field label="Layer count">
+              <NumberField
+                value={sliceNumber}
+                min={1}
+                step={1}
+                integer
+                onChange={(v) => setParam("sliceNumber", v >= 1 ? v : 1)}
+              />
+            </Field>
+          </div>
+        )}
+
         {/* Z-axis descent group */}
         <div className="mt-3 border border-[var(--color-border)] rounded p-2">
           <label className="flex items-center gap-2 font-mono text-[11px] text-[var(--color-ink-muted)]">
@@ -291,7 +316,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
           </label>
           {zEnabled && (
             <>
-              <div className="grid grid-cols-3 gap-2 mt-2">
+              <div className="grid grid-cols-2 gap-2 mt-2">
                 <Field label="Every N layers">
                   <NumberField
                     value={zLayers}
@@ -309,16 +334,6 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
                     step={0.01}
                     disabled={linkedDeepen}
                     onChange={(v) => setParam("zDecline", v >= 0 ? v : 0)}
-                  />
-                </Field>
-                <Field label="Slices">
-                  <NumberField
-                    value={sliceNumber}
-                    min={1}
-                    step={1}
-                    integer
-                    disabled={linkedDeepen}
-                    onChange={(v) => setParam("sliceNumber", v >= 1 ? v : 1)}
                   />
                 </Field>
               </div>

@@ -276,7 +276,7 @@ export function ForgePage() {
         )}
 
         {state.kind === "ready" && (
-          <div className="grid grid-cols-[260px_1fr_320px] gap-3">
+          <div className="grid grid-cols-[260px_1fr_320px] items-start gap-3">
             {/* LEFT: validation + object lists */}
             <div className="flex flex-col gap-3 text-xs">
               <Card>
@@ -356,8 +356,10 @@ export function ForgePage() {
               />
             </div>
 
-            {/* RIGHT: controls + debug */}
-            <div className="flex flex-col gap-3 overflow-y-auto max-h-[calc(100vh-160px)]">
+            {/* RIGHT: controls + debug. No internal scroll/height cap — the
+                page scrolls as one document (main is the scroller), so the
+                full-width Stage-parameters row below is always reachable. */}
+            <div className="flex flex-col gap-3">
               <ForgeControls
                 config={config}
                 onChange={setConfig}

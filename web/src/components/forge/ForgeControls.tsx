@@ -129,11 +129,21 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
       {/* Deepen pass-group table */}
       <Card>
         <CardHeader><CardTitle>Deepen pass groups (CUT_03–06)</CardTitle></CardHeader>
-        <div className="p-2 overflow-x-auto">
-          <table className="w-full font-mono text-[11px]">
+        <div className="p-2">
+          {/* table-fixed + colgroup: the name column flexes and the numeric
+              columns stay fixed, so inputs fill their own cell (w-full) instead
+              of overflowing into the next column. */}
+          <table className="w-full table-fixed font-mono text-[11px]">
+            <colgroup>
+              <col className="w-5" />
+              <col />
+              <col className="w-12" />
+              <col className="w-12" />
+              <col className="w-10" />
+            </colgroup>
             <thead>
               <tr className="text-left text-[var(--color-muted)]">
-                <th>on</th><th>name</th><th>from</th><th>to</th><th>×beam</th>
+                <th></th><th>name</th><th className="text-right pr-1">from</th><th className="text-right pr-1">to</th><th className="text-right">×b</th>
               </tr>
             </thead>
             <tbody>
@@ -143,10 +153,10 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
                 // collides when two groups share a name.
                 <tr key={i}>
                   <td><input type="checkbox" checked={g.enabled} onChange={(e) => setGroup(i, { enabled: e.target.checked })} /></td>
-                  <td><input className="w-40 bg-transparent border-b" value={g.name} onChange={(e) => onChange(renameDeepenGroup(config, i, e.target.value))} /></td>
-                  <td><input className="w-12 bg-transparent border-b" type="number" value={g.fromLayer} onChange={(e) => setGroup(i, { fromLayer: Number(e.target.value) })} /></td>
-                  <td><input className="w-12 bg-transparent border-b" type="number" value={g.toLayer} onChange={(e) => setGroup(i, { toLayer: Number(e.target.value) })} /></td>
-                  <td><input className="w-12 bg-transparent border-b" type="number" value={g.widthMultiplier} onChange={(e) => setGroup(i, { widthMultiplier: Number(e.target.value) })} /></td>
+                  <td className="pr-2"><input className="w-full min-w-0 bg-transparent border-b" value={g.name} onChange={(e) => onChange(renameDeepenGroup(config, i, e.target.value))} /></td>
+                  <td className="pr-1"><input className="w-full min-w-0 bg-transparent border-b text-right" type="number" value={g.fromLayer} onChange={(e) => setGroup(i, { fromLayer: Number(e.target.value) })} /></td>
+                  <td className="pr-1"><input className="w-full min-w-0 bg-transparent border-b text-right" type="number" value={g.toLayer} onChange={(e) => setGroup(i, { toLayer: Number(e.target.value) })} /></td>
+                  <td><input className="w-full min-w-0 bg-transparent border-b text-right" type="number" value={g.widthMultiplier} onChange={(e) => setGroup(i, { widthMultiplier: Number(e.target.value) })} /></td>
                 </tr>
               ))}
             </tbody>
