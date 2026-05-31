@@ -18,6 +18,10 @@ _VALID_KINDS = {"range", "stepped", "not_applicable", "enum"}
 
 
 def _validate_constraint(profile_id: str, field_name: str, c: dict) -> None:
+    if not isinstance(c, dict):
+        raise ValueError(
+            f"{profile_id}.{field_name}: constraint must be a dict, got {type(c).__name__!r}"
+        )
     kind = c.get("kind")
     if kind not in _VALID_KINDS:
         raise ValueError(
@@ -25,7 +29,9 @@ def _validate_constraint(profile_id: str, field_name: str, c: dict) -> None:
         )
     if kind == "range":
         lo, hi = c.get("min"), c.get("max")
-        if lo is None or hi is None or lo > hi:
+        if (lo is None or hi is None
+                or not isinstance(lo, (int, float)) or not isinstance(hi, (int, float))
+                or lo > hi):
             raise ValueError(
                 f"{profile_id}.{field_name}: invalid range {lo!r}..{hi!r}",
             )
@@ -47,6 +53,8 @@ def validate_profiles(profiles: dict[str, dict[str, dict]]) -> None:
 def load_profiles(path: Path = DEFAULT_PATH) -> dict[str, dict[str, dict]]:
     """Read + validate the profiles JSON, returning the ``profiles`` dict."""
     raw = json.loads(Path(path).read_text())
-    profiles = raw.get("profiles", {})
+    if "profiles" not in raw:
+        raise ValueError(f"profiles JSON at {path} is missing the 'profiles' key")
+    profiles = raw["profiles"]
     validate_profiles(profiles)
     return profiles
