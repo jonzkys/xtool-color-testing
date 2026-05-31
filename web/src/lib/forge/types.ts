@@ -99,6 +99,10 @@ export interface ForgeConfig {
    *  INTAGLIO entry's `customize.processAngle` on export. Opt-in (experimental
    *  — the exact processAngle convention is xTool's). */
   optimizeScanAngle: boolean;
+  /** Manual scan-angle override (deg) written to `customize.processAngle` on
+   *  export. null = inherit the source value. Ignored while `optimizeScanAngle`
+   *  is on (that takes precedence). */
+  manualScanAngleDeg: number | null;
 }
 
 /** Rough per-stage laser params. All optional — undefined = inherit source. */

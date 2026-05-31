@@ -3,7 +3,7 @@ import type { ForgeConfig, ParsedXcs, PipelineResult, XcsObject } from "./types"
 import { parseXcsFile } from "./xcs";
 import { runPipeline } from "./pipeline";
 import { buildGeneratedXcs, exportXcs } from "./xcs";
-import { resolveStageParams } from "./config";
+import { resolveStageParams, effectiveScanAngle } from "./config";
 
 export type ForgeRequest =
   | { type: "parse"; buf: ArrayBuffer }
@@ -46,7 +46,7 @@ self.onmessage = (e: MessageEvent<ForgeRequest>) => {
         paths,
         stats.mmPerUnit,
         resolveStageParams(msg.config),
-        msg.config.optimizeScanAngle ? stats.scanAngleDeg : undefined,
+        effectiveScanAngle(msg.config, stats.scanAngleDeg),
       );
       const buf = exportXcs(doc);
       post({ type: "exported", buf }, [buf]);

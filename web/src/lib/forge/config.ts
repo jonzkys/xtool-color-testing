@@ -20,6 +20,18 @@ export function renameDeepenGroup(config: ForgeConfig, index: number, newName: s
 }
 
 /**
+ * The scan angle (deg) to write to `processAngle` on export, or undefined to
+ * leave the source's value untouched. Precedence: the Optimize toggle
+ * (auto-optimal) > a manual override > source. `optimalDeg` is the
+ * geometry-derived optimum (`DebugStats.scanAngleDeg`).
+ */
+export function effectiveScanAngle(config: ForgeConfig, optimalDeg: number): number | undefined {
+  if (config.optimizeScanAngle) return optimalDeg;
+  if (config.manualScanAngleDeg != null) return config.manualScanAngleDeg;
+  return undefined;
+}
+
+/**
  * Expand the per-stage override map for export. Two deepen-specific rules:
  *  - **Linking:** a deepen group after the first whose `copyParamsFromFirst` is
  *    set (default true) inherits the FIRST deepen group's laser overrides.

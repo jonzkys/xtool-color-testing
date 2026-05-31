@@ -30,9 +30,10 @@ import { ForgeStageParams } from "../components/forge/ForgeStageParams";
 
 // Bumped v1 → v2 when the default config shape/values changed (beam width
 // 0.05→0.03, deepen groups dropped `fromLayer`, renamed default groups), then
-// v2 → v3 for the new `optimizeScanAngle` field. A new key discards stale saved
-// configs so users pick up the corrected defaults.
-const CONFIG_LS_KEY = "forge.config.v3";
+// v2 → v3 for the new `optimizeScanAngle` field, v3 → v4 for the new
+// `manualScanAngleDeg` field. A new key discards stale saved configs so users
+// pick up the corrected defaults.
+const CONFIG_LS_KEY = "forge.config.v4";
 
 /** Load the saved config from localStorage, merged onto defaults so new fields
  *  (and the deepen group list) survive older saves. */

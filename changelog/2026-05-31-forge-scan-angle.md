@@ -17,3 +17,8 @@ logo, large on long/narrow features (a 5 × 100 mm bar drops ~20× in scan
 lines). It's opt-in and experimental: the exact angle convention is xTool's, so
 compare the time estimate in Studio with the toggle on vs off before relying
 on it.
+
+The optimization is **off by default**. A companion **Scan angle** entry field
+(Global panel) lets you set `processAngle` directly to any fixed value — enter
+0 to inherit the source file's value unchanged. When **Optimize scan angle** is
+enabled it takes precedence and the manual field is disabled.

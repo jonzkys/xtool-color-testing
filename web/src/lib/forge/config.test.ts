@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renameDeepenGroup, resolveStageParams } from "./config";
+import { renameDeepenGroup, resolveStageParams, effectiveScanAngle } from "./config";
 import { DEFAULT_CONFIG } from "./defaults";
 
 describe("renameDeepenGroup", () => {
@@ -32,6 +32,18 @@ describe("renameDeepenGroup", () => {
     renameDeepenGroup(cfg, 0, "Y");
 
     expect(JSON.stringify(cfg)).toBe(snapshot);
+  });
+});
+
+describe("effectiveScanAngle", () => {
+  it("uses the optimal angle when Optimize is on (ignoring any manual value)", () => {
+    expect(effectiveScanAngle({ ...DEFAULT_CONFIG, optimizeScanAngle: true, manualScanAngleDeg: 33 }, 12)).toBe(12);
+  });
+  it("uses the manual angle when set and Optimize is off", () => {
+    expect(effectiveScanAngle({ ...DEFAULT_CONFIG, optimizeScanAngle: false, manualScanAngleDeg: 33 }, 12)).toBe(33);
+  });
+  it("inherits source (undefined) when neither is set", () => {
+    expect(effectiveScanAngle({ ...DEFAULT_CONFIG, optimizeScanAngle: false, manualScanAngleDeg: null }, 12)).toBeUndefined();
   });
 });
 
