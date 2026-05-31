@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import anyio
-from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -80,7 +80,9 @@ from .schemas import (
     ValidationCellsPatch,
     TestLockBody,
 )
+from .capture_pipeline import decode_image_bytes
 from .pixel_art_converter import pixel_art_to_svg, pixel_art_to_xcs_bytes
+from .relief import ReliefSmoothParams, encode_png, smooth_heightfield, to_grayscale_u8
 from .svg_converter import svg_stack_to_xcs_bytes
 from .svg_layers_converter import (
     svg_layers_to_xcs_bytes,
@@ -881,6 +883,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "Content-Disposition": f'attachment; filename="{filename}"',
             },
         )
+
+    @app.post("/api/relief/smooth")
+    def relief_smooth(
+        file: UploadFile = File(...),
+        strength: int = Form(8),
+        edge_preserve: bool = Form(True),
+        edge_threshold: int = Form(40),
+        spike_removal: bool = Form(True),
+        median_ksize: int = Form(3),
+    ) -> Response:
+        """Smooth a grayscale depth map and return the cleaned PNG. Stateless."""
+        raw = file.file.read()
+        try:
+            bgr = decode_image_bytes(raw)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Could not decode image")
+        gray = to_grayscale_u8(bgr)
+        if gray.size == 0 or min(gray.shape) < 2:
+            raise HTTPException(status_code=422, detail="Image too small to smooth")
+        params = ReliefSmoothParams(
+            strength=max(1, min(100, strength)),
+            edge_preserve=edge_preserve,
+            edge_threshold=max(1, min(255, edge_threshold)),
+            spike_removal=spike_removal,
+            median_ksize=median_ksize,
+        )
+        png = encode_png(smooth_heightfield(gray, params))
+        return Response(content=png, media_type="image/png",
+                        headers={"Cache-Control": "no-store"})
 
     from .repositories import palette as pal_repo
     from .repositories import materials as m_repo

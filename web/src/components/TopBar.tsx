@@ -40,7 +40,8 @@ type NavRouteName =
   | "exposure"
   | "spectrum"
   | "spectrum-2d"
-  | "saved-spectrums";
+  | "saved-spectrums"
+  | "relief";
 
 interface NavChild {
   label: string;
@@ -74,6 +75,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Loom", route: "loom" },
       { label: "SVG layers", route: "svg-layers" },
       { label: "Pixel art", route: "pixel-art" },
+      { label: "Relief", route: "relief" },
     ],
   },
   {
@@ -337,6 +339,7 @@ function activeNavRoute(route: Route): NavRouteName | null {
     case "spectrum":
     case "spectrum-2d":
     case "saved-spectrums":
+    case "relief":
       return route.name;
     default:
       return null;
