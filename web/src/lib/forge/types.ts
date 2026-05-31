@@ -98,9 +98,14 @@ export interface StageParams {
   power?: number; // %
   speed?: number; // mm/s
   passes?: number; // → customize.repeat
-  zLayers?: number; // depth slices (→ customize.zLayers)
   pulseWidth?: number; // ns (MOPA)
   frequency?: number; // kHz (→ customize.mopaFrequency)
+  density?: number; // lines/cm (→ customize.density)
+  laser?: "red" | "blue"; // → customize.processingLightSource
+  zAxisMove?: boolean; // "Descend at Z-axis" (→ customize.zAxisMove)
+  zLayers?: number; // descend every N layers (→ customize.zLayers)
+  zDecline?: number; // mm per descent step (→ customize.zDecline)
+  sliceNumber?: number; // total layers/slices (→ customize.sliceNumber)
 }
 
 /** One object detected inside the uploaded XCS. */
@@ -113,6 +118,9 @@ export interface XcsObject {
   dPath?: string;
   /** True when this object carries a vector path (a forge-able contour). */
   hasGeometry: boolean;
+  /** Source laser params read from this object's INTAGLIO customize (cut
+   *  targets only); used to pre-fill the per-stage param widgets. */
+  params?: StageParams;
   /** id of the device.data process group this object belongs to. */
   groupKey: string;
 }

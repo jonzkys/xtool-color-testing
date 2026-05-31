@@ -25,7 +25,10 @@ function stageList(config: ForgeConfig): Array<{ group: string; label: string }>
   return out;
 }
 
-const FIELDS: Array<{ key: keyof StageParams; label: string; step: number }> = [
+/** Subset of StageParams keys that hold a numeric value. */
+type NumericStageParamKey = "power" | "speed" | "passes" | "pulseWidth" | "frequency" | "density" | "zLayers" | "zDecline" | "sliceNumber";
+
+const FIELDS: Array<{ key: NumericStageParamKey; label: string; step: number }> = [
   { key: "power", label: "Power (%)", step: 1 },
   { key: "speed", label: "Speed (mm/s)", step: 10 },
   { key: "passes", label: "Passes", step: 1 },
@@ -44,7 +47,7 @@ export function ForgeStageParams({ config, onChange }: ForgeStageParamsProps) {
   const current = stages[idx];
   const params: StageParams = config.stageParams[current?.group ?? ""] ?? {};
 
-  const setParam = (key: keyof StageParams, v: number) => {
+  const setParam = (key: NumericStageParamKey, v: number) => {
     const next: StageParams = { ...params };
     if (v > 0) next[key] = v;
     else delete next[key]; // 0 ⇒ inherit source value

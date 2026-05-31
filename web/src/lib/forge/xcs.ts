@@ -10,6 +10,26 @@ const SCORE_TYPES = new Set([
   "COLOR_FILL_ENGRAVE",
 ]);
 
+/** Map an INTAGLIO `customize` block to the StageParams we expose. */
+function readStageParams(customize: Record<string, unknown> | undefined): import("./types").StageParams | undefined {
+  if (!customize) return undefined;
+  const num = (k: string) => (typeof customize[k] === "number" ? (customize[k] as number) : undefined);
+  const laser = customize.processingLightSource;
+  return {
+    power: num("power"),
+    speed: num("speed"),
+    passes: num("repeat"),
+    pulseWidth: num("pulseWidth"),
+    frequency: num("mopaFrequency"),
+    density: num("density"),
+    laser: laser === "red" || laser === "blue" ? laser : undefined,
+    zAxisMove: typeof customize.zAxisMove === "boolean" ? customize.zAxisMove : undefined,
+    zLayers: num("zLayers"),
+    zDecline: num("zDecline"),
+    sliceNumber: num("sliceNumber"),
+  };
+}
+
 /** Classify a layer by its device-map processingType. Exported for testing. */
 export function classify(pt: string | null): XcsObject["modeClass"] {
   if (pt && INCISE_TYPES.has(pt)) return "incise";
@@ -78,14 +98,19 @@ export function parseXcsFile(buf: ArrayBuffer): ParsedXcs {
       // remain byte-intact in `raw`, so export still preserves them.
       if (!disp) continue;
       const processingType = entry.processingType ?? null;
+      const modeClass = classify(processingType);
+      const entryData = (entry as { data?: Record<string, { parameter?: { customize?: Record<string, unknown> } }> }).data;
+      const params =
+        modeClass === "incise" ? readStageParams(entryData?.INTAGLIO?.parameter?.customize) : undefined;
       objects.push({
         id: displayId,
         type: disp.type ?? entry.type ?? "UNKNOWN",
         name: disp.name ?? null,
         processingType,
-        modeClass: classify(processingType),
+        modeClass,
         dPath: disp.dPath,
         hasGeometry: !!disp.dPath,
+        params,
         groupKey,
       });
     }
@@ -380,12 +405,23 @@ function applyStageParams(
   const set = (key: string, v: number | undefined) => {
     if (typeof v === "number" && Number.isFinite(v)) customize[key] = v;
   };
+  const setStr = (key: string, v: string | undefined) => {
+    if (typeof v === "string" && v) customize[key] = v;
+  };
+  const setBool = (key: string, v: boolean | undefined) => {
+    if (typeof v === "boolean") customize[key] = v;
+  };
   set("power", params.power);
   set("speed", params.speed);
   set("repeat", params.passes);
-  set("zLayers", params.zLayers);
   set("pulseWidth", params.pulseWidth);
   set("mopaFrequency", params.frequency);
+  set("density", params.density);
+  setStr("processingLightSource", params.laser);
+  setBool("zAxisMove", params.zAxisMove);
+  set("zLayers", params.zLayers);
+  set("zDecline", params.zDecline);
+  set("sliceNumber", params.sliceNumber);
 }
 
 /** Serialise a built XCS document to UTF-8 bytes (compact JSON, like write_xcs). */

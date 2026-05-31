@@ -120,6 +120,47 @@ import { buildGeneratedXcs, exportXcs } from "./xcs";
 import { runPipeline } from "./pipeline";
 import { DEFAULT_CONFIG } from "./defaults";
 
+describe("source params (incise customize → StageParams)", () => {
+  it("attaches mapped params to the cut target (test-text.xcs)", () => {
+    const parsed = parseXcsFile(loadText());
+    const p = parsed.targets[0].params!;
+    expect(p.power).toBe(1);
+    expect(p.speed).toBe(80);
+    expect(p.passes).toBe(1);          // customize.repeat
+    expect(p.pulseWidth).toBe(200);
+    expect(p.frequency).toBe(65);      // customize.mopaFrequency
+    expect(p.density).toBe(100);
+    expect(p.laser).toBe("blue");      // customize.processingLightSource
+    expect(p.zAxisMove).toBe(false);
+    expect(p.zLayers).toBe(1);
+    expect(p.zDecline).toBeCloseTo(0.01, 4);
+    expect(p.sliceNumber).toBe(100);
+  });
+});
+
+describe("applyStageParams (new fields)", () => {
+  it("writes density, laser, and the z-descent fields into the INTAGLIO customize", () => {
+    const parsed = parseXcsFile(loadSample());
+    const incise = findInciseObjects(parsed)[0];
+    const { paths, stats } = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+    const seed = paths.find((p) => p.groupName === "CUT_01_SEED")!;
+    const stageParams = {
+      CUT_01_SEED: { density: 222, laser: "red" as const, zAxisMove: true, zLayers: 8, zDecline: 0.05, sliceNumber: 256 },
+    };
+    const out = buildGeneratedXcs(parsed, incise.id, paths, stats.mmPerUnit, stageParams) as {
+      device: { data: { value: Array<[string, { displays: { value: Array<[string, { data: { INTAGLIO: { parameter: { customize: Record<string, unknown> } } } }]> } }]> } };
+    };
+    const entries = out.device.data.value.flatMap(([, g]) => g.displays.value);
+    const c = entries.find(([id]) => id === `forge-${seed.operationOrder}`)![1].data.INTAGLIO.parameter.customize;
+    expect(c.density).toBe(222);
+    expect(c.processingLightSource).toBe("red");
+    expect(c.zAxisMove).toBe(true);
+    expect(c.zLayers).toBe(8);
+    expect(c.zDecline).toBe(0.05);
+    expect(c.sliceNumber).toBe(256);
+  });
+});
+
 interface RawCanvasDoc {
   canvas: Array<{
     displays: Array<{
