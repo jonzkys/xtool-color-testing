@@ -369,7 +369,15 @@ export function ForgePage() {
 
             {/* BOTTOM (full width): per-stage laser params */}
             <div className="col-span-3">
-              <ForgeStageParams config={config} onChange={setConfig} />
+              <ForgeStageParams
+                config={config}
+                onChange={setConfig}
+                sourceParams={
+                  state.kind === "ready" && selectedIncise
+                    ? state.objects.find((o) => o.id === selectedIncise)?.params
+                    : undefined
+                }
+              />
             </div>
           </div>
         )}
