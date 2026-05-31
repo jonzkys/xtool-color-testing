@@ -32,6 +32,56 @@ function readStageParams(customize: Record<string, unknown> | undefined): import
   };
 }
 
+const KAPPA = 0.5522847498307936; // bezier circle constant
+const fmtNum = (v: number) => String(Number(v.toFixed(4)));
+
+/**
+ * Synthesize a closed dPath (in the display's local mm space) for primitive
+ * shapes (RECT / CIRCLE / ELLIPSE) that carry no `dPath`. The display's
+ * x/y/offset + scale already place this local geometry on the canvas, exactly
+ * as for a PATH's dPath. Returns undefined for unknown / zero-size shapes.
+ * NOTE: circle/ellipse use the width/height bounding box (inferred — no sample
+ * to verify against yet); rotation (`angle`) is not applied (a known limit,
+ * same as for PATH displays).
+ */
+function primitiveDPath(disp: RawDisplay): string | undefined {
+  const w = typeof disp.width === "number" ? disp.width : 0;
+  const h = typeof disp.height === "number" ? disp.height : 0;
+  if (!(w > 0) || !(h > 0)) return undefined;
+  const type = (disp.type ?? "").toUpperCase();
+  const f = fmtNum;
+  if (type === "RECT") {
+    let r = typeof disp.radius === "number" ? disp.radius : 0;
+    r = Math.max(0, Math.min(r, Math.min(w, h) / 2));
+    if (r <= 0) return `M0,0 L${f(w)},0 L${f(w)},${f(h)} L0,${f(h)} Z`;
+    const k = r * KAPPA;
+    return [
+      `M${f(r)},0`,
+      `L${f(w - r)},0`,
+      `C${f(w - r + k)},0 ${f(w)},${f(r - k)} ${f(w)},${f(r)}`,
+      `L${f(w)},${f(h - r)}`,
+      `C${f(w)},${f(h - r + k)} ${f(w - r + k)},${f(h)} ${f(w - r)},${f(h)}`,
+      `L${f(r)},${f(h)}`,
+      `C${f(r - k)},${f(h)} 0,${f(h - r + k)} 0,${f(h - r)}`,
+      `L0,${f(r)}`,
+      `C0,${f(r - k)} ${f(r - k)},0 ${f(r)},0`,
+      "Z",
+    ].join(" ");
+  }
+  if (type === "CIRCLE" || type === "ELLIPSE") {
+    const rx = w / 2, ry = h / 2, kx = (w / 2) * KAPPA, ky = (h / 2) * KAPPA;
+    return [
+      `M${f(rx)},0`,
+      `C${f(rx + kx)},0 ${f(w)},${f(ry - ky)} ${f(w)},${f(ry)}`,
+      `C${f(w)},${f(ry + ky)} ${f(rx + kx)},${f(h)} ${f(rx)},${f(h)}`,
+      `C${f(rx - kx)},${f(h)} 0,${f(ry + ky)} 0,${f(ry)}`,
+      `C0,${f(ry - ky)} ${f(rx - kx)},0 ${f(rx)},0`,
+      "Z",
+    ].join(" ");
+  }
+  return undefined;
+}
+
 /** Classify a layer by its device-map processingType. Exported for testing. */
 export function classify(pt: string | null): XcsObject["modeClass"] {
   if (pt && INCISE_TYPES.has(pt)) return "incise";
@@ -104,14 +154,15 @@ export function parseXcsFile(buf: ArrayBuffer): ParsedXcs {
       const entryData = (entry as { data?: Record<string, { parameter?: { customize?: Record<string, unknown> } }> }).data;
       const params =
         modeClass === "incise" ? readStageParams(entryData?.INTAGLIO?.parameter?.customize) : undefined;
+      const dPath = disp.dPath ?? primitiveDPath(disp);
       objects.push({
         id: displayId,
         type: disp.type ?? entry.type ?? "UNKNOWN",
         name: disp.name ?? null,
         processingType,
         modeClass,
-        dPath: disp.dPath,
-        hasGeometry: !!disp.dPath,
+        dPath,
+        hasGeometry: !!dPath,
         params,
         groupKey,
       });

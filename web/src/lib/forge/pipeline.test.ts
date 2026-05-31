@@ -83,6 +83,21 @@ describe("runPipeline", () => {
   });
 });
 
+const SIZES_SAMPLE = resolve(__dirname, "../../../../samples/xcs/sizes_ex.xcs");
+function loadSizes(): ArrayBuffer {
+  const b = readFileSync(SIZES_SAMPLE);
+  return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+}
+
+describe("runPipeline (RECT primitive target)", () => {
+  it("produces a non-empty staged cut from a rect", () => {
+    const parsed = parseXcsFile(loadSizes());
+    const { paths, stats } = runPipeline(parsed, parsed.targets[0].id, DEFAULT_CONFIG);
+    expect(stats.mmPerUnitConfident).toBe(true);
+    expect(paths.length).toBeGreaterThan(0);
+  });
+});
+
 describe("runPipeline (incise-only sample: test-text.xcs)", () => {
   it("calibrates confidently at ~1.0 with no warning", () => {
     const parsed = parseXcsFile(loadText());

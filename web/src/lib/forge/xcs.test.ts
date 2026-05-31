@@ -116,9 +116,41 @@ describe("contourToDPath", () => {
   });
 });
 
-import { buildGeneratedXcs, exportXcs } from "./xcs";
+import { buildGeneratedXcs, exportXcs, extractContourSubpaths } from "./xcs";
 import { runPipeline } from "./pipeline";
 import { DEFAULT_CONFIG } from "./defaults";
+
+const SIZES_SAMPLE = resolve(__dirname, "../../../../samples/xcs/sizes_ex.xcs");
+function loadSizes(): ArrayBuffer {
+  const b = readFileSync(SIZES_SAMPLE);
+  return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+}
+
+describe("primitive shapes (sizes_ex.xcs — RECT primitives)", () => {
+  it("treats RECT primitives as geometry-bearing cut targets", () => {
+    const parsed = parseXcsFile(loadSizes());
+    expect(parsed.targets.length).toBe(5);
+    expect(parsed.targets.every((t) => t.hasGeometry)).toBe(true);
+    expect(parsed.targets.every((t) => t.processingType === "INTAGLIO")).toBe(true);
+  });
+
+  it("calibrates each rect to its true real-world width", () => {
+    const parsed = parseXcsFile(loadSizes());
+    const widths = parsed.targets
+      .map((t) => {
+        const cal = calibrateMmPerUnit(parsed, t);
+        const subs = extractContourSubpaths(t);
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const c of subs) for (const p of c.points) {
+          if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+          if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+        }
+        return Math.min(maxX - minX, maxY - minY) * cal.mmPerUnit; // short side = rect width
+      })
+      .sort((a, b) => a - b);
+    [0.2, 0.4, 0.8, 1, 5].forEach((exp, i) => expect(widths[i]).toBeCloseTo(exp, 2));
+  });
+});
 
 describe("source params (incise customize → StageParams)", () => {
   it("attaches mapped params to the cut target (test-text.xcs)", () => {
