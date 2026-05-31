@@ -1,9 +1,1370 @@
 {
-  "meta": { "source": "stub — replaced in Task 4", "extracted": "2026-06-01" },
+  "meta": {
+    "source": "xTool Studio 1.7.24",
+    "extracted": "2026-06-01",
+    "tool": "tools/xtool-extract (parse-bundle + read-pulse-enums + build-profiles)",
+    "note": "Per-(machine,mode) constraints. See tools/xtool-extract/README.md."
+  },
   "profiles": {
     "F2Ultra:engrave": {
-      "power": { "kind": "range", "min": 1, "max": 100, "step": 1 },
-      "laser": { "kind": "enum", "values": ["red", "blue"] }
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "stepped",
+        "values": [
+          2,
+          4,
+          6,
+          9,
+          13,
+          20,
+          30,
+          45,
+          60,
+          80,
+          100,
+          150,
+          200,
+          250,
+          350,
+          500
+        ]
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red",
+          "blue"
+        ]
+      }
+    },
+    "F2Ultra:score": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "stepped",
+        "values": [
+          2,
+          4,
+          6,
+          9,
+          13,
+          20,
+          30,
+          45,
+          60,
+          80,
+          100,
+          150,
+          200,
+          250,
+          350,
+          500
+        ]
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red",
+          "blue"
+        ]
+      }
+    },
+    "F2Ultra:cut": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "stepped",
+        "values": [
+          2,
+          4,
+          6,
+          9,
+          13,
+          20,
+          30,
+          45,
+          60,
+          80,
+          100,
+          150,
+          200,
+          250,
+          350,
+          500
+        ]
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red",
+          "blue"
+        ]
+      }
+    },
+    "F2Ultra:color_engrave": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 5000,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 15000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "stepped",
+        "values": [
+          2,
+          4,
+          6,
+          9,
+          13,
+          20,
+          30,
+          45,
+          60,
+          80,
+          100,
+          150,
+          200,
+          250,
+          350,
+          500
+        ]
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red",
+          "blue"
+        ]
+      }
+    },
+    "F2Ultra:intaglio": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "stepped",
+        "values": [
+          2,
+          4,
+          6,
+          9,
+          13,
+          20,
+          30,
+          45,
+          60,
+          80,
+          100,
+          150,
+          200,
+          250,
+          350,
+          500
+        ]
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red",
+          "blue"
+        ]
+      }
+    },
+    "F2Ultra:relief": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "stepped",
+        "values": [
+          2,
+          4,
+          6,
+          9,
+          13,
+          20,
+          30,
+          45,
+          60,
+          80,
+          100,
+          150,
+          200,
+          250,
+          350,
+          500
+        ]
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red",
+          "blue"
+        ]
+      }
+    },
+    "F2UltraSingle:engrave": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "stepped",
+        "values": [
+          2,
+          4,
+          6,
+          9,
+          13,
+          20,
+          30,
+          45,
+          60,
+          80,
+          100,
+          150,
+          200,
+          250,
+          350,
+          500
+        ]
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red"
+        ]
+      }
+    },
+    "F2UltraSingle:score": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "stepped",
+        "values": [
+          2,
+          4,
+          6,
+          9,
+          13,
+          20,
+          30,
+          45,
+          60,
+          80,
+          100,
+          150,
+          200,
+          250,
+          350,
+          500
+        ]
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red"
+        ]
+      }
+    },
+    "F2UltraSingle:cut": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "stepped",
+        "values": [
+          2,
+          4,
+          6,
+          9,
+          13,
+          20,
+          30,
+          45,
+          60,
+          80,
+          100,
+          150,
+          200,
+          250,
+          350,
+          500
+        ]
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red"
+        ]
+      }
+    },
+    "F2UltraSingle:color_engrave": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 5000,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 15000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "stepped",
+        "values": [
+          2,
+          4,
+          6,
+          9,
+          13,
+          20,
+          30,
+          45,
+          60,
+          80,
+          100,
+          150,
+          200,
+          250,
+          350,
+          500
+        ]
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red"
+        ]
+      }
+    },
+    "F2UltraSingle:intaglio": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "stepped",
+        "values": [
+          2,
+          4,
+          6,
+          9,
+          13,
+          20,
+          30,
+          45,
+          60,
+          80,
+          100,
+          150,
+          200,
+          250,
+          350,
+          500
+        ]
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red"
+        ]
+      }
+    },
+    "F2UltraSingle:relief": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "stepped",
+        "values": [
+          2,
+          4,
+          6,
+          9,
+          13,
+          20,
+          30,
+          45,
+          60,
+          80,
+          100,
+          150,
+          200,
+          250,
+          350,
+          500
+        ]
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red"
+        ]
+      }
+    },
+    "F2UltraUV:engrave": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "uv"
+        ]
+      }
+    },
+    "F2UltraUV:score": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "uv"
+        ]
+      }
+    },
+    "F2UltraUV:cut": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "uv"
+        ]
+      }
+    },
+    "F2UltraUV:intaglio": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "uv"
+        ]
+      }
+    },
+    "F2UltraUV:relief": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "uv"
+        ]
+      }
+    },
+    "F1Ultra:engrave": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red",
+          "blue"
+        ]
+      }
+    },
+    "F1Ultra:score": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red",
+          "blue"
+        ]
+      }
+    },
+    "F1Ultra:cut": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red",
+          "blue"
+        ]
+      }
+    },
+    "F1Ultra:intaglio": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red",
+          "blue"
+        ]
+      }
+    },
+    "F1Ultra:relief": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "range",
+        "min": 1,
+        "max": 150,
+        "step": 1
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "red",
+          "blue"
+        ]
+      }
+    },
+    "F1Lite:engrave": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "not_applicable"
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "blue"
+        ]
+      }
+    },
+    "F1Lite:score": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "not_applicable"
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "blue"
+        ]
+      }
+    },
+    "F1Lite:cut": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "not_applicable"
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "blue"
+        ]
+      }
+    },
+    "F1:engrave": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "not_applicable"
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "blue",
+          "red"
+        ]
+      }
+    },
+    "F1:score": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "not_applicable"
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 99,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "blue",
+          "red"
+        ]
+      }
+    },
+    "F1:cut": {
+      "power": {
+        "kind": "range",
+        "min": 1,
+        "max": 100,
+        "step": 1
+      },
+      "density": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "frequency": {
+        "kind": "not_applicable"
+      },
+      "speed": {
+        "kind": "range",
+        "min": 2,
+        "max": 10000,
+        "step": 1
+      },
+      "passes": {
+        "kind": "range",
+        "min": 1,
+        "max": 300,
+        "step": 1
+      },
+      "pulse_width": {
+        "kind": "not_applicable"
+      },
+      "laser": {
+        "kind": "enum",
+        "values": [
+          "blue",
+          "red"
+        ]
+      }
     }
   }
 }
