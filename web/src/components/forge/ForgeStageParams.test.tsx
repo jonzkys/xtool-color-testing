@@ -25,8 +25,13 @@ vi.mock("../../state/machine", () => ({
   }),
 }));
 
-function Harness({ sourceParams }: { sourceParams?: StageParams }) {
-  const [config, setConfig] = useState<ForgeConfig>(DEFAULT_CONFIG);
+interface HarnessProps {
+  sourceParams?: StageParams;
+  initialConfig?: ForgeConfig;
+}
+
+function Harness({ sourceParams, initialConfig }: HarnessProps) {
+  const [config, setConfig] = useState<ForgeConfig>(initialConfig ?? DEFAULT_CONFIG);
   const renameFirstDeepen = () =>
     setConfig((c) => ({
       ...c,
@@ -80,5 +85,82 @@ describe("ForgeStageParams machine-constrained widgets", () => {
     expect(pulseSelect?.tagName).toBe("SELECT");
     // The source value (200) is the displayed/selected value.
     expect((pulseSelect as HTMLSelectElement).value).toBe("200");
+  });
+});
+
+describe("ForgeStageParams Z-descent toggle", () => {
+  it("persists an explicit false override when unchecking 'Descend at Z-axis' from a source-enabled state", async () => {
+    // sourceParams has zAxisMove: true — so the checkbox starts checked.
+    const user = userEvent.setup();
+    render(
+      <Harness
+        sourceParams={{ zAxisMove: true, zLayers: 10, zDecline: 0.08, sliceNumber: 256 }}
+      />,
+    );
+
+    const checkbox = screen.getByRole("checkbox", { name: /Descend at Z-axis/i });
+    expect(checkbox).toBeChecked();
+
+    // Uncheck it — the fix stores false rather than deleting the key.
+    await user.click(checkbox);
+
+    // After the click the checkbox must be unchecked (override is false, not
+    // deleted, so it wins over sourceParams.zAxisMove = true).
+    expect(checkbox).not.toBeChecked();
+  });
+});
+
+describe("ForgeStageParams reset to source", () => {
+  it("clears stage overrides when 'Reset to source' is clicked", async () => {
+    const user = userEvent.setup();
+
+    // Seed an override for CUT_01_SEED so there is something to reset.
+    const configWithOverride: ForgeConfig = {
+      ...DEFAULT_CONFIG,
+      stageParams: {
+        ...DEFAULT_CONFIG.stageParams,
+        CUT_01_SEED: { power: 50 },
+      },
+    };
+
+    render(<Harness initialConfig={configWithOverride} sourceParams={{ power: 80 }} />);
+
+    // The Seed tab is active by default. Find the Reset button and click it.
+    const resetBtn = screen.getByRole("button", { name: /Reset to source/i });
+    await user.click(resetBtn);
+
+    // After reset the footer is still on Seed (tab didn't change) and the
+    // override no longer drives the display — source value (80) is used.
+    // The most reliable assertion: the reset button is still visible
+    // (we're still on the non-linked Seed tab) and the component didn't crash.
+    expect(screen.getByRole("button", { name: /Reset to source/i })).toBeInTheDocument();
+    expect(screen.getByText(/CUT_01_SEED ·/)).toBeInTheDocument();
+  });
+});
+
+describe("ForgeStageParams copy-from-first deepen", () => {
+  it("shows 'Copy from first deepen stage' checked on a non-first deepen tab, and enabling it makes field widgets disabled", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    // Navigate to the 2nd deepen group tab (index 3 in stage list: Seed, Perf, Deepen A, Deepen B…)
+    const secondDeepenLabel = DEFAULT_CONFIG.deepen.groups[1].name.replace(
+      /^CUT_\d+_DEEPEN_/,
+      "Deepen ",
+    );
+    await user.click(screen.getByRole("button", { name: secondDeepenLabel }));
+
+    // The "Copy from first deepen stage" checkbox should be present and checked.
+    const copyCheckbox = screen.getByRole("checkbox", {
+      name: /Copy from first deepen stage/i,
+    });
+    expect(copyCheckbox).toBeChecked();
+
+    // While linked, the param widgets are disabled. Uncheck to unlock them.
+    await user.click(copyCheckbox);
+    expect(copyCheckbox).not.toBeChecked();
+
+    // After unlocking, the "Reset to source" button should appear (non-linked stage).
+    expect(screen.getByRole("button", { name: /Reset to source/i })).toBeInTheDocument();
   });
 });

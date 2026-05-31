@@ -102,6 +102,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
     // Fallbacks per kind.
     if (constraint?.kind === "range") return constraint.min;
     if (param === "pulseWidth") return sourceParams?.pulseWidth ?? 200;
+    if (constraint?.kind === "stepped") return Number(constraint.values[0]);
     return 0;
   }
 
@@ -159,6 +160,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
           {stages.map((s, i) => (
             <button
               key={i}
+              type="button"
               onClick={() => setActiveIdx(i)}
               className={cn(
                 "px-2 py-1 text-[11px] font-mono uppercase rounded transition-colors",
@@ -283,7 +285,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
               type="checkbox"
               checked={zEnabled}
               disabled={linkedDeepen}
-              onChange={(e) => setParam("zAxisMove", e.target.checked || undefined)}
+              onChange={(e) => setParam("zAxisMove", e.target.checked)}
             />
             Descend at Z-axis
           </label>
@@ -349,6 +351,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
           </p>
           {!linkedDeepen && (
             <button
+              type="button"
               onClick={resetToSource}
               className="shrink-0 px-2 py-1 text-[10px] font-mono uppercase rounded border border-[var(--color-border)] text-[var(--color-ink-muted)] hover:text-[var(--color-fg)] transition-colors"
             >
