@@ -16,14 +16,16 @@
  *     a few hundred ms instead of grinding on a 4k map.
  *   - export re-runs the smooth on the FULL-RES bitmap with the
  *     UNSCALED params, then downloads the PNG.
- *
- * The smoothing controls themselves land in the next task — the left
- * column is a placeholder Card for now.
+ *   - left:  ``ReliefControls`` — strength / edge / speckle / layers.
+ *   - right: source + export, plus ``ReliefInspect`` (luminance
+ *     histogram, gradient thumbnail, % pixels changed).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, EmptyState, PageContainer, Section, Toolbar } from "../ui";
 import { ReliefCompare2D } from "../components/relief/ReliefCompare2D";
+import { ReliefControls } from "../components/relief/ReliefControls";
+import { ReliefInspect } from "../components/relief/ReliefInspect";
 import {
   DEFAULT_RELIEF_PARAMS,
   downscaleForPreview,
@@ -68,6 +70,16 @@ export function ReliefPage() {
   // in-flight smooth that resolves late is discarded so a slow request
   // can't clobber a newer result.
   const reqIdRef = useRef(0);
+
+  // Decoded pixel buffers for the inspect strip (histogram / gradient /
+  // % changed). We deliberately sample the SAME downscaled geometry for
+  // both so "% pixels changed" is meaningful: ``originalData`` is the
+  // source bitmap drawn to the cleaned preview's dimensions, and
+  // ``cleanedData`` is the cleaned preview itself. If the cleaned image
+  // hasn't loaded yet they simply stay null and the panel shows muted
+  // placeholders — never a crash.
+  const [originalData, setOriginalData] = useState<ImageData | null>(null);
+  const [cleanedData, setCleanedData] = useState<ImageData | null>(null);
 
   // ── File decode ───────────────────────────────────────────────────
   const onFile = useCallback(async (file: File) => {
@@ -136,6 +148,66 @@ export function ReliefPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run on unmount only
   }, []);
 
+  // ── Inspect buffers: decode bitmap + cleaned preview to ImageData ──
+  // The cleaned preview is a downscaled PNG; we draw the source bitmap to
+  // the SAME dimensions so the histogram, gradient, and "% changed" all
+  // line up. Runs whenever the bitmap or cleaned URL changes.
+  useEffect(() => {
+    if (!bitmap || !cleanedUrl) {
+      setOriginalData(null);
+      setCleanedData(null);
+      return;
+    }
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (cancelled) return;
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      if (w <= 0 || h <= 0) return;
+      try {
+        // Cleaned preview → ImageData.
+        const cc = document.createElement("canvas");
+        cc.width = w;
+        cc.height = h;
+        const cctx = cc.getContext("2d", { willReadFrequently: true });
+        if (!cctx) return;
+        cctx.drawImage(img, 0, 0);
+        const cleaned = cctx.getImageData(0, 0, w, h);
+
+        // Source bitmap drawn to the SAME box → ImageData (so the diff is
+        // apples-to-apples even though the cleaned preview is downscaled).
+        const oc = document.createElement("canvas");
+        oc.width = w;
+        oc.height = h;
+        const octx = oc.getContext("2d", { willReadFrequently: true });
+        if (!octx) return;
+        octx.drawImage(bitmap, 0, 0, w, h);
+        const original = octx.getImageData(0, 0, w, h);
+
+        if (cancelled) return;
+        setOriginalData(original);
+        setCleanedData(cleaned);
+      } catch {
+        // getImageData can throw on a tainted canvas; degrade gracefully.
+        if (!cancelled) {
+          setOriginalData(null);
+          setCleanedData(null);
+        }
+      }
+    };
+    img.onerror = () => {
+      if (!cancelled) {
+        setOriginalData(null);
+        setCleanedData(null);
+      }
+    };
+    img.src = cleanedUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [bitmap, cleanedUrl]);
+
   // ── Export: full-res, unscaled params ─────────────────────────────
   const onExport = useCallback(async () => {
     if (!bitmap) return;
@@ -194,10 +266,6 @@ export function ReliefPage() {
     ro.observe(el);
     roRef.current = ro;
   }, []);
-
-  // Keep params referenced until the controls task wires real inputs —
-  // setParams is what the next task will hang sliders off of.
-  void setParams;
 
   const statusLabel: Record<Status, string> = {
     idle: "Awaiting depth map",
@@ -299,42 +367,9 @@ export function ReliefPage() {
         )}
 
         <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_300px] items-stretch gap-4">
-          {/* ── Settings (left) — controls land next task ───────────── */}
+          {/* ── Settings (left) — smoothing controls ─────────────────── */}
           <div className="flex min-h-0 flex-col overflow-y-auto pr-1">
-            <Card padded={false} className="flex flex-col gap-3 p-4">
-              <Section
-                title="Smoothing"
-                dense
-                titleHint="Bilateral / median smoothing of the depth map."
-              >
-                <p className="text-[12px] leading-relaxed text-[color:var(--color-ink-muted)]">
-                  Smoothing controls land in the next step — strength,
-                  edge preservation, and spike removal. For now the
-                  preview runs with the default profile.
-                </p>
-              </Section>
-              <Section title="Profile" dense>
-                <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 font-mono text-[11px] tabular-nums">
-                  <RowStat label="Strength" value={String(params.strength)} />
-                  <RowStat
-                    label="Edge preserve"
-                    value={params.edgePreserve ? "on" : "off"}
-                  />
-                  <RowStat
-                    label="Edge thresh"
-                    value={String(params.edgeThreshold)}
-                  />
-                  <RowStat
-                    label="Spike removal"
-                    value={params.spikeRemoval ? "on" : "off"}
-                  />
-                  <RowStat
-                    label="Median k"
-                    value={String(params.medianKsize)}
-                  />
-                </dl>
-              </Section>
-            </Card>
+            <ReliefControls params={params} onChange={setParams} />
           </div>
 
           {/* ── Compare (centre) ────────────────────────────────────── */}
@@ -369,8 +404,8 @@ export function ReliefPage() {
             </Card>
           </div>
 
-          {/* ── Source / export (right) ─────────────────────────────── */}
-          <div className="flex min-h-0 flex-col self-start max-h-full">
+          {/* ── Source / export / inspect (right) ───────────────────── */}
+          <div className="flex min-h-0 flex-col gap-4 overflow-y-auto pl-1">
             <Card padded={false} className="flex flex-col gap-3 p-4">
               <Section title="Source" dense>
                 <Button
@@ -410,6 +445,16 @@ export function ReliefPage() {
                 </Button>
               </Section>
             </Card>
+
+            {/* Inspect strip — histogram, gradient, % changed. */}
+            {bitmap && (
+              <Card padded={false} className="flex flex-col p-4">
+                <ReliefInspect
+                  originalData={originalData}
+                  cleanedData={cleanedData}
+                />
+              </Card>
+            )}
           </div>
         </div>
       </PageContainer>

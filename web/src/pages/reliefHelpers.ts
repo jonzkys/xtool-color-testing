@@ -4,6 +4,10 @@ export interface ReliefParams {
   edgeThreshold: number;  // 1..255
   spikeRemoval: boolean;
   medianKsize: number;    // 3 | 5
+  /** Informational / preview-only in Phase 1 — does NOT affect the smooth. */
+  targetLayers: number;   // 2..256
+  /** Pass-through for a future export — does NOT affect the smooth. */
+  zDescentPerLayers: number; // >=0
 }
 
 export const DEFAULT_RELIEF_PARAMS: ReliefParams = {
@@ -12,6 +16,8 @@ export const DEFAULT_RELIEF_PARAMS: ReliefParams = {
   edgeThreshold: 40,
   spikeRemoval: true,
   medianKsize: 3,
+  targetLayers: 256,
+  zDescentPerLayers: 0,
 };
 
 /** Longest-edge downscale ratio for a max edge (<=1; 1 if already small). */
