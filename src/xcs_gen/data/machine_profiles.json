@@ -1,0 +1,9 @@
+{
+  "meta": { "source": "stub — replaced in Task 4", "extracted": "2026-06-01" },
+  "profiles": {
+    "F2Ultra:engrave": {
+      "power": { "kind": "range", "min": 1, "max": 100, "step": 1 },
+      "laser": { "kind": "enum", "values": ["red", "blue"] }
+    }
+  }
+}
