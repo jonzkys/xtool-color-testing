@@ -1,6 +1,6 @@
 // web/src/lib/forge/xcs.ts
 import type { Contour, GeneratedPath, ParsedXcs, XcsObject } from "./types";
-import { flattenDPath, normaliseContour, contourPerimeter, splitSubpaths } from "./contour";
+import { flattenDPath, normaliseContour, splitSubpaths } from "./contour";
 
 const INCISE_TYPES = new Set(["INTAGLIO", "VECTOR_CUTTING"]);
 const EMBOSS_TYPES = new Set(["RELIEF"]);
@@ -136,24 +136,45 @@ export interface Calibration {
 }
 
 /**
- * Derive path-units → mm. The RELIEF_PROCESS group records the real-world
- * `perimeter` (mm) of its contour; dividing by the flattened path perimeter
- * (units) gives mm-per-unit. If the field is missing/zero we fall back to 1.0
- * and report not-confident (caller surfaces a warning + manual override).
+ * Derive path-units → mm for the selected incise contour.
+ *
+ * The xTool canvas is in millimetres and a display maps its path units to the
+ * canvas via `canvasX = unit·scale.x + offsetX` — so the display's own
+ * `scale.x` IS the units→mm factor (cross-checked by `width / bbox-width`).
+ * The old `RELIEF_PROCESS.perimeter` method was wrong: that perimeter
+ * describes the emboss, not the incise contour, and made kerf bands ~3.57×
+ * too wide. Falls back to 1.0 + not-confident only when neither scale nor
+ * width is available (caller surfaces a warning + manual override).
  */
 export function calibrateMmPerUnit(p: ParsedXcs, incise: XcsObject): Calibration {
-  const raw = p.raw as { device?: { data?: unknown } };
-  let perimeterMm = 0;
-  for (const [, group] of mapEntries<RawGroup>(raw.device?.data)) {
-    if (group.mode && group.data?.[group.mode]?.perimeter) {
-      perimeterMm = group.data[group.mode]!.perimeter!;
-      break;
+  const raw = p.raw as { canvas?: Array<{ displays?: Array<Record<string, unknown>> }> };
+  const disp = (raw.canvas?.[0]?.displays ?? []).find((d) => d.id === incise.id) as
+    | { scale?: { x?: number; y?: number }; width?: number }
+    | undefined;
+
+  // 1. Uniform display scale = path-units → bed-mm. Authoritative.
+  const sx = disp?.scale?.x;
+  const sy = disp?.scale?.y;
+  if (typeof sx === "number" && sx > 0 && (typeof sy !== "number" || Math.abs(sx - sy) < 1e-6)) {
+    return { mmPerUnit: sx, confident: true };
+  }
+
+  // 2. Real-world width ÷ flattened-bbox width (missing/anisotropic scale).
+  const w = disp?.width;
+  if (typeof w === "number" && w > 0) {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    for (const c of extractContourSubpaths(incise)) {
+      for (const pt of c.points) {
+        if (pt.x < minX) minX = pt.x;
+        if (pt.x > maxX) maxX = pt.x;
+      }
     }
+    const bboxW = maxX - minX;
+    if (Number.isFinite(bboxW) && bboxW > 0) return { mmPerUnit: w / bboxW, confident: true };
   }
-  const units = extractContourSubpaths(incise).reduce((sum, c) => sum + contourPerimeter(c), 0);
-  if (perimeterMm > 0 && units > 0) {
-    return { mmPerUnit: perimeterMm / units, confident: true };
-  }
+
+  // 3. No usable signal.
   return { mmPerUnit: 1, confident: false };
 }
 

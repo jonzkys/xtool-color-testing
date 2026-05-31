@@ -41,12 +41,13 @@ describe("parseXcsFile (real sample)", () => {
     expect(contour.closed).toBe(true);
   });
 
-  it("calibrates mmPerUnit confidently from the RELIEF_PROCESS perimeter", () => {
+  it("calibrates mmPerUnit confidently from the display scale (≈0.848)", () => {
     const parsed = parseXcsFile(loadSample());
     const incise = findInciseObjects(parsed)[0];
     const cal = calibrateMmPerUnit(parsed, incise);
     expect(cal.confident).toBe(true);
-    expect(cal.mmPerUnit).toBeGreaterThan(0);
+    // scale.x (0.84813), NOT the buggy perimeter-derived 0.2375.
+    expect(cal.mmPerUnit).toBeCloseTo(0.848, 2);
   });
 });
 
@@ -77,6 +78,13 @@ describe("parseXcsFile (incise-only sample: test-text.xcs)", () => {
     expect(parsed.objects.length).toBe(1);
     expect(parsed.objects.every((o) => o.hasGeometry)).toBe(true);
     expect(parsed.preserved.length).toBe(0);
+  });
+
+  it("calibrates confidently at ≈1.0 (scale.x) with no perimeter", () => {
+    const parsed = parseXcsFile(loadText());
+    const cal = calibrateMmPerUnit(parsed, parsed.targets[0]);
+    expect(cal.confident).toBe(true);
+    expect(cal.mmPerUnit).toBeCloseTo(1.0, 3);
   });
 });
 
