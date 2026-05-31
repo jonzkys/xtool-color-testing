@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   parseXcsFile,
+  classify,
   findEmbossObjects,
   findInciseObjects,
   extractContourGeometry,
@@ -15,6 +16,12 @@ const SAMPLE = resolve(__dirname, "../../../../samples/xcs/incise_emboss.xcs");
 function loadSample(): ArrayBuffer {
   const buf = readFileSync(SAMPLE);
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+}
+
+const TEXT_SAMPLE = resolve(__dirname, "../../../../samples/xcs/test-text.xcs");
+function loadText(): ArrayBuffer {
+  const b = readFileSync(TEXT_SAMPLE);
+  return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
 }
 
 describe("parseXcsFile (real sample)", () => {
@@ -40,6 +47,46 @@ describe("parseXcsFile (real sample)", () => {
     const cal = calibrateMmPerUnit(parsed, incise);
     expect(cal.confident).toBe(true);
     expect(cal.mmPerUnit).toBeGreaterThan(0);
+  });
+});
+
+describe("classify", () => {
+  it("maps processingType tokens to the right mode class", () => {
+    expect(classify("INTAGLIO")).toBe("incise");
+    expect(classify("VECTOR_CUTTING")).toBe("incise");
+    expect(classify("RELIEF")).toBe("emboss");
+    expect(classify("VECTOR_ENGRAVING")).toBe("score");
+    expect(classify("FILL_VECTOR_ENGRAVING")).toBe("score");
+    expect(classify("COLOR_FILL_ENGRAVE")).toBe("score");
+    expect(classify("SOMETHING_ELSE")).toBe("other");
+    expect(classify(null)).toBe("other");
+  });
+});
+
+describe("parseXcsFile (incise-only sample: test-text.xcs)", () => {
+  it("yields exactly one geometry-bearing cut target and no emboss", () => {
+    const parsed = parseXcsFile(loadText());
+    expect(parsed.targets.length).toBe(1);
+    expect(parsed.targets[0].processingType).toBe("INTAGLIO");
+    expect(parsed.targets[0].hasGeometry).toBe(true);
+    expect(parsed.emboss.length).toBe(0);
+  });
+
+  it("skips phantom device entries (no canvas display) entirely", () => {
+    const parsed = parseXcsFile(loadText());
+    expect(parsed.objects.length).toBe(1);
+    expect(parsed.objects.every((o) => o.hasGeometry)).toBe(true);
+    expect(parsed.preserved.length).toBe(0);
+  });
+});
+
+describe("parseXcsFile (real sample: targets/preserved)", () => {
+  it("splits the emboss+incise sample into one target and one preserved layer", () => {
+    const parsed = parseXcsFile(loadSample());
+    expect(parsed.targets.length).toBe(1);
+    expect(parsed.targets[0].processingType).toBe("INTAGLIO");
+    expect(parsed.preserved.length).toBe(1);
+    expect(parsed.preserved[0].processingType).toBe("RELIEF");
   });
 });
 

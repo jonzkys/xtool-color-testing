@@ -3,11 +3,18 @@ import type { Contour, GeneratedPath, ParsedXcs, XcsObject } from "./types";
 import { flattenDPath, normaliseContour, contourPerimeter, splitSubpaths } from "./contour";
 
 const INCISE_TYPES = new Set(["INTAGLIO", "VECTOR_CUTTING"]);
-const EMBOSS_TYPES = new Set(["RELIEF", "VECTOR_ENGRAVING", "FILL_VECTOR_ENGRAVING", "COLOR_FILL_ENGRAVE"]);
+const EMBOSS_TYPES = new Set(["RELIEF"]);
+const SCORE_TYPES = new Set([
+  "VECTOR_ENGRAVING",
+  "FILL_VECTOR_ENGRAVING",
+  "COLOR_FILL_ENGRAVE",
+]);
 
-function classify(pt: string | null): XcsObject["modeClass"] {
+/** Classify a layer by its device-map processingType. Exported for testing. */
+export function classify(pt: string | null): XcsObject["modeClass"] {
   if (pt && INCISE_TYPES.has(pt)) return "incise";
   if (pt && EMBOSS_TYPES.has(pt)) return "emboss";
+  if (pt && SCORE_TYPES.has(pt)) return "score";
   return "other";
 }
 
@@ -66,14 +73,20 @@ export function parseXcsFile(buf: ArrayBuffer): ParsedXcs {
   for (const [groupKey, group] of mapEntries<RawGroup>(raw.device?.data)) {
     for (const [displayId, entry] of mapEntries<RawEntry>(group.displays)) {
       const disp = byId.get(displayId);
+      // Device-map entries can reference displays that no longer exist on the
+      // canvas (orphan sub-entries of a compound path). They carry no geometry
+      // and can be neither a cut target nor a visible layer — skip them. They
+      // remain byte-intact in `raw`, so export still preserves them.
+      if (!disp) continue;
       const processingType = entry.processingType ?? null;
       objects.push({
         id: displayId,
-        type: disp?.type ?? entry.type ?? "UNKNOWN",
-        name: disp?.name ?? null,
+        type: disp.type ?? entry.type ?? "UNKNOWN",
+        name: disp.name ?? null,
         processingType,
         modeClass: classify(processingType),
-        dPath: disp?.dPath,
+        dPath: disp.dPath,
+        hasGeometry: !!disp.dPath,
         groupKey,
       });
     }
@@ -84,6 +97,8 @@ export function parseXcsFile(buf: ArrayBuffer): ParsedXcs {
     objects,
     emboss: objects.filter((o) => o.modeClass === "emboss"),
     incise: objects.filter((o) => o.modeClass === "incise"),
+    targets: objects.filter((o) => o.modeClass === "incise" && o.hasGeometry),
+    preserved: objects.filter((o) => o.modeClass !== "incise"),
   };
   return parsed;
 }

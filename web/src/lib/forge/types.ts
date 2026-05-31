@@ -109,8 +109,10 @@ export interface XcsObject {
   type: string; // PATH | BITMAP | CIRCLE | ...
   name: string | null;
   processingType: string | null; // INTAGLIO | RELIEF | VECTOR_CUTTING | ...
-  modeClass: "incise" | "emboss" | "other";
+  modeClass: "incise" | "emboss" | "score" | "other";
   dPath?: string;
+  /** True when this object carries a vector path (a forge-able contour). */
+  hasGeometry: boolean;
   /** id of the device.data process group this object belongs to. */
   groupKey: string;
 }
@@ -121,6 +123,10 @@ export interface ParsedXcs {
   objects: XcsObject[];
   emboss: XcsObject[];
   incise: XcsObject[];
+  /** Incise objects with usable geometry — the forge-able cut targets. */
+  targets: XcsObject[];
+  /** Real non-incise objects (emboss / score / other) preserved untouched. */
+  preserved: XcsObject[];
 }
 
 /** Stats + warnings surfaced in the debug panel. */
