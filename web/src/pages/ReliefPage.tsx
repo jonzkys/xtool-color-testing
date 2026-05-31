@@ -77,6 +77,13 @@ export function ReliefPage() {
     cleanedUrlRef.current = cleanedUrl;
   }, [cleanedUrl]);
 
+  // Mirror the current bitmap into a ref so the unmount cleanup can close
+  // it (freeing the decoded buffer) without re-running on every change.
+  const bitmapRef = useRef<ImageBitmap | null>(null);
+  useEffect(() => {
+    bitmapRef.current = bitmap;
+  }, [bitmap]);
+
   // Monotonic request id — the latest async preview wins; any earlier
   // in-flight smooth that resolves late is discarded so a slow request
   // can't clobber a newer result.
@@ -99,7 +106,12 @@ export function ReliefPage() {
       const bmp = await createImageBitmap(file, {
         imageOrientation: "from-image",
       });
-      setBitmap(bmp);
+      // Close the previous bitmap before swapping — ImageBitmap memory is
+      // not GC'd promptly, so a 4k depth map would leak on every Replace.
+      setBitmap((prev) => {
+        prev?.close();
+        return bmp;
+      });
       // Swap in the new original URL, revoking the old one first.
       setOriginalUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
@@ -148,13 +160,26 @@ export function ReliefPage() {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [bitmap, params, renderTick]);
+    // Only the SMOOTHING fields re-trigger a preview. targetLayers /
+    // zDescentPerLayers are Phase-2 pass-through and must NOT cost a
+    // backend round-trip, so they're deliberately excluded here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    bitmap,
+    params.strength,
+    params.edgePreserve,
+    params.edgeThreshold,
+    params.spikeRemoval,
+    params.medianKsize,
+    renderTick,
+  ]);
 
   // ── Unmount cleanup ───────────────────────────────────────────────
   useEffect(() => {
     return () => {
       if (originalUrl) URL.revokeObjectURL(originalUrl);
       if (cleanedUrlRef.current) URL.revokeObjectURL(cleanedUrlRef.current);
+      bitmapRef.current?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run on unmount only
   }, []);
