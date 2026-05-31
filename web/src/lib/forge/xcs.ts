@@ -253,8 +253,9 @@ interface MutableMap<V> {
  * Each distinct stage groupName becomes its own xTool layer/operation: it gets
  * a stable colour from STAGE_PALETTE (keyed by groupName, first-seen order), a
  * matching `canvas.layerData` entry, and the display's `layerTag`/`layerColor`
- * are set to that colour. The existing `#00befe` layerData entry is preserved
- * (the emboss BITMAP still uses it). Params/processingType are copied from the
+ * are set to that colour. Any pre-existing layerData entries (e.g. an emboss
+ * BITMAP's `#00befe`) are preserved if present. Params/processingType are
+ * copied from the
  * source incise entry. Emboss + model objects are left untouched. Generated ids
  * are `forge-<operationOrder>`. Returns the new raw JSON object (not serialised).
  */
@@ -324,7 +325,7 @@ export function buildGeneratedXcs(
     const tag = layerTagForGroup(path.groupName);
 
     // Recompute this display's own canvas bbox from its geometry, reusing the
-    // source's scale + offset mapping so it stays aligned with the emboss.
+    // source's scale + offset mapping so it stays aligned with the source contour.
     const b = ringsBoundsUnits(path.rings, mmPerUnit);
     const display: RawDisplay = {
       ...(sourceTemplateDisplay ?? ({} as RawDisplay)),

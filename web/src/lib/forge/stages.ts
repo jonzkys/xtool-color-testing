@@ -12,8 +12,8 @@
 //
 // Every generated pass operates on the reconstructed PART REGION (a polygon with
 // holes). A band is the scrap-side ring set Difference(Inflate(part,±w), part):
-// the part body is a hole in every band (even-odd / non-zero), so the emboss is
-// never engraved. One whole-part band per stage keeps the cloned display
+// the part body is a hole in every band (even-odd / non-zero), so only the kerf
+// sliver is engraved (the part body stays a hole). One whole-part band per stage keeps the cloned display
 // transform/bbox correct. Perforation pockets are the exception — single solid
 // loops walked along the part's outer silhouette.
 //

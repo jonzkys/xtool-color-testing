@@ -82,7 +82,7 @@ export interface CleanConfig {
 export interface ForgeConfig {
   beamWidthMm: number;
   sideMode: SideMode;
-  /** Manual unit override; null = use perimeter-derived calibration. */
+  /** Manual unit override; null = use the display-scale calibration. */
   mmPerUnitOverride: number | null;
   seed: SeedConfig;
   perforate: PerforateConfig;
