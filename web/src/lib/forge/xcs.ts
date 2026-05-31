@@ -162,8 +162,12 @@ export function parseXcsFile(buf: ArrayBuffer): ParsedXcs {
       const processingType = entry.processingType ?? null;
       const modeClass = classify(processingType);
       const entryData = (entry as { data?: Record<string, { parameter?: { customize?: Record<string, unknown> } }> }).data;
-      const params =
-        modeClass === "incise" ? readStageParams(entryData?.INTAGLIO?.parameter?.customize) : undefined;
+      const customize = entryData?.INTAGLIO?.parameter?.customize;
+      const params = modeClass === "incise" ? readStageParams(customize) : undefined;
+      const sourceScanAngleDeg =
+        modeClass === "incise" && typeof customize?.processAngle === "number"
+          ? (customize.processAngle as number)
+          : undefined;
       const dPath = disp.dPath ?? primitiveDPath(disp);
       objects.push({
         id: displayId,
@@ -174,6 +178,7 @@ export function parseXcsFile(buf: ArrayBuffer): ParsedXcs {
         dPath,
         hasGeometry: !!dPath,
         params,
+        sourceScanAngleDeg,
         groupKey,
       });
     }

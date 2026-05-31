@@ -98,6 +98,16 @@ describe("runPipeline (RECT primitive target)", () => {
   });
 });
 
+describe("scan-angle metric", () => {
+  it("reports the optimal angle + reduction vs the source angle (test-text)", () => {
+    const parsed = parseXcsFile(loadText());
+    const { stats } = runPipeline(parsed, parsed.targets[0].id, DEFAULT_CONFIG);
+    expect(stats.scanAngleDeg).toBe(0);            // wide word → horizontal optimal
+    expect(stats.scanAngleBaselineDeg).toBe(15);   // source processAngle
+    expect(stats.scanAngleReductionPct).toBeGreaterThan(15); // ~26% fewer lines
+  });
+});
+
 describe("runPipeline (incise-only sample: test-text.xcs)", () => {
   it("calibrates confidently at ~1.0 with no warning", () => {
     const parsed = parseXcsFile(loadText());

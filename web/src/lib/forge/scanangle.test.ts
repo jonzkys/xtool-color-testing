@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { optimalScanAngle } from "./scanangle";
+import { optimalScanAngle, perpendicularExtentAt } from "./scanangle";
 import type { Contour } from "./types";
 
 const rect = (w: number, h: number): Contour => ({
@@ -18,5 +18,15 @@ describe("optimalScanAngle", () => {
   it("returns 0 for empty input", () => {
     expect(optimalScanAngle([])).toBe(0);
     expect(optimalScanAngle([{ points: [], closed: true }])).toBe(0);
+  });
+});
+
+describe("perpendicularExtentAt", () => {
+  it("equals the dimension perpendicular to the scan", () => {
+    expect(perpendicularExtentAt([rect(5, 100)], 0)).toBeCloseTo(100, 6);  // horizontal lines → 100 tall
+    expect(perpendicularExtentAt([rect(5, 100)], 90)).toBeCloseTo(5, 6);   // vertical lines → 5 wide
+  });
+  it("is 0 for empty input", () => {
+    expect(perpendicularExtentAt([], 0)).toBe(0);
   });
 });

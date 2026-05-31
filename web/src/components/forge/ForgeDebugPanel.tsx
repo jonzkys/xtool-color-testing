@@ -16,7 +16,12 @@ export function ForgeDebugPanel({
       <div className="p-2 font-mono text-[11px] flex flex-col gap-1">
         <div>mm/unit: {stats.mmPerUnit.toFixed(4)} {stats.mmPerUnitConfident ? "✓" : "⚠ unconfident"}</div>
         <div>paths: total {stats.totalPaths} — seed {stats.pathCounts.seed}, perforate {stats.pathCounts.perforate}, deepen {stats.pathCounts.deepen}, clean {stats.pathCounts.clean}</div>
-        <div>scan ∠: {stats.scanAngleDeg}° {optimizeScanAngle ? "(applied)" : "(off)"}</div>
+        <div>
+          scan ∠: {stats.scanAngleDeg}° {optimizeScanAngle ? "(applied)" : "(off)"}
+          {stats.scanAngleReductionPct != null && stats.scanAngleReductionPct > 0 && (
+            <> · {stats.scanAngleReductionPct}% fewer lines vs {stats.scanAngleBaselineDeg}°</>
+          )}
+        </div>
         {stats.warnings.length > 0 && (
           <div className="flex flex-col gap-1 mt-1">
             {stats.warnings.map((w, i) => (

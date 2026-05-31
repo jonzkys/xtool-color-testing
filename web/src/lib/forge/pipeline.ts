@@ -9,7 +9,7 @@ import type {
   PipelineResult,
 } from "./types";
 import { extractContourSubpaths, calibrateMmPerUnit } from "./xcs";
-import { optimalScanAngle } from "./scanangle";
+import { optimalScanAngle, perpendicularExtentAt } from "./scanangle";
 import { inferWindingAndOutside } from "./contour";
 import { buildPartRegion } from "./offset";
 import {
@@ -59,6 +59,13 @@ export function runPipeline(
   // Speed-optimal raster scan angle from the mm-space geometry. Computed
   // always (shown in the debug panel); applied to export only behind the toggle.
   const scanAngleDeg = optimalScanAngle(subpaths);
+  const baselineDeg = obj.sourceScanAngleDeg;
+  const optimalExtent = perpendicularExtentAt(subpaths, scanAngleDeg);
+  const baselineExtent = baselineDeg != null ? perpendicularExtentAt(subpaths, baselineDeg) : undefined;
+  const scanAngleReductionPct =
+    baselineExtent && baselineExtent > 0
+      ? Math.max(0, Math.round((1 - optimalExtent / baselineExtent) * 100))
+      : undefined;
 
   // Winding check — run per subpath; warn once if any is not confident.
   let windingWarned = false;
@@ -86,6 +93,8 @@ export function runPipeline(
         totalPaths: 0,
         warnings,
         scanAngleDeg,
+        scanAngleBaselineDeg: baselineDeg,
+        scanAngleReductionPct,
       },
     };
   }
@@ -114,6 +123,8 @@ export function runPipeline(
     totalPaths: ordered.length,
     warnings,
     scanAngleDeg,
+    scanAngleBaselineDeg: baselineDeg,
+    scanAngleReductionPct,
   };
   return { paths: ordered, stats };
 }

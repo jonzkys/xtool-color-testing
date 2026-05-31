@@ -129,6 +129,9 @@ export interface XcsObject {
   /** Source laser params read from this object's INTAGLIO customize (cut
    *  targets only); used to pre-fill the per-stage param widgets. */
   params?: StageParams;
+  /** Source `processAngle` from this object's INTAGLIO customize — the
+   *  baseline the optimizer improves on. */
+  sourceScanAngleDeg?: number;
   /** id of the device.data process group this object belongs to. */
   groupKey: string;
 }
@@ -155,6 +158,11 @@ export interface DebugStats {
   /** Speed-optimal raster scan angle (deg) computed from the source contour;
    *  written to `processAngle` on export only when `optimizeScanAngle` is on. */
   scanAngleDeg: number;
+  /** The source object's `processAngle` — the baseline the optimizer compares against. */
+  scanAngleBaselineDeg?: number;
+  /** Percentage reduction in scan lines from using the optimal angle vs the
+   *  source angle (0–100). Undefined when the source angle is not known. */
+  scanAngleReductionPct?: number;
 }
 
 export interface PipelineResult {

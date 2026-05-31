@@ -1,5 +1,24 @@
 import type { Contour } from "./types";
 
+/** Extent of the geometry perpendicular to a scan at `deg` (∝ number of scan
+ *  lines). Lower = fewer lines. Returns 0 for empty input. */
+export function perpendicularExtentAt(contours: Contour[], deg: number): number {
+  const a = (deg * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  let min = Infinity;
+  let max = -Infinity;
+  for (const ct of contours) {
+    for (const p of ct.points) {
+      const v = -p.x * s + p.y * c;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+  }
+  const ext = max - min;
+  return Number.isFinite(ext) ? ext : 0;
+}
+
 /**
  * Speed-optimal raster scan angle (degrees, 0..179) for the given mm-space
  * contours: the angle that minimises the number of scan lines = the geometry's
