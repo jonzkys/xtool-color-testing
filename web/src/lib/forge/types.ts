@@ -49,6 +49,9 @@ export interface DeepenGroup {
   toLayer: number;
   widthMultiplier: number;
   enabled: boolean;
+  /** Deepen groups after the first default to copying the first group's
+   *  laser params; undefined is treated as true for non-first groups. */
+  copyParamsFromFirst?: boolean;
 }
 
 export interface SeedConfig {

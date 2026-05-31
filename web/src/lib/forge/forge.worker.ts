@@ -3,6 +3,7 @@ import type { ForgeConfig, ParsedXcs, PipelineResult, XcsObject } from "./types"
 import { parseXcsFile } from "./xcs";
 import { runPipeline } from "./pipeline";
 import { buildGeneratedXcs, exportXcs } from "./xcs";
+import { resolveStageParams } from "./config";
 
 export type ForgeRequest =
   | { type: "parse"; buf: ArrayBuffer }
@@ -39,7 +40,7 @@ self.onmessage = (e: MessageEvent<ForgeRequest>) => {
     }
     if (msg.type === "export") {
       const { paths, stats } = runPipeline(parsed, msg.inciseId, msg.config);
-      const doc = buildGeneratedXcs(parsed, msg.inciseId, paths, stats.mmPerUnit, msg.config.stageParams);
+      const doc = buildGeneratedXcs(parsed, msg.inciseId, paths, stats.mmPerUnit, resolveStageParams(msg.config));
       const buf = exportXcs(doc);
       post({ type: "exported", buf }, [buf]);
       return;

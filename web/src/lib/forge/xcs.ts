@@ -10,7 +10,9 @@ const SCORE_TYPES = new Set([
   "COLOR_FILL_ENGRAVE",
 ]);
 
-/** Map an INTAGLIO `customize` block to the StageParams we expose. */
+/** Map an INTAGLIO `customize` block to the StageParams we expose.
+ *  Reads from the `INTAGLIO` customize block; VECTOR_CUTTING incise targets
+ *  (not used in the current F2 Ultra Embossment workflow) would yield `undefined`. */
 function readStageParams(customize: Record<string, unknown> | undefined): import("./types").StageParams | undefined {
   if (!customize) return undefined;
   const num = (k: string) => (typeof customize[k] === "number" ? (customize[k] as number) : undefined);
