@@ -22,7 +22,7 @@ class BaseParams(BaseModel):
     # nearest allowed one so legacy DB rows and forgiving API callers
     # don't 422; the machine would reject a non-preset value anyway.
     pulse_width: int = Field(ge=1)
-    laser: Literal["red", "blue"]
+    laser: Literal["red", "blue", "uv"]
 
     @field_validator("pulse_width", mode="before")
     @classmethod

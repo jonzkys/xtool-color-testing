@@ -211,6 +211,34 @@ def test_tests_create_f1_clamps_high_frequency_to_profile_max(fresh_db):
     assert saved["spec"]["base_params"]["frequency"] == expected_max
 
 
+def test_f2ultrauv_test_creation_accepts_uv_laser(fresh_db):
+    """F2UltraUV with laser='uv' must be accepted (201) without a 422.
+
+    This is a regression guard for the schema fix that widened
+    BaseParams.laser from Literal["red", "blue"] to include "uv".
+    """
+    c = TestClient(create_app())
+    mid = m_repo.create(name="Acrylic")["id"]
+    base_uv = {
+        "power": 50, "speed": 500, "frequency": 30,
+        "density": 200, "passes": 1, "pulse_width": 200,
+        "laser": "uv", "mode": "engrave",
+    }
+    spec_uv = {
+        "x_param": "speed", "x_min": 200, "x_max": 1000, "x_steps": 5,
+        "rows": 1, "width_mm": 50, "height_mm": 10, "gap_mm": 0.5,
+        "cell_shape": "rect", "square_cells": True, "angle_mode": "fixed",
+        "unidirectional": False, "base_params": base_uv,
+        "registration": {"mode": "off"},
+    }
+    r = c.post("/api/tests", json={
+        "name": "UV-engrave", "material_id": mid,
+        "machine_id": "F2UltraUV", "spec": spec_uv,
+    })
+    assert r.status_code == 201, r.json()
+    assert r.json()["machine_id"] == "F2UltraUV"
+
+
 def test_tests_lock_route_locks_and_unlocks_before_results(fresh_db):
     """``POST /api/tests/{id}/lock`` flips the manual lock flag both
     ways while the test has no results uploaded. Use case: lock

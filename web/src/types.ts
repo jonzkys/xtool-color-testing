@@ -1,4 +1,4 @@
-export type Laser = "red" | "blue";
+export type Laser = "red" | "blue" | "uv";
 
 export const PARAM_NAMES = [
   "speed", "power", "frequency", "density", "passes", "pulse_width",
@@ -344,8 +344,8 @@ export interface PaletteQueryResult {
 
 // ── Machine registry (mirrors xcs_gen.machines.MACHINES + PROFILES) ──────────
 
-export type LaserKind = "fiber" | "blue";
-export type LaserName = "red" | "blue";   // wire format used inside .xcs files
+export type LaserKind = "fiber" | "blue" | "uv";
+export type LaserName = "red" | "blue" | "uv";   // wire format used inside .xcs files
 export type ModeId = "engrave" | "score" | "cut" | "color_engrave" | "intaglio" | "relief";
 export type ProfileId = string;   // per-machine "<machineId>:<mode>"
 

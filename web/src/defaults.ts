@@ -1,4 +1,4 @@
-import type { BaseParams, HatchPassSpec, TestSpec, ValidationProfile } from "./types";
+import type { BaseParams, HatchPassSpec, Laser, TestSpec, ValidationProfile } from "./types";
 
 /** Pick a default value for one constraint that's guaranteed valid. */
 function defaultForConstraint(
@@ -47,7 +47,7 @@ export function defaultBaseParams(profile?: ValidationProfile): BaseParams {
     density:     defaultForConstraint("density",     profile.density,     legacyBase.density)     as number,
     passes:      defaultForConstraint("passes",      profile.passes,      legacyBase.passes)      as number,
     pulse_width: defaultForConstraint("pulse_width", profile.pulse_width, legacyBase.pulse_width) as number,
-    laser:       defaultForConstraint("laser",       profile.laser,       legacyBase.laser)       as "red" | "blue",
+    laser:       defaultForConstraint("laser",       profile.laser,       legacyBase.laser)       as Laser,
     scan_angle:  90,
   };
 }

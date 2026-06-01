@@ -226,6 +226,7 @@ function renderWithGrid(
 const LASER_LABELS: Record<string, string> = {
   red:  "Red · MOPA",
   blue: "Blue · Diode",
+  uv:   "UV · 355 nm",
 };
 
 function LaserToggle({

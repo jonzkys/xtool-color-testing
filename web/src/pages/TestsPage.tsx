@@ -514,8 +514,8 @@ function TinyCaps({ children }: { children: React.ReactNode }) {
   );
 }
 
-function LaserDot({ laser }: { laser: "red" | "blue" }) {
-  const color = laser === "red" ? "#D13A2A" : "#3B6FCF";
+function LaserDot({ laser }: { laser: "red" | "blue" | "uv" }) {
+  const color = laser === "red" ? "#D13A2A" : laser === "uv" ? "#9B4DCA" : "#3B6FCF";
   return (
     <span
       className="inline-block h-2 w-2 rounded-full shrink-0"
