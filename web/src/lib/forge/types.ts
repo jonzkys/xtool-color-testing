@@ -113,7 +113,7 @@ export interface StageParams {
   pulseWidth?: number; // ns (MOPA)
   frequency?: number; // kHz (→ customize.mopaFrequency)
   density?: number; // lines/cm (→ customize.density)
-  laser?: "red" | "blue"; // → customize.processingLightSource
+  laser?: "red" | "blue" | "uv"; // → customize.processingLightSource
   zAxisMove?: boolean; // "Descend at Z-axis" (→ customize.zAxisMove)
   zLayers?: number; // descend every N layers (→ customize.zLayers)
   zDecline?: number; // mm per descent step (→ customize.zDecline)

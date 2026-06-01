@@ -1288,9 +1288,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def _default_mode_for(machine_id: str) -> str:
         """When a request omits mode, pick the most representative mode for the
-        machine. F2 Ultra's marquee feature is color engrave; everything else
-        defaults to plain engrave."""
-        return "color_engrave" if machine_id == "F2Ultra" else "engrave"
+        machine. Any machine that supports color_engrave (F2Ultra, F2UltraSingle)
+        defaults to that; everything else defaults to plain engrave.
+        Unknown machine IDs fall back to engrave — the caller's profile_for()
+        will 422 shortly after if the id is truly invalid."""
+        from xcs_gen.machines import get as _get_machine
+        try:
+            supported = {m.id for m in _get_machine(machine_id).modes}
+            return "color_engrave" if "color_engrave" in supported else "engrave"
+        except KeyError:
+            return "engrave"
 
     # Tests --------------------------------------------------------------
     @app.post("/api/tests", response_model=TestResponse, status_code=201)
@@ -1305,7 +1312,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # specs predate the mode concept; we pick color_engrave for F2 (its
         # marquee feature) and engrave for everything else.
         # NOTE: We strip fields that are not_applicable for the profile
-        # (e.g. pulse_width on STANDARD) before validating so that
+        # (e.g. pulse_width on F1Ultra:engrave) before validating so that
         # legacy base_params, which always carry those fields, still
         # pass.  Full constraint enforcement is a future tightening pass.
         from xcs_gen.machines import PROFILES, profile_for, ValidationError as ProfileError
@@ -1319,7 +1326,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             from xcs_gen.machines import validate_against_profile
             # Strip not_applicable fields before validation so legacy
             # base_params (which always carry pulse_width) don't fail on
-            # machines where the field is irrelevant (e.g. F2Ultra STANDARD).
+            # machines where the field is irrelevant (e.g. F1Ultra:engrave).
             profile = PROFILES[profile_id]
             not_applicable = {
                 k for k, v in profile.items() if v.get("kind") == "not_applicable"
@@ -1329,12 +1336,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if k not in not_applicable
             }
             # Pre-clamp range fields onto [min, max] so legacy
-            # base_params from a different machine/mode (eg. freq=125
+            # base_params from a different machine/mode (eg. freq=400
             # from F2 carried into a saved test loaded on F1, where
-            # freq is [30, 60]) snap into the active profile instead
-            # of failing the save with a 422. Mirrors the snap-on-load
-            # behaviour the stepped/pulse_width path already has —
-            # see CLAUDE.md "Pydantic validators snap legacy values".
+            # F1Ultra:engrave freq is [1, 150]) snap into the active
+            # profile instead of failing the save with a 422. Mirrors
+            # the snap-on-load behaviour the stepped/pulse_width path
+            # already has — see CLAUDE.md "Pydantic validators snap
+            # legacy values".
             range_clamps: dict[str, tuple[object, float]] = {}
             for field_name, constraint in profile.items():
                 if constraint.get("kind") != "range":

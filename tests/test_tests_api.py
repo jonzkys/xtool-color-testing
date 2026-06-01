@@ -121,14 +121,16 @@ def test_patch_material_rejects_unknown_id(fresh_db):
 
 # ── Default-mode resolution ──────────────────────────────────────────────────
 
-# COLOR_ENGRAVE allows frequency up to 500 kHz; STANDARD caps at 60 kHz.
+# F2Ultra:color_engrave allows frequency up to 150 kHz; F2Ultra:engrave also uses [1, 150].
 # If F2Ultra silently defaults to color_engrave when mode is absent, a
-# request with frequency=400 should succeed (201). If it defaulted to
-# engrave/STANDARD instead it would 422.
+# request with frequency=400 should succeed (201, clamped to profile max).
+# If it defaulted to F2Ultra:engrave instead the snap behaviour is the same —
+# what the test checks is that the request is accepted (201) and the machine
+# round-trips.
 _BASE_CE = {
     "power": 50,
     "speed": 1000,
-    "frequency": 400,   # valid for COLOR_ENGRAVE (60-500 kHz), out-of-range for STANDARD (30-60 kHz)
+    "frequency": 400,   # above both profiles' max (150 kHz); gets clamped on save
     "density": 200,
     "passes": 1,
     "pulse_width": 200,
@@ -145,11 +147,12 @@ _SPEC_CE = {
 
 
 def test_tests_create_defaults_mode_color_engrave_for_f2(fresh_db):
-    """F2Ultra with no mode in base_params defaults to color_engrave.
+    """F2Ultra with no mode in base_params defaults to F2Ultra:color_engrave.
 
-    A frequency of 400 kHz is within color_engrave's [60, 500] kHz
-    range but above the STANDARD cap of 60 kHz. If the backend were
-    wrongly defaulting to STANDARD (engrave) the request would 422.
+    A frequency of 400 kHz exceeds both F2Ultra:color_engrave and
+    F2Ultra:engrave's [1, 150] kHz envelope, so it is clamped to the
+    profile max on save. The test checks that the request is accepted
+    (201) and machine_id round-trips correctly.
     """
     c = TestClient(create_app())
     mid = m_repo.create(name="Stainless")["id"]
@@ -182,16 +185,16 @@ def test_tests_create_explicit_mode_color_engrave_for_f2(fresh_db):
 
 
 def test_tests_create_f1_clamps_high_frequency_to_profile_max(fresh_db):
-    """F1Ultra with no mode defaults to engrave (STANDARD, max 60 kHz).
+    """F1Ultra with no mode defaults to engrave (F1Ultra:engrave, max 150 kHz).
 
-    A spec with frequency=400 kHz used to 422; we now snap it to the
-    profile's max instead so legacy specs (created on F2 / migrated
-    from older defaults) survive a save under the new machine. Mirrors
-    the pulse_width snap-on-load behaviour — see CLAUDE.md.
+    A spec with frequency=400 kHz is above the profile max; we snap it to
+    the profile's max instead so legacy specs survive a save under the new
+    machine. Mirrors the pulse_width snap-on-load behaviour — see CLAUDE.md.
     """
+    from xcs_gen import machines as machines_mod
     c = TestClient(create_app())
     mid = m_repo.create(name="Aluminium")["id"]
-    base_f1 = dict(_BASE_CE)   # frequency=400_000 (kHz), pulse_width=200
+    base_f1 = dict(_BASE_CE)   # frequency=400 kHz, pulse_width=200
     spec_f1 = dict(_SPEC_CE)
     spec_f1["base_params"] = base_f1
     r = c.post("/api/tests", json={
@@ -202,9 +205,38 @@ def test_tests_create_f1_clamps_high_frequency_to_profile_max(fresh_db):
     })
     assert r.status_code == 201, r.json()
     saved = r.json()
-    # F1Ultra STANDARD profile has frequency in [30, 60] kHz — the
-    # excessive 400_000 should snap down to 60.
-    assert saved["spec"]["base_params"]["frequency"] == 60
+    # F1Ultra:engrave profile has frequency in [1, 150] kHz —
+    # the excessive 400 should clamp down to the profile max.
+    expected_max = machines_mod.PROFILES["F1Ultra:engrave"]["frequency"]["max"]
+    assert saved["spec"]["base_params"]["frequency"] == expected_max
+
+
+def test_f2ultrauv_test_creation_accepts_uv_laser(fresh_db):
+    """F2UltraUV with laser='uv' must be accepted (201) without a 422.
+
+    This is a regression guard for the schema fix that widened
+    BaseParams.laser from Literal["red", "blue"] to include "uv".
+    """
+    c = TestClient(create_app())
+    mid = m_repo.create(name="Acrylic")["id"]
+    base_uv = {
+        "power": 50, "speed": 500, "frequency": 30,
+        "density": 200, "passes": 1, "pulse_width": 200,
+        "laser": "uv", "mode": "engrave",
+    }
+    spec_uv = {
+        "x_param": "speed", "x_min": 200, "x_max": 1000, "x_steps": 5,
+        "rows": 1, "width_mm": 50, "height_mm": 10, "gap_mm": 0.5,
+        "cell_shape": "rect", "square_cells": True, "angle_mode": "fixed",
+        "unidirectional": False, "base_params": base_uv,
+        "registration": {"mode": "off"},
+    }
+    r = c.post("/api/tests", json={
+        "name": "UV-engrave", "material_id": mid,
+        "machine_id": "F2UltraUV", "spec": spec_uv,
+    })
+    assert r.status_code == 201, r.json()
+    assert r.json()["machine_id"] == "F2UltraUV"
 
 
 def test_tests_lock_route_locks_and_unlocks_before_results(fresh_db):
