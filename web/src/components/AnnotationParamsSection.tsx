@@ -16,6 +16,7 @@ import type {
   TextRegParamsBody,
   TextRegResolveResponse,
 } from "../types";
+import { useCurrentMachine, getValidationProfile, representativeMode } from "../state/machine";
 import { TextRegParamsEditor, TextRegSourcePill } from "./TextRegParamsEditor";
 
 /**
@@ -47,6 +48,12 @@ export function AnnotationParamsSection({
   materialName,
   isDemo,
 }: AnnotationParamsSectionProps) {
+  const { registry } = useCurrentMachine();
+  const machine = registry?.machines.find((m) => m.id === machineId) ?? null;
+  const profile = registry
+    ? getValidationProfile(registry, machineId, machine ? representativeMode(machine) : "engrave")
+    : null;
+
   const [resolved, setResolved] = useState<TextRegResolveResponse | null>(null);
   const [draft, setDraft] = useState<TextRegParamsBody | null>(null);
   const [loading, setLoading] = useState(true);
@@ -151,6 +158,7 @@ export function AnnotationParamsSection({
             value={draft}
             onChange={setDraft}
             disabled={isDemo || busy}
+            profile={profile}
           />
           {error && (
             <p className="text-[11.5px] text-[color:var(--color-destructive)]">
