@@ -87,9 +87,12 @@ where = ["src"]
 # Include non-Python data files inside the packaged wheels. Without
 # this, `pip install .` (non-editable) leaves font_data.json behind
 # and text_height() fails at runtime. Editable installs accidentally
-# work because they reference the source tree directly.
+# work because they reference the source tree directly. The same trap
+# applies to data/machine_profiles.json — the machine registry loads it
+# at import via Path(__file__).parent, which only resolves if it ships
+# in the wheel.
 [tool.setuptools.package-data]
-"xcs_gen" = ["font_data.json"]
+"xcs_gen" = ["font_data.json", "data/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
