@@ -5,7 +5,6 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from xcs_gen_web.app import create_app
-from xcs_gen import machines as machines_mod
 
 
 def _client(fresh_db) -> TestClient:

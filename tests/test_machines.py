@@ -80,7 +80,7 @@ def test_laser_for_returns_named_laser():
 
 
 def test_device_power_list_for_xcs():
-    """The .xcs `device.power` field is a [w_fiber, w_blue] list."""
+    """The .xcs device.power field is a wattage list ordered by laser kind (fiber, blue, uv)."""
     assert machines.device_power("F1Ultra") == [20, 20]
     assert machines.device_power("F2Ultra") == [60, 40]
 
@@ -114,3 +114,14 @@ def test_device_power_unchanged_for_dual_laser():
     from xcs_gen import machines
     assert machines.device_power("F2Ultra") == [60, 40]
     assert machines.device_power("F1Ultra") == [20, 20]
+
+
+def test_device_power_orders_by_kind_for_new_machines():
+    # device_power emits wattages ordered fiber, blue, uv — pinning the contract
+    # for single-laser, UV, and blue+fiber machines (not verified against real
+    # .xcs output for these; documents the intended ordering).
+    from xcs_gen import machines
+    assert machines.device_power("F2UltraSingle") == [60]   # fiber only
+    assert machines.device_power("F2UltraUV") == [5]         # uv only
+    assert machines.device_power("F1Lite") == [10]           # blue only
+    assert machines.device_power("F1") == [2, 10]            # fiber(2) before blue(10)

@@ -1305,7 +1305,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # specs predate the mode concept; we pick color_engrave for F2 (its
         # marquee feature) and engrave for everything else.
         # NOTE: We strip fields that are not_applicable for the profile
-        # (e.g. pulse_width on STANDARD) before validating so that
+        # (e.g. pulse_width on F1Ultra:engrave) before validating so that
         # legacy base_params, which always carry those fields, still
         # pass.  Full constraint enforcement is a future tightening pass.
         from xcs_gen.machines import PROFILES, profile_for, ValidationError as ProfileError
@@ -1319,7 +1319,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             from xcs_gen.machines import validate_against_profile
             # Strip not_applicable fields before validation so legacy
             # base_params (which always carry pulse_width) don't fail on
-            # machines where the field is irrelevant (e.g. F2Ultra STANDARD).
+            # machines where the field is irrelevant (e.g. F1Ultra:engrave).
             profile = PROFILES[profile_id]
             not_applicable = {
                 k for k, v in profile.items() if v.get("kind") == "not_applicable"
