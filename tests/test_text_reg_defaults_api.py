@@ -188,3 +188,15 @@ def test_machine_put_unknown_machine_stores_as_is(fresh_db):
               json=body)
     assert r.status_code == 200
     assert r.json()["speed"] == 99999  # no profile -> unchanged
+
+
+def test_machine_put_accepts_max_pulse_width(fresh_db):
+    """PUT with pulse_width=500 (a valid F2 Ultra preset) must 200, not 422."""
+    c, _mid = _setup(fresh_db)
+    body = {
+        "speed": 1000, "power": 50, "density": 100, "repeat": 2,
+        "pulse_width": 500, "mopa_frequency": 60, "processing_light_source": "red",
+    }
+    r = c.put("/api/text-registration-defaults/machine/F2Ultra", json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["pulse_width"] == 500  # profile-valid; coercion leaves it unchanged
