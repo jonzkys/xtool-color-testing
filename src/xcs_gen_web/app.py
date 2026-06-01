@@ -1329,12 +1329,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if k not in not_applicable
             }
             # Pre-clamp range fields onto [min, max] so legacy
-            # base_params from a different machine/mode (eg. freq=125
+            # base_params from a different machine/mode (eg. freq=400
             # from F2 carried into a saved test loaded on F1, where
-            # freq is [30, 60]) snap into the active profile instead
-            # of failing the save with a 422. Mirrors the snap-on-load
-            # behaviour the stepped/pulse_width path already has —
-            # see CLAUDE.md "Pydantic validators snap legacy values".
+            # F1Ultra:engrave freq is [1, 150]) snap into the active
+            # profile instead of failing the save with a 422. Mirrors
+            # the snap-on-load behaviour the stepped/pulse_width path
+            # already has — see CLAUDE.md "Pydantic validators snap
+            # legacy values".
             range_clamps: dict[str, tuple[object, float]] = {}
             for field_name, constraint in profile.items():
                 if constraint.get("kind") != "range":

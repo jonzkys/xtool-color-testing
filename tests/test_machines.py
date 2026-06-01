@@ -49,9 +49,9 @@ def test_unknown_machine_id_raises():
 
 
 def test_profile_for_known_pair():
-    assert machines.profile_for("F1Ultra", "engrave") == "STANDARD"
-    assert machines.profile_for("F2Ultra", "color_engrave") == "COLOR_ENGRAVE"
-    assert machines.profile_for("F2Ultra", "engrave") == "STANDARD"
+    assert machines.profile_for("F1Ultra", "engrave") == "F1Ultra:engrave"
+    assert machines.profile_for("F2Ultra", "color_engrave") == "F2Ultra:color_engrave"
+    assert machines.profile_for("F2Ultra", "engrave") == "F2Ultra:engrave"
 
 
 def test_profile_for_unsupported_pair_raises():
@@ -83,3 +83,34 @@ def test_device_power_list_for_xcs():
     """The .xcs `device.power` field is a [w_fiber, w_blue] list."""
     assert machines.device_power("F1Ultra") == [20, 20]
     assert machines.device_power("F2Ultra") == [60, 40]
+
+
+def test_six_machines_registered():
+    from xcs_gen import machines
+    ids = set(machines.known_ids())
+    assert {"F2Ultra", "F2UltraSingle", "F2UltraUV", "F1Ultra", "F1Lite", "F1"} <= ids
+
+
+def test_profile_ids_are_per_machine_mode():
+    from xcs_gen import machines
+    assert machines.profile_for("F2Ultra", "color_engrave") == "F2Ultra:color_engrave"
+    assert machines.profile_for("F1Lite", "engrave") == "F1Lite:engrave"
+
+
+def test_every_mode_profile_exists_in_loaded_profiles():
+    from xcs_gen import machines
+    for m in machines.all_machines():
+        for mode in m.modes:
+            assert mode.profile in machines.PROFILES, f"missing profile {mode.profile}"
+
+
+def test_intaglio_and_relief_modes_on_f2ultra():
+    from xcs_gen import machines
+    modes = {m.id for m in machines.get("F2Ultra").modes}
+    assert {"intaglio", "relief"} <= modes
+
+
+def test_device_power_unchanged_for_dual_laser():
+    from xcs_gen import machines
+    assert machines.device_power("F2Ultra") == [60, 40]
+    assert machines.device_power("F1Ultra") == [20, 20]

@@ -15,15 +15,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-LaserKind = Literal["fiber", "blue"]
-LaserName = Literal["red", "blue"]   # the wire-format name used inside .xcs files
-ModeId = Literal["engrave", "score", "cut", "color_engrave"]
-ProfileId = Literal["STANDARD", "COLOR_ENGRAVE"]
+LaserKind = Literal["fiber", "blue", "uv"]
+LaserName = Literal["red", "blue", "uv"]   # the wire-format name used inside .xcs files
+ModeId = Literal["engrave", "score", "cut", "color_engrave", "intaglio", "relief"]
+ProfileId = str   # per-machine "<machineId>:<mode>"; validated by profiles_loader
 
 # .xcs's per-element ``processingLightSource`` uses "red" for the fiber
 # (MOPA / IR) laser and "blue" for the diode laser. Map them once here so
 # the rest of the codebase can talk in laser names.
-_LASER_NAME_TO_KIND: dict[LaserName, LaserKind] = {"red": "fiber", "blue": "blue"}
+_LASER_NAME_TO_KIND: dict[LaserName, LaserKind] = {"red": "fiber", "blue": "blue", "uv": "uv"}
 
 
 @dataclass(frozen=True)
@@ -56,39 +56,46 @@ class MachineSpec:
     modes: tuple[ModeSpec, ...]
 
 
+def _modes(machine_id: str, mode_ids: tuple[str, ...]) -> tuple[ModeSpec, ...]:
+    return tuple(ModeSpec(m, f"{machine_id}:{m}") for m in mode_ids)
+
+
 _MACHINES: dict[str, MachineSpec] = {
     "F2Ultra": MachineSpec(
-        id="F2Ultra",
-        display_name="F2 Ultra",
-        ext_id="GS004-CLASS-4",
-        ext_name="F2 Ultra",
-        image="f2ultra.png",
-        lasers=(
-            LaserSpec("fiber", 60, (0.03, 0.03)),
-            LaserSpec("blue",  40, (0.08, 0.10)),
-        ),
-        modes=(
-            ModeSpec("engrave",       "STANDARD"),
-            ModeSpec("score",         "STANDARD"),
-            ModeSpec("cut",           "STANDARD"),
-            ModeSpec("color_engrave", "COLOR_ENGRAVE"),
-        ),
+        id="F2Ultra", display_name="F2 Ultra",
+        ext_id="GS004-CLASS-4", ext_name="F2 Ultra", image="f2ultra.png",
+        lasers=(LaserSpec("fiber", 60, (0.03, 0.03)), LaserSpec("blue", 40, (0.08, 0.10))),
+        modes=_modes("F2Ultra", ("engrave", "score", "cut", "color_engrave", "intaglio", "relief")),
+    ),
+    "F2UltraSingle": MachineSpec(
+        id="F2UltraSingle", display_name="F2 Ultra (Single)",
+        ext_id="GS007-CLASS-4", ext_name="F2 Ultra", image="f2ultrasingle.png",
+        lasers=(LaserSpec("fiber", 60, (0.03, 0.03)),),
+        modes=_modes("F2UltraSingle", ("engrave", "score", "cut", "color_engrave", "intaglio", "relief")),
+    ),
+    "F2UltraUV": MachineSpec(
+        id="F2UltraUV", display_name="F2 Ultra UV",
+        ext_id="GS009-CLASS-4", ext_name="F2 Ultra UV", image="f2ultrauv.png",
+        lasers=(LaserSpec("uv", 5, (0.02, 0.02)),),
+        modes=_modes("F2UltraUV", ("engrave", "score", "cut", "intaglio", "relief")),
     ),
     "F1Ultra": MachineSpec(
-        id="F1Ultra",
-        display_name="F1 Ultra",
-        ext_id="F1Ultra",
-        ext_name="F1 Ultra",
-        image="f1ultra.png",
-        lasers=(
-            LaserSpec("fiber", 20, (0.03, 0.03)),
-            LaserSpec("blue",  20, (0.08, 0.10)),
-        ),
-        modes=(
-            ModeSpec("engrave", "STANDARD"),
-            ModeSpec("score",   "STANDARD"),
-            ModeSpec("cut",     "STANDARD"),
-        ),
+        id="F1Ultra", display_name="F1 Ultra",
+        ext_id="F1Ultra", ext_name="F1 Ultra", image="f1ultra.png",
+        lasers=(LaserSpec("fiber", 20, (0.03, 0.03)), LaserSpec("blue", 20, (0.08, 0.10))),
+        modes=_modes("F1Ultra", ("engrave", "score", "cut", "intaglio", "relief")),
+    ),
+    "F1Lite": MachineSpec(
+        id="F1Lite", display_name="F1 Lite",
+        ext_id="GS005", ext_name="F1 Lite", image="f1lite.png",
+        lasers=(LaserSpec("blue", 10, (0.08, 0.10)),),
+        modes=_modes("F1Lite", ("engrave", "score", "cut")),
+    ),
+    "F1": MachineSpec(
+        id="F1", display_name="F1",
+        ext_id="F1", ext_name="F1", image="f1.png",
+        lasers=(LaserSpec("blue", 10, (0.08, 0.10)), LaserSpec("fiber", 2, (0.03, 0.03))),
+        modes=_modes("F1", ("engrave", "score", "cut")),
     ),
 }
 
@@ -131,47 +138,19 @@ def laser_for(machine: MachineSpec, laser_name: LaserName) -> LaserSpec:
 
 
 def device_power(machine_id: str) -> list[int]:
-    """``device.power`` list as written to .xcs files: [fiber_w, blue_w]."""
+    """``device.power`` list as written to .xcs files, ordered fiber, blue, uv."""
     m = get(machine_id)
-    fiber = next(laser for laser in m.lasers if laser.kind == "fiber")
-    blue  = next(laser for laser in m.lasers if laser.kind == "blue")
-    return [fiber.wattage, blue.wattage]
+    order = {"fiber": 0, "blue": 1, "uv": 2}
+    return [laser.wattage for laser in sorted(m.lasers, key=lambda x: order.get(x.kind, 9))]
 
 
 # ── Validation profiles ──────────────────────────────────────────────────────
 
-from .pulse_width import ALLOWED_PULSE_WIDTHS, snap_pulse_width  # noqa: E402
+from .pulse_width import snap_pulse_width  # noqa: E402  (used by validate_against_profile)
+from .profiles_loader import load_profiles  # noqa: E402
 
-# Stepped LPC values for the STANDARD profile (lines per cm).
-# 10..100 step 10, then 100..200 step 20. The duplicated 100 is kept
-# only on the lower segment.
-_STANDARD_DENSITY = tuple(
-    list(range(10, 101, 10)) + list(range(120, 201, 20))
-)
-
-# Per-profile constraint dicts. Shape mirrors what /api/machines returns.
-PROFILES: dict[str, dict[str, dict]] = {
-    "STANDARD": {
-        "power":       {"kind": "range",   "min": 1,  "max": 100,  "step": 1},
-        "density":     {"kind": "stepped", "values": list(_STANDARD_DENSITY)},
-        # F1 / F2 standard fiber laser: 30–60 kHz (canonical unit: kHz).
-        "frequency":   {"kind": "range",   "min": 30, "max": 60,   "step": 1},
-        "speed":       {"kind": "range",   "min": 2,  "max": 10000, "step": 1},
-        "passes":      {"kind": "range",   "min": 1,  "max": 99,   "step": 1},
-        "pulse_width": {"kind": "not_applicable"},
-        "laser":       {"kind": "enum",    "values": ["red", "blue"]},
-    },
-    "COLOR_ENGRAVE": {
-        "power":       {"kind": "range",   "min": 1,   "max": 100,   "step": 1},
-        "density":     {"kind": "range",   "min": 1,   "max": 5000,  "step": 1},
-        # F2 MOPA color engrave: 60–500 kHz (canonical unit: kHz).
-        "frequency":   {"kind": "range",   "min": 60,  "max": 500,   "step": 1},
-        "speed":       {"kind": "range",   "min": 2,   "max": 15000, "step": 1},
-        "passes":      {"kind": "range",   "min": 1,   "max": 99,    "step": 1},
-        "pulse_width": {"kind": "stepped", "values": list(ALLOWED_PULSE_WIDTHS)},
-        "laser":       {"kind": "enum",    "values": ["red", "blue"]},
-    },
-}
+# Loaded from data/machine_profiles.json (extracted from xTool Studio).
+PROFILES: dict[str, dict[str, dict]] = load_profiles()
 
 
 class ValidationError(ValueError):

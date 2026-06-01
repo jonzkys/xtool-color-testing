@@ -182,16 +182,16 @@ def test_tests_create_explicit_mode_color_engrave_for_f2(fresh_db):
 
 
 def test_tests_create_f1_clamps_high_frequency_to_profile_max(fresh_db):
-    """F1Ultra with no mode defaults to engrave (STANDARD, max 60 kHz).
+    """F1Ultra with no mode defaults to engrave (F1Ultra:engrave, max 150 kHz).
 
-    A spec with frequency=400 kHz used to 422; we now snap it to the
-    profile's max instead so legacy specs (created on F2 / migrated
-    from older defaults) survive a save under the new machine. Mirrors
-    the pulse_width snap-on-load behaviour — see CLAUDE.md.
+    A spec with frequency=400 kHz is above the profile max; we snap it to
+    the profile's max instead so legacy specs survive a save under the new
+    machine. Mirrors the pulse_width snap-on-load behaviour — see CLAUDE.md.
     """
+    from xcs_gen import machines as machines_mod
     c = TestClient(create_app())
     mid = m_repo.create(name="Aluminium")["id"]
-    base_f1 = dict(_BASE_CE)   # frequency=400_000 (kHz), pulse_width=200
+    base_f1 = dict(_BASE_CE)   # frequency=400 kHz, pulse_width=200
     spec_f1 = dict(_SPEC_CE)
     spec_f1["base_params"] = base_f1
     r = c.post("/api/tests", json={
@@ -202,9 +202,10 @@ def test_tests_create_f1_clamps_high_frequency_to_profile_max(fresh_db):
     })
     assert r.status_code == 201, r.json()
     saved = r.json()
-    # F1Ultra STANDARD profile has frequency in [30, 60] kHz — the
-    # excessive 400_000 should snap down to 60.
-    assert saved["spec"]["base_params"]["frequency"] == 60
+    # F1Ultra:engrave profile has frequency in [1, 150] kHz —
+    # the excessive 400 should clamp down to the profile max.
+    expected_max = machines_mod.PROFILES["F1Ultra:engrave"]["frequency"]["max"]
+    assert saved["spec"]["base_params"]["frequency"] == expected_max
 
 
 def test_tests_lock_route_locks_and_unlocks_before_results(fresh_db):
