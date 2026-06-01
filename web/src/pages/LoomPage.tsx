@@ -1337,17 +1337,9 @@ function StopsRail({
         setDragging(null);
         return;
       }
-      // When there is a range constraint, also update the stop value so it
-      // tracks the drag position (maps 0..1 rail position to [min..max] and
-      // snaps to any step). For unconstrained params (spacing) the value
-      // stays fixed and only position moves.
-      if (constraint?.kind === "range") {
-        const rawValue = constraint.min + clampedPos * (constraint.max - constraint.min);
-        const clampedValue = clampToConstraint(rawValue, constraint) as number;
-        setStop(dragging, { position: clampedPos, value: clampedValue });
-      } else {
-        setStop(dragging, { position: clampedPos });
-      }
+      // Dragging repositions the stop only; its value is independent (set via
+      // the double-click prompt) and clamped there + in addStopAt.
+      setStop(dragging, { position: clampedPos });
     };
     const onUp = () => setDragging(null);
     window.addEventListener("pointermove", onMove);
