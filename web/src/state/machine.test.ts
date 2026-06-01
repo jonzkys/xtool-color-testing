@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MachinesPayload } from "../types";
-import { getValidationProfile } from "./machine";
+import { getValidationProfile, representativeMode } from "./machine";
 
 const REGISTRY: MachinesPayload = {
   machines: [
@@ -69,5 +69,19 @@ describe("getValidationProfile", () => {
     } as unknown as MachinesPayload;
     const p = getValidationProfile(reg, "F2Ultra", "intaglio");
     expect(p?.power).toEqual({ kind: "range", min: 1, max: 100 });
+  });
+});
+
+describe("representativeMode", () => {
+  const mk = (modeIds: string[]) =>
+    ({ id: "M", display_name: "", ext_id: "", ext_name: "", image: "", lasers: [],
+       modes: modeIds.map((id) => ({ id, profile: `M:${id}` })) }) as unknown as
+      import("../types").Machine;
+
+  it("prefers color_engrave when supported", () => {
+    expect(representativeMode(mk(["engrave", "cut", "color_engrave"]))).toBe("color_engrave");
+  });
+  it("falls back to engrave otherwise", () => {
+    expect(representativeMode(mk(["engrave", "score", "cut"]))).toBe("engrave");
   });
 });
