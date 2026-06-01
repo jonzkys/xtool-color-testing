@@ -45,7 +45,7 @@ class BaseParams(BaseModel):
     # validation profile applies. Optional for backwards compat — pre-
     # multi-machine rows lack the field; the API handler infers a
     # sensible default from machine_id when it's missing.
-    mode: Literal["engrave", "score", "cut", "color_engrave"] | None = None
+    mode: Literal["engrave", "score", "cut", "color_engrave", "intaglio", "relief"] | None = None
 
 
 class RegistrationConfig(BaseModel):

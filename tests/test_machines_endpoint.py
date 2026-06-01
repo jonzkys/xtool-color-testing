@@ -62,6 +62,24 @@ def test_machines_endpoint_modes_carry_profile(fresh_db):
     assert color["profile"] == "F2Ultra:color_engrave"
 
 
+def test_intaglio_mode_accepted_by_schema():
+    from xcs_gen_web.schemas import BaseParams
+    # BaseParams has no field defaults except scan_angle and mode, so we must
+    # supply all required fields. The point is to assert mode="intaglio" is
+    # accepted by the Literal without a ValidationError.
+    bp = BaseParams(
+        power=50,
+        speed=1000,
+        frequency=20,
+        density=100,
+        passes=1,
+        pulse_width=2,
+        laser="red",
+        mode="intaglio",
+    )
+    assert bp.mode == "intaglio"
+
+
 def test_profiles_payload_matches_registry(fresh_db):
     """Spot-check the profile payload survives JSON round-trip."""
     r = _client(fresh_db).get("/api/machines")
