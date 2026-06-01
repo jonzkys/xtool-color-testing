@@ -2706,6 +2706,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     from .repositories import text_reg_defaults as treg_repo
     from xcs_gen.generators import _DEFAULT_ANNOTATION_PARAMS
+    from xcs_gen import machines as _machines
+    from .text_reg_vocab import to_profile as _treg_to_profile, from_profile as _treg_from_profile
+
+    def _coerce_text_reg(machine_id: str, params: dict) -> dict:
+        """Clamp/snap TextReg params against the machine's representative-mode
+        profile. Unknown machine/mode -> return unchanged."""
+        try:
+            profile_id = _machines.profile_for(machine_id, _default_mode_for(machine_id))
+        except KeyError:
+            return params
+        coerced = _machines.coerce_against_profile(profile_id, _treg_to_profile(params))
+        return _treg_from_profile(coerced)
 
     @app.get(
         "/api/text-registration-defaults/resolve",
@@ -2784,7 +2796,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> TextRegMachineDefault:
         row = treg_repo.upsert_machine(
             owner_id=user_id, machine_id=machine_id,
-            params=body.model_dump(),
+            params=_coerce_text_reg(machine_id, body.model_dump()),
         )
         return TextRegMachineDefault(**row)
 
@@ -2833,7 +2845,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="material not found")
         row = treg_repo.upsert_material(
             owner_id=user_id, machine_id=machine_id,
-            material_id=material_id, params=body.model_dump(),
+            material_id=material_id,
+            params=_coerce_text_reg(machine_id, body.model_dump()),
         )
         return TextRegMaterialDefault(**row)
 

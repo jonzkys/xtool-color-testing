@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { clampToConstraint } from "../../lib/constraints";
 
 interface Props {
   label: string;
@@ -190,21 +191,7 @@ function SteppedSlider({
       setText(String(value));
       return;
     }
-    let bestIdx = 0;
-    let bestDist = Infinity;
-    values.forEach((v, i) => {
-      const dist =
-        typeof typed === "number" && typeof v === "number"
-          ? Math.abs(v - typed)
-          : v === typed
-            ? 0
-            : Infinity;
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestIdx = i;
-      }
-    });
-    onChange(values[bestIdx]);
+    onChange(clampToConstraint(typed as number | string, { kind: "stepped", values }));
   }
 
   const pct =

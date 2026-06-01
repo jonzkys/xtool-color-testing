@@ -153,3 +153,50 @@ def test_invalid_payload_422(fresh_db):
     bad = {**_PARAMS, "power": 250.0}
     r = c.put("/api/text-registration-defaults/machine/F2Ultra", json=bad)
     assert r.status_code == 422
+
+
+# ── Coercion tests (Phase-3 Task 3) ─────────────────────────────────────────
+
+
+def test_machine_put_coerces_out_of_range(fresh_db):
+    """machine PUT clamps/snaps values against the representative-mode profile."""
+    c, _mid = _setup(fresh_db)
+    body = {
+        "speed": 99999, "power": 50, "density": 100, "repeat": 2,
+        "pulse_width": 7, "mopa_frequency": 99999, "processing_light_source": "red",
+    }
+    r = c.put("/api/text-registration-defaults/machine/F2Ultra",
+              json=body)
+    assert r.status_code == 200
+    out = r.json()
+    from xcs_gen import machines
+    prof = machines.PROFILES[machines.profile_for("F2Ultra", "color_engrave")]
+    assert out["speed"] == prof["speed"]["max"]           # clamped
+    assert out["mopa_frequency"] == prof["frequency"]["max"]  # mapped + clamped
+    assert out["pulse_width"] == 6                        # snapped
+    assert out["power"] == 50                             # within range, unchanged
+
+
+def test_machine_put_unknown_machine_stores_as_is(fresh_db):
+    """machine PUT for an unknown machine stores the raw params unchanged."""
+    c, _mid = _setup(fresh_db)
+    body = {
+        "speed": 99999, "power": 50, "density": 100, "repeat": 2,
+        "pulse_width": 200, "mopa_frequency": 60, "processing_light_source": "red",
+    }
+    r = c.put("/api/text-registration-defaults/machine/NoSuchMachine",
+              json=body)
+    assert r.status_code == 200
+    assert r.json()["speed"] == 99999  # no profile -> unchanged
+
+
+def test_machine_put_accepts_max_pulse_width(fresh_db):
+    """PUT with pulse_width=500 (a valid F2 Ultra preset) must 200, not 422."""
+    c, _mid = _setup(fresh_db)
+    body = {
+        "speed": 1000, "power": 50, "density": 100, "repeat": 2,
+        "pulse_width": 500, "mopa_frequency": 60, "processing_light_source": "red",
+    }
+    r = c.put("/api/text-registration-defaults/machine/F2Ultra", json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["pulse_width"] == 500  # profile-valid; coercion leaves it unchanged

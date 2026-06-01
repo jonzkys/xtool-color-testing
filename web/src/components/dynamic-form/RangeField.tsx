@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { clampToConstraint } from "../../lib/constraints";
 
 interface Props {
   label: string;
@@ -11,12 +12,6 @@ interface Props {
   disabled?: boolean;
   /** When true, renders at slightly larger scale (power field treatment). */
   prominent?: boolean;
-}
-
-/** Snap `v` to the nearest step increment from `min`. */
-function snapToStep(v: number, step: number, min: number): number {
-  if (step <= 0) return v;
-  return min + Math.round((v - min) / step) * step;
 }
 
 /** Format a numeric value for the value badge — at most 1 decimal place,
@@ -54,8 +49,7 @@ export function RangeField({
   const inputRef = useRef<HTMLInputElement>(null);
 
   function coerce(n: number): number {
-    const snapped = step && step >= 1 ? snapToStep(n, step, min) : n;
-    return Math.max(min, Math.min(max, snapped));
+    return clampToConstraint(n, { kind: "range", min, max, step }) as number;
   }
 
   useEffect(() => {

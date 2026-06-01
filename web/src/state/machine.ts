@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Machine, MachinesPayload, ProfileId, ValidationProfile } from "../types";
+import type { Machine, MachinesPayload, ModeId, ProfileId, ValidationProfile } from "../types";
 import { getMachines } from "../api/machines";
 
 const LS_KEY = "xcs.currentMachineId";
@@ -56,4 +56,11 @@ export function getValidationProfile(
   const modeSpec = machine.modes.find((m) => m.id === mode);
   if (!modeSpec) return null;
   return registry.profiles[modeSpec.profile as ProfileId] ?? null;
+}
+
+/** Pick the representative mode for surfaces with no explicit mode
+ *  (Loom, Material calibration). Mirrors the backend's _default_mode_for:
+ *  color_engrave if the machine supports it, else engrave. */
+export function representativeMode(machine: Machine): ModeId {
+  return machine.modes.some((m) => m.id === "color_engrave") ? "color_engrave" : "engrave";
 }

@@ -14,12 +14,15 @@ import {
   putMaterialTextRegDefault,
   resolveTextRegDefaults,
 } from "../api/textRegDefaults";
+import { getValidationProfile, representativeMode } from "../state/machine";
 import type {
   Machine,
+  MachinesPayload,
   TextRegMaterialDefault,
   TextRegParamsBody,
   TextRegResolveResponse,
   TextRegSource,
+  ValidationProfile,
 } from "../types";
 import { TextRegParamsEditor, TextRegSourcePill } from "./TextRegParamsEditor";
 
@@ -43,12 +46,12 @@ export function MaterialTextRegPanel({
   materialName,
   isDemo,
 }: MaterialTextRegPanelProps) {
-  const [machines, setMachines] = useState<Machine[] | null>(null);
+  const [registry, setRegistry] = useState<MachinesPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getMachines()
-      .then((p) => setMachines(p.machines))
+      .then((p) => setRegistry(p))
       .catch((e) => setError((e as Error).message));
   }, []);
 
@@ -59,7 +62,7 @@ export function MaterialTextRegPanel({
       </div>
     );
   }
-  if (machines === null) {
+  if (registry === null) {
     return (
       <div className="flex items-center gap-2 text-[12.5px] text-[color:var(--color-ink-subtle)]">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -80,13 +83,14 @@ export function MaterialTextRegPanel({
         substrates often need different power/density to keep these crisp.
       </p>
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-        {machines.map((m) => (
+        {registry.machines.map((m) => (
           <MachineCard
             key={m.id}
             machine={m}
             materialId={materialId}
             materialName={materialName}
             isDemo={isDemo}
+            registry={registry}
           />
         ))}
       </div>
@@ -101,12 +105,15 @@ function MachineCard({
   materialId,
   materialName,
   isDemo,
+  registry,
 }: {
   machine: Machine;
   materialId: number;
   materialName: string;
   isDemo?: boolean;
+  registry: MachinesPayload;
 }) {
+  const profile: ValidationProfile | null = getValidationProfile(registry, machine.id, representativeMode(machine));
   const [resolved, setResolved] = useState<TextRegResolveResponse | null>(null);
   const [draft, setDraft] = useState<TextRegParamsBody | null>(null);
   const [hasMaterialRow, setHasMaterialRow] = useState<boolean>(false);
@@ -242,6 +249,7 @@ function MachineCard({
             value={draft}
             onChange={setDraft}
             disabled={isDemo || saving || resetting}
+            profile={profile}
           />
         )}
         {error && (

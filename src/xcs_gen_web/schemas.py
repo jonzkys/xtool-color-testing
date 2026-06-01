@@ -1188,7 +1188,7 @@ class TextRegParamsBody(BaseModel):
     power: float = Field(ge=0, le=100)
     density: int = Field(ge=1)
     repeat: int = Field(ge=1, le=99)
-    pulse_width: int = Field(ge=2, le=350)
+    pulse_width: int = Field(ge=2, le=500)
     mopa_frequency: int = Field(ge=1)
     processing_light_source: str = Field(min_length=1, max_length=16)
 
