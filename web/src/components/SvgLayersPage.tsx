@@ -16,11 +16,13 @@ import { defaultBaseParams, defaultHatchPass } from "../defaults";
 import { sanitiseProjectName } from "../projectName";
 import { PulseWidthSelect } from "./PulseWidthSelect";
 import {
+  DEFAULT_OUTPUT_FORMAT,
   DEFAULT_RASTER_TRACE_OPTIONS,
   previewSvg,
   svgLayersAndDownload,
 } from "../generate";
 import type { RasterTraceOptions } from "../generate";
+import { FormatToggle } from "./FormatToggle";
 // Colour detection runs in the browser via DOMParser + getComputedStyle —
 // no round-trip, no backend CPU, same shape as the old API response.
 import { detectSvgLayers } from "../svg/detectLayers";
@@ -31,6 +33,7 @@ import type {
   BaseParams,
   DetectedLayer,
   LayerSpec,
+  OutputFormat,
   PaletteEntry,
   PaletteQueryResult,
   SvgLayersRequest,
@@ -227,6 +230,9 @@ export function SvgLayersPage() {
   // .xcs canvas reads the palette colours instead.
   type ExportColorMode = "original" | "matched";
   const [exportColorMode, setExportColorMode] = useState<ExportColorMode>("original");
+  // Output container for the Generate download — ".xs" (ZIP, default)
+  // or legacy ".xcs".
+  const [outputFormat, setOutputFormat] = useState<OutputFormat>(DEFAULT_OUTPUT_FORMAT);
   const [autoApplying, setAutoApplying] = useState(false);
   const [autoApplyMessage, setAutoApplyMessage] = useState<string | undefined>();
   // Restrict the auto-match to validated palette entries — i.e.
@@ -719,7 +725,7 @@ export function SvgLayersPage() {
     setErrorMessage(undefined);
     setGenerating(true);
     try {
-      await svgLayersAndDownload(buildGenerateRequest());
+      await svgLayersAndDownload({ ...buildGenerateRequest(), format: outputFormat });
     } catch (err) {
       setErrorMessage((err as Error).message);
     } finally {
@@ -875,13 +881,18 @@ export function SvgLayersPage() {
             <FileImage className="h-4 w-4" />
             Save SVG
           </Button>
+          <FormatToggle
+            value={outputFormat}
+            onChange={setOutputFormat}
+            disabled={generating}
+          />
           <Button
             variant="primary"
             onClick={handleGenerate}
             disabled={disabled}
           >
             <Download className="h-4 w-4" />
-            {generating ? "Generating…" : "Generate .xcs"}
+            {generating ? "Generating…" : `Generate .${outputFormat}`}
           </Button>
         </div>
       </header>

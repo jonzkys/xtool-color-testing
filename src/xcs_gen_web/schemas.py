@@ -218,6 +218,10 @@ class SvgStackRequest(BaseModel):
     material_id: str = Field(min_length=1)
     subtract_overlaps: bool = False
 
+    # Output container: "xs" (xcs-workspace-v2 ZIP, the default) or "xcs"
+    # (legacy flat JSON). See xcs_gen_web.serialize.project_to_bytes.
+    format: Literal["xcs", "xs"] = "xs"
+
 
 # Color layer pattern - lowercase hex, "none" sentinel allowed for stroke-only shapes
 _COLOR_PATTERN = r"^(#[0-9a-f]{6}|none)$"
@@ -349,6 +353,10 @@ class SvgLayersRequest(BaseModel):
     material_id: str = Field(min_length=1)
     layers: list[LayerSpec] = Field(min_length=1)
     subtract_overlaps: bool = False
+
+    # Output container: "xs" (xcs-workspace-v2 ZIP, the default) or "xcs"
+    # (legacy flat JSON). See xcs_gen_web.serialize.project_to_bytes.
+    format: Literal["xcs", "xs"] = "xs"
 
 
 # SvgDetectRequest + DetectedLayer used to live here. Layer colour
@@ -1279,6 +1287,10 @@ class PixelArtRequest(BaseModel):
     # well past anything practical for engraving.
     rects: list[PixelArtRectSpec] = Field(min_length=1, max_length=50_000)
     layers: list[PixelArtLayerSpec] = Field(min_length=1, max_length=64)
+
+    # Output container: "xs" (xcs-workspace-v2 ZIP, the default) or "xcs"
+    # (legacy flat JSON). See xcs_gen_web.serialize.project_to_bytes.
+    format: Literal["xcs", "xs"] = "xs"
 
 
 # ---------------------------------------------------------------------------

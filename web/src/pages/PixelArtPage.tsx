@@ -49,6 +49,7 @@ import { sampleCellGrid } from "../components/pixelArtImage";
 import { isNearWhite } from "../color/math";
 import { sanitiseProjectName } from "../projectName";
 import type {
+  OutputFormat,
   PaletteEntry,
   PixelArtRequest,
   PixelArtRectSpec,
@@ -58,7 +59,7 @@ import type { LibraryState } from "../library";
 import { listMaterials, listPresets } from "../api/library";
 import { listPaletteEntries } from "../api/palette";
 import { getCurrentMachineId, useCurrentMachine } from "../state/machine";
-import { pixelArtAndDownload, pixelArtSvgAndDownload } from "../generate";
+import { DEFAULT_OUTPUT_FORMAT, pixelArtAndDownload, pixelArtSvgAndDownload } from "../generate";
 import type { MergeGroup } from "../svg/mergeColors";
 import {
   decodeFile,
@@ -134,6 +135,8 @@ export function PixelArtPage() {
   const [matchByColor, setMatchByColor] = useState<Record<string, PaletteEntry | null>>({});
   const [error, setError] = useState<string | undefined>();
   const [generating, setGenerating] = useState(false);
+  // Output container for the .xs/.xcs download — ".xs" (ZIP) is default.
+  const [outputFormat, setOutputFormat] = useState<OutputFormat>(DEFAULT_OUTPUT_FORMAT);
   // Off by default: the burn fits whatever crop the user picks. When
   // on, the crop frame snaps to the material's aspect (the original
   // behaviour). Toggleable in case the user wants the burn to mirror
@@ -515,13 +518,13 @@ export function PixelArtPage() {
     setGenerating(true);
     setError(undefined);
     try {
-      await pixelArtAndDownload(req);
+      await pixelArtAndDownload({ ...req, format: outputFormat });
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setGenerating(false);
     }
-  }, [buildRequest]);
+  }, [buildRequest, outputFormat]);
 
   const onDownloadSvg = useCallback(async () => {
     const req = buildRequest();
@@ -757,6 +760,8 @@ export function PixelArtPage() {
                 onDownloadXcs={onDownloadXcs}
                 onDownloadSvg={onDownloadSvg}
                 generating={generating}
+                outputFormat={outputFormat}
+                onOutputFormatChange={setOutputFormat}
               />
             </Card>
           </div>

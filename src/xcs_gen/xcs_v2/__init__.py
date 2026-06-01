@@ -22,6 +22,6 @@ ground-truth spec in /tmp/groundtruth.md.
 
 from __future__ import annotations
 
-from .writer import build_bundle, write_xs
+from .writer import build_bundle, build_xs_bytes, write_xs
 
-__all__ = ["write_xs", "build_bundle"]
+__all__ = ["write_xs", "build_bundle", "build_xs_bytes"]

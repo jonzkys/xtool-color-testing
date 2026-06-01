@@ -26,11 +26,12 @@ import {
   Section,
 } from "../ui";
 import { defaultBaseParams } from "../defaults";
-import type { BaseParams, LayerSpec, PaletteEntry } from "../types";
+import type { BaseParams, LayerSpec, OutputFormat, PaletteEntry } from "../types";
 import type { LibraryState } from "../library";
 import { deltaE2000, hexToLab, type Lab } from "../color/math";
 import { MergeColorsDialog } from "./MergeColorsDialog";
 import type { MergeGroup } from "../svg/mergeColors";
+import { FormatToggle } from "./FormatToggle";
 
 export interface PixelArtLayerRow {
   /** Centroid hex (lower-case, ``#rrggbb``). The layer key. */
@@ -66,6 +67,9 @@ export interface PixelArtLayerPanelProps {
   onDownloadSvg: () => void;
   /** Disabled when a download is in flight. */
   generating?: boolean;
+  /** Selected output container for the project download. */
+  outputFormat: OutputFormat;
+  onOutputFormatChange: (format: OutputFormat) => void;
 }
 
 /** Adapt our centroid rows into the ``LayerSpec`` shape the merge
@@ -97,6 +101,8 @@ export function PixelArtLayerPanel({
   onDownloadXcs,
   onDownloadSvg,
   generating,
+  outputFormat,
+  onOutputFormatChange,
 }: PixelArtLayerPanelProps) {
   const [mergeOpen, setMergeOpen] = useState(false);
 
@@ -138,6 +144,17 @@ export function PixelArtLayerPanel({
           right card while the tile grid grows downward and scrolls
           internally for long palettes. */}
       <div className="flex flex-col gap-2 shrink-0">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-mono text-[9.5px] tracking-[0.16em] uppercase font-semibold text-[color:var(--color-ink-subtle)]">
+            Format
+          </span>
+          <FormatToggle
+            value={outputFormat}
+            onChange={onOutputFormatChange}
+            disabled={generating === true}
+            size="sm"
+          />
+        </div>
         <div className="grid grid-cols-2 gap-2">
           <Button
             variant="primary"
@@ -147,7 +164,7 @@ export function PixelArtLayerPanel({
           >
             <Download className="h-3.5 w-3.5" />
             <FileCode2 className="h-3.5 w-3.5" />
-            .xcs
+            .{outputFormat}
           </Button>
           <Button
             variant="primary"

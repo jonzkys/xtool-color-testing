@@ -85,7 +85,8 @@ def test_svg_stack_rejects_empty_svg():
 
 
 def test_svg_stack_returns_valid_xcs_bytes():
-    body = svg_stack_to_xcs_bytes(_request())
+    body, media, ext = svg_stack_to_xcs_bytes(_request(format="xcs"))
+    assert (media, ext) == ("application/json", "xcs")
     data = json.loads(body)
     assert "canvas" in data
     assert "device" in data
@@ -110,10 +111,18 @@ def test_api_svg_stack_endpoint():
         "stack_step_deg": 90.0,
         "material_id": "mat-test",
     }
+    # Default output is the .xs ZIP bundle.
     resp = client.post("/api/svg-stack", json=payload)
     assert resp.status_code == 200
-    assert "pika_stack.xcs" in resp.headers["content-disposition"]
-    data = json.loads(resp.content)
+    assert "pika_stack.xs" in resp.headers["content-disposition"]
+    assert resp.headers["content-type"].startswith("application/zip")
+    assert resp.content.startswith(b"PK")
+
+    # .xcs flat JSON still selectable.
+    resp_xcs = client.post("/api/svg-stack", json={**payload, "format": "xcs"})
+    assert resp_xcs.status_code == 200
+    assert "pika_stack.xcs" in resp_xcs.headers["content-disposition"]
+    data = json.loads(resp_xcs.content)
     assert "canvas" in data
 
 

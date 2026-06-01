@@ -13,7 +13,9 @@ import {
   notify,
 } from "../ui";
 import ForgeWorker from "../lib/forge/forge.worker?worker";
-import type { ForgeRequest, ForgeResponse } from "../lib/forge/forge.worker";
+import type { ForgeFormat, ForgeRequest, ForgeResponse } from "../lib/forge/forge.worker";
+import { FormatToggle } from "../components/FormatToggle";
+import { DEFAULT_OUTPUT_FORMAT } from "../generate";
 import type {
   Contour,
   ForgeConfig,
@@ -69,6 +71,7 @@ type State =
       objects: XcsObject[];
       targetIds: string[];
       preservedIds: string[];
+      format: ForgeFormat;
     }
   | { kind: "error"; message: string };
 
@@ -86,6 +89,9 @@ export function ForgePage() {
   const [result, setResult] = useState<PipelineResult | null>(null);
   const [visible, setVisible] = useState<Record<GeneratedClass, boolean>>(ALL_VISIBLE);
   const [canvasSize, setCanvasSize] = useState({ w: 600, h: 480 });
+  // Output container, chosen by the user (default .xs, like every other page).
+  // Independent of the uploaded file's format — either input exports as either.
+  const [exportFormat, setExportFormat] = useState<ForgeFormat>(DEFAULT_OUTPUT_FORMAT);
 
   const workerRef = useRef<Worker | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -119,12 +125,13 @@ export function ForgePage() {
           objects: msg.objects,
           targetIds: msg.targetIds,
           preservedIds: msg.preservedIds,
+          format: msg.format,
         });
         setSelectedIncise(msg.targetIds.length === 1 ? msg.targetIds[0] : null);
       } else if (msg.type === "generated") {
         setResult(msg.result);
       } else if (msg.type === "exported") {
-        downloadBuf(msg.buf);
+        downloadBuf(msg.buf, msg.format);
       } else if (msg.type === "error") {
         notify(msg.message, "error");
         setState({ kind: "error", message: msg.message });
@@ -191,12 +198,18 @@ export function ForgePage() {
       });
   }
 
-  function downloadBuf(buf: ArrayBuffer) {
-    const blob = new Blob([buf], { type: "application/json" });
+  // Download the exported bytes with a name + MIME matching the chosen output
+  // format. `.xs` is a v2 ZIP bundle; `.xcs` is the legacy flat JSON. Either
+  // input can be exported as either — the format follows the page's toggle.
+  function downloadBuf(buf: ArrayBuffer, format: ForgeFormat) {
+    const isXs = format === "xs";
+    const blob = new Blob([buf], {
+      type: isXs ? "application/zip" : "application/json",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "contour-forge.xcs";
+    a.download = isXs ? "contour-forge.xs" : "contour-forge.xcs";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -225,7 +238,12 @@ export function ForgePage() {
 
   function onExport() {
     if (!selectedIncise) return;
-    const req: ForgeRequest = { type: "export", inciseId: selectedIncise, config };
+    const req: ForgeRequest = {
+      type: "export",
+      inciseId: selectedIncise,
+      config,
+      format: exportFormat,
+    };
     workerRef.current?.postMessage(req);
   }
 
@@ -236,11 +254,11 @@ export function ForgePage() {
           trailing={
             <>
               <label className="px-3 py-1.5 text-xs font-mono uppercase rounded bg-[var(--color-primary)] text-white cursor-pointer hover:bg-[var(--color-primary-hover)] transition-colors">
-                Upload .xcs
+                Upload .xcs / .xs
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".xcs,application/json"
+                  accept=".xcs,.xs,application/json,application/zip"
                   className="sr-only"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
@@ -249,8 +267,9 @@ export function ForgePage() {
                   }}
                 />
               </label>
+              <FormatToggle value={exportFormat} onChange={setExportFormat} />
               <Button disabled={!canExport} onClick={onExport}>
-                Export modified .xcs
+                {exportFormat === "xs" ? "Export modified .xs" : "Export modified .xcs"}
               </Button>
             </>
           }
@@ -265,8 +284,8 @@ export function ForgePage() {
 
         {state.kind === "idle" && (
           <EmptyState
-            title="Upload an xTool .xcs"
-            description="The file needs at least one incise (INTAGLIO) contour — the cut target. Forge converts the selected contour into staged seed / perforate / deepen / clean cut paths; any emboss or score layers are preserved untouched."
+            title="Upload an xTool .xcs or .xs"
+            description="Legacy .xcs and xcs-workspace-v2 .xs bundles are both supported; the export round-trips back to whichever you uploaded. The file needs at least one incise (INTAGLIO) contour — the cut target. Forge converts the selected contour into staged seed / perforate / deepen / clean cut paths; any emboss or score layers are preserved untouched."
           />
         )}
         {state.kind === "loading" && (

@@ -37,9 +37,25 @@ def _payload(**overrides):
     return base
 
 
-def test_pixel_art_returns_xcs_bytes_with_filename():
+def test_pixel_art_returns_xs_bundle_by_default():
+    """Default output is now the .xs (xcs-workspace-v2) ZIP bundle."""
+    import io
+    import zipfile
+
     client = TestClient(create_app())
     resp = client.post("/api/pixel-art", json=_payload())
+    assert resp.status_code == 200
+    assert resp.headers["content-disposition"].startswith("attachment;")
+    assert "test-pixel.xs" in resp.headers["content-disposition"]
+    assert resp.headers["content-type"].startswith("application/zip")
+    assert resp.content.startswith(b"PK")
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        assert zf.read(".format") == b"v2"
+
+
+def test_pixel_art_returns_xcs_bytes_when_requested():
+    client = TestClient(create_app())
+    resp = client.post("/api/pixel-art", json=_payload(format="xcs"))
     assert resp.status_code == 200
     assert resp.headers["content-disposition"].startswith("attachment;")
     assert "test-pixel.xcs" in resp.headers["content-disposition"]

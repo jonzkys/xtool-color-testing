@@ -81,6 +81,10 @@ export interface HatchPassSpec {
   ramps: HatchRampSpec[];
 }
 
+/** Output format for generator downloads. ``xs`` (the default) returns a
+ *  ZIP; ``xcs`` returns the legacy single-file XCS JSON. */
+export type OutputFormat = "xcs" | "xs";
+
 export interface SvgStackRequest {
   name: string;
   svg_content: string;
@@ -95,6 +99,8 @@ export interface SvgStackRequest {
   stack_step_deg: number;
   material_id: string;  // required
   subtract_overlaps: boolean;
+  /** Output container — ``xs`` (default) or legacy ``xcs``. */
+  format?: OutputFormat;
 }
 
 export interface LayerSpec {
@@ -124,6 +130,8 @@ export interface SvgLayersRequest {
   material_id: string;  // required project-level material (substrate)
   layers: LayerSpec[];
   subtract_overlaps: boolean;
+  /** Output container — ``xs`` (default) or legacy ``xcs``. */
+  format?: OutputFormat;
 }
 
 export interface DetectedLayer {
@@ -539,6 +547,8 @@ export interface PixelArtRequest {
   cell_mm: number;
   rects: PixelArtRectSpec[];
   layers: PixelArtLayerSpec[];
+  /** Output container — ``xs`` (default) or legacy ``xcs``. */
+  format?: OutputFormat;
 }
 
 // ---------------------------------------------------------------------------

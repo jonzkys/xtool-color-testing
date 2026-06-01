@@ -12,13 +12,11 @@ Spec: docs/superpowers/specs/2026-05-03-pixel-art-design.md
 
 from __future__ import annotations
 
-import json
-
-from xcs_gen.builder import build_xcs
 from xcs_gen.model import Path, XCSProject
 
 from .converter import _to_processing_params
 from .schemas import PixelArtRectSpec, PixelArtRequest
+from .serialize import project_to_bytes
 
 
 def build_pixel_art_project(req: PixelArtRequest) -> XCSProject:
@@ -79,11 +77,14 @@ def build_pixel_art_project(req: PixelArtRequest) -> XCSProject:
     return project
 
 
-def pixel_art_to_xcs_bytes(req: PixelArtRequest) -> bytes:
-    """Build the project, serialise via build_xcs, JSON-dump to bytes."""
+def pixel_art_to_xcs_bytes(req: PixelArtRequest) -> tuple[bytes, str, str]:
+    """Build the project and serialise per ``req.format``.
+
+    Returns ``(body, media_type, extension)`` — ``"xs"`` ZIP bundle by
+    default, ``"xcs"`` flat JSON when selected.
+    """
     project = build_pixel_art_project(req)
-    payload = build_xcs(project)
-    return json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    return project_to_bytes(project, req.format)
 
 
 def pixel_art_to_svg(req: PixelArtRequest) -> str:

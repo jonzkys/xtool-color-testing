@@ -148,7 +148,8 @@ def bytes_for_test(*, test_id: int, name: str, material_id: int,
                    machine_id: str = "F2Ultra",
                    kind: str = "sweep",
                    validation_cells: list[dict[str, Any]] | None = None,
-                   owner_id: int | None = None) -> bytes:
+                   owner_id: int | None = None,
+                   fmt: str = "xs") -> tuple[bytes, str, str]:
     # Build a throwaway Project with exactly one placement so the existing
     # converter machinery keeps working. When the frontend project wrapper
     # is removed we'll fold this into a cleaner single-test path.
@@ -236,4 +237,5 @@ def bytes_for_test(*, test_id: int, name: str, material_id: int,
         Project.model_validate(project), machine_id=machine_id,
         annotation_params=annotation_params,
         calibration_by_material_id=calibration_by_material_id or None,
+        fmt=fmt,  # type: ignore[arg-type]
     )

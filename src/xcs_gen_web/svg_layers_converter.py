@@ -8,18 +8,17 @@ SvgStackRequest.
 
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 import time
 from contextlib import nullcontext
 from dataclasses import replace
 
-from xcs_gen.builder import build_xcs
 from xcs_gen.model import GRADIENT_LAYER_COLOR, Path, Rect, XCSProject
 from xcs_gen.svg_source import ParsedShape, parse_svg
 
 from .converter import _to_processing_params
+from .serialize import project_to_bytes
 from .schemas import (
     LayerSpec,
     SvgLayersRequest,
@@ -347,12 +346,16 @@ def svg_preview(request: SvgPreviewRequest) -> SvgPreviewResponse:
     return SvgPreviewResponse(svg="".join(parts))
 
 
-def svg_layers_to_xcs_bytes(request: SvgLayersRequest) -> bytes:
-    """Convert to .xcs file bytes (JSON-encoded)."""
+def svg_layers_to_xcs_bytes(request: SvgLayersRequest) -> tuple[bytes, str, str]:
+    """Convert to download bytes per ``request.format``.
+
+    Returns ``(body, media_type, extension)`` — ``"xs"`` ZIP bundle by
+    default, ``"xcs"`` flat JSON when selected.
+    """
     assert_shape_count(request.svg_content)
 
     # Per-phase timing so a slow request log-line tells us which step
-    # (parse vs subtract vs emit vs json.dumps) caused it. Especially
+    # (parse vs subtract vs emit vs serialize) caused it. Especially
     # useful when the pipeline hits a gateway timeout — the report line
     # is written even on failure (emit() still runs in the finally
     # equivalent below, but we also want it on success).
@@ -360,16 +363,15 @@ def svg_layers_to_xcs_bytes(request: SvgLayersRequest) -> bytes:
     report.set("svg_bytes", len(request.svg_content))
     report.set("layers_enabled", sum(1 for l in request.layers if l.enabled))
     report.set("subtract", request.subtract_overlaps)
+    report.set("format", request.format)
 
     try:
         xcs = build_svg_layers_project(request, report=report)
         report.set("paths", len(xcs.paths))
         report.set("extra_displays", len(xcs.extra_displays))
-        with report.phase("build_xcs"):
-            data = build_xcs(xcs)
-        with report.phase("json.dumps"):
-            body = json.dumps(data, separators=(",", ":")).encode("utf-8")
+        with report.phase("serialize"):
+            body, media_type, ext = project_to_bytes(xcs, request.format)
         report.set("output_bytes", len(body))
-        return body
+        return body, media_type, ext
     finally:
         report.emit()

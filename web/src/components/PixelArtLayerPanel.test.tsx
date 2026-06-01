@@ -19,6 +19,8 @@ const baseProps = {
   onRematchAll: () => {},
   onDownloadXcs: () => {},
   onDownloadSvg: () => {},
+  outputFormat: "xs" as const,
+  onOutputFormatChange: () => {},
 };
 
 function row(color: string, areaPct: number, enabled = true): PixelArtLayerRow {
@@ -55,11 +57,22 @@ describe("PixelArtLayerPanel", () => {
     expect(screen.getByText(/Colours · 3\/3/)).toBeInTheDocument();
   });
 
-  it("disables the .xcs/.svg downloads when every colour is turned off", () => {
+  it("disables the project / .svg downloads when every colour is turned off", () => {
     const rows = [row("#ff0000", 0.6, false), row("#00ff00", 0.4, false)];
     render(<PixelArtLayerPanel {...baseProps} rows={rows} />);
-    expect(screen.getByRole("button", { name: /\.xcs/ })).toBeDisabled();
+    // The project-download button is labelled with the chosen format
+    // (".xs" by default). The format toggle's own entries are radios,
+    // not buttons, so this name only matches the download button.
+    expect(screen.getByRole("button", { name: /\.xs/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: /\.svg/ })).toBeDisabled();
+  });
+
+  it("renders the .xs / .xcs output-format toggle (default .xs)", () => {
+    render(<PixelArtLayerPanel {...baseProps} rows={[row("#ff0000", 1)]} />);
+    const xs = screen.getByRole("radio", { name: /\.xs/ });
+    const xcs = screen.getByRole("radio", { name: /\.xcs/ });
+    expect(xs).toHaveAttribute("aria-checked", "true");
+    expect(xcs).toHaveAttribute("aria-checked", "false");
   });
 
   it("shows the path-count badge equal to enabled colours", () => {
