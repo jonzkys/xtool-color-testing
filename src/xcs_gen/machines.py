@@ -244,3 +244,46 @@ def validate_against_profile(
             raise RuntimeError(f"unknown constraint kind: {kind!r}")
 
     return ValidationResult(values=out, snapped=snapped)
+
+
+def coerce_against_profile(profile_id: str, params: dict) -> dict:
+    """Clamp/snap ``params`` to satisfy the profile, returning a coerced dict.
+
+    Unlike ``validate_against_profile`` (which REJECTS out-of-range ``range``
+    values), this clamps them — the clamp-mode mirror of the frontend's
+    ``coerceParams``. Fields the profile marks ``not_applicable`` OR doesn't
+    mention are passed through UNCHANGED (callers persist fixed-shape rows, so
+    we never drop a key). Only ``range``/``stepped``/``enum`` fields move.
+    """
+    if profile_id not in PROFILES:
+        raise KeyError(f"unknown profile_id: {profile_id!r}")
+    profile = PROFILES[profile_id]
+    out = dict(params)
+    for field_name, v in params.items():
+        constraint = profile.get(field_name)
+        if constraint is None:
+            continue
+        kind = constraint["kind"]
+        if kind == "range":
+            lo, hi = constraint["min"], constraint["max"]
+            try:
+                n = float(v)
+            except (TypeError, ValueError):
+                continue
+            step = constraint.get("step")
+            if step and step >= 1:
+                n = lo + round((n - lo) / step) * step
+            out[field_name] = max(lo, min(hi, n))
+        elif kind == "stepped":
+            allowed = constraint["values"]
+            if v in allowed:
+                continue
+            if field_name == "pulse_width":
+                out[field_name] = snap_pulse_width(float(v))
+            else:
+                out[field_name] = _nearest_in(allowed, float(v))
+        elif kind == "enum":
+            if v not in constraint["values"]:
+                out[field_name] = constraint["values"][0]
+        # not_applicable / unknown kind: passthrough (leave out[field_name] as-is)
+    return out
