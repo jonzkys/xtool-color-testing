@@ -1138,6 +1138,8 @@ const MODE_LABELS: Record<string, string> = {
   score:         "Score",
   cut:           "Cut",
   color_engrave: "Color Engrave",
+  intaglio:      "Intaglio",
+  relief:        "Relief",
 };
 
 function ModeSegmentedControl({

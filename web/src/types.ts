@@ -346,8 +346,8 @@ export interface PaletteQueryResult {
 
 export type LaserKind = "fiber" | "blue";
 export type LaserName = "red" | "blue";   // wire format used inside .xcs files
-export type ModeId = "engrave" | "score" | "cut" | "color_engrave";
-export type ProfileId = "STANDARD" | "COLOR_ENGRAVE";
+export type ModeId = "engrave" | "score" | "cut" | "color_engrave" | "intaglio" | "relief";
+export type ProfileId = string;   // per-machine "<machineId>:<mode>"
 
 export interface MachineLaser {
   kind: LaserKind;
@@ -380,7 +380,7 @@ export type ValidationProfile = Record<string, FieldConstraint>;
 
 export interface MachinesPayload {
   machines: Machine[];
-  profiles: Record<ProfileId, ValidationProfile>;
+  profiles: Record<string, ValidationProfile>;
 }
 
 export interface SwatchPreviewResponse {

@@ -61,4 +61,13 @@ describe("getValidationProfile", () => {
   it("returns null when registry hasn't loaded yet", () => {
     expect(getValidationProfile(null, "F1Ultra", "engrave")).toBeNull();
   });
+  it("resolves a per-machine intaglio profile id", () => {
+    const reg = {
+      machines: [{ id: "F2Ultra", display_name: "F2 Ultra", ext_id: "", ext_name: "", image: "",
+        lasers: [], modes: [{ id: "intaglio", profile: "F2Ultra:intaglio" }] }],
+      profiles: { "F2Ultra:intaglio": { power: { kind: "range", min: 1, max: 100 } } },
+    } as unknown as MachinesPayload;
+    const p = getValidationProfile(reg, "F2Ultra", "intaglio");
+    expect(p?.power).toEqual({ kind: "range", min: 1, max: 100 });
+  });
 });
