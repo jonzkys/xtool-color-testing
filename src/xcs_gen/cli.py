@@ -7,12 +7,26 @@ import math
 import sys
 
 from .builder import write_xcs
+from .xcs_v2 import write_xs
 from .generators import generate_from_image, generate_gradient
 from .model import ProcessingParams
 
 # Default beam spot — F2/F1 fiber lasers are both 30µm. Per-machine
 # values live in xcs_gen.machines.
 DEFAULT_BEAM_WIDTH = 0.03
+
+
+def _write_output(project, output: str, fmt: str = "xcs") -> None:
+    """Dispatch to the legacy .xcs writer or the v2 .xs emitter.
+
+    A ``.xs`` output extension infers the v2 (xcs-workspace-v2) format even
+    when ``--format`` is left at its default, so ``-o foo.xs`` does the
+    expected thing. Otherwise the legacy flat-JSON ``.xcs`` writer is used.
+    """
+    if fmt == "xs" or output.lower().endswith(".xs"):
+        write_xs(project, output)
+    else:
+        write_xcs(project, output)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -62,7 +76,9 @@ def main(argv: list[str] | None = None) -> None:
                        help="Suppress per-row tick marks and axis labels (summary header is kept)")
 
     # Output
-    gen_p.add_argument("-o", "--output", required=True, help="Output .xcs file path")
+    gen_p.add_argument("-o", "--output", required=True, help="Output file path (.xcs legacy, or .xs for xcs-workspace-v2)")
+    gen_p.add_argument("--format", choices=["xcs", "xs"], default="xcs",
+                       help="Output format: 'xcs' (legacy, default) or 'xs' (xcs-workspace-v2 bundle). Inferred from a .xs output path.")
 
     # --- image command ---
     img_p = sub.add_parser("image", help="Generate XCS from an image (brightness → laser parameter)")
@@ -101,7 +117,9 @@ def main(argv: list[str] | None = None) -> None:
                        help="Processing type (default: COLOR_FILL_ENGRAVE)")
 
     # Output
-    img_p.add_argument("-o", "--output", required=True, help="Output .xcs file path")
+    img_p.add_argument("-o", "--output", required=True, help="Output file path (.xcs legacy, or .xs for xcs-workspace-v2)")
+    img_p.add_argument("--format", choices=["xcs", "xs"], default="xcs",
+                       help="Output format: 'xcs' (legacy, default) or 'xs' (xcs-workspace-v2 bundle). Inferred from a .xs output path.")
 
     # --- serve command ---
     serve_p = sub.add_parser("serve", help="Launch the web UI locally")
@@ -121,7 +139,9 @@ def main(argv: list[str] | None = None) -> None:
     # svg generate
     svg_gen_p = svg_sub.add_parser("generate", help="Convert an SVG to an .xcs file")
     svg_gen_p.add_argument("input", help="Path to input SVG file")
-    svg_gen_p.add_argument("-o", "--output", required=True, help="Output .xcs file path")
+    svg_gen_p.add_argument("-o", "--output", required=True, help="Output file path (.xcs legacy, or .xs for xcs-workspace-v2)")
+    svg_gen_p.add_argument("--format", choices=["xcs", "xs"], default="xcs",
+                           help="Output format: 'xcs' (legacy, default) or 'xs' (xcs-workspace-v2 bundle). Inferred from a .xs output path.")
     svg_gen_p.add_argument("--width", type=float, default=100.0,
                            help="Output width in mm (default: 100)")
     svg_gen_p.add_argument("--height", type=float, default=None,
@@ -229,7 +249,7 @@ def main(argv: list[str] | None = None) -> None:
             processing_type=args.processing_type,
         )
 
-        write_xcs(project, args.output)
+        _write_output(project, args.output, getattr(args, "format", "xcs"))
 
         n_elements = len(project.elements)
         n_skipped = (args.cols or 0) * (args.img_rows or 0) - n_elements  # approximate
@@ -344,7 +364,7 @@ def main(argv: list[str] | None = None) -> None:
             hide_axis_labels=args.hide_axis_labels,
         )
 
-        write_xcs(project, args.output)
+        _write_output(project, args.output, getattr(args, "format", "xcs"))
 
         n_elements = len(project.elements)
         n_annotations = len(project.extra_displays)
@@ -460,7 +480,7 @@ def _svg_generate(args) -> None:
         min_spacing=args.min_spacing,
     )
 
-    write_xcs(project, args.output)
+    _write_output(project, args.output, getattr(args, "format", "xcs"))
 
     print(f"Generated {len(project.paths)} path displays from {args.input}")
     print(f"  Written to: {args.output}")

@@ -60,7 +60,11 @@ def _build_rect_display(elem: Rect) -> dict[str, Any]:
         "visibleState": True,
         "lockState": False,
         "resourceOrigin": "",
-        "customData": {"from": {"officialMaterialId": _STAINLESS_STEEL_OFFICIAL_ID}},
+        "customData": {
+            "from": {"officialMaterialId": _STAINLESS_STEEL_OFFICIAL_ID},
+            "tabBreaks": {},
+            "startPoint": {},
+        },
         "rootComponentId": "",
         "minCanvasVersion": "0.0.0",
         "alpha": 1,
@@ -136,7 +140,11 @@ def build_bitmap_display(bmp: Bitmap) -> dict[str, Any]:
         "visibleState": True,
         "lockState": False,
         "resourceOrigin": "",
-        "customData": {"from": {"officialMaterialId": _STAINLESS_STEEL_OFFICIAL_ID}},
+        "customData": {
+            "from": {"officialMaterialId": _STAINLESS_STEEL_OFFICIAL_ID},
+            "tabBreaks": {},
+            "startPoint": {},
+        },
         "rootComponentId": "",
         "minCanvasVersion": "0.0.0",
         "alpha": 1,
@@ -158,6 +166,15 @@ def build_bitmap_display(bmp: Bitmap) -> dict[str, Any]:
         "temperature": 0,
         "tone": 0,
         "colorInverted": False,
+        # Colour-invert transparency controls + a stable source id. VERIFIED
+        # present on the real png-included.xs BITMAP display (these were missing
+        # before, which the BITMAP faithfulness test now guards). The sample's
+        # transparent-colour value is the literal "black" (not a hex code);
+        # sourceId is a per-display UUID in the sample but emitting "" keeps the
+        # output deterministic and Studio re-assigns it on load.
+        "colorInvertedFillTransparent": False,
+        "colorInvertedTransparentColor": "black",
+        "sourceId": "",
         "filterAttrsMap": {
             "emboss": {"strength": 5},
             "halftone": {"radius": 4, "angle": 45},
@@ -215,7 +232,11 @@ def build_line_display(line: Line) -> dict[str, Any]:
         "visibleState": True,
         "lockState": False,
         "resourceOrigin": "",
-        "customData": {"from": {"officialMaterialId": _STAINLESS_STEEL_OFFICIAL_ID}},
+        "customData": {
+            "from": {"officialMaterialId": _STAINLESS_STEEL_OFFICIAL_ID},
+            "tabBreaks": {},
+            "startPoint": {},
+        },
         "rootComponentId": "",
         "minCanvasVersion": "0.0.0",
         "alpha": 1,
@@ -282,7 +303,11 @@ def _build_path_display(path: Path) -> dict[str, Any]:
         "visibleState": True,
         "lockState": False,
         "resourceOrigin": "",
-        "customData": {"from": {"officialMaterialId": _STAINLESS_STEEL_OFFICIAL_ID}},
+        "customData": {
+            "from": {"officialMaterialId": _STAINLESS_STEEL_OFFICIAL_ID},
+            "tabBreaks": {},
+            "startPoint": {},
+        },
         "rootComponentId": "",
         "minCanvasVersion": "0.0.0",
         "alpha": 1,
@@ -358,7 +383,11 @@ def _build_circle_display(circle: Circle) -> dict[str, Any]:
         "visibleState": True,
         "lockState": False,
         "resourceOrigin": "",
-        "customData": {"from": {"officialMaterialId": _STAINLESS_STEEL_OFFICIAL_ID}},
+        "customData": {
+            "from": {"officialMaterialId": _STAINLESS_STEEL_OFFICIAL_ID},
+            "tabBreaks": {},
+            "startPoint": {},
+        },
         "rootComponentId": "",
         "minCanvasVersion": "0.0.0",
         "alpha": 1,
@@ -524,6 +553,7 @@ def _build_processing_data(p: ProcessingParams) -> dict[str, Any]:
                     "enableKerf": False,
                     "kerfDistance": 0,
                     "enableBreakPoint": False,
+                    "breakPointGenMode": "auto",
                     "breakPointSize": 0.5,
                     "breakPointCount": 2,
                     "breakPointMode": "count",
