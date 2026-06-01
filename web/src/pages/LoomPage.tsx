@@ -47,11 +47,13 @@ import type {
 import { defaultBaseParams } from "../defaults";
 import { sanitiseProjectName } from "../projectName";
 import type { LibraryState } from "../library";
+import { clampToConstraint } from "../lib/constraints";
+import type { FieldConstraint } from "../types";
 import { listMaterials, listPresets } from "../api/library";
-import { getCurrentMachineId } from "../state/machine";
+import { getCurrentMachineId, useCurrentMachine, getValidationProfile, representativeMode } from "../state/machine";
 import { MaterialPresetPicker } from "../components/MaterialPresetPicker";
-import { PulseWidthSelect } from "../components/PulseWidthSelect";
 import { HatchPassesEditor } from "../components/HatchPassesEditor";
+import { BaseParamsEditor } from "../components/BaseParamsEditor";
 import { svgLayersAndDownload } from "../generate";
 import { traceImageToSvg } from "../tracer/vtracer";
 import { DEFAULT_RASTER_TRACE_OPTIONS, type RasterTraceOptions } from "../generate";
@@ -255,6 +257,11 @@ export function LoomPage() {
   // the generate guard can detect stale context (machine switch without
   // a full page reload, which the MachineSwitcher normally enforces).
   const loadedMachineIdRef = useRef<string>(getCurrentMachineId());
+
+  const { registry, machineId, machine } = useCurrentMachine();
+  const loomProfile = getValidationProfile(
+    registry, machineId, machine ? representativeMode(machine) : "engrave",
+  );
 
   const [library, setLibrary] = useState<LibraryState>({
     materials: [],
@@ -554,6 +561,7 @@ export function LoomPage() {
               <StopsRail
                 ramp={ramp}
                 onChange={setRamp}
+                profile={loomProfile}
               />
             </Section>
 
@@ -1236,15 +1244,40 @@ const RAMP_PARAMS: { value: HatchRamp["param"]; label: string; unit: string }[] 
   { value: "spacing",    label: "Spacing",    unit: "mm" },
 ];
 
+// The profile constraint for a ramp param, or null for params outside the
+// profile vocabulary (e.g. "spacing", which is hatch-specific).
+function rampConstraint(
+  profile: ReturnType<typeof getValidationProfile>,
+  param: HatchRamp["param"],
+): FieldConstraint | null {
+  if (!profile || param === "spacing") return null;
+  const c = profile[param];
+  return c && c.kind !== "not_applicable" ? c : null;
+}
+
+// Ramp params selectable for the active profile: spacing always; others only
+// when the profile has them and they aren't not_applicable.
+function applicableRampParams(profile: ReturnType<typeof getValidationProfile>) {
+  return RAMP_PARAMS.filter(
+    (p) => p.value === "spacing" || (!!profile && profile[p.value] && profile[p.value].kind !== "not_applicable"),
+  );
+}
+
 function StopsRail({
   ramp,
   onChange,
+  profile,
 }: {
   ramp: RampState;
   onChange: (r: RampState) => void;
+  profile: ReturnType<typeof getValidationProfile>;
 }) {
   const railRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
+
+  // Constraint for the currently-selected ramp param (null for spacing or
+  // params not in the active profile).
+  const constraint = rampConstraint(profile, ramp.param);
 
   const sortedStops = useMemo(() => [...ramp.stops].sort((a, b) => a.position - b.position), [ramp.stops]);
 
@@ -1261,9 +1294,14 @@ function StopsRail({
 
   const paramMeta = RAMP_PARAMS.find((m) => m.value === ramp.param)!;
 
+  const clampStopValue = (rawValue: number): number => {
+    if (!constraint) return rawValue;
+    return clampToConstraint(rawValue, constraint) as number;
+  };
+
   const addStopAt = (position: number) => {
     const p = Math.max(0, Math.min(1, position));
-    const v = (() => {
+    const rawV = (() => {
       const sorted = sortedStops;
       if (p <= sorted[0].position) return sorted[0].value;
       if (p >= sorted[sorted.length - 1].position) return sorted[sorted.length - 1].value;
@@ -1278,6 +1316,7 @@ function StopsRail({
       }
       return sorted[sorted.length - 1].value;
     })();
+    const v = clampStopValue(rawV);
     onChange({
       ...ramp,
       stops: [...ramp.stops, { id: makeStopId(), position: p, value: v }],
@@ -1291,14 +1330,24 @@ function StopsRail({
       const rail = railRef.current?.getBoundingClientRect();
       if (!rail) return;
       const t = (e.clientX - rail.left) / rail.width;
-      const clamped = Math.max(0, Math.min(1, t));
+      const clampedPos = Math.max(0, Math.min(1, t));
       // Drag off the top (more than 40px above the rail) removes the stop.
       if (e.clientY < rail.top - 40 && ramp.stops.length > 2) {
         removeStop(dragging);
         setDragging(null);
         return;
       }
-      setStop(dragging, { position: clamped });
+      // When there is a range constraint, also update the stop value so it
+      // tracks the drag position (maps 0..1 rail position to [min..max] and
+      // snaps to any step). For unconstrained params (spacing) the value
+      // stays fixed and only position moves.
+      if (constraint?.kind === "range") {
+        const rawValue = constraint.min + clampedPos * (constraint.max - constraint.min);
+        const clampedValue = clampToConstraint(rawValue, constraint) as number;
+        setStop(dragging, { position: clampedPos, value: clampedValue });
+      } else {
+        setStop(dragging, { position: clampedPos });
+      }
     };
     const onUp = () => setDragging(null);
     window.addEventListener("pointermove", onMove);
@@ -1307,7 +1356,7 @@ function StopsRail({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [dragging, ramp]);
+  }, [dragging, ramp, constraint]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -1318,7 +1367,7 @@ function StopsRail({
             value={ramp.param}
             onChange={(e) => onChange({ ...ramp, param: e.target.value as HatchRamp["param"] })}
           >
-            {RAMP_PARAMS.map((m) => (
+            {applicableRampParams(profile).map((m) => (
               <option key={m.value} value={m.value}>{m.label} ({m.unit})</option>
             ))}
           </Select>
@@ -1369,8 +1418,11 @@ function StopsRail({
                   String(s.value),
                 );
                 if (next != null) {
-                  const v = Number(next);
-                  if (!Number.isNaN(v)) setStop(s.id, { value: v });
+                  const rawV = Number(next);
+                  if (!Number.isNaN(rawV)) {
+                    const clamped = constraint ? (clampToConstraint(rawV, constraint) as number) : rawV;
+                    setStop(s.id, { value: clamped });
+                  }
                 }
               }}
               style={{
@@ -1559,36 +1611,6 @@ function paramDescription(p: HatchRamp["param"]): string {
     case "spacing":     return "Hatch spacing drifts — tighter lines on one side, looser on the other.";
   }
   return "";
-}
-
-/* ========================================================================
- * Base params editor (small copy of LibraryPage's inline form)
- * ====================================================================== */
-
-function BaseParamsEditor({
-  value,
-  onChange,
-}: {
-  value: BaseParams;
-  onChange: (v: BaseParams) => void;
-}) {
-  const patch = (p: Partial<BaseParams>) => onChange({ ...value, ...p });
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      <NumberField label="Power %" value={value.power} min={0} max={100} onChange={(v) => patch({ power: v })} />
-      <NumberField label="Speed (mm/s)" value={value.speed} integer min={1} onChange={(v) => patch({ speed: v })} />
-      <NumberField label="Frequency (Hz)" value={value.frequency} integer min={1} onChange={(v) => patch({ frequency: v })} />
-      <NumberField label="Lines/cm" value={value.density} integer min={1} onChange={(v) => patch({ density: v })} />
-      <NumberField label="Passes" value={value.passes} integer min={1} onChange={(v) => patch({ passes: v })} />
-      <PulseWidthSelect value={value.pulse_width} onChange={(v) => patch({ pulse_width: v })} />
-      <Field label="Laser">
-        <Select value={value.laser} onChange={(e) => patch({ laser: e.target.value as "red" | "blue" })}>
-          <option value="red">Red (MOPA)</option>
-          <option value="blue">Blue</option>
-        </Select>
-      </Field>
-    </div>
-  );
 }
 
 /* Silence unused-imports for components we ship for completeness. */
