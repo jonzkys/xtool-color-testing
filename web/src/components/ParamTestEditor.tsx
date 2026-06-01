@@ -5,7 +5,6 @@ import { PARAM_NAMES } from "../types";
 import { squareCellHeight } from "../specUtils";
 import { computeAutoFitGrid, gridHeightToSpecHeight, squareCellAutoFit } from "../autofit";
 import { Field, NumberField, Section, Select } from "../ui";
-import { PulseWidthSelect } from "./PulseWidthSelect";
 import {
   ALLOWED_PULSE_WIDTHS,
   allowedPulseWidthsInRange,
@@ -1082,49 +1081,9 @@ function BaseParamsSection({
             })()}
           </>
         ) : (
-          /* Profile not yet loaded — render the static fallback form. */
-          <div className="flex flex-col gap-3">
-            <p className="font-mono text-[11px] tracking-[0.04em] text-[color:var(--color-ink-subtle)]">
-              Loading constraints…
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <NumberField
-                label="Power %"
-                value={base_params.power}
-                onChange={(v) => updateBase({ power: v })}
-              />
-              <NumberField
-                label="Speed (mm/s)"
-                value={base_params.speed}
-                integer
-                onChange={(v) => updateBase({ speed: v })}
-              />
-              <NumberField
-                label="Frequency (kHz)"
-                value={base_params.frequency}
-                integer
-                onChange={(v) => updateBase({ frequency: v })}
-              />
-              <NumberField
-                label="Lines/cm"
-                value={base_params.density}
-                integer
-                onChange={(v) => updateBase({ density: v })}
-              />
-              <NumberField
-                label="Passes"
-                value={base_params.passes}
-                integer
-                min={1}
-                step={1}
-                onChange={(v) => updateBase({ passes: v })}
-              />
-              <PulseWidthSelect
-                value={base_params.pulse_width}
-                onChange={(v) => updateBase({ pulse_width: v })}
-              />
-            </div>
-          </div>
+          <p className="font-mono text-[11px] tracking-[0.04em] text-[color:var(--color-ink-subtle)]">
+            Loading constraints…
+          </p>
         )}
       </div>
     </section>
