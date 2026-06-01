@@ -198,3 +198,36 @@ def test_missing_required_field_raises():
             # power omitted
         })
     assert exc.value.field == "power"
+
+
+# -- coerce_against_profile ---------------------------------------------------
+
+def test_coerce_against_profile_clamps_and_snaps():
+    from xcs_gen import machines
+    pid = machines.profile_for("F2Ultra", "color_engrave")  # power 1-100, pulse_width stepped, laser enum
+    out = machines.coerce_against_profile(pid, {
+        "power": 999,          # range -> clamp to 100
+        "pulse_width": 7,      # stepped -> snap to 6
+        "laser": "green",      # enum -> first allowed
+        "speed": 1000,         # in range -> unchanged
+    })
+    assert out["power"] == 100
+    assert out["pulse_width"] == 6
+    assert out["laser"] in ("red", "blue")
+    assert out["speed"] == 1000
+
+
+def test_coerce_against_profile_passes_through_unconstrained_fields():
+    from xcs_gen import machines
+    # F1Lite: diode-only -> pulse_width is not_applicable; frequency not_applicable.
+    pid = machines.profile_for("F1Lite", "engrave")
+    out = machines.coerce_against_profile(pid, {
+        "pulse_width": 200,    # not_applicable -> passthrough (NOT dropped)
+        "frequency": 9999,     # not_applicable -> passthrough
+        "scan_angle": 45,      # absent from profile -> passthrough
+        "power": 999,          # range -> clamp
+    })
+    assert out["pulse_width"] == 200
+    assert out["frequency"] == 9999
+    assert out["scan_angle"] == 45
+    assert out["power"] == 100

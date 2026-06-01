@@ -1,97 +1,43 @@
 import { type ReactNode } from "react";
-import {
-  cn,
-  Field,
-  NumberField,
-  Select,
-} from "../ui";
-import { PulseWidthSelect } from "./PulseWidthSelect";
-import type { TextRegParamsBody, TextRegSource } from "../types";
+import { cn } from "../ui";
+import { DynamicParamForm } from "./dynamic-form/DynamicParamForm";
+import { toProfile, fromProfile } from "../lib/textRegVocab";
+import type { TextRegParamsBody, TextRegSource, ValidationProfile } from "../types";
 
 /**
- * Form rhythm shared by every place we edit the seven-field
- * "engraved annotation params" — the Library page's per-machine cards
- * and the Tests page's Registration tab. Two-column grid with mono
- * NumberFields, the same PulseWidthSelect the rest of the workbench
- * uses, and a final laser-source select.
+ * Editor for the seven-field "engraved annotation params". A thin adapter:
+ * renames TextReg fields to the profile vocabulary, renders the shared
+ * DynamicParamForm (constrained widgets), and renames back on change. The
+ * active machine's profile is resolved by the parent and passed in (each
+ * Library card constrains by its own machine, not the globally-selected one).
  */
-
 export interface TextRegParamsEditorProps {
   value: TextRegParamsBody;
   onChange: (next: TextRegParamsBody) => void;
   disabled?: boolean;
+  profile: ValidationProfile | null;
 }
 
 export function TextRegParamsEditor({
   value,
   onChange,
   disabled,
+  profile,
 }: TextRegParamsEditorProps) {
-  function patch(p: Partial<TextRegParamsBody>) {
-    onChange({ ...value, ...p });
+  if (!profile) {
+    return (
+      <p className="font-mono text-[11px] tracking-[0.04em] text-[color:var(--color-ink-subtle)]">
+        Loading constraints…
+      </p>
+    );
   }
   return (
-    <div className="grid grid-cols-2 gap-3">
-      <NumberField
-        label="Power %"
-        value={value.power}
-        min={0}
-        max={100}
-        disabled={disabled}
-        onChange={(v) => patch({ power: v })}
-      />
-      <NumberField
-        label="Speed"
-        value={value.speed}
-        integer
-        min={1}
-        disabled={disabled}
-        onChange={(v) => patch({ speed: v })}
-      />
-      <NumberField
-        label="Frequency (kHz)"
-        value={value.mopa_frequency}
-        integer
-        min={1}
-        disabled={disabled}
-        onChange={(v) => patch({ mopa_frequency: v })}
-      />
-      <NumberField
-        label="Lines/cm"
-        value={value.density}
-        integer
-        min={1}
-        disabled={disabled}
-        onChange={(v) => patch({ density: v })}
-      />
-      <NumberField
-        label="Passes"
-        value={value.repeat}
-        integer
-        min={1}
-        max={99}
-        disabled={disabled}
-        onChange={(v) => patch({ repeat: v })}
-      />
-      <PulseWidthSelect
-        label="Pulse width"
-        value={value.pulse_width}
-        disabled={disabled}
-        onChange={(v) => patch({ pulse_width: v })}
-      />
-      <div className="col-span-2">
-        <Field label="Laser source">
-          <Select
-            value={value.processing_light_source}
-            disabled={disabled}
-            onChange={(e) => patch({ processing_light_source: e.target.value })}
-          >
-            <option value="red">Red (MOPA)</option>
-            <option value="blue">Blue (diode)</option>
-          </Select>
-        </Field>
-      </div>
-    </div>
+    <DynamicParamForm
+      profile={profile}
+      value={toProfile(value)}
+      onChange={(next) => onChange(fromProfile(next))}
+      disabled={disabled}
+    />
   );
 }
 
