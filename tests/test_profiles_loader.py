@@ -1,6 +1,6 @@
 import json
 import pytest
-from xcs_gen.profiles_loader import load_profiles, validate_profiles
+from xcs_gen.profiles_loader import load_profiles
 
 
 def _write(tmp_path, obj):
