@@ -4,7 +4,9 @@ import {
 } from "lucide-react";
 import { useIsDemo } from "../hooks/useIsDemo";
 import type { Material, Preset } from "../library";
-import type { PaletteEntry, TestRecord, TestSpec, ValidationCell } from "../types";
+import type { OutputFormat, PaletteEntry, TestRecord, TestSpec, ValidationCell } from "../types";
+import { DEFAULT_OUTPUT_FORMAT, outputFilename } from "../generate";
+import { FormatToggle } from "../components/FormatToggle";
 import {
   getTest,
   updateTest,
@@ -107,6 +109,7 @@ export function TestDetailPage({ testId }: Props) {
   const [name, setName] = useState("New test");
   const [error, setError] = useState<string>();
   const [creating, setCreating] = useState(false);
+  const [outputFormat, setOutputFormat] = useState<OutputFormat>(DEFAULT_OUTPUT_FORMAT);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [activeTab, setActiveTab] = useState<ParamTestEditorTab>("test");
   const [palette, setPalette] = useState<PaletteEntry[]>([]);
@@ -375,11 +378,11 @@ export function TestDetailPage({ testId }: Props) {
       // Flush any debounced autosave so the .xcs reflects the visible
       // spec, not the last persisted one.
       await flushAutoSave();
-      const blob = await generateTestXcs(test.id);
+      const blob = await generateTestXcs(test.id, outputFormat);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${test.name || `test-${test.id}`}.xcs`;
+      a.download = outputFilename(test.name || `test-${test.id}`, outputFormat);
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -506,10 +509,13 @@ export function TestDetailPage({ testId }: Props) {
             </DemoLock>
           )}
           {test && (
-            <DemoLock label="Generating .xcs is disabled in the demo.">
+            <FormatToggle value={outputFormat} onChange={setOutputFormat} />
+          )}
+          {test && (
+            <DemoLock label="Generating the project file is disabled in the demo.">
               <Button variant="primary" onClick={onGenerate}>
                 <Download className="h-4 w-4" />
-                Generate .xcs
+                Generate .{outputFormat}
                 {(test.retest_index ?? 0) > 0 && (
                   <span className="ml-1 font-mono text-[10px] tabular-nums opacity-80">
                     · retest #{test.retest_index}

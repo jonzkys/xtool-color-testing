@@ -196,10 +196,18 @@ def test_api_layers_endpoint():
         ],
         "subtract_overlaps": False,
     }
+    # Default output is now the .xs ZIP bundle.
     resp = client.post("/api/svg-layers", json=payload)
     assert resp.status_code == 200
-    assert "pika.xcs" in resp.headers["content-disposition"]
-    data = json.loads(resp.content)
+    assert "pika.xs" in resp.headers["content-disposition"]
+    assert resp.headers["content-type"].startswith("application/zip")
+    assert resp.content.startswith(b"PK")
+
+    # .xcs flat JSON is still selectable via the format field.
+    resp_xcs = client.post("/api/svg-layers", json={**payload, "format": "xcs"})
+    assert resp_xcs.status_code == 200
+    assert "pika.xcs" in resp_xcs.headers["content-disposition"]
+    data = json.loads(resp_xcs.content)
     assert "canvas" in data
 
 
@@ -348,10 +356,18 @@ def test_api_layers_endpoint_with_hatched_layer():
              ]},
         ],
     }
+    # Default .xs bundle for a hatched layer.
     resp = client.post("/api/svg-layers", json=payload)
     assert resp.status_code == 200
-    assert resp.headers["content-type"].startswith("application/json")
-    assert len(resp.content) > 1000  # non-trivial XCS body
+    assert resp.headers["content-type"].startswith("application/zip")
+    assert resp.content.startswith(b"PK")
+    assert len(resp.content) > 1000  # non-trivial bundle
+
+    # .xcs flat JSON still selectable.
+    resp_xcs = client.post("/api/svg-layers", json={**payload, "format": "xcs"})
+    assert resp_xcs.status_code == 200
+    assert resp_xcs.headers["content-type"].startswith("application/json")
+    assert len(resp_xcs.content) > 1000  # non-trivial XCS body
 
 
 def test_api_layers_endpoint_rejects_hatched_with_empty_passes():

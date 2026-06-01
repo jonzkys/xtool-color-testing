@@ -129,7 +129,8 @@ def test_path_d_string_groups_by_color():
 def test_xcs_bytes_round_trip():
     import json
 
-    body = pixel_art_to_xcs_bytes(_req())
+    body, media, ext = pixel_art_to_xcs_bytes(_req(format="xcs"))
+    assert (media, ext) == ("application/json", "xcs")
     assert isinstance(body, bytes)
     payload = json.loads(body.decode("utf-8"))
     assert isinstance(payload, dict)

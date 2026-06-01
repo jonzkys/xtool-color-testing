@@ -42,6 +42,7 @@ import type {
   HatchPassSpec as HatchPass,
   HatchRampSpec as HatchRamp,
   LayerSpec,
+  OutputFormat,
   SvgLayersRequest,
 } from "../types";
 import { defaultBaseParams } from "../defaults";
@@ -54,9 +55,10 @@ import { getCurrentMachineId, useCurrentMachine, getValidationProfile, represent
 import { MaterialPresetPicker } from "../components/MaterialPresetPicker";
 import { HatchPassesEditor } from "../components/HatchPassesEditor";
 import { BaseParamsEditor } from "../components/BaseParamsEditor";
-import { svgLayersAndDownload } from "../generate";
+import { DEFAULT_OUTPUT_FORMAT, svgLayersAndDownload } from "../generate";
 import { traceImageToSvg } from "../tracer/vtracer";
 import { DEFAULT_RASTER_TRACE_OPTIONS, type RasterTraceOptions } from "../generate";
+import { FormatToggle } from "../components/FormatToggle";
 
 /* ========================================================================
  * Types + helpers
@@ -290,6 +292,8 @@ export function LoomPage() {
   }));
   const [error, setError] = useState<string | undefined>();
   const [generating, setGenerating] = useState(false);
+  // Output container for the woven project download — ".xs" (ZIP) default.
+  const [outputFormat, setOutputFormat] = useState<OutputFormat>(DEFAULT_OUTPUT_FORMAT);
 
   // Loom state
   const [widthMm, setWidthMm] = useState(50);
@@ -450,6 +454,7 @@ export function LoomPage() {
         material_id: materialId,
         layers: [layer],
         subtract_overlaps: false,
+        format: outputFormat,
       };
       await svgLayersAndDownload(request);
     } catch (err) {
@@ -457,7 +462,7 @@ export function LoomPage() {
     } finally {
       setGenerating(false);
     }
-  }, [silhouette, materialId, ramp, angle, spacing, thickness, baseParams, widthMm]);
+  }, [silhouette, materialId, ramp, angle, spacing, thickness, baseParams, widthMm, outputFormat]);
 
   return (
     <div className="relative min-h-full">
@@ -475,6 +480,8 @@ export function LoomPage() {
           onGenerate={onGenerate}
           canGenerate={!!silhouette && !!materialId && !generating}
           generating={generating}
+          outputFormat={outputFormat}
+          onOutputFormatChange={setOutputFormat}
         />
 
         {error && (
@@ -598,10 +605,14 @@ function Masthead({
   onGenerate,
   canGenerate,
   generating,
+  outputFormat,
+  onOutputFormatChange,
 }: {
   onGenerate: () => void;
   canGenerate: boolean;
   generating: boolean;
+  outputFormat: OutputFormat;
+  onOutputFormatChange: (format: OutputFormat) => void;
 }) {
   return (
     <header className="mb-6">
@@ -625,14 +636,21 @@ function Masthead({
             to watch the gradient phase in line by line.
           </p>
         </div>
-        <Button
-          variant="primary"
-          onClick={onGenerate}
-          disabled={!canGenerate || generating}
-        >
-          <Wand2 className="h-4 w-4" />
-          {generating ? "Weaving…" : "Generate .xcs"}
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <FormatToggle
+            value={outputFormat}
+            onChange={onOutputFormatChange}
+            disabled={generating}
+          />
+          <Button
+            variant="primary"
+            onClick={onGenerate}
+            disabled={!canGenerate || generating}
+          >
+            <Wand2 className="h-4 w-4" />
+            {generating ? "Weaving…" : `Generate .${outputFormat}`}
+          </Button>
+        </div>
       </div>
       <div className="mt-4">
         <MetalBar />

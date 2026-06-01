@@ -792,14 +792,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/svg-stack")
     def svg_stack(request: SvgStackRequest) -> Response:
         try:
-            body = svg_stack_to_xcs_bytes(request)
+            body, media_type, ext = svg_stack_to_xcs_bytes(request)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        filename = f"{request.name or 'svg-stack'}.xcs"
+        filename = f"{request.name or 'svg-stack'}.{ext}"
         return Response(
             content=body,
-            media_type="application/octet-stream",
+            media_type=media_type,
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
             },
@@ -834,7 +834,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         import time as _time
         t0 = _time.perf_counter()
         try:
-            body = svg_layers_to_xcs_bytes(request)
+            body, media_type, ext = svg_layers_to_xcs_bytes(request)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         elapsed = _time.perf_counter() - t0
@@ -845,10 +845,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 elapsed, len(request.layers), len(request.svg_content),
             )
 
-        filename = f"{request.name or 'svg-layers'}.xcs"
+        filename = f"{request.name or 'svg-layers'}.{ext}"
         return Response(
             content=body,
-            media_type="application/json",
+            media_type=media_type,
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
             },
@@ -857,13 +857,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/pixel-art")
     def pixel_art(request: PixelArtRequest) -> Response:
         try:
-            body = pixel_art_to_xcs_bytes(request)
+            body, media_type, ext = pixel_art_to_xcs_bytes(request)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        filename = f"{request.name or 'pixel-art'}.xcs"
+        filename = f"{request.name or 'pixel-art'}.{ext}"
         return Response(
             content=body,
-            media_type="application/json",
+            media_type=media_type,
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
             },
@@ -1436,12 +1436,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/tests/{tid}/generate")
     def tests_generate(
-        tid: int, user_id: int = Depends(get_current_user),
+        tid: int,
+        format: str = "xs",
+        user_id: int = Depends(get_current_user),
     ) -> Response:
+        # ``format`` selects the output container: "xs" (xcs-workspace-v2
+        # ZIP, the default) or "xcs" (legacy flat JSON). Anything else 422s.
+        if format not in ("xs", "xcs"):
+            raise HTTPException(
+                status_code=422,
+                detail="format must be 'xs' or 'xcs'",
+            )
         t = t_repo.get(tid, owner_id=user_id)
         if t is None:
             raise HTTPException(status_code=404, detail="test not found")
-        body = xcs_service.bytes_for_test(
+        body, media_type, ext = xcs_service.bytes_for_test(
             test_id=t["id"], name=t["name"],
             material_id=t["material_id"], spec=t["spec"],
             retest_index=t.get("retest_index", 0),
@@ -1449,12 +1458,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             kind=t.get("kind", "sweep") or "sweep",
             validation_cells=t.get("validation_cells"),
             owner_id=user_id,
+            fmt=format,
         )
         safe_name = xcs_service._safe_project_name(t["name"], fallback=f"test-{t['id']}")
         return Response(
             content=body,
-            media_type="application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{safe_name}.xcs"'},
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}.{ext}"'},
         )
 
     @app.post("/api/tests/{tid}/retest", response_model=TestResponse)

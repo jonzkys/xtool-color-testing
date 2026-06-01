@@ -7,17 +7,16 @@ and emits N stacked passes rotated by step_deg each. Used by the web UI's
 
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 from dataclasses import replace
 
-from xcs_gen.builder import build_xcs
 from xcs_gen.model import GRADIENT_LAYER_COLOR, Path, ProcessingParams, XCSProject, _uuid
 from xcs_gen.svg_source import parse_svg
 
 from .converter import _to_processing_params
 from .schemas import SvgStackRequest
+from .serialize import project_to_bytes
 from .svg_guard import assert_shape_count
 from .svg_subtract import subtract_overlapping_shapes
 
@@ -131,9 +130,14 @@ def svg_stack_to_xcs(request: SvgStackRequest) -> XCSProject:
     return project
 
 
-def svg_stack_to_xcs_bytes(request: SvgStackRequest) -> bytes:
-    """Convert the request into .xcs file bytes."""
+def svg_stack_to_xcs_bytes(
+    request: SvgStackRequest,
+) -> tuple[bytes, str, str]:
+    """Convert the request into download bytes.
+
+    Returns ``(body, media_type, extension)`` per ``request.format``
+    (``"xs"`` ZIP bundle by default, ``"xcs"`` flat JSON when selected).
+    """
     assert_shape_count(request.svg_content)
-    xcs = svg_stack_to_xcs(request)
-    data = build_xcs(xcs)
-    return json.dumps(data, separators=(",", ":")).encode("utf-8")
+    project = svg_stack_to_xcs(request)
+    return project_to_bytes(project, request.format)

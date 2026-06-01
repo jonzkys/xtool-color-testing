@@ -16,15 +16,33 @@ SPEC = {
 }
 
 
-def test_generate_returns_xcs_bytes(fresh_db):
+def test_generate_returns_xs_bundle_by_default(fresh_db):
+    """Default output is now the .xs (xcs-workspace-v2) ZIP bundle."""
+    import io
+    import zipfile
+
     c = TestClient(create_app())
     mid = m_repo.create(name="SS")["id"]
     tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
     r = c.post(f"/api/tests/{tid}/generate")
     assert r.status_code == 200
-    assert r.headers["content-type"] == "application/octet-stream"
+    assert r.headers["content-type"].startswith("application/zip")
+    assert ".xs" in r.headers.get("content-disposition", "")
+    assert r.content.startswith(b"PK")
+    with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+        assert zf.read(".format") == b"v2"
+
+
+def test_generate_returns_xcs_bytes_when_requested(fresh_db):
+    c = TestClient(create_app())
+    mid = m_repo.create(name="SS")["id"]
+    tid = t_repo.create(name="T", material_id=mid, spec=SPEC)["id"]
+    r = c.post(f"/api/tests/{tid}/generate?format=xcs")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/json"
     assert r.content.startswith(b"{") or b"canvasId" in r.content
     assert "filename=" in r.headers.get("content-disposition", "")
+    assert ".xcs" in r.headers.get("content-disposition", "")
 
 
 def test_generate_404_for_missing_test(fresh_db):
@@ -42,5 +60,5 @@ def test_generate_handles_unsafe_test_name(fresh_db):
     assert r.status_code == 200
     cd = r.headers.get("content-disposition", "")
     # No unescaped quotes or backslashes in the header value
-    assert '"' not in cd.replace('filename="', "").replace('.xcs"', "")
+    assert '"' not in cd.replace('filename="', "").replace('.xs"', "")
     assert "\\" not in cd

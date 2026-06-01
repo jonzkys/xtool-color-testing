@@ -9,6 +9,7 @@ zero-length members to match the real bundles (member order is free per spec).
 
 from __future__ import annotations
 
+import io
 import json
 import time
 import zipfile
@@ -233,19 +234,36 @@ _DIR_ENTRIES_BASE = ["canvases/", "devices/", "resources/"]
 _DIR_ENTRIES_VECTORS = ["vectors/", "vectors/svg/"]
 
 
-def write_xs(project: XCSProject, path: str) -> None:
-    """Build and write a ``.xs`` (xcs-workspace-v2) ZIP bundle to ``path``."""
-    members = build_bundle(project)
-
+def _write_members(zf: zipfile.ZipFile, members: dict[str, bytes]) -> None:
+    """Write directory entries + members into an open ZIP, matching the real
+    bundles' zero-length dir entries. Shared by disk + in-memory writers so
+    both produce identical archives."""
     has_vectors = any(name.startswith("vectors/") for name in members)
     dir_entries = list(_DIR_ENTRIES_BASE)
     if has_vectors:
         dir_entries.extend(_DIR_ENTRIES_VECTORS)
 
+    for d in dir_entries:
+        zi = zipfile.ZipInfo(d)
+        zi.external_attr = 0o40755 << 16  # directory bit
+        zf.writestr(zi, b"")
+    for name, data in members.items():
+        zf.writestr(name, data)
+
+
+def build_xs_bytes(project: XCSProject) -> bytes:
+    """Build a ``.xs`` (xcs-workspace-v2) ZIP bundle as raw bytes in memory.
+
+    Same archive `write_xs` writes to disk — both share `_write_members`."""
+    members = build_bundle(project)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        _write_members(zf, members)
+    return buf.getvalue()
+
+
+def write_xs(project: XCSProject, path: str) -> None:
+    """Build and write a ``.xs`` (xcs-workspace-v2) ZIP bundle to ``path``."""
+    members = build_bundle(project)
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for d in dir_entries:
-            zi = zipfile.ZipInfo(d)
-            zi.external_attr = 0o40755 << 16  # directory bit
-            zf.writestr(zi, b"")
-        for name, data in members.items():
-            zf.writestr(name, data)
+        _write_members(zf, members)

@@ -4,19 +4,51 @@ import { parseXcsFile } from "./xcs";
 import { runPipeline } from "./pipeline";
 import { buildGeneratedXcs, exportXcs } from "./xcs";
 import { resolveStageParams, effectiveScanAngle } from "./config";
+import { isXsBuffer, xsToLegacyRaw, legacyRawToXs, type Bundle } from "./xs";
+
+/** Project container format. `.xs` is xcs-workspace-v2 (ZIP); `.xcs` is the
+ *  legacy flat JSON. Either input can be exported as either format — the user
+ *  picks the output via the page's format toggle (default `.xs`). */
+export type ForgeFormat = "xcs" | "xs";
 
 export type ForgeRequest =
   | { type: "parse"; buf: ArrayBuffer }
   | { type: "generate"; inciseId: string; config: ForgeConfig }
-  | { type: "export"; inciseId: string; config: ForgeConfig };
+  | { type: "export"; inciseId: string; config: ForgeConfig; format: ForgeFormat };
 
 export type ForgeResponse =
-  | { type: "parsed"; objects: XcsObject[]; targetIds: string[]; preservedIds: string[] }
+  | {
+      type: "parsed";
+      objects: XcsObject[];
+      targetIds: string[];
+      preservedIds: string[];
+      format: ForgeFormat;
+    }
   | { type: "generated"; result: PipelineResult }
-  | { type: "exported"; buf: ArrayBuffer }
+  | { type: "exported"; buf: ArrayBuffer; format: ForgeFormat }
   | { type: "error"; message: string };
 
 let parsed: ParsedXcs | null = null;
+// Input format + the retained .xs members (so export can repack the bundle
+// faithfully). `bundle` is null for legacy `.xcs` inputs.
+let inputFormat: ForgeFormat = "xcs";
+let xsBundle: Bundle | null = null;
+
+/** Parse either a legacy `.xcs` JSON buffer or a `.xs` (v2 ZIP) bundle into the
+ *  shared ParsedXcs model, tracking the input format + retained bundle in worker
+ *  scope so export can round-trip in kind. */
+function parseForgeInput(buf: ArrayBuffer): ParsedXcs {
+  if (isXsBuffer(buf)) {
+    const { raw, bundle } = xsToLegacyRaw(buf);
+    inputFormat = "xs";
+    xsBundle = bundle;
+    // Feed the legacy-shaped raw through the existing parser.
+    return parseXcsFile(new TextEncoder().encode(JSON.stringify(raw)).buffer);
+  }
+  inputFormat = "xcs";
+  xsBundle = null;
+  return parseXcsFile(buf);
+}
 
 self.onmessage = (e: MessageEvent<ForgeRequest>) => {
   const post = (r: ForgeResponse, transfer?: Transferable[]) =>
@@ -24,12 +56,13 @@ self.onmessage = (e: MessageEvent<ForgeRequest>) => {
   try {
     const msg = e.data;
     if (msg.type === "parse") {
-      parsed = parseXcsFile(msg.buf);
+      parsed = parseForgeInput(msg.buf);
       post({
         type: "parsed",
         objects: parsed.objects,
         targetIds: parsed.targets.map((o) => o.id),
         preservedIds: parsed.preserved.map((o) => o.id),
+        format: inputFormat,
       });
       return;
     }
@@ -48,8 +81,16 @@ self.onmessage = (e: MessageEvent<ForgeRequest>) => {
         resolveStageParams(msg.config),
         effectiveScanAngle(msg.config, stats.scanAngleDeg),
       );
-      const buf = exportXcs(doc);
-      post({ type: "exported", buf }, [buf]);
+      // Output format is the user's choice, independent of the input format.
+      // `.xs` repacks the modified legacy raw into a v2 bundle — reusing the
+      // retained members when the input was already `.xs`, or synthesizing a
+      // fresh bundle (incl. extracting base64 rasters into resources/) when the
+      // input was legacy `.xcs`. `.xcs` emits the flat legacy JSON.
+      const buf =
+        msg.format === "xs"
+          ? legacyRawToXs(doc, xsBundle)
+          : exportXcs(doc);
+      post({ type: "exported", buf, format: msg.format }, [buf]);
       return;
     }
   } catch (err) {

@@ -107,10 +107,11 @@ def test_validation_kind_round_trips_through_bytes_for_test():
         {"cell_index": 1, "params": {"power": 11}},
         {"cell_index": 2, "params": {"power": 14}},
     ]
-    raw = bytes_for_test(
+    raw, media, ext = bytes_for_test(
         test_id=1, name="v", material_id=1, spec=spec,
-        kind="validation", validation_cells=cells,
+        kind="validation", validation_cells=cells, fmt="xcs",
     )
+    assert (media, ext) == ("application/json", "xcs")
     payload = json.loads(raw.decode("utf-8"))
     # Three RECT displays from the gradient layer (plus one TEXT for the
     # summary line). Filter to RECT to count cells.
@@ -186,7 +187,8 @@ def test_validation_kind_supports_multi_param_overlay():
 def test_project_to_xcs_bytes_validation_kind_serialises():
     """Full round-trip through JSON serialisation works."""
     project = _validation_project()
-    raw = project_to_xcs_bytes(project)
+    raw, media, ext = project_to_xcs_bytes(project, fmt="xcs")
+    assert (media, ext) == ("application/json", "xcs")
     payload = json.loads(raw.decode("utf-8"))
     rects = [d for d in payload["canvas"][0]["displays"] if d.get("type") == "RECT"]
     assert len(rects) == 3

@@ -1,6 +1,18 @@
-import type { PixelArtRequest, SvgLayersRequest, SvgStackRequest } from "./types";
+import type { OutputFormat, PixelArtRequest, SvgLayersRequest, SvgStackRequest } from "./types";
 import { ApiError } from "./api/_fetch";
 import { captureHandledError } from "./sentry";
+
+/** Default output container for every generator download. ``xs`` returns a
+ *  ZIP; ``xcs`` returns the legacy single-file XCS JSON. Keep this the
+ *  single source of truth so the UI controls and the helpers agree. */
+export const DEFAULT_OUTPUT_FORMAT: OutputFormat = "xs";
+
+/** Build the download filename for a generated project. Pure so the
+ *  ext-selection logic is unit-testable without mocking fetch/DOM.
+ *  ``${name}.${format}`` — e.g. ``my-project.xs`` / ``my-project.xcs``. */
+export function outputFilename(name: string, format: OutputFormat): string {
+  return `${name}.${format}`;
+}
 
 async function postAndDownload(endpoint: string, body: unknown, filename: string): Promise<void> {
   const resp = await fetch(endpoint, {
@@ -47,11 +59,21 @@ async function postAndDownload(endpoint: string, body: unknown, filename: string
 }
 
 export async function svgStackAndDownload(request: SvgStackRequest): Promise<void> {
-  return postAndDownload("/api/svg-stack", request, `${request.name || "svg-stack"}.xcs`);
+  const format = request.format ?? DEFAULT_OUTPUT_FORMAT;
+  return postAndDownload(
+    "/api/svg-stack",
+    { ...request, format },
+    outputFilename(request.name || "svg-stack", format),
+  );
 }
 
 export async function svgLayersAndDownload(request: SvgLayersRequest): Promise<void> {
-  return postAndDownload("/api/svg-layers", request, `${request.name || "svg-layers"}.xcs`);
+  const format = request.format ?? DEFAULT_OUTPUT_FORMAT;
+  return postAndDownload(
+    "/api/svg-layers",
+    { ...request, format },
+    outputFilename(request.name || "svg-layers", format),
+  );
 }
 
 // detectSvgLayers moved to web/src/svg/detectLayers.ts — the browser
@@ -123,7 +145,12 @@ export async function previewSvg(
 }
 
 export async function pixelArtAndDownload(request: PixelArtRequest): Promise<void> {
-  return postAndDownload("/api/pixel-art", request, `${request.name || "pixel-art"}.xcs`);
+  const format = request.format ?? DEFAULT_OUTPUT_FORMAT;
+  return postAndDownload(
+    "/api/pixel-art",
+    { ...request, format },
+    outputFilename(request.name || "pixel-art", format),
+  );
 }
 
 export async function pixelArtSvgAndDownload(request: PixelArtRequest): Promise<void> {

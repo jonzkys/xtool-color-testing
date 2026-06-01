@@ -1,4 +1,4 @@
-import type { TestRecord, TestSpec } from "../types";
+import type { OutputFormat, TestRecord, TestSpec } from "../types";
 import { ApiError, j } from "./_fetch";
 import { captureHandledError } from "../sentry";
 
@@ -45,8 +45,18 @@ export async function updateTest(id: number, patch: {
 export async function deleteTest(id: number): Promise<void> {
   await j(await fetch(`/api/tests/${id}`, { method: "DELETE" }));
 }
-export async function generateTestXcs(id: number): Promise<Blob> {
-  const r = await fetch(`/api/tests/${id}/generate`, { method: "POST" });
+/** Generate the test's project file. ``format`` selects the output
+ *  container: ``xs`` (default) returns a ZIP; ``xcs`` returns the legacy
+ *  single-file XCS JSON. The caller names the file with the matching
+ *  extension. */
+export async function generateTestXcs(
+  id: number,
+  format: OutputFormat = "xs",
+): Promise<Blob> {
+  const r = await fetch(
+    `/api/tests/${id}/generate?format=${format}`,
+    { method: "POST" },
+  );
   if (!r.ok) {
     const body = await r.text().catch(() => "");
     const err = new ApiError({

@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import math
-from xcs_gen.builder import build_xcs
 from xcs_gen.capture.layout import registration_reservation_mm
 from xcs_gen.generators import _PARAM_MAP, _set_param, generate_gradient
 from xcs_gen.model import Device, ProcessingParams, XCSProject
 from xcs_gen.text import text_height
 
 from .schemas import BaseParams, ParamTest, Project
+from .serialize import OutputFormat, project_to_bytes
 
 def beam_width_for_machine(machine_id: str, *, laser: str = "red") -> float:
     """Smallest spot dimension of the named laser on ``machine_id``.
@@ -409,11 +408,17 @@ def project_to_xcs_bytes(
     machine_id: str = "F2Ultra",
     annotation_params: ProcessingParams | None = None,
     calibration_by_material_id: dict[str, dict] | None = None,
-) -> bytes:
-    """Convert a Project to .xcs file bytes."""
+    fmt: OutputFormat = "xs",
+) -> tuple[bytes, str, str]:
+    """Convert a Project to download bytes per ``fmt``.
+
+    Returns ``(body, media_type, extension)`` — ``"xs"`` ZIP bundle by
+    default, ``"xcs"`` flat JSON when selected. The XCSProject build path
+    (annotations, calibration, the whole merge) is unchanged; only the
+    final serialise step routes through the shared helper.
+    """
     xcs = project_to_xcs(
         project, machine_id=machine_id, annotation_params=annotation_params,
         calibration_by_material_id=calibration_by_material_id,
     )
-    data = build_xcs(xcs)
-    return json.dumps(data, separators=(",", ":")).encode("utf-8")
+    return project_to_bytes(xcs, fmt)
