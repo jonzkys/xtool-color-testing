@@ -26,6 +26,7 @@ export function clampToConstraint(
       return Math.max(c.min, Math.min(c.max, snapped));
     }
     case "stepped": {
+      if (c.values.length === 0) return value;
       if (c.values.some((v) => v === value)) return value;
       const target = typeof value === "number" ? value : parseFloat(String(value));
       if (Number.isFinite(target) && c.values.every((v) => typeof v === "number")) {
@@ -40,6 +41,7 @@ export function clampToConstraint(
       return c.values[0];
     }
     case "enum":
+      if (c.values.length === 0) return value;
       return c.values.some((v) => v === value) ? value : c.values[0];
     case "not_applicable":
       return value;

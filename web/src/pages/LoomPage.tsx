@@ -1359,7 +1359,7 @@ function StopsRail({
             value={ramp.param}
             onChange={(e) => onChange({ ...ramp, param: e.target.value as HatchRamp["param"] })}
           >
-            {applicableRampParams(profile).map((m) => (
+            {(profile ? applicableRampParams(profile) : RAMP_PARAMS).map((m) => (
               <option key={m.value} value={m.value}>{m.label} ({m.unit})</option>
             ))}
           </Select>

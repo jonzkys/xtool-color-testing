@@ -38,6 +38,11 @@ describe("clampToConstraint", () => {
     expect(clampToConstraint("uv", c)).toBe("red");
   });
 
+  it("returns the input unchanged for an empty stepped/enum list", () => {
+    expect(clampToConstraint(42, { kind: "stepped", values: [] })).toBe(42);
+    expect(clampToConstraint("x", { kind: "enum", values: [] })).toBe("x");
+  });
+
   it("passes through a not_applicable value unchanged", () => {
     expect(clampToConstraint(42, { kind: "not_applicable" })).toBe(42);
   });
