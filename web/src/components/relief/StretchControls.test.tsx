@@ -32,4 +32,27 @@ describe("StretchControls", () => {
     );
     expect(screen.getByLabelText(/gamma/i)).toBeInTheDocument();
   });
+
+  it("renders the Trim section toggles", () => {
+    render(
+      <StretchControls params={DEFAULT_STRETCH_PARAMS} onChange={() => {}} />,
+    );
+    expect(screen.getByText("Trim")).toBeInTheDocument();
+    expect(screen.getByText(/remove empty layers/i)).toBeInTheDocument();
+    expect(screen.getByText(/remove background/i)).toBeInTheDocument();
+  });
+
+  it("shows the threshold slider only when remove background is on", () => {
+    const { rerender } = render(
+      <StretchControls params={DEFAULT_STRETCH_PARAMS} onChange={() => {}} />,
+    );
+    expect(screen.queryByLabelText(/threshold/i)).not.toBeInTheDocument();
+    rerender(
+      <StretchControls
+        params={{ ...DEFAULT_STRETCH_PARAMS, removeBackground: true }}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText(/threshold/i)).toBeInTheDocument();
+  });
 });

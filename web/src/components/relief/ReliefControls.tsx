@@ -35,58 +35,74 @@ export function ReliefControls({ params, onChange }: ReliefControlsProps) {
         dense
         titleHint="Bilateral spatial radius — higher = softer, more aggressive."
       >
-        <Slider
-          label="Strength"
-          value={params.strength}
-          min={1}
-          max={30}
-          onChange={(v) => set("strength", v)}
-          hint="Radius of the bilateral / median pass."
-        />
-      </Section>
-
-      {/* ── Edges ──────────────────────────────────────────────────── */}
-      <Section title="Edges" dense>
         <Toggle
-          label="Preserve edges"
-          checked={params.edgePreserve}
-          onChange={(v) => set("edgePreserve", v)}
+          label="Enable smoothing"
+          checked={params.smoothEnabled}
+          onChange={(v) => set("smoothEnabled", v)}
         />
-        {params.edgePreserve && (
+        {params.smoothEnabled ? (
           <Slider
-            label="Edge threshold"
-            value={params.edgeThreshold}
+            label="Strength"
+            value={params.strength}
             min={1}
-            max={255}
-            onChange={(v) => set("edgeThreshold", v)}
-            hint="Preserve drops steeper than this — keeps real edges crisp."
+            max={30}
+            onChange={(v) => set("strength", v)}
+            hint="Radius of the bilateral / median pass."
           />
+        ) : (
+          <p className="text-[12px] leading-relaxed text-[color:var(--color-ink-subtle)]">
+            Smoothing off — driving the raw heightfield (use the histogram /
+            stretch tools).
+          </p>
         )}
       </Section>
 
-      {/* ── Speckle ────────────────────────────────────────────────── */}
-      <Section title="Speckle" dense>
-        <Toggle
-          label="Remove speckle"
-          checked={params.spikeRemoval}
-          onChange={(v) => set("spikeRemoval", v)}
-        />
-        {params.spikeRemoval && (
-          <Field
-            label="Median window"
-            hint="Kernel size for the despeckling median pass."
-          >
-            <SegmentedChoice
-              value={params.medianKsize}
-              options={[
-                { value: 3, label: "3 × 3" },
-                { value: 5, label: "5 × 5" },
-              ]}
-              onChange={(v) => set("medianKsize", v)}
+      {params.smoothEnabled && (
+        <>
+          {/* ── Edges ────────────────────────────────────────────────── */}
+          <Section title="Edges" dense>
+            <Toggle
+              label="Preserve edges"
+              checked={params.edgePreserve}
+              onChange={(v) => set("edgePreserve", v)}
             />
-          </Field>
-        )}
-      </Section>
+            {params.edgePreserve && (
+              <Slider
+                label="Edge threshold"
+                value={params.edgeThreshold}
+                min={1}
+                max={255}
+                onChange={(v) => set("edgeThreshold", v)}
+                hint="Preserve drops steeper than this — keeps real edges crisp."
+              />
+            )}
+          </Section>
+
+          {/* ── Speckle ──────────────────────────────────────────────── */}
+          <Section title="Speckle" dense>
+            <Toggle
+              label="Remove speckle"
+              checked={params.spikeRemoval}
+              onChange={(v) => set("spikeRemoval", v)}
+            />
+            {params.spikeRemoval && (
+              <Field
+                label="Median window"
+                hint="Kernel size for the despeckling median pass."
+              >
+                <SegmentedChoice
+                  value={params.medianKsize}
+                  options={[
+                    { value: 3, label: "3 × 3" },
+                    { value: 5, label: "5 × 5" },
+                  ]}
+                  onChange={(v) => set("medianKsize", v)}
+                />
+              </Field>
+            )}
+          </Section>
+        </>
+      )}
 
       {/* ── Layers (preview / pass-through) ────────────────────────── */}
       <Section

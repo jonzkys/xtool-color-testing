@@ -173,7 +173,75 @@ export function StretchControls({ params, onChange }: StretchControlsProps) {
           </p>
         )}
       </Section>
+
+      {/* ── Trim ───────────────────────────────────────────────────── */}
+      <Section
+        title="Trim"
+        dense
+        titleHint="Drop the unused bottom of the range, and cut out the background."
+      >
+        <Toggle
+          label="Remove empty layers"
+          checked={params.removeEmptyLayers}
+          onChange={(v) => set("removeEmptyLayers", v)}
+        />
+        <p className="text-[11px] leading-relaxed text-[color:var(--color-ink-subtle)]">
+          Offsets the lowest value to 0 — drops layers the machine would
+          otherwise cut as air. Most visible with Mode = None.
+        </p>
+
+        <Toggle
+          label="Remove background"
+          checked={params.removeBackground}
+          onChange={(v) => set("removeBackground", v)}
+        />
+        <p className="text-[11px] leading-relaxed text-[color:var(--color-ink-subtle)]">
+          Make the surrounding background transparent — it won't be engraved,
+          and it's excluded from the stretch.
+        </p>
+        {params.removeBackground && (
+          <>
+            <Slider
+              label="Threshold"
+              value={params.bgThreshold}
+              min={0}
+              max={64}
+              step={1}
+              onChange={(v) => set("bgThreshold", v)}
+              hint="Pixels at or below this value become transparent."
+            />
+            <Toggle
+              label="Background is the bright end"
+              checked={params.bgHigh}
+              onChange={(v) => set("bgHigh", v)}
+            />
+          </>
+        )}
+      </Section>
     </Card>
+  );
+}
+
+/** Checkbox toggle row — mirrors ReliefControls's Toggle. */
+function Toggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-[12.5px] text-[color:var(--color-ink-muted)] select-none cursor-pointer">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="accent-[color:var(--color-primary)]"
+      />
+      <span>{label}</span>
+    </label>
   );
 }
 
