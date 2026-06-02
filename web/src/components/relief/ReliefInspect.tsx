@@ -20,6 +20,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { Section } from "../../ui";
+import { histogram } from "./stretch";
 
 export interface ReliefInspectProps {
   originalData: ImageData | null;
@@ -43,17 +44,6 @@ function cssVar(name: string, fallback: string): string {
   return v || fallback;
 }
 
-/** 256-bin luminance histogram for an ImageData. */
-function histogram(data: ImageData): Uint32Array {
-  const bins = new Uint32Array(256);
-  const { data: px } = data;
-  for (let i = 0; i < px.length; i += 4) {
-    const l = luma(px[i], px[i + 1], px[i + 2]);
-    bins[Math.min(255, Math.max(0, Math.round(l)))]++;
-  }
-  return bins;
-}
-
 /**
  * Fraction (0..1) of pixels whose luminance shifted by more than one level.
  * Returns null when dimensions differ — the caller renders a placeholder.
@@ -72,7 +62,11 @@ function percentChanged(a: ImageData, b: ImageData): number | null {
   return n > 0 ? changed / n : 0;
 }
 
-export function ReliefInspect({ originalData, cleanedData }: ReliefInspectProps) {
+export function ReliefInspect({
+  originalData,
+  cleanedData,
+  lut,
+}: ReliefInspectProps) {
   const histRef = useRef<HTMLCanvasElement>(null);
   const gradRef = useRef<HTMLCanvasElement>(null);
 
@@ -146,7 +140,23 @@ export function ReliefInspect({ originalData, cleanedData }: ReliefInspectProps)
         ctx.fillRect(i * barW, cssH - h, Math.max(0.5, barW), h);
       }
     }
-  }, [originalData, cleanedData]);
+
+    // Transfer curve — the active tone-stretch LUT mapped over the histogram.
+    // x = input 0→255 across the width; y = output 0 (baseline) → 255 (top).
+    if (lut && lut.length === 256) {
+      const secondary = cssVar("--color-secondary", "#3A6E7A");
+      ctx.strokeStyle = secondary;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (let i = 0; i < 256; i++) {
+        const x = (i / 255) * cssW;
+        const y = cssH - (lut[i] / 255) * cssH;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }, [originalData, cleanedData, lut]);
 
   // ── Gradient-magnitude thumbnail paint ────────────────────────────
   useEffect(() => {
@@ -248,6 +258,7 @@ export function ReliefInspect({ originalData, cleanedData }: ReliefInspectProps)
         <div className="flex items-center gap-3 font-mono text-[9px] uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
           <Legend swatch="var(--color-primary)" label="cleaned" />
           <Legend swatch="var(--color-ink-subtle)" label="original" faint />
+          {lut && <Legend swatch="var(--color-secondary)" label="curve" />}
           <span className="ml-auto">0 → 255</span>
         </div>
       </Section>
