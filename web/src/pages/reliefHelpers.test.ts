@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest";
-import { DEFAULT_RELIEF_PARAMS, previewRatio, scaleParamsForPreview } from "./reliefHelpers";
+import { describe, it, expect, vi } from "vitest";
+import {
+  DEFAULT_RELIEF_PARAMS,
+  previewRatio,
+  reliefSmooth,
+  scaleParamsForPreview,
+} from "./reliefHelpers";
 
 describe("previewRatio", () => {
   it("is 1 when already within maxEdge", () => {
@@ -19,5 +24,44 @@ describe("scaleParamsForPreview", () => {
   });
   it("never drops strength below 1", () => {
     expect(scaleParamsForPreview({ ...DEFAULT_RELIEF_PARAMS, strength: 1 }, 0.1).strength).toBe(1);
+  });
+});
+
+describe("reliefSmooth clahe form fields", () => {
+  it("omits clahe fields when no clahe arg is given", async () => {
+    const sent: FormData[] = [];
+    const fetchMock = vi
+      .fn()
+      .mockImplementation((_url: string, init: { body: FormData }) => {
+        sent.push(init.body);
+        return Promise.resolve({ ok: true, blob: async () => new Blob() });
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await reliefSmooth(new Blob(["x"]), { ...DEFAULT_RELIEF_PARAMS });
+    expect(sent[0].get("clahe")).toBeNull();
+
+    vi.unstubAllGlobals();
+  });
+
+  it("appends clahe fields when a clahe arg is given", async () => {
+    const sent: FormData[] = [];
+    const fetchMock = vi
+      .fn()
+      .mockImplementation((_url: string, init: { body: FormData }) => {
+        sent.push(init.body);
+        return Promise.resolve({ ok: true, blob: async () => new Blob() });
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await reliefSmooth(new Blob(["x"]), { ...DEFAULT_RELIEF_PARAMS }, {
+      clipLimit: 3,
+      tiles: 8,
+    });
+    expect(sent[0].get("clahe")).toBe("true");
+    expect(sent[0].get("clahe_clip")).toBe("3");
+    expect(sent[0].get("clahe_tiles")).toBe("8");
+
+    vi.unstubAllGlobals();
   });
 });

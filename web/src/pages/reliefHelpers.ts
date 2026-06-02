@@ -33,8 +33,14 @@ export function scaleParamsForPreview(p: ReliefParams, ratio: number): ReliefPar
   return { ...p, strength: Math.max(1, Math.round(p.strength * r)) };
 }
 
-/** POST a depth-map blob + params (multipart) and resolve the cleaned PNG blob. */
-export async function reliefSmooth(blob: Blob, p: ReliefParams): Promise<Blob> {
+/** POST a depth-map blob + params (multipart) and resolve the cleaned PNG blob.
+ *  Pass `clahe` to request backend tile-adaptive local-contrast stretch (the
+ *  monotonic tone modes are applied client-side as a LUT, not here). */
+export async function reliefSmooth(
+  blob: Blob,
+  p: ReliefParams,
+  clahe?: { clipLimit: number; tiles: number },
+): Promise<Blob> {
   const fd = new FormData();
   fd.append("file", blob, "depth.png");
   fd.append("strength", String(p.strength));
@@ -42,6 +48,11 @@ export async function reliefSmooth(blob: Blob, p: ReliefParams): Promise<Blob> {
   fd.append("edge_threshold", String(p.edgeThreshold));
   fd.append("spike_removal", String(p.spikeRemoval));
   fd.append("median_ksize", String(p.medianKsize));
+  if (clahe) {
+    fd.append("clahe", "true");
+    fd.append("clahe_clip", String(clahe.clipLimit));
+    fd.append("clahe_tiles", String(clahe.tiles));
+  }
   const res = await fetch("/api/relief/smooth", { method: "POST", body: fd });
   if (!res.ok) throw new Error(`relief smooth failed: ${res.status}`);
   return res.blob();
