@@ -157,17 +157,25 @@ export function ReliefPage() {
             bitmap,
             PREVIEW_MAX_EDGE,
           );
-          const claheArg =
-            stretchParams.mode === "clahe"
+          const opts = {
+            clahe:
+              stretchParams.mode === "clahe"
+                ? {
+                    clipLimit: stretchParams.claheClipLimit,
+                    tiles: stretchParams.claheTiles,
+                  }
+                : undefined,
+            background: stretchParams.removeBackground
               ? {
-                  clipLimit: stretchParams.claheClipLimit,
-                  tiles: stretchParams.claheTiles,
+                  threshold: stretchParams.bgThreshold,
+                  high: stretchParams.bgHigh,
                 }
-              : undefined;
+              : undefined,
+          };
           const smoothed = await reliefSmooth(
             blob,
             scaleParamsForPreview(params, ratio),
-            claheArg,
+            opts,
           );
           // Stale guard: a newer request started while we awaited.
           if (cancelled || myReq !== reqIdRef.current) return;
@@ -349,14 +357,19 @@ export function ReliefPage() {
           "image/png",
         ),
       );
-      const claheArg =
-        stretchParams.mode === "clahe"
-          ? {
-              clipLimit: stretchParams.claheClipLimit,
-              tiles: stretchParams.claheTiles,
-            }
-          : undefined;
-      const smoothed = await reliefSmooth(fullBlob, params, claheArg);
+      const opts = {
+        clahe:
+          stretchParams.mode === "clahe"
+            ? {
+                clipLimit: stretchParams.claheClipLimit,
+                tiles: stretchParams.claheTiles,
+              }
+            : undefined,
+        background: stretchParams.removeBackground
+          ? { threshold: stretchParams.bgThreshold, high: stretchParams.bgHigh }
+          : undefined,
+      };
+      const smoothed = await reliefSmooth(fullBlob, params, opts);
 
       // Apply the SAME client LUT to the full-res result (identity for CLAHE),
       // so the exported PNG matches the preview exactly.

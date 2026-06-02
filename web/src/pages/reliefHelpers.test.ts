@@ -27,8 +27,8 @@ describe("scaleParamsForPreview", () => {
   });
 });
 
-describe("reliefSmooth clahe form fields", () => {
-  it("omits clahe fields when no clahe arg is given", async () => {
+describe("reliefSmooth form fields", () => {
+  function stub() {
     const sent: FormData[] = [];
     const fetchMock = vi
       .fn()
@@ -37,31 +37,44 @@ describe("reliefSmooth clahe form fields", () => {
         return Promise.resolve({ ok: true, blob: async () => new Blob() });
       });
     vi.stubGlobal("fetch", fetchMock);
+    return sent;
+  }
 
-    await reliefSmooth(new Blob(["x"]), { ...DEFAULT_RELIEF_PARAMS });
-    expect(sent[0].get("clahe")).toBeNull();
-
+  it("always sends the smooth flag from params", async () => {
+    const sent = stub();
+    await reliefSmooth(new Blob(["x"]), { ...DEFAULT_RELIEF_PARAMS, smoothEnabled: false });
+    expect(sent[0].get("smooth")).toBe("false");
     vi.unstubAllGlobals();
   });
 
-  it("appends clahe fields when a clahe arg is given", async () => {
-    const sent: FormData[] = [];
-    const fetchMock = vi
-      .fn()
-      .mockImplementation((_url: string, init: { body: FormData }) => {
-        sent.push(init.body);
-        return Promise.resolve({ ok: true, blob: async () => new Blob() });
-      });
-    vi.stubGlobal("fetch", fetchMock);
+  it("omits clahe / bg fields when no opts given", async () => {
+    const sent = stub();
+    await reliefSmooth(new Blob(["x"]), { ...DEFAULT_RELIEF_PARAMS });
+    expect(sent[0].get("clahe")).toBeNull();
+    expect(sent[0].get("remove_bg")).toBeNull();
+    expect(sent[0].get("smooth")).toBe("true");
+    vi.unstubAllGlobals();
+  });
 
+  it("appends clahe fields when opts.clahe given", async () => {
+    const sent = stub();
     await reliefSmooth(new Blob(["x"]), { ...DEFAULT_RELIEF_PARAMS }, {
-      clipLimit: 3,
-      tiles: 8,
+      clahe: { clipLimit: 3, tiles: 8 },
     });
     expect(sent[0].get("clahe")).toBe("true");
     expect(sent[0].get("clahe_clip")).toBe("3");
     expect(sent[0].get("clahe_tiles")).toBe("8");
+    vi.unstubAllGlobals();
+  });
 
+  it("appends background fields when opts.background given", async () => {
+    const sent = stub();
+    await reliefSmooth(new Blob(["x"]), { ...DEFAULT_RELIEF_PARAMS }, {
+      background: { threshold: 8, high: false },
+    });
+    expect(sent[0].get("remove_bg")).toBe("true");
+    expect(sent[0].get("bg_threshold")).toBe("8");
+    expect(sent[0].get("bg_high")).toBe("false");
     vi.unstubAllGlobals();
   });
 });
