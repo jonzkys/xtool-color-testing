@@ -59,3 +59,25 @@ def test_to_grayscale_u8_handles_channel_layouts():
     bgra = cv2.cvtColor(gray2d, cv2.COLOR_GRAY2BGRA)
     out_bgra = to_grayscale_u8(bgra)
     assert out_bgra.ndim == 2 and out_bgra.dtype == np.uint8
+
+
+def test_apply_clahe_increases_local_contrast():
+    from xcs_gen_web.relief import apply_clahe
+
+    # A low-contrast gradient bunched in a narrow band.
+    row = np.linspace(90, 150, 256).astype(np.uint8)
+    gray = np.tile(row, (64, 1))
+    out = apply_clahe(gray, clip_limit=2.0, tiles=8)
+    assert out.dtype == np.uint8
+    assert out.shape == gray.shape
+    # CLAHE should widen the value range vs the cramped input.
+    assert int(out.max()) - int(out.min()) >= int(gray.max()) - int(gray.min())
+
+
+def test_apply_clahe_handles_flat_field_without_error():
+    from xcs_gen_web.relief import apply_clahe
+
+    gray = np.full((32, 32), 128, dtype=np.uint8)
+    out = apply_clahe(gray, clip_limit=2.0, tiles=8)
+    assert out.shape == (32, 32)
+    assert out.dtype == np.uint8

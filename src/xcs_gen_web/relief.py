@@ -14,7 +14,13 @@ import cv2
 import numpy as np
 from PIL import Image
 
-__all__ = ["ReliefSmoothParams", "smooth_heightfield", "to_grayscale_u8", "encode_png"]
+__all__ = [
+    "ReliefSmoothParams",
+    "smooth_heightfield",
+    "apply_clahe",
+    "to_grayscale_u8",
+    "encode_png",
+]
 
 
 @dataclass(frozen=True)
@@ -74,6 +80,22 @@ def smooth_heightfield(gray: np.ndarray, p: ReliefSmoothParams) -> np.ndarray:
         smoothed = np.where(edge_mask.astype(bool), work, smoothed)
 
     return np.ascontiguousarray(smoothed, dtype=np.uint8)
+
+
+def apply_clahe(gray: np.ndarray, clip_limit: float, tiles: int) -> np.ndarray:
+    """Contrast-limited adaptive histogram equalization of a uint8 heightfield.
+
+    Tile-adaptive local-contrast equalization — not expressible as a single
+    256-LUT, hence done here on the backend rather than client-side. Runs on
+    the already-smoothed field (denoise-then-stretch)."""
+    if gray.ndim != 2:
+        raise ValueError("apply_clahe expects a single-channel image")
+    n = max(1, int(tiles))
+    clahe = cv2.createCLAHE(
+        clipLimit=max(0.1, float(clip_limit)),
+        tileGridSize=(n, n),
+    )
+    return np.ascontiguousarray(clahe.apply(gray), dtype=np.uint8)
 
 
 def encode_png(gray: np.ndarray) -> bytes:
