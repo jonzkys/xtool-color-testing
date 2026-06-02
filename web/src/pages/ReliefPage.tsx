@@ -207,11 +207,16 @@ export function ReliefPage() {
     params.edgeThreshold,
     params.spikeRemoval,
     params.medianKsize,
-    // CLAHE is the only stretch mode that touches the backend. A boolean so
-    // switching between monotonic modes doesn't cost a round-trip.
+    params.smoothEnabled,
+    // CLAHE and background removal are the stretch features that touch the
+    // backend. A boolean for CLAHE so switching between monotonic modes
+    // doesn't cost a round-trip.
     stretchParams.mode === "clahe",
     stretchParams.claheClipLimit,
     stretchParams.claheTiles,
+    stretchParams.removeBackground,
+    stretchParams.bgThreshold,
+    stretchParams.bgHigh,
     renderTick,
   ]);
 
@@ -336,6 +341,7 @@ export function ReliefPage() {
     stretchParams.clipPct,
     stretchParams.gamma,
     stretchParams.asinhStrength,
+    stretchParams.removeEmptyLayers,
   ]);
 
   // ── Export: full-res, unscaled params ─────────────────────────────
@@ -571,7 +577,13 @@ export function ReliefPage() {
 
                   <div
                     ref={hostCallbackRef}
-                    className="min-h-0 min-w-0 flex-1"
+                    className="min-h-0 min-w-0 flex-1 rounded-[6px]"
+                    style={{
+                      backgroundColor: "var(--color-surface)",
+                      backgroundImage:
+                        "repeating-conic-gradient(var(--color-border) 0% 25%, transparent 0% 50%)",
+                      backgroundSize: "16px 16px",
+                    }}
                   >
                     {view === "2d" ? (
                       <ReliefCompare2D

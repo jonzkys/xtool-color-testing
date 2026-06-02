@@ -105,10 +105,9 @@ export function ReliefCompare2D({
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Backdrop — the warm inset surface so the depth map reads against
-    // the blueprint chrome, not raw white.
-    ctx.fillStyle = "#14110F";
-    ctx.fillRect(0, 0, width, height);
+    // Clear to transparent so removed-background (alpha 0) regions — and the
+    // padding margins — reveal the checkerboard backdrop behind the canvas.
+    ctx.clearRect(0, 0, width, height);
 
     if (empty || width <= 0 || height <= 0) return;
 
