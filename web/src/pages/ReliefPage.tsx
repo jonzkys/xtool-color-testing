@@ -34,6 +34,14 @@ import {
   scaleParamsForPreview,
   type ReliefParams,
 } from "./reliefHelpers";
+import { StretchControls } from "../components/relief/StretchControls";
+import {
+  DEFAULT_STRETCH_PARAMS,
+  buildLut,
+  applyLut,
+  histogram,
+  type StretchParams,
+} from "../components/relief/stretch";
 
 /** Preview re-render debounce. Long enough to coalesce a slider drag,
  *  short enough that a single change feels responsive. */
@@ -53,8 +61,15 @@ export function ReliefPage() {
 
   const [bitmap, setBitmap] = useState<ImageBitmap | null>(null);
   const [params, setParams] = useState<ReliefParams>(DEFAULT_RELIEF_PARAMS);
+  const [stretchParams, setStretchParams] = useState<StretchParams>(
+    DEFAULT_STRETCH_PARAMS,
+  );
+  // Active LUT (monotonic modes) — passed to the inspect curve overlay; null
+  // for none/clahe so the overlay draws nothing.
+  const [lut, setLut] = useState<Uint8Array | null>(null);
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
-  const [cleanedUrl, setCleanedUrl] = useState<string | null>(null);
+  const [smoothedUrl, setSmoothedUrl] = useState<string | null>(null);
+  const [cleanedUrl, setCleanedUrl] = useState<string | null>(null); // final (post-stretch)
   const [status, setStatus] = useState<Status>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -72,6 +87,10 @@ export function ReliefPage() {
   // never leak. ``cleanedUrl`` is also stored in a ref so the async
   // preview effect can revoke the PREVIOUS one without listing the URL
   // as a dependency (which would re-fire the effect on every render).
+  const smoothedUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    smoothedUrlRef.current = smoothedUrl;
+  }, [smoothedUrl]);
   const cleanedUrlRef = useRef<string | null>(null);
   useEffect(() => {
     cleanedUrlRef.current = cleanedUrl;
@@ -97,7 +116,8 @@ export function ReliefPage() {
   // hasn't loaded yet they simply stay null and the panel shows muted
   // placeholders — never a crash.
   const [originalData, setOriginalData] = useState<ImageData | null>(null);
-  const [cleanedData, setCleanedData] = useState<ImageData | null>(null);
+  const [smoothedData, setSmoothedData] = useState<ImageData | null>(null);
+  const [cleanedData, setCleanedData] = useState<ImageData | null>(null); // final (post-stretch)
 
   // ── File decode ───────────────────────────────────────────────────
   const onFile = useCallback(async (file: File) => {
@@ -137,17 +157,25 @@ export function ReliefPage() {
             bitmap,
             PREVIEW_MAX_EDGE,
           );
-          const cleaned = await reliefSmooth(
+          const claheArg =
+            stretchParams.mode === "clahe"
+              ? {
+                  clipLimit: stretchParams.claheClipLimit,
+                  tiles: stretchParams.claheTiles,
+                }
+              : undefined;
+          const smoothed = await reliefSmooth(
             blob,
             scaleParamsForPreview(params, ratio),
+            claheArg,
           );
           // Stale guard: a newer request started while we awaited.
           if (cancelled || myReq !== reqIdRef.current) return;
-          const url = URL.createObjectURL(cleaned);
-          // Revoke the previous cleaned URL before swapping in the new
-          // one. Read from the ref so we don't depend on cleanedUrl.
-          if (cleanedUrlRef.current) URL.revokeObjectURL(cleanedUrlRef.current);
-          setCleanedUrl(url);
+          const url = URL.createObjectURL(smoothed);
+          // Revoke the previous smoothed URL before swapping in the new
+          // one. Read from the ref so we don't depend on smoothedUrl.
+          if (smoothedUrlRef.current) URL.revokeObjectURL(smoothedUrlRef.current);
+          setSmoothedUrl(url);
           setStatus("ready");
         } catch (err) {
           if (cancelled || myReq !== reqIdRef.current) return;
@@ -171,6 +199,11 @@ export function ReliefPage() {
     params.edgeThreshold,
     params.spikeRemoval,
     params.medianKsize,
+    // CLAHE is the only stretch mode that touches the backend. A boolean so
+    // switching between monotonic modes doesn't cost a round-trip.
+    stretchParams.mode === "clahe",
+    stretchParams.claheClipLimit,
+    stretchParams.claheTiles,
     renderTick,
   ]);
 
@@ -178,20 +211,22 @@ export function ReliefPage() {
   useEffect(() => {
     return () => {
       if (originalUrl) URL.revokeObjectURL(originalUrl);
+      if (smoothedUrlRef.current) URL.revokeObjectURL(smoothedUrlRef.current);
       if (cleanedUrlRef.current) URL.revokeObjectURL(cleanedUrlRef.current);
       bitmapRef.current?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run on unmount only
   }, []);
 
-  // ── Inspect buffers: decode bitmap + cleaned preview to ImageData ──
-  // The cleaned preview is a downscaled PNG; we draw the source bitmap to
-  // the SAME dimensions so the histogram, gradient, and "% changed" all
-  // line up. Runs whenever the bitmap or cleaned URL changes.
+  // ── Inspect buffers: decode bitmap + smoothed preview to ImageData ─
+  // The smoothed preview (backend result, pre-stretch) is a downscaled PNG;
+  // we draw the source bitmap to the SAME dimensions so the histogram,
+  // gradient, and "% changed" all line up. The client stretch effect below
+  // turns ``smoothedData`` into the final ``cleanedData``.
   useEffect(() => {
-    if (!bitmap || !cleanedUrl) {
+    if (!bitmap || !smoothedUrl) {
       setOriginalData(null);
-      setCleanedData(null);
+      setSmoothedData(null);
       return;
     }
     let cancelled = false;
@@ -202,17 +237,17 @@ export function ReliefPage() {
       const h = img.naturalHeight;
       if (w <= 0 || h <= 0) return;
       try {
-        // Cleaned preview → ImageData.
+        // Smoothed preview → ImageData.
         const cc = document.createElement("canvas");
         cc.width = w;
         cc.height = h;
         const cctx = cc.getContext("2d", { willReadFrequently: true });
         if (!cctx) return;
         cctx.drawImage(img, 0, 0);
-        const cleaned = cctx.getImageData(0, 0, w, h);
+        const smoothed = cctx.getImageData(0, 0, w, h);
 
         // Source bitmap drawn to the SAME box → ImageData (so the diff is
-        // apples-to-apples even though the cleaned preview is downscaled).
+        // apples-to-apples even though the preview is downscaled).
         const oc = document.createElement("canvas");
         oc.width = w;
         oc.height = h;
@@ -223,26 +258,77 @@ export function ReliefPage() {
 
         if (cancelled) return;
         setOriginalData(original);
-        setCleanedData(cleaned);
+        setSmoothedData(smoothed);
       } catch {
         // getImageData can throw on a tainted canvas; degrade gracefully.
         if (!cancelled) {
           setOriginalData(null);
-          setCleanedData(null);
+          setSmoothedData(null);
         }
       }
     };
     img.onerror = () => {
       if (!cancelled) {
         setOriginalData(null);
-        setCleanedData(null);
+        setSmoothedData(null);
       }
     };
-    img.src = cleanedUrl;
+    img.src = smoothedUrl;
     return () => {
       cancelled = true;
     };
-  }, [bitmap, cleanedUrl]);
+  }, [bitmap, smoothedUrl]);
+
+  // ── Client tone-stretch: smoothedData → final cleanedData (+ URL) ─────
+  // Monotonic modes (linear/gamma/asinh/equalize) are a 256-LUT applied here
+  // in the browser — instant, no backend round-trip. CLAHE is resolved on the
+  // backend already, so its LUT is identity and this just forwards the result.
+  useEffect(() => {
+    if (!smoothedData) {
+      setCleanedData(null);
+      setLut(null);
+      if (cleanedUrlRef.current) {
+        URL.revokeObjectURL(cleanedUrlRef.current);
+        setCleanedUrl(null);
+      }
+      return;
+    }
+    const built = buildLut(stretchParams, histogram(smoothedData));
+    const out = applyLut(smoothedData, built);
+    setCleanedData(out);
+    setLut(
+      stretchParams.mode === "none" || stretchParams.mode === "clahe"
+        ? null
+        : built,
+    );
+
+    // Re-encode for the 2D wipe (cleanedUrl). Cheap at the ≤800px preview size.
+    let cancelled = false;
+    const canvas = document.createElement("canvas");
+    canvas.width = out.width;
+    canvas.height = out.height;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.putImageData(out, 0, 0);
+      canvas.toBlob((b) => {
+        if (cancelled || !b) return;
+        const url = URL.createObjectURL(b);
+        if (cleanedUrlRef.current) URL.revokeObjectURL(cleanedUrlRef.current);
+        setCleanedUrl(url);
+      }, "image/png");
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    smoothedData,
+    stretchParams.mode,
+    stretchParams.clipLowPct,
+    stretchParams.clipHighPct,
+    stretchParams.clipPct,
+    stretchParams.gamma,
+    stretchParams.asinhStrength,
+  ]);
 
   // ── Export: full-res, unscaled params ─────────────────────────────
   const onExport = useCallback(async () => {
@@ -263,8 +349,38 @@ export function ReliefPage() {
           "image/png",
         ),
       );
-      const cleaned = await reliefSmooth(fullBlob, params);
-      const url = URL.createObjectURL(cleaned);
+      const claheArg =
+        stretchParams.mode === "clahe"
+          ? {
+              clipLimit: stretchParams.claheClipLimit,
+              tiles: stretchParams.claheTiles,
+            }
+          : undefined;
+      const smoothed = await reliefSmooth(fullBlob, params, claheArg);
+
+      // Apply the SAME client LUT to the full-res result (identity for CLAHE),
+      // so the exported PNG matches the preview exactly.
+      const smoothedBitmap = await createImageBitmap(smoothed);
+      const oc = document.createElement("canvas");
+      oc.width = smoothedBitmap.width;
+      oc.height = smoothedBitmap.height;
+      const octx = oc.getContext("2d", { willReadFrequently: true });
+      if (!octx) throw new Error("Failed to get 2D context");
+      octx.drawImage(smoothedBitmap, 0, 0);
+      smoothedBitmap.close();
+      const srcData = octx.getImageData(0, 0, oc.width, oc.height);
+      const finalData = applyLut(
+        srcData,
+        buildLut(stretchParams, histogram(srcData)),
+      );
+      octx.putImageData(finalData, 0, 0);
+      const finalBlob = await new Promise<Blob>((resolve, reject) =>
+        oc.toBlob(
+          (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
+          "image/png",
+        ),
+      );
+      const url = URL.createObjectURL(finalBlob);
       const a = document.createElement("a");
       a.href = url;
       a.download = "relief.png";
@@ -278,7 +394,7 @@ export function ReliefPage() {
     } finally {
       setExporting(false);
     }
-  }, [bitmap, params]);
+  }, [bitmap, params, stretchParams]);
 
   // ── Centre host: measure CSS box for the compare canvas ───────────
   // The host is mounted only once a depth map exists, so attach the
@@ -404,8 +520,9 @@ export function ReliefPage() {
 
         <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_300px] items-stretch gap-4">
           {/* ── Settings (left) — smoothing controls ─────────────────── */}
-          <div className="flex min-h-0 flex-col overflow-y-auto pr-1">
+          <div className="flex min-h-0 flex-col gap-4 overflow-y-auto pr-1">
             <ReliefControls params={params} onChange={setParams} />
+            <StretchControls params={stretchParams} onChange={setStretchParams} />
           </div>
 
           {/* ── Compare (centre) ────────────────────────────────────── */}
@@ -530,6 +647,7 @@ export function ReliefPage() {
                 <ReliefInspect
                   originalData={originalData}
                   cleanedData={cleanedData}
+                  lut={lut}
                 />
               </Card>
             )}

@@ -24,6 +24,9 @@ import { Section } from "../../ui";
 export interface ReliefInspectProps {
   originalData: ImageData | null;
   cleanedData: ImageData | null;
+  /** Active tone-stretch LUT — drawn as a transfer curve over the histogram.
+   *  Null/absent (none/clahe modes) → no curve. */
+  lut?: Uint8Array | null;
 }
 
 /** Rec. 601 luma — cheap and good enough for a grayscale depth map. */
