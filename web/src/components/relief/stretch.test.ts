@@ -114,4 +114,44 @@ describe("histogram", () => {
     expect(h[100]).toBe(100);
     expect(h.reduce((a, b) => a + b, 0)).toBe(100);
   });
+
+  it("skips transparent pixels", () => {
+    // 4 pixels: two opaque value 100, two transparent value 0.
+    const data = new Uint8ClampedArray(4 * 4);
+    data.set([100, 100, 100, 255], 0);
+    data.set([100, 100, 100, 255], 4);
+    data.set([0, 0, 0, 0], 8);
+    data.set([0, 0, 0, 0], 12);
+    const img = new ImageData(data, 4, 1);
+    const h = histogram(img);
+    expect(h[100]).toBe(2);
+    expect(h[0]).toBe(0); // transparent pixels not counted
+  });
+});
+
+describe("removeEmptyLayers", () => {
+  it("offsets the floor to 0 in None mode", () => {
+    const lut = buildLut(
+      params({ mode: "none", removeEmptyLayers: true }),
+      bunchedHist(60, 180),
+    );
+    expect(lut[60]).toBe(0);
+    expect(lut[100]).toBe(40);
+    expect(lut[180]).toBe(120);
+  });
+
+  it("is identity in None mode when off", () => {
+    const lut = buildLut(
+      params({ mode: "none", removeEmptyLayers: false }),
+      bunchedHist(60, 180),
+    );
+    for (let v = 0; v < 256; v++) expect(lut[v]).toBe(v);
+  });
+
+  it("is a no-op under Linear (mode already zeros the floor)", () => {
+    const hist = bunchedHist(60, 180);
+    const off = buildLut(params({ mode: "linear", removeEmptyLayers: false }), hist);
+    const on = buildLut(params({ mode: "linear", removeEmptyLayers: true }), hist);
+    for (let v = 0; v < 256; v++) expect(on[v]).toBe(off[v]);
+  });
 });

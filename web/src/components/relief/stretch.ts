@@ -34,6 +34,12 @@ export interface StretchParams {
   claheClipLimit: number;
   /** CLAHE (backend) tile grid (one axis): 4 | 8 | 16. */
   claheTiles: number;
+  /** Offset the lowest populated value to 0 (drop unused bottom of the range). */
+  removeEmptyLayers: boolean;
+  /** Mask near-black (or near-white) pixels to transparency — backend. */
+  removeBackground: boolean;
+  bgThreshold: number;
+  bgHigh: boolean;
 }
 
 export const DEFAULT_STRETCH_PARAMS: StretchParams = {
@@ -45,6 +51,10 @@ export const DEFAULT_STRETCH_PARAMS: StretchParams = {
   asinhStrength: 0.5,
   claheClipLimit: 2,
   claheTiles: 8,
+  removeEmptyLayers: false,
+  removeBackground: false,
+  bgThreshold: 8,
+  bgHigh: false,
 };
 
 /** Rec. 601 luma — for a grayscale depth map R=G=B so this is just the value. */
@@ -57,6 +67,7 @@ export function histogram(src: ImageData): Uint32Array {
   const bins = new Uint32Array(256);
   const px = src.data;
   for (let i = 0; i < px.length; i += 4) {
+    if (px[i + 3] < 128) continue; // skip transparent (background) pixels
     const l = luma(px[i], px[i + 1], px[i + 2]);
     bins[Math.min(255, Math.max(0, Math.round(l)))]++;
   }
@@ -101,9 +112,21 @@ function percentileBounds(
 export function buildLut(p: StretchParams, hist: Uint32Array): Uint8Array {
   const lut = new Uint8Array(256);
 
-  // None and CLAHE (backend) are identity here.
+  // None and CLAHE (backend) are identity here — except None gains an optional
+  // floor offset ("remove initial empty layers").
   if (p.mode === "none" || p.mode === "clahe") {
-    for (let v = 0; v < 256; v++) lut[v] = v;
+    if (p.removeEmptyLayers && p.mode === "none") {
+      let floor = 0;
+      for (let i = 0; i < 256; i++) {
+        if (hist[i] > 0) {
+          floor = i;
+          break;
+        }
+      }
+      for (let v = 0; v < 256; v++) lut[v] = Math.max(0, Math.min(255, v - floor));
+    } else {
+      for (let v = 0; v < 256; v++) lut[v] = v;
+    }
     return lut;
   }
 
