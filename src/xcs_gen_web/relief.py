@@ -18,6 +18,8 @@ __all__ = [
     "ReliefSmoothParams",
     "smooth_heightfield",
     "apply_clahe",
+    "background_alpha",
+    "encode_png_la",
     "to_grayscale_u8",
     "encode_png",
 ]
@@ -96,6 +98,29 @@ def apply_clahe(gray: np.ndarray, clip_limit: float, tiles: int) -> np.ndarray:
         tileGridSize=(n, n),
     )
     return np.ascontiguousarray(clahe.apply(gray), dtype=np.uint8)
+
+
+def background_alpha(gray: np.ndarray, threshold: int, high: bool = False) -> np.ndarray:
+    """Alpha mask (uint8 0/255) marking background pixels transparent.
+
+    ``high=False``: background is the dark end (``gray <= threshold``) — the
+    common case (surrounding black background). ``high=True``: the bright end
+    (``gray >= threshold``) for inverted maps."""
+    if gray.ndim != 2:
+        raise ValueError("background_alpha expects a single-channel image")
+    t = max(0, min(255, int(threshold)))
+    mask = gray >= t if high else gray <= t
+    alpha = np.where(mask, 0, 255).astype(np.uint8)
+    return np.ascontiguousarray(alpha)
+
+
+def encode_png_la(gray: np.ndarray, alpha: np.ndarray) -> bytes:
+    """Encode grayscale + alpha as an ``LA`` PNG (transparent background)."""
+    lum = Image.fromarray(np.ascontiguousarray(gray, dtype=np.uint8), mode="L")
+    a = Image.fromarray(np.ascontiguousarray(alpha, dtype=np.uint8), mode="L")
+    buf = BytesIO()
+    Image.merge("LA", [lum, a]).save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def encode_png(gray: np.ndarray) -> bytes:

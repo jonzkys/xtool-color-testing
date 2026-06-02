@@ -81,3 +81,40 @@ def test_apply_clahe_handles_flat_field_without_error():
     out = apply_clahe(gray, clip_limit=2.0, tiles=8)
     assert out.shape == (32, 32)
     assert out.dtype == np.uint8
+
+
+def test_background_alpha_masks_dark():
+    from xcs_gen_web.relief import background_alpha
+
+    gray = np.full((10, 10), 100, dtype=np.uint8)
+    gray[0, 0] = 0
+    gray[1, 1] = 5
+    alpha = background_alpha(gray, threshold=8, high=False)
+    assert alpha.dtype == np.uint8 and alpha.shape == gray.shape
+    assert alpha[0, 0] == 0 and alpha[1, 1] == 0  # dark → transparent
+    assert alpha[5, 5] == 255                     # relief → opaque
+
+
+def test_background_alpha_high_masks_bright():
+    from xcs_gen_web.relief import background_alpha
+
+    gray = np.full((10, 10), 100, dtype=np.uint8)
+    gray[0, 0] = 255
+    alpha = background_alpha(gray, threshold=250, high=True)
+    assert alpha[0, 0] == 0 and alpha[5, 5] == 255
+
+
+def test_encode_png_la_round_trips_alpha():
+    from io import BytesIO as _B
+
+    from PIL import Image as _I
+
+    from xcs_gen_web.relief import encode_png_la
+
+    gray = np.full((4, 4), 120, dtype=np.uint8)
+    alpha = np.full((4, 4), 255, dtype=np.uint8)
+    alpha[0, 0] = 0
+    img = _I.open(_B(encode_png_la(gray, alpha)))
+    assert img.mode == "LA"
+    px = np.array(img)
+    assert px[0, 0, 1] == 0 and px[1, 1, 1] == 255
