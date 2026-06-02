@@ -36,3 +36,29 @@ def test_relief_smooth_rejects_non_image():
         files={"file": ("x.bin", b"not an image", "application/octet-stream")},
     )
     assert resp.status_code == 400
+
+
+def test_relief_smooth_with_clahe_returns_png():
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/relief/smooth",
+        files={"file": ("depth.png", _png_bytes(64, 64, 120), "image/png")},
+        data={"clahe": "true", "clahe_clip": "3.0", "clahe_tiles": "8"},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/png"
+    out = Image.open(BytesIO(resp.content))
+    assert out.size == (64, 64)
+
+
+def test_relief_smooth_clamps_out_of_range_clahe_params():
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/relief/smooth",
+        files={"file": ("depth.png", _png_bytes(64, 64, 120), "image/png")},
+        # absurd values must be clamped, not 422'd (snap-don't-reject convention)
+        data={"clahe": "true", "clahe_clip": "9999", "clahe_tiles": "9999"},
+    )
+    assert resp.status_code == 200
+    out = Image.open(BytesIO(resp.content))
+    assert out.size == (64, 64)

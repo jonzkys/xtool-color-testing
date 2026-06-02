@@ -82,7 +82,13 @@ from .schemas import (
 )
 from .capture_pipeline import decode_image_bytes
 from .pixel_art_converter import pixel_art_to_svg, pixel_art_to_xcs_bytes
-from .relief import ReliefSmoothParams, encode_png, smooth_heightfield, to_grayscale_u8
+from .relief import (
+    ReliefSmoothParams,
+    apply_clahe,
+    encode_png,
+    smooth_heightfield,
+    to_grayscale_u8,
+)
 from .svg_converter import svg_stack_to_xcs_bytes
 from .svg_layers_converter import (
     svg_layers_to_xcs_bytes,
@@ -892,8 +898,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         edge_threshold: int = Form(40),
         spike_removal: bool = Form(True),
         median_ksize: int = Form(3),
+        clahe: bool = Form(False),
+        clahe_clip: float = Form(2.0),
+        clahe_tiles: int = Form(8),
     ) -> Response:
-        """Smooth a grayscale depth map and return the cleaned PNG. Stateless."""
+        """Smooth a grayscale depth map and return the cleaned PNG. Stateless.
+
+        Optional CLAHE (tile-adaptive local-contrast stretch) runs AFTER the
+        smooth — the monotonic tone modes are applied client-side as a LUT."""
         raw = file.file.read()
         try:
             bgr = decode_image_bytes(raw)
@@ -909,7 +921,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             spike_removal=spike_removal,
             median_ksize=median_ksize,
         )
-        png = encode_png(smooth_heightfield(gray, params))
+        out = smooth_heightfield(gray, params)
+        if clahe:
+            out = apply_clahe(
+                out,
+                clip_limit=max(0.1, min(40.0, clahe_clip)),
+                tiles=max(1, min(32, clahe_tiles)),
+            )
+        png = encode_png(out)
         return Response(content=png, media_type="image/png",
                         headers={"Cache-Control": "no-store"})
 
