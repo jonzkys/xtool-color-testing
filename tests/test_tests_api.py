@@ -121,16 +121,16 @@ def test_patch_material_rejects_unknown_id(fresh_db):
 
 # ── Default-mode resolution ──────────────────────────────────────────────────
 
-# F2Ultra:color_engrave allows frequency up to 150 kHz; F2Ultra:engrave also uses [1, 150].
+# F2Ultra MOPA freq tops out at 4000 kHz (color_engrave + engrave alike).
 # If F2Ultra silently defaults to color_engrave when mode is absent, a
-# request with frequency=400 should succeed (201, clamped to profile max).
-# If it defaulted to F2Ultra:engrave instead the snap behaviour is the same —
-# what the test checks is that the request is accepted (201) and the machine
-# round-trips.
+# request with an out-of-range frequency should still succeed (201, clamped to
+# profile max). If it defaulted to F2Ultra:engrave instead the snap behaviour is
+# the same — what the test checks is that the request is accepted (201) and the
+# machine round-trips.
 _BASE_CE = {
     "power": 50,
     "speed": 1000,
-    "frequency": 400,   # above both profiles' max (150 kHz); gets clamped on save
+    "frequency": 5000,  # above F2's 4000 kHz (and F1's 150); gets clamped on save
     "density": 200,
     "passes": 1,
     "pulse_width": 200,
@@ -149,8 +149,8 @@ _SPEC_CE = {
 def test_tests_create_defaults_mode_color_engrave_for_f2(fresh_db):
     """F2Ultra with no mode in base_params defaults to F2Ultra:color_engrave.
 
-    A frequency of 400 kHz exceeds both F2Ultra:color_engrave and
-    F2Ultra:engrave's [1, 150] kHz envelope, so it is clamped to the
+    A frequency of 5000 kHz exceeds both F2Ultra:color_engrave and
+    F2Ultra:engrave's [1, 4000] kHz envelope, so it is clamped to the
     profile max on save. The test checks that the request is accepted
     (201) and machine_id round-trips correctly.
     """
@@ -187,14 +187,14 @@ def test_tests_create_explicit_mode_color_engrave_for_f2(fresh_db):
 def test_tests_create_f1_clamps_high_frequency_to_profile_max(fresh_db):
     """F1Ultra with no mode defaults to engrave (F1Ultra:engrave, max 150 kHz).
 
-    A spec with frequency=400 kHz is above the profile max; we snap it to
+    A spec with frequency=5000 kHz is above the profile max; we snap it to
     the profile's max instead so legacy specs survive a save under the new
     machine. Mirrors the pulse_width snap-on-load behaviour — see CLAUDE.md.
     """
     from xcs_gen import machines as machines_mod
     c = TestClient(create_app())
     mid = m_repo.create(name="Aluminium")["id"]
-    base_f1 = dict(_BASE_CE)   # frequency=400 kHz, pulse_width=200
+    base_f1 = dict(_BASE_CE)   # frequency=5000 kHz, pulse_width=200
     spec_f1 = dict(_SPEC_CE)
     spec_f1["base_params"] = base_f1
     r = c.post("/api/tests", json={

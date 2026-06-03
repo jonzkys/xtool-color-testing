@@ -88,9 +88,10 @@ def test_profiles_payload_matches_registry(fresh_db):
     f1_engrave = body["profiles"]["F1Ultra:engrave"]
     assert f1_engrave["pulse_width"]["kind"] == "not_applicable"
     assert f1_engrave["density"]["kind"] == "range"
-    # F2Ultra:engrave frequency: range 1-150
+    # F2Ultra:engrave frequency: range 1-4000 (MOPA fiber; max is pulse-width-
+    # dependent up to 4000 kHz via the bundle's PWMapFrequency table).
     f2_engrave = body["profiles"]["F2Ultra:engrave"]
-    assert f2_engrave["frequency"] == {"kind": "range", "min": 1, "max": 150, "step": 1}
+    assert f2_engrave["frequency"] == {"kind": "range", "min": 1, "max": 4000, "step": 1}
     # F2Ultra:color_engrave density: range 1-5000
     f2_color = body["profiles"]["F2Ultra:color_engrave"]
     assert f2_color["density"]["kind"] == "range"
