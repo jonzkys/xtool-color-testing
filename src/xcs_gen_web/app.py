@@ -82,7 +82,15 @@ from .schemas import (
 )
 from .capture_pipeline import decode_image_bytes
 from .pixel_art_converter import pixel_art_to_svg, pixel_art_to_xcs_bytes
-from .relief import ReliefSmoothParams, encode_png, smooth_heightfield, to_grayscale_u8
+from .relief import (
+    ReliefSmoothParams,
+    apply_clahe,
+    background_alpha,
+    encode_png,
+    encode_png_la,
+    smooth_heightfield,
+    to_grayscale_u8,
+)
 from .svg_converter import svg_stack_to_xcs_bytes
 from .svg_layers_converter import (
     svg_layers_to_xcs_bytes,
@@ -892,8 +900,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         edge_threshold: int = Form(40),
         spike_removal: bool = Form(True),
         median_ksize: int = Form(3),
+        smooth: bool = Form(True),
+        clahe: bool = Form(False),
+        clahe_clip: float = Form(2.0),
+        clahe_tiles: int = Form(8),
+        remove_bg: bool = Form(False),
+        bg_threshold: int = Form(8),
+        bg_high: bool = Form(False),
     ) -> Response:
-        """Smooth a grayscale depth map and return the cleaned PNG. Stateless."""
+        """Smooth a grayscale depth map and return the cleaned PNG. Stateless.
+
+        ``smooth=false`` skips the smoothing pass (raw heightfield). Optional
+        CLAHE runs after the smooth; optional background removal masks near-black
+        (or near-white) pixels to transparency and returns an ``LA`` PNG. The
+        monotonic tone modes are applied client-side as a LUT."""
         raw = file.file.read()
         try:
             bgr = decode_image_bytes(raw)
@@ -902,14 +922,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         gray = to_grayscale_u8(bgr)
         if gray.size == 0 or min(gray.shape) < 2:
             raise HTTPException(status_code=422, detail="Image too small to smooth")
-        params = ReliefSmoothParams(
-            strength=max(1, min(100, strength)),
-            edge_preserve=edge_preserve,
-            edge_threshold=max(1, min(255, edge_threshold)),
-            spike_removal=spike_removal,
-            median_ksize=median_ksize,
-        )
-        png = encode_png(smooth_heightfield(gray, params))
+        out = gray
+        if smooth:
+            params = ReliefSmoothParams(
+                strength=max(1, min(100, strength)),
+                edge_preserve=edge_preserve,
+                edge_threshold=max(1, min(255, edge_threshold)),
+                spike_removal=spike_removal,
+                median_ksize=median_ksize,
+            )
+            out = smooth_heightfield(gray, params)
+        if clahe:
+            out = apply_clahe(
+                out,
+                clip_limit=max(0.1, min(40.0, clahe_clip)),
+                tiles=max(1, min(32, clahe_tiles)),
+            )
+        if remove_bg:
+            alpha = background_alpha(
+                out, threshold=max(0, min(255, bg_threshold)), high=bg_high
+            )
+            png = encode_png_la(out, alpha)
+        else:
+            png = encode_png(out)
         return Response(content=png, media_type="image/png",
                         headers={"Cache-Control": "no-store"})
 

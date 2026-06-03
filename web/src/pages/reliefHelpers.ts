@@ -4,6 +4,8 @@ export interface ReliefParams {
   edgeThreshold: number;  // 1..255
   spikeRemoval: boolean;
   medianKsize: number;    // 3 | 5
+  /** Master switch for the smoothing pass — off = use the raw heightfield. */
+  smoothEnabled: boolean;
   /** Informational / preview-only in Phase 1 — does NOT affect the smooth. */
   targetLayers: number;   // 2..256
   /** Pass-through for a future export — does NOT affect the smooth. */
@@ -16,6 +18,7 @@ export const DEFAULT_RELIEF_PARAMS: ReliefParams = {
   edgeThreshold: 40,
   spikeRemoval: true,
   medianKsize: 3,
+  smoothEnabled: true,
   targetLayers: 256,
   zDescentPerLayers: 0,
 };
@@ -33,8 +36,18 @@ export function scaleParamsForPreview(p: ReliefParams, ratio: number): ReliefPar
   return { ...p, strength: Math.max(1, Math.round(p.strength * r)) };
 }
 
-/** POST a depth-map blob + params (multipart) and resolve the cleaned PNG blob. */
-export async function reliefSmooth(blob: Blob, p: ReliefParams): Promise<Blob> {
+/** POST a depth-map blob + params (multipart) and resolve the cleaned PNG blob.
+ *  ``opts.clahe`` requests backend tile-adaptive local-contrast stretch;
+ *  ``opts.background`` requests near-black/white → transparency (LA PNG). The
+ *  monotonic tone modes are applied client-side as a LUT, not here. */
+export async function reliefSmooth(
+  blob: Blob,
+  p: ReliefParams,
+  opts?: {
+    clahe?: { clipLimit: number; tiles: number };
+    background?: { threshold: number; high: boolean };
+  },
+): Promise<Blob> {
   const fd = new FormData();
   fd.append("file", blob, "depth.png");
   fd.append("strength", String(p.strength));
@@ -42,6 +55,17 @@ export async function reliefSmooth(blob: Blob, p: ReliefParams): Promise<Blob> {
   fd.append("edge_threshold", String(p.edgeThreshold));
   fd.append("spike_removal", String(p.spikeRemoval));
   fd.append("median_ksize", String(p.medianKsize));
+  fd.append("smooth", String(p.smoothEnabled));
+  if (opts?.clahe) {
+    fd.append("clahe", "true");
+    fd.append("clahe_clip", String(opts.clahe.clipLimit));
+    fd.append("clahe_tiles", String(opts.clahe.tiles));
+  }
+  if (opts?.background) {
+    fd.append("remove_bg", "true");
+    fd.append("bg_threshold", String(opts.background.threshold));
+    fd.append("bg_high", String(opts.background.high));
+  }
   const res = await fetch("/api/relief/smooth", { method: "POST", body: fd });
   if (!res.ok) throw new Error(`relief smooth failed: ${res.status}`);
   return res.blob();
