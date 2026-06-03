@@ -63,7 +63,7 @@ Mostly **wider** (safe). The one tightening is handled by the frontend
 | field | old (STANDARD / COLOR_ENGRAVE) | new | note |
 |---|---|---|---|
 | density | stepped `[10..200]` / range `1–5000` | range `1–300` / `1–5000` | kind change stepped→range; wider |
-| frequency | `30–60` / `60–500` | `1–150` (fiber/UV); `not_applicable` (diode) | color max **tighter** 500→150 (frontend clamps); diode now N/A |
+| frequency | `30–60` / `60–500` | `1–4000` (MOPA: F2Ultra/F2UltraSingle); `1–150` (F2UltraUV/F1Ultra fiber); `not_applicable` (diode) | MOPA max is pulse-width-dependent, ceiling 4000 kHz (PWMapFrequency/C7 table); the static `40–150` field-def is a generic fallback parse-bundle.mjs wrongly used for the MOPA machines |
 | passes | `1–99` | `1–99`; cut `1–300` | wider for cut |
 | power / speed | `1–100` / `2–10000`,`2–15000` | unchanged | — |
 | pulse_width | N/A (STANDARD) / stepped (COLOR) | stepped on F2Ultra+F2UltraSingle only; N/A elsewhere | — |
@@ -71,8 +71,11 @@ Mostly **wider** (safe). The one tightening is handled by the frontend
 New: machines `F2UltraSingle`, `F2UltraUV`, `F1Lite`, `F1`; modes `intaglio`, `relief`.
 
 ## Caveats
-- `speed` bounds use runtime variables in the bundle (no literal) — kept at the
-  generous current values (back-compat safe; never wrongly rejects).
+- `speed` **and `frequency`** upper bounds use runtime/computed variables in the
+  bundle (no literal), so `parse-bundle.mjs`'s regex can't see them. `speed` is
+  kept at the generous current values; MOPA `frequency` is hard-coded to its
+  computed ceiling (4000 kHz, from the PWMapFrequency/C7 table) in
+  `build-profiles.mjs`. Both are back-compat safe (never wrongly reject).
 - Machine images for the four new machines are **placeholders** (copies of the
   F2/F1 Ultra icons) — replace with real artwork when available.
 - The raw 5.75 MB IndexedDB dump is not committed; it lives in `~/xtool-param-capture/`.

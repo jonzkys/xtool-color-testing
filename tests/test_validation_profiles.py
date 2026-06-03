@@ -113,7 +113,7 @@ def test_stepped_pulse_width_clamps_above_max():
 def test_range_frequency_rejects_above_max():
     with pytest.raises(ValidationError) as exc:
         validate_against_profile("F2Ultra:engrave", {
-            "power": 50, "speed": 1000, "frequency": 999,   # over 150
+            "power": 50, "speed": 1000, "frequency": 5000,  # over 4000 (MOPA max)
             "density": 100, "passes": 1, "laser": "red",
             "pulse_width": 200,
         })

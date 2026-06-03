@@ -6,6 +6,11 @@
 //     six bundles (shared common module).
 //   - per-mode overrides: color_engrave density -> 5000 (widget config max:5e3);
 //     cut passes -> 300 (observed repeat up to 250-300).
+//   - MOPA frequency -> 4000: the static frequency field-def (40-150) is a
+//     generic fallback. The real F2-class control is `mopaFrequency`, max computed
+//     per pulse width from the PWMapFrequency (C7) table, ceiling 4000 kHz (bundle
+//     default `a=t||4e3`). parse-bundle.mjs can't see it (computed, not a literal),
+//     same blind spot as `speed`. Applies to MOPA machines (pulse:true) only.
 //   - applicability + sources from the IndexedDB dump + material-device-basic-info:
 //       * pulse_width (MOPA) only on F2Ultra & F2UltraSingle  -> elsewhere not_applicable
 //       * color_engrave only on F2Ultra & F2UltraSingle (need MOPA pulse control)
@@ -44,10 +49,15 @@ function profileFor(m, mode) {
   return {
     power: range(1, 100),
     density: isColor ? range(1, 5000) : range(1, 300),
-    // Superset 1-150: F2-class fiber runs ~48-90 kHz, but F1Ultra's fiber runs
-    // ~1-30 (the bundle's shared 40-150 base is wrong for it), so the honest
-    // envelope that never rejects an observed value is 1-150. NA on diode-only.
-    frequency: m.freq ? range(1, 150) : NA,
+    // Frequency upper bound is MOPA-dependent and NOT a literal in the bundle.
+    // The static `frequency:{min:40,max:150}` field-def parse-bundle.mjs catches
+    // is a generic fallback; the real MOPA control is `mopaFrequency`, whose max
+    // is computed per pulse width via the PWMapFrequency (C7) table and tops out
+    // at 4000 kHz (pw 2-9 ns) — the bundle default is literally `a=t||4e3`. So on
+    // MOPA machines (F2Ultra/F2UltraSingle) the honest envelope is 1-4000. Other
+    // freq machines (F2UltraUV, F1Ultra) have no MOPA pulse control; keep the
+    // static 40-150 base (min relaxed to 1). NA on diode-only (F1Lite, F1).
+    frequency: m.freq ? (m.pulse ? range(1, 4000) : range(1, 150)) : NA,
     speed: isColor ? range(2, 15000) : range(2, 10000),
     passes: isCut ? range(1, 300) : range(1, 99),
     pulse_width: m.pulse ? { kind: "stepped", values: PULSE } : NA,
