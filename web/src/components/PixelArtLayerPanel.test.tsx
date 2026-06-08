@@ -178,4 +178,30 @@ describe("ExpandedLayerPanel sections", () => {
     fireEvent.click(screen.getAllByRole("button").find((b) => b.textContent?.includes("ΔE"))!);
     expect(picked[0]?.id).toBe(1);
   });
+
+  it("Clear match calls onChooseMatch(color, null)", () => {
+    const calls: [string, PaletteEntry | null][] = [];
+    const matched = entry("#c47a3e", { id: 1 });
+    render(
+      <ExpandedLayerPanel
+        row={expandedRow({ matchedEntry: matched })}
+        paletteEntries={[matched]}
+        library={baseLibrary}
+        onChooseMatch={(c, e) => calls.push([c, e])}
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /clear match/i }));
+    expect(calls[0]).toEqual(["#c47a3e", null]);
+  });
+
+  it("All filter narrows entries and shows 'no matches' when nothing fits", () => {
+    render(
+      <ExpandedLayerPanel row={expandedRow()} paletteEntries={many} library={baseLibrary} onChooseMatch={() => {}} onClose={() => {}} />,
+    );
+    fireEvent.click(screen.getByText(/^All ·/i));
+    const filter = screen.getByPlaceholderText(/filter by name or hex/i);
+    fireEvent.change(filter, { target: { value: "zzznomatch" } });
+    expect(screen.getByText(/no matches/i)).toBeInTheDocument();
+  });
 });
