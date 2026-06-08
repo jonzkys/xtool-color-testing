@@ -154,7 +154,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
     current.group === STAGE_GROUPS.seed ? config.seed.layerCount
     : current.group === STAGE_GROUPS.perforate ? config.perforate.layerCount
     : current.group === STAGE_GROUPS.clean ? config.clean.layerCount
-    : Z_DEFAULTS.sliceNumber;
+    : Z_DEFAULTS.sliceNumber; // unreachable given current stage model; sentinel for future non-deepen stages
   const depthLayers = isDeepen
     ? Math.max(1, config.deepen.groups[deepenIdx].toLayer)
     : nonDeepenLayerCount;

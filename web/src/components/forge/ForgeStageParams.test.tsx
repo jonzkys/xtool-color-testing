@@ -138,6 +138,46 @@ describe("ForgeStageParams reset to source", () => {
   });
 });
 
+describe("ForgeStageParams layer-count write path", () => {
+  it("writes to config.seed.layerCount + activePreset:'custom', not to stageParams", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    // Seed tab is active by default (index 0). Z-axis is disabled in DEFAULT_CONFIG,
+    // and the mocked profile renders RangeField/SteppedField/EnumField for the
+    // laser params — so the only spinbutton visible is the "Layer count" NumberField.
+    render(
+      <ForgeStageParams config={DEFAULT_CONFIG} onChange={onChange} />,
+    );
+
+    // RangeField also hides a spinbutton for its numeric scrubber; pick the
+    // Layer-count input by excluding the range-specific data-testid.
+    const allSpinbuttons = screen.getAllByRole("spinbutton");
+    const layerInput = allSpinbuttons.find(
+      (el) => el.getAttribute("data-testid") !== "range-number",
+    ) as HTMLInputElement;
+    expect(layerInput).toBeDefined();
+    // The initial displayed value reflects config.seed.layerCount (3 in LEAN preset).
+    expect(layerInput).toHaveValue(DEFAULT_CONFIG.seed.layerCount);
+
+    // Type a new value; NumberField fires onChange on each valid keystroke.
+    await user.clear(layerInput);
+    await user.type(layerInput, "4");
+
+    // At least one call must have been made with layerCount=4 on seed.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const emitted = (onChange.mock.calls as Array<[ForgeConfig]>).map(
+      (c) => c[0],
+    );
+    const hit = emitted.find((c) => c.seed.layerCount === 4);
+    expect(hit).toBeDefined();
+    // The write path must stamp activePreset:"custom".
+    expect(hit!.activePreset).toBe("custom");
+    // The legacy stageParams key must NOT have been written (it's still the
+    // initial empty object from DEFAULT_CONFIG — no CUT_01_SEED entry).
+    expect(hit!.stageParams["CUT_01_SEED"]).toBeUndefined();
+  });
+});
+
 describe("ForgeStageParams copy-from-first deepen", () => {
   it("shows 'Copy from first deepen stage' checked on a non-first deepen tab, and enabling it makes field widgets disabled", async () => {
     const user = userEvent.setup();
