@@ -34,9 +34,11 @@ import { ForgeStageParams } from "../components/forge/ForgeStageParams";
 // Bumped v1 → v2 when the default config shape/values changed (beam width
 // 0.05→0.03, deepen groups dropped `fromLayer`, renamed default groups), then
 // v2 → v3 for the new `optimizeScanAngle` field, v3 → v4 for the new
-// `manualScanAngleDeg` field. A new key discards stale saved configs so users
-// pick up the corrected defaults.
-const CONFIG_LS_KEY = "forge.config.v4";
+// `manualScanAngleDeg` field, v4 → v5 for the Lean default + new fields
+// (layerCount on perforate/clean, timeBudgetX, activePreset); also clears any
+// stale stageParams.sliceNumber that would otherwise win on export. A new key
+// discards stale saved configs so users pick up the corrected defaults.
+const CONFIG_LS_KEY = "forge.config.v5"; // v4→v5: Lean default + layerCount/timeBudget/activePreset; discards stale saves (also clears any old stageParams.sliceNumber)
 
 /** Load the saved config from localStorage, merged onto defaults so new fields
  *  (and the deepen group list) survive older saves. */
@@ -57,6 +59,8 @@ function loadConfig(): ForgeConfig {
       },
       clean: { ...DEFAULT_CONFIG.clean, ...(p.clean ?? {}) },
       stageParams: p.stageParams ?? {},
+      timeBudgetX: p.timeBudgetX ?? DEFAULT_CONFIG.timeBudgetX,
+      activePreset: p.activePreset ?? DEFAULT_CONFIG.activePreset,
     };
   } catch {
     return DEFAULT_CONFIG;
