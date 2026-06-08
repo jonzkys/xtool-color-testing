@@ -19,6 +19,7 @@ export const DEFAULT_CONFIG: ForgeConfig = {
     cornerAngleThresholdDeg: 35,
     pocketSizeMm: 0.2,
     outsideBias: true,
+    layerCount: 2,
   },
   deepen: {
     groups: [
@@ -33,6 +34,7 @@ export const DEFAULT_CONFIG: ForgeConfig = {
     enabled: true,
     offsetSelection: "walls",
     passes: 1,
+    layerCount: 10,
   },
   stageParams: {},
   optimizeScanAngle: false,

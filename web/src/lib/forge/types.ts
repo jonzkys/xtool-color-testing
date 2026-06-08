@@ -68,6 +68,8 @@ export interface PerforateConfig {
   cornerAngleThresholdDeg: number;
   pocketSizeMm: number;
   outsideBias: boolean;
+  /** Slice count this stage exports (shallow — starter pockets, not a deep cut). */
+  layerCount: number;
 }
 
 export interface DeepenConfig {
@@ -80,6 +82,8 @@ export interface CleanConfig {
   /** Which walls to follow. */
   offsetSelection: "walls" | "outer" | "inner";
   passes: number;
+  /** Slice count this stage exports (shallow wall clean-up). */
+  layerCount: number;
 }
 
 export interface ForgeConfig {
@@ -102,6 +106,10 @@ export interface ForgeConfig {
    *  export. null = inherit the source value. Ignored while `optimizeScanAngle`
    *  is on (that takes precedence). */
   manualScanAngleDeg: number | null;
+  /** Warn when estimated time exceeds this multiple of a plain incise. null = off. */
+  timeBudgetX?: number | null;
+  /** Which preset the staged config currently matches (UI hint). */
+  activePreset?: "lean" | "aggressive" | "custom";
 }
 
 /** Rough per-stage laser params. All optional — undefined = inherit source. */

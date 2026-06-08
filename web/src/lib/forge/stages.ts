@@ -25,6 +25,7 @@ import {
   outwardNormalAt,
 } from "./offset";
 import { detectCorners } from "./contour";
+import { STAGE_GROUPS } from "./config";
 
 /** Stage 1 — seed. Shallow scrap-side conditioning band, one operation. */
 export function generateSeedPaths(
@@ -43,7 +44,7 @@ export function generateSeedPaths(
     {
       sourceObjectId,
       generatedClass: "seed",
-      groupName: "CUT_01_SEED",
+      groupName: STAGE_GROUPS.seed,
       layerStart: 0,
       layerEnd: cfg.seed.layerCount, // informational; depth is tuned per-layer
       widthMultiplier: cfg.seed.widthMultiplier,
@@ -96,7 +97,7 @@ export function generatePerforationPaths(
     out.push({
       sourceObjectId,
       generatedClass: "perforate",
-      groupName: "CUT_02_PERFORATE",
+      groupName: STAGE_GROUPS.perforate,
       layerStart: 0,
       layerEnd: 0,
       widthMultiplier: 1,
@@ -172,7 +173,7 @@ export function generateCleanPaths(
     out.push({
       sourceObjectId,
       generatedClass: "clean",
-      groupName: "CUT_07_CLEAN",
+      groupName: STAGE_GROUPS.clean,
       layerStart: 0,
       layerEnd: 0,
       widthMultiplier: 1,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renameDeepenGroup, resolveStageParams, effectiveScanAngle } from "./config";
+import { renameDeepenGroup, resolveStageParams, effectiveScanAngle, STAGE_GROUPS } from "./config";
 import { DEFAULT_CONFIG } from "./defaults";
 
 describe("renameDeepenGroup", () => {
@@ -79,5 +79,35 @@ describe("resolveStageParams (deepen linking + per-group layer count)", () => {
     expect(r[A]).toEqual({ sliceNumber: to[A] });
     expect(r[B]).toEqual({ sliceNumber: to[B] });
     expect(r[D]).toEqual({ sliceNumber: to[D] });
+  });
+});
+
+describe("resolveStageParams — footgun fix", () => {
+  it("seed/perforate/clean get a sliceNumber from their layerCount (not the source's deep value)", () => {
+    const cfg = { ...DEFAULT_CONFIG };
+    const r = resolveStageParams(cfg);
+    expect(r[STAGE_GROUPS.seed].sliceNumber).toBe(cfg.seed.layerCount);
+    expect(r[STAGE_GROUPS.perforate].sliceNumber).toBe(cfg.perforate.layerCount);
+    expect(r[STAGE_GROUPS.clean].sliceNumber).toBe(cfg.clean.layerCount);
+  });
+
+  it("clean.passes flows through as a passes override (→ customize.repeat on export)", () => {
+    const cfg = { ...DEFAULT_CONFIG, clean: { ...DEFAULT_CONFIG.clean, passes: 3 } };
+    expect(resolveStageParams(cfg)[STAGE_GROUPS.clean].passes).toBe(3);
+  });
+
+  it("an explicit per-stage sliceNumber override still wins", () => {
+    const cfg = {
+      ...DEFAULT_CONFIG,
+      stageParams: { [STAGE_GROUPS.seed]: { sliceNumber: 7 } },
+    };
+    expect(resolveStageParams(cfg)[STAGE_GROUPS.seed].sliceNumber).toBe(7);
+  });
+
+  it("each deepen group's sliceNumber is still its own toLayer", () => {
+    const r = resolveStageParams(DEFAULT_CONFIG);
+    for (const g of DEFAULT_CONFIG.deepen.groups) {
+      expect(r[g.name].sliceNumber).toBe(g.toLayer);
+    }
   });
 });
