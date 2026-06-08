@@ -381,17 +381,19 @@ def test_generate_xcs_selectable(fresh_db):
 
 
 def _scrub_random(d):
-    """Strip the per-call random UUID fields (groupTag, projectTraceID) so two
-    build_xcs calls on the same project can be compared structurally.
+    """Strip the per-call volatile fields so two build_xcs calls on the same
+    project can be compared structurally.
 
-    build_xcs injects fresh UUIDs on every call (xcs_gen.builder uses _uuid()
-    for groupTag/projectTraceID), so the raw bytes legitimately differ run to
-    run — only those fields may differ."""
+    build_xcs injects fresh values on every call: random UUIDs (groupTag,
+    projectTraceID via xcs_gen.builder._uuid()) AND millisecond ``created`` /
+    ``modify`` timestamps. Two calls a few µs apart usually land in the same
+    millisecond, but occasionally straddle a boundary — so the timestamps must
+    be scrubbed too, otherwise the comparison is flaky (~7% failure)."""
     if isinstance(d, dict):
         return {
             k: _scrub_random(v)
             for k, v in d.items()
-            if k not in ("groupTag", "projectTraceID")
+            if k not in ("groupTag", "projectTraceID", "created", "modify")
         }
     if isinstance(d, list):
         return [_scrub_random(x) for x in d]
