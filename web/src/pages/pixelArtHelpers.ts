@@ -97,6 +97,12 @@ export function paletteEntryToBaseParams(
     }
     return def;
   };
+  // ``source: "averaged"`` entries carry fractional, cross-run mean params.
+  // speed/frequency/density/passes/pulse_width are integers in the backend
+  // ``BaseParams`` schema (Pydantic 422s on a fractional float), so round
+  // when materialising the aggregate into a concrete burn spec. power and
+  // scan_angle stay float — the schema accepts those as-is.
+  const int = (k: string, def: number): number => Math.round(num(k, def));
   const laserRaw = p.laser;
   const laser: Laser =
     laserRaw === "blue" || laserRaw === "red"
@@ -104,11 +110,11 @@ export function paletteEntryToBaseParams(
       : fallback.laser;
   return {
     power: num("power", fallback.power),
-    speed: num("speed", fallback.speed),
-    frequency: num("frequency", fallback.frequency),
-    density: num("density", fallback.density),
-    passes: num("passes", fallback.passes),
-    pulse_width: num("pulse_width", fallback.pulse_width),
+    speed: int("speed", fallback.speed),
+    frequency: int("frequency", fallback.frequency),
+    density: int("density", fallback.density),
+    passes: int("passes", fallback.passes),
+    pulse_width: int("pulse_width", fallback.pulse_width),
     laser,
     scan_angle: num("scan_angle", fallback.scan_angle),
   };
