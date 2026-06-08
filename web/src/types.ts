@@ -529,12 +529,12 @@ export interface PixelArtLayerSpec {
   palette_entry_id: number | null;
 }
 
-export interface PixelArtRectSpec {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+export interface PixelArtShapeSpec {
+  /** Centroid hex (layer key, ``#rrggbb``). */
   color: string;
+  /** Closed loops (outer boundary + holes), points ``[x, y]`` in local
+   *  mm (0-based, crop-relative). Each loop is implicitly closed. */
+  loops: [number, number][][];
 }
 
 export interface PixelArtRequest {
@@ -545,7 +545,7 @@ export interface PixelArtRequest {
   start_x: number;
   start_y: number;
   cell_mm: number;
-  rects: PixelArtRectSpec[];
+  shapes: PixelArtShapeSpec[];
   layers: PixelArtLayerSpec[];
   /** Output container — ``xs`` (default) or legacy ``xcs``. */
   format?: OutputFormat;

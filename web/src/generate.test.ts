@@ -98,7 +98,7 @@ function pixelArtReq(overrides: Partial<PixelArtRequest> = {}): PixelArtRequest 
     start_x: 0,
     start_y: 0,
     cell_mm: 1,
-    rects: [],
+    shapes: [],
     layers: [],
     ...overrides,
   };
