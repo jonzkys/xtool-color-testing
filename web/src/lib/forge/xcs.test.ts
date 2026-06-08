@@ -120,6 +120,7 @@ describe("contourToDPath", () => {
 import { buildGeneratedXcs, exportXcs, extractContourSubpaths } from "./xcs";
 import { runPipeline } from "./pipeline";
 import { DEFAULT_CONFIG } from "./defaults";
+import { AGGRESSIVE } from "./presets";
 import { resolveStageParams } from "./config";
 
 const SIZES_SAMPLE = resolve(__dirname, "../../../../samples/xcs/sizes_ex.xcs");
@@ -398,21 +399,23 @@ describe("scan-angle on export", () => {
 
 describe("deepen layer count on export", () => {
   it("each deepen display's sliceNumber is its own toLayer (not the source's slice count)", () => {
+    // Use AGGRESSIVE (4 groups: 50/100/200/256) so the multi-distinct-toLayer
+    // guard actually fires — LEAN has only one enabled group (all toLayer=256).
     const parsed = parseXcsFile(loadSample());
     const incise = findInciseObjects(parsed)[0];
-    const { paths, stats } = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+    const { paths, stats } = runPipeline(parsed, incise.id, AGGRESSIVE);
     // The worker passes resolveStageParams(config) to buildGeneratedXcs.
     const out = buildGeneratedXcs(
       parsed,
       incise.id,
       paths,
       stats.mmPerUnit,
-      resolveStageParams(DEFAULT_CONFIG),
+      resolveStageParams(AGGRESSIVE),
     ) as {
       device: { data: { value: Array<[string, { displays: { value: Array<[string, { data: { INTAGLIO: { parameter: { customize: Record<string, number> } } } }]> } }]> } };
     };
     const entries = out.device.data.value.flatMap(([, g]) => g.displays.value);
-    const toByName = Object.fromEntries(DEFAULT_CONFIG.deepen.groups.map((g) => [g.name, g.toLayer]));
+    const toByName = Object.fromEntries(AGGRESSIVE.deepen.groups.map((g) => [g.name, g.toLayer]));
 
     const deepenPaths = paths.filter((p) => p.generatedClass === "deepen");
     expect(deepenPaths.length).toBeGreaterThan(0);

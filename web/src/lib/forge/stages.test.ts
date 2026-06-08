@@ -8,6 +8,7 @@ import {
 } from "./stages";
 import { buildPartRegion, bandFromRegion } from "./offset";
 import { DEFAULT_CONFIG } from "./defaults";
+import { AGGRESSIVE } from "./presets";
 import type { Contour, Pt } from "./types";
 
 const square: Contour = {
@@ -76,7 +77,8 @@ describe("generateDeepenPaths", () => {
     expect(paths.every((p) => p.rings.length >= 2)).toBe(true);
   });
   it("a wider group has a larger outer-ring bbox than a narrower one", () => {
-    const paths = generateDeepenPaths(PART, DEFAULT_CONFIG, SRC);
+    // Use AGGRESSIVE (1/2/4/8 × 50/100/200/256) to verify the widening schedule.
+    const paths = generateDeepenPaths(PART, AGGRESSIVE, SRC);
     const a = paths.find((p) => p.groupName.includes("DEEPEN_A"))!;
     const d = paths.find((p) => p.groupName.includes("DEEPEN_D"))!;
     expect(bboxSpan(d.rings)).toBeGreaterThan(bboxSpan(a.rings));
