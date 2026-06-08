@@ -1255,18 +1255,18 @@ class PixelArtLayerSpec(BaseModel):
     palette_entry_id: int | None = None  # audit/debug only
 
 
-class PixelArtRectSpec(BaseModel):
-    """One output rectangle in mm-space, relative to the crop origin.
+class PixelArtShapeSpec(BaseModel):
+    """One output colour's merged geometry in mm-space (crop-relative).
 
-    The browser pipeline produces these by greedy max-rectangle covering
-    over same-label cells; the backend treats them as opaque.  ``color``
-    references a layer in the request's ``layers`` list by hex."""
+    The browser traces contiguous same-colour cells into closed loops
+    (outer boundary + holes); the backend renders the loops as one
+    compound Path with fill-rule=evenodd.  Each loop is implicitly closed
+    (last point → first).  ``color`` references a layer in the request's
+    ``layers`` list by hex.  With merging off the browser sends one
+    4-point square loop per cell — same shape, same code path."""
 
-    x: float = Field(ge=0)
-    y: float = Field(ge=0)
-    width: float = Field(gt=0)
-    height: float = Field(gt=0)
     color: str = Field(pattern=_COLOR_PATTERN)
+    loops: list[list[tuple[float, float]]] = Field(min_length=1, max_length=70_000)
 
 
 class PixelArtRequest(BaseModel):
@@ -1282,10 +1282,10 @@ class PixelArtRequest(BaseModel):
     start_x: float = Field(default=10.0, ge=0)
     start_y: float = Field(default=10.0, ge=0)
     cell_mm: float = Field(gt=0)
-    # One rect per non-skip cell — the backend groups by colour and
-    # emits one compound Path per layer. 50000 covers a ~225×225 grid,
-    # well past anything practical for engraving.
-    rects: list[PixelArtRectSpec] = Field(min_length=1, max_length=50_000)
+    # One shape per enabled colour; each shape is a list of closed loops
+    # (outer boundary + holes), points in local mm. The backend emits one
+    # compound Path per shape. Bounded by colour count (<= max layers).
+    shapes: list[PixelArtShapeSpec] = Field(min_length=1, max_length=64)
     layers: list[PixelArtLayerSpec] = Field(min_length=1, max_length=64)
 
     # Output container: "xs" (xcs-workspace-v2 ZIP, the default) or "xcs"

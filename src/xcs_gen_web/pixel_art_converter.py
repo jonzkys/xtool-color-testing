@@ -1,13 +1,13 @@
-"""Pixel Art converter — turn a list of mm-space cell rects into an XCSProject.
+"""Pixel Art converter — turn per-colour merged loops into an XCSProject.
 
-The browser pipeline does everything image-related (decode, sample, k-means,
-auto-match); this module's job is to group the cell rectangles by colour and
-emit one ``Path`` model element per enabled layer (compound path, one
-subpath per cell). One path-per-layer keeps the .xcs well under XCS's 750-
-display element budget no matter how detailed the image — a 100×100 grid
-becomes K paths, not 10,000 rects.
+The browser pipeline does everything image-related (decode, sample,
+k-means, auto-match) AND the geometry (tracing contiguous same-colour
+cells into merged loops). This module's job is to emit one ``Path`` model
+element per enabled colour (compound path, one subpath per loop). One
+path-per-colour keeps the .xcs well under XCS's 750-display-element
+budget no matter how detailed the image.
 
-Spec: docs/superpowers/specs/2026-05-03-pixel-art-design.md
+Spec: docs/superpowers/specs/2026-06-03-pixel-art-cell-merge-design.md
 """
 
 from __future__ import annotations
@@ -15,49 +15,49 @@ from __future__ import annotations
 from xcs_gen.model import Path, XCSProject
 
 from .converter import _to_processing_params
-from .schemas import PixelArtRectSpec, PixelArtRequest
+from .schemas import PixelArtRequest, PixelArtShapeSpec
 from .serialize import project_to_bytes
 
 
+def _loop_to_d(pts: list[tuple[float, float]]) -> str:
+    """One closed subpath: ``M x,y L x,y … z``."""
+    head = f"M{pts[0][0]:g},{pts[0][1]:g}"
+    rest = " ".join(f"L{x:g},{y:g}" for (x, y) in pts[1:])
+    return f"{head} {rest} z" if rest else f"{head} z"
+
+
 def build_pixel_art_project(req: PixelArtRequest) -> XCSProject:
-    """Group request rects by colour, emit one ``Path`` per enabled layer.
+    """Emit one compound ``Path`` per enabled colour from its loops.
 
-    Each rect becomes one closed subpath ``M{x},{y} h{w} v{h} h-{w} z`` in
-    the layer's compound path. fill-rule=evenodd handles the
-    (non-overlapping) cell tiling without orientation magic.
-
-    Disabled layers' rects are dropped (skip-engrave — the cells become
-    blank space in the output, letting the material colour show through).
+    Shapes whose colour maps to a disabled (or absent) layer are dropped
+    — skip-engrave, letting the material colour show through.
 
     Raises:
-        ValueError: when no enabled rects survive (request had only
-            disabled layers, or all rects referenced colours that don't
-            map to an enabled layer).
+        ValueError: when no enabled shapes survive.
     """
     enabled = {layer.color: layer for layer in req.layers if layer.enabled}
-    by_color: dict[str, list[PixelArtRectSpec]] = {}
-    for r in req.rects:
-        if r.color in enabled:
-            by_color.setdefault(r.color, []).append(r)
-
     project = XCSProject()
-    for color, rects in by_color.items():
-        layer = enabled[color]
+    for shape in req.shapes:
+        layer = enabled.get(shape.color)
+        if layer is None:
+            continue
         d_parts: list[str] = []
         min_x = min_y = float("inf")
         max_x = max_y = float("-inf")
-        for r in rects:
-            x = req.start_x + r.x
-            y = req.start_y + r.y
-            d_parts.append(f"M{x:g},{y:g} h{r.width:g} v{r.height:g} h-{r.width:g} z")
-            if x < min_x:
-                min_x = x
-            if y < min_y:
-                min_y = y
-            if x + r.width > max_x:
-                max_x = x + r.width
-            if y + r.height > max_y:
-                max_y = y + r.height
+        n_loops = 0
+        for loop in shape.loops:
+            if not loop:
+                continue
+            pts = [(req.start_x + px, req.start_y + py) for (px, py) in loop]
+            d_parts.append(_loop_to_d(pts))
+            n_loops += 1
+            for x, y in pts:
+                min_x = min(min_x, x)
+                min_y = min(min_y, y)
+                max_x = max(max_x, x)
+                max_y = max(max_y, y)
+        if not d_parts:
+            continue
         project.paths.append(Path(
             d=" ".join(d_parts),
             x=min_x,
@@ -65,15 +65,15 @@ def build_pixel_art_project(req: PixelArtRequest) -> XCSProject:
             width=max_x - min_x,
             height=max_y - min_y,
             is_close_path=True,
-            is_compound_path=len(rects) > 1,
+            is_compound_path=n_loops > 1,
             fill_rule="evenodd",
             params=_to_processing_params(layer.base_params),
             processing_type="COLOR_FILL_ENGRAVE",
-            layer_color=color,
+            layer_color=shape.color,
         ))
 
     if not project.paths:
-        raise ValueError("No enabled rects — enable at least one colour.")
+        raise ValueError("No enabled shapes — enable at least one colour.")
     return project
 
 
@@ -88,30 +88,29 @@ def pixel_art_to_xcs_bytes(req: PixelArtRequest) -> tuple[bytes, str, str]:
 
 
 def pixel_art_to_svg(req: PixelArtRequest) -> str:
-    """Serialise the request's enabled rects to a standalone SVG document.
+    """Serialise the request's enabled shapes to a standalone SVG.
 
-    Mirrors the .xcs structure: one ``<path>`` per enabled colour, with
-    each cell as a closed rectangular subpath. The fill colour is the
-    rect's *layer* colour (the centroid hex from quantisation), not the
-    matched palette entry's colour — the SVG is intended as a faithful
-    preview of the pixelation, with laser params living in the .xcs
-    companion."""
+    Mirrors the .xcs structure: one ``<path>`` per enabled colour, each
+    loop a closed subpath. Coordinates are 0-based (no start offset) so
+    the ``viewBox`` is ``0 0 width_mm height_mm``. The fill colour is the
+    centroid hex (the layer key), not the matched palette entry's colour
+    — the SVG is a faithful preview of the pixelation."""
     enabled = {layer.color for layer in req.layers if layer.enabled}
-    by_color: dict[str, list[PixelArtRectSpec]] = {}
-    for r in req.rects:
-        if r.color in enabled:
-            by_color.setdefault(r.color, []).append(r)
-
     parts: list[str] = [
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'viewBox="0 0 {req.width_mm} {req.height_mm}" '
         f'width="{req.width_mm}mm" height="{req.height_mm}mm">'
     ]
-    for color, rects in by_color.items():
+    for shape in req.shapes:
+        if shape.color not in enabled:
+            continue
         d = " ".join(
-            f"M{r.x:g},{r.y:g} h{r.width:g} v{r.height:g} h-{r.width:g} z"
-            for r in rects
+            _loop_to_d([(px, py) for (px, py) in loop])
+            for loop in shape.loops
+            if loop
         )
-        parts.append(f'<path d="{d}" fill="{color}" fill-rule="evenodd"/>')
+        if not d:
+            continue
+        parts.append(f'<path d="{d}" fill="{shape.color}" fill-rule="evenodd"/>')
     parts.append("</svg>")
     return "".join(parts)
