@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { fireEvent } from "@testing-library/react";
 import { PixelArtLayerPanel, type PixelArtLayerRow } from "./PixelArtLayerPanel";
+import { ExpandedLayerPanel } from "./PixelArtLayerPanel";
 import { defaultBaseParams } from "../defaults";
 import type { LibraryState } from "../library";
+import type { PaletteEntry } from "../types";
 
 const baseLibrary: LibraryState = {
   materials: [],
@@ -86,5 +89,93 @@ describe("PixelArtLayerPanel", () => {
     render(<PixelArtLayerPanel {...baseProps} rows={rows} />);
     // Two enabled rows → "2 paths" pill in the section header.
     expect(screen.getByText(/2 paths/)).toBeInTheDocument();
+  });
+});
+
+function entry(hex: string, over: Partial<PaletteEntry> = {}): PaletteEntry {
+  return {
+    id: over.id ?? Math.floor(Math.random() * 1e9),
+    machine_id: "F2Ultra",
+    test_id: null,
+    material_id: 1,
+    x_value: null,
+    y_value: null,
+    hex,
+    lab: [],
+    params: {},
+    sigma: 0,
+    source: "manual",
+    source_result_id: null,
+    notes: "",
+    favorited: false,
+    created_at: "2026-06-08T00:00:00Z",
+    ...over,
+  };
+}
+
+function expandedRow(over: Partial<PixelArtLayerRow> = {}): PixelArtLayerRow {
+  return {
+    color: "#c47a3e",
+    enabled: true,
+    areaPct: 0.5,
+    cellCount: 100,
+    isNearWhite: false,
+    matchedEntry: null,
+    baseParams: defaultBaseParams(),
+    materialId: null,
+    ...over,
+  };
+}
+
+describe("ExpandedLayerPanel sections", () => {
+  const many: PaletteEntry[] = [
+    ...Array.from({ length: 10 }, (_, i) =>
+      entry(`#${(0x111111 * (i + 1)).toString(16).padStart(6, "0").slice(0, 6)}`, { id: 100 + i }),
+    ),
+    entry("#d4af37", { id: 900, favorited: true }),
+    entry("#b87333", { id: 901, favorited: true }),
+  ];
+
+  it("shows the Similar, Favourites and All section headers", () => {
+    render(
+      <ExpandedLayerPanel row={expandedRow()} paletteEntries={many} library={baseLibrary} onChooseMatch={() => {}} onClose={() => {}} />,
+    );
+    expect(screen.getByText(/Similar/i)).toBeInTheDocument();
+    expect(screen.getByText(/Favourites/i)).toBeInTheDocument();
+    expect(screen.getByText(/^All ·/i)).toBeInTheDocument();
+  });
+
+  it("hides the Favourites section when there are none", () => {
+    const noFavs = many.filter((e) => !e.favorited);
+    render(
+      <ExpandedLayerPanel row={expandedRow()} paletteEntries={noFavs} library={baseLibrary} onChooseMatch={() => {}} onClose={() => {}} />,
+    );
+    expect(screen.queryByText(/Favourites/i)).toBeNull();
+  });
+
+  it("Load more grows the Similar list until exhausted", () => {
+    render(
+      <ExpandedLayerPanel row={expandedRow()} paletteEntries={many} library={baseLibrary} onChooseMatch={() => {}} onClose={() => {}} />,
+    );
+    fireEvent.click(screen.getByText(/Load more/i));
+    expect(screen.queryByText(/Load more/i)).toBeNull(); // 12 entries → after one more page all shown
+  });
+
+  it("All is collapsed by default and expands with a filter box", () => {
+    render(
+      <ExpandedLayerPanel row={expandedRow()} paletteEntries={many} library={baseLibrary} onChooseMatch={() => {}} onClose={() => {}} />,
+    );
+    expect(screen.queryByPlaceholderText(/filter by name or hex/i)).toBeNull();
+    fireEvent.click(screen.getByText(/^All ·/i));
+    expect(screen.getByPlaceholderText(/filter by name or hex/i)).toBeInTheDocument();
+  });
+
+  it("calls onChooseMatch with the picked entry", () => {
+    const picked: (PaletteEntry | null)[] = [];
+    render(
+      <ExpandedLayerPanel row={expandedRow()} paletteEntries={[entry("#c47a3e", { id: 1 })]} library={baseLibrary} onChooseMatch={(_c, e) => picked.push(e)} onClose={() => {}} />,
+    );
+    fireEvent.click(screen.getAllByRole("button").find((b) => b.textContent?.includes("ΔE"))!);
+    expect(picked[0]?.id).toBe(1);
   });
 });
