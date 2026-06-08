@@ -861,7 +861,7 @@ export function PixelArtCanvas({
                         )
                         .join(" ")}
                       fill="none"
-                      stroke="var(--color-primary)"
+                      stroke="#ffffff"
                       strokeWidth={1}
                       vectorEffect="non-scaling-stroke"
                     />
