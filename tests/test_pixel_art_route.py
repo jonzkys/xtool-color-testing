@@ -18,8 +18,11 @@ def _payload(**overrides):
         "start_x": 10.0,
         "start_y": 20.0,
         "cell_mm": 1.0,
-        "rects": [
-            {"x": 0, "y": 0, "width": 2, "height": 2, "color": "#000000"},
+        "shapes": [
+            {
+                "color": "#000000",
+                "loops": [[[0, 0], [2, 0], [2, 2], [0, 2]]],
+            },
         ],
         "layers": [
             {
@@ -69,7 +72,7 @@ def test_pixel_art_400_when_all_layers_disabled():
     body["layers"][0]["enabled"] = False
     resp = client.post("/api/pixel-art", json=body)
     assert resp.status_code == 400
-    assert "No enabled rects" in resp.json()["detail"]
+    assert "No enabled shapes" in resp.json()["detail"]
 
 
 def test_pixel_art_svg_returns_parseable_svg():

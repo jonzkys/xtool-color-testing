@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { PixelArtCanvas, type PreviewState } from "./PixelArtCanvas";
+import { PixelArtCanvas, type PreviewState, type PreviewShape } from "./PixelArtCanvas";
 
 describe("PixelArtCanvas", () => {
   it("renders a placeholder strip when no image is supplied", () => {
@@ -14,6 +14,9 @@ describe("PixelArtCanvas", () => {
         preview={null}
         previewMode="representative"
         onPreviewModeChange={() => {}}
+        previewView="fill"
+        onPreviewViewChange={() => {}}
+        shapes={null}
         lockAspect={false}
         cropEnabled={false}
         onCropEnabledChange={() => {}}
@@ -46,6 +49,9 @@ describe("PixelArtCanvas", () => {
         preview={preview}
         previewMode="representative"
         onPreviewModeChange={() => {}}
+        previewView="fill"
+        onPreviewViewChange={() => {}}
+        shapes={null}
         lockAspect={false}
         cropEnabled={false}
         onCropEnabledChange={() => {}}
@@ -58,5 +64,51 @@ describe("PixelArtCanvas", () => {
     expect(canvases.length).toBe(1);
     expect(screen.getByText(/4×4 cells/)).toBeInTheDocument();
     expect(screen.getByText(/2 paths/)).toBeInTheDocument();
+  });
+});
+
+const previewSV: PreviewState = {
+  cols: 2,
+  rows: 1,
+  cellCentroidHex: ["#000000", "#000000"],
+  pathCount: 1,
+  kColors: 1,
+  cellMeansHex: ["#000000", "#000000"],
+};
+
+const shapesSV: PreviewShape[] = [
+  { color: "#000000", loops: [[[0, 0], [2, 0], [2, 1], [0, 1]]] },
+];
+
+function renderCanvas(view: "fill" | "shapes") {
+  return render(
+    <PixelArtCanvas
+      image={null}
+      materialWidthMm={10}
+      materialHeightMm={10}
+      crop={{ x: 0, y: 0, w: 1, h: 1 }}
+      onCropChange={() => {}}
+      preview={previewSV}
+      previewMode="representative"
+      onPreviewModeChange={() => {}}
+      previewView={view}
+      onPreviewViewChange={() => {}}
+      shapes={shapesSV}
+      lockAspect={false}
+      cropEnabled={false}
+      onCropEnabledChange={() => {}}
+    />,
+  );
+}
+
+describe("PixelArtCanvas shapes view", () => {
+  it("hides the outline overlay in fill view", () => {
+    renderCanvas("fill");
+    expect(screen.queryByLabelText("merged shape outlines")).toBeNull();
+  });
+
+  it("renders the outline overlay in shapes view", () => {
+    renderCanvas("shapes");
+    expect(screen.getByLabelText("merged shape outlines")).toBeTruthy();
   });
 });

@@ -35,6 +35,7 @@ import {
   PixelArtCanvas,
   type CroppedRegion,
   type PreviewState,
+  type PreviewShapeView,
 } from "../components/PixelArtCanvas";
 import {
   PixelArtLayerPanel,
@@ -43,7 +44,10 @@ import {
 import {
   kMeansLab,
   clampGridToBudget,
+  cellsToLoops,
+  cellsToSquares,
   type KMeansResult,
+  type Loop,
 } from "../components/pixelArtMath";
 import { sampleCellGrid } from "../components/pixelArtImage";
 import { isNearWhite } from "../color/math";
@@ -52,7 +56,7 @@ import type {
   OutputFormat,
   PaletteEntry,
   PixelArtRequest,
-  PixelArtRectSpec,
+  PixelArtShapeSpec,
   PixelArtLayerSpec,
 } from "../types";
 import type { LibraryState } from "../library";
@@ -149,6 +153,12 @@ export function PixelArtPage() {
   const [previewMode, setPreviewMode] = useState<"representative" | "original">(
     "representative",
   );
+  // Merge contiguous same-colour cells into one outline per region.
+  // On by default — strictly cleaner geometry for a fill engrave.
+  const [mergeEnabled, setMergeEnabled] = useState(true);
+  // Bottom-preview view. "fill" = flat colours (default). "shapes" =
+  // flat colours + stroked merged outlines so the merge is visible.
+  const [previewView, setPreviewView] = useState<PreviewShapeView>("fill");
   // Bumping this counter forces the pipeline effect to re-run even
   // when its other inputs haven't changed. Drives the manual
   // "re-render" button so users dragging the crop frame can flush a
@@ -385,6 +395,34 @@ export function PixelArtPage() {
     };
   }, [pipelineResult, rows]);
 
+  // Shared merged geometry — one source for the export request, the
+  // stat readout, and the "Shapes" preview overlay so they can't drift.
+  // Loops are in CELL coordinates (0..cols / 0..rows); the request
+  // builder scales them to mm and the overlay maps them to the viewBox.
+  const exportShapes = useMemo<{
+    shapes: { color: string; loops: Loop[] }[];
+    shapeCount: number;
+    vertexCount: number;
+  } | null>(() => {
+    if (!pipelineResult) return null;
+    const { labels, centroidsHex, cols, rows: pRows } = pipelineResult;
+    const enabledColors = new Set(rows.filter((r) => r.enabled).map((r) => r.color));
+    const byLabel = mergeEnabled
+      ? cellsToLoops(labels, cols, pRows)
+      : cellsToSquares(labels, cols, pRows);
+    const shapes: { color: string; loops: Loop[] }[] = [];
+    let shapeCount = 0;
+    let vertexCount = 0;
+    for (const [label, loops] of byLabel) {
+      const color = centroidsHex[label];
+      if (!enabledColors.has(color)) continue;
+      shapes.push({ color, loops });
+      shapeCount += loops.length;
+      for (const lp of loops) vertexCount += lp.length;
+    }
+    return { shapes, shapeCount, vertexCount };
+  }, [pipelineResult, rows, mergeEnabled]);
+
   // ── Handlers ────────────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null);
   const onFile = useCallback(
@@ -472,26 +510,15 @@ export function PixelArtPage() {
     // Derive cell size from the ACTUAL grid (may have been clamped down) so the
     // burn stays physically widthMm wide.
     const cellMm = widthMm / pipelineResult.cols;
-    const enabledColors = new Set(rows.filter((r) => r.enabled).map((r) => r.color));
-    const { labels, centroidsHex, cols, rows: pRows } = pipelineResult;
-    // One PixelArtRectSpec per cell (not merged). The backend groups
-    // them by colour and emits one Path per layer.
-    const rects: PixelArtRectSpec[] = [];
-    for (let row = 0; row < pRows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const label = labels[row * cols + col];
-        if (label < 0) continue;
-        const color = centroidsHex[label];
-        if (!enabledColors.has(color)) continue;
-        rects.push({
-          x: col * cellMm,
-          y: row * cellMm,
-          width: cellMm,
-          height: cellMm,
-          color,
-        });
-      }
-    }
+    if (!exportShapes || exportShapes.shapes.length === 0) return null;
+    // Scale the shared cell-space loops into mm. Merge on → contour
+    // loops; merge off → one square loop per cell (same code path).
+    const shapes: PixelArtShapeSpec[] = exportShapes.shapes.map((s) => ({
+      color: s.color,
+      loops: s.loops.map((loop) =>
+        loop.map(([c, r]) => [c * cellMm, r * cellMm] as [number, number]),
+      ),
+    }));
     const layers: PixelArtLayerSpec[] = rows.map((row) => ({
       color: row.color,
       enabled: row.enabled,
@@ -507,10 +534,10 @@ export function PixelArtPage() {
       start_x: startX,
       start_y: startY,
       cell_mm: cellMm,
-      rects,
+      shapes,
       layers,
     };
-  }, [pipelineResult, materialId, name, widthMm, heightMm, startX, startY, cellsAcross, rows]);
+  }, [exportShapes, pipelineResult, materialId, name, widthMm, heightMm, startX, startY, rows]);
 
   const onDownloadXcs = useCallback(async () => {
     const req = buildRequest();
@@ -706,9 +733,12 @@ export function PixelArtPage() {
               </Section>
 
               <PixelArtStats
-                rows={rows}
+                layerCount={rows.filter((r) => r.enabled).length}
+                shapeCount={exportShapes?.shapeCount ?? 0}
+                vertexCount={exportShapes?.vertexCount ?? 0}
                 cols={pipelineResult?.cols ?? 0}
                 rasterRows={pipelineResult?.rows ?? 0}
+                merged={mergeEnabled}
               />
             </Card>
           </div>
@@ -728,6 +758,9 @@ export function PixelArtPage() {
                 preview={previewState}
                 previewMode={previewMode}
                 onPreviewModeChange={setPreviewMode}
+                previewView={previewView}
+                onPreviewViewChange={setPreviewView}
+                shapes={exportShapes?.shapes ?? null}
                 lockAspect={lockAspect}
                 cropEnabled={cropEnabled}
                 onCropEnabledChange={setCropEnabled}
@@ -762,6 +795,8 @@ export function PixelArtPage() {
                 generating={generating}
                 outputFormat={outputFormat}
                 onOutputFormatChange={setOutputFormat}
+                mergeEnabled={mergeEnabled}
+                onMergeEnabledChange={setMergeEnabled}
               />
             </Card>
           </div>
@@ -780,40 +815,38 @@ export function PixelArtPage() {
  * separate so a glance tells the user "this many laser shapes
  * (enabled) out of this many positions (whole grid)". */
 function PixelArtStats({
-  rows,
+  layerCount,
+  shapeCount,
+  vertexCount,
   cols,
   rasterRows,
+  merged,
 }: {
-  rows: PixelArtLayerRow[];
-  /** Pipeline grid columns (cells across). 0 before the first
-   *  pipeline run. */
+  layerCount: number;
+  shapeCount: number;
+  vertexCount: number;
   cols: number;
-  /** Pipeline grid rows. Renamed locally to avoid colliding with
-   *  the ``rows`` prop above. */
   rasterRows: number;
+  merged: boolean;
 }) {
-  const layerCount = rows.filter((r) => r.enabled).length;
-  const enabledCellCount = rows
-    .filter((r) => r.enabled)
-    .reduce((n, r) => n + r.cellCount, 0);
-  // Each enabled cell exports as one rect path = 4 vertices. Closing
-  // back to the start point isn't counted (svg-layers doesn't either).
-  const vertexCount = enabledCellCount * 4;
   const totalGridCells = cols * rasterRows;
-  const skippedCells = Math.max(0, totalGridCells - enabledCellCount);
   return (
     <Section title="Stats" dense>
       <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 font-mono text-[11px] tabular-nums">
         <Stat label="Layers" value={layerCount.toLocaleString()} />
         <Stat
           label="Shapes"
-          value={enabledCellCount.toLocaleString()}
-          hint={`one rect per enabled cell (${enabledCellCount === 1 ? "shape" : "shapes"})`}
+          value={shapeCount.toLocaleString()}
+          hint={
+            merged
+              ? "merged outlines (one per region + holes)"
+              : "one square per enabled cell (merge off)"
+          }
         />
         <Stat
           label="Vertices"
           value={vertexCount.toLocaleString()}
-          hint="rect paths × 4 corners"
+          hint="total loop corners across enabled colours"
         />
         <Stat
           label="Grid total"
@@ -824,13 +857,6 @@ function PixelArtStats({
           }
           hint="cells across × down"
         />
-        {skippedCells > 0 && (
-          <Stat
-            label="Skipped"
-            value={skippedCells.toLocaleString()}
-            hint="cells in disabled (e.g. near-white) layers"
-          />
-        )}
       </dl>
     </Section>
   );

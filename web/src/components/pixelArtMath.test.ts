@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { kMeansLab, greedyRectCover, capFit, clampGridToBudget } from "./pixelArtMath";
+import { kMeansLab, cellsToLoops, cellsToSquares, clampGridToBudget } from "./pixelArtMath";
 
 describe("clampGridToBudget", () => {
   it("leaves a within-budget grid unchanged", () => {
@@ -55,64 +55,77 @@ describe("kMeansLab", () => {
   });
 });
 
-describe("greedyRectCover", () => {
-  it("collapses a uniform grid to a single rect", () => {
-    const labels = new Array(9).fill(0);
-    const result = greedyRectCover(labels, 3, 3);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toEqual({ x: 0, y: 0, width: 3, height: 3, label: 0 });
+// A loop is rotation/winding agnostic — compare as a sorted set of "x,y".
+function cornerSet(loop: [number, number][]): string[] {
+  return loop.map(([x, y]) => `${x},${y}`).sort();
+}
+
+describe("cellsToSquares", () => {
+  it("emits one 4-corner loop per non-skip cell, grouped by label", () => {
+    // 2x1 grid: [0, 1]
+    const m = cellsToSquares([0, 1], 2, 1);
+    expect(m.get(0)).toHaveLength(1);
+    expect(m.get(1)).toHaveLength(1);
+    expect(m.get(0)![0]).toEqual([[0, 0], [1, 0], [1, 1], [0, 1]]);
   });
 
-  it("treats -1 (skip) cells as gaps that are never covered", () => {
-    const labels = [0, -1, 0, 0, -1, 0];
-    const result = greedyRectCover(labels, 3, 2);
-    expect(result.filter((r) => r.label === 0)).toHaveLength(2);
-    expect(result.every((r) => r.label !== -1)).toBe(true);
-  });
-
-  it("handles a checkerboard worst case (every cell its own rect)", () => {
-    const labels = [0, 1, 0, 1, 1, 0, 1, 0];
-    const result = greedyRectCover(labels, 4, 2);
-    expect(result).toHaveLength(8);
-  });
-
-  it("emits a single rect for two adjacent same-label cells", () => {
-    const labels = [0, 0, 0];
-    const result = greedyRectCover(labels, 3, 1);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toEqual({ x: 0, y: 0, width: 3, height: 1, label: 0 });
+  it("drops skip cells (-1)", () => {
+    const m = cellsToSquares([0, -1, 0], 3, 1);
+    expect(m.get(0)).toHaveLength(2);
+    expect(m.has(-1)).toBe(false);
   });
 });
 
-describe("capFit", () => {
-  it("returns the requested K when its rect-count is already under cap", () => {
-    const cells: (string | null)[] = ["#000000", "#000000", "#ffffff", "#ffffff"];
-    const result = capFit(cells, 2, 2, 2, /*cap*/ 100);
-    expect(result.k).toBe(2);
-    expect(result.rects.length).toBeLessThanOrEqual(100);
-    expect(result.exceededAtK2).toBe(false);
+describe("cellsToLoops", () => {
+  it("collapses a solid grid to one 4-corner loop", () => {
+    const labels = new Array(9).fill(0);
+    const loops = cellsToLoops(labels, 3, 3).get(0)!;
+    expect(loops).toHaveLength(1);
+    expect(loops[0]).toHaveLength(4);
+    expect(cornerSet(loops[0])).toEqual(["0,0", "0,3", "3,0", "3,3"]);
   });
 
-  it("drops K when rect-count exceeds cap", () => {
-    // 9 distinct colours; at K=3 each centroid pulls scattered cells, so the
-    // greedy cover can't compress below ~9 rects. cap=2 forces a K-drop.
-    const cells: (string | null)[] = [
-      "#ff0000", "#00ff00", "#0000ff",
-      "#ffff00", "#00ffff", "#ff00ff",
-      "#ffffff", "#888888", "#000000",
-    ];
-    const result = capFit(cells, 3, 3, 3, /*cap*/ 2);
-    expect(result.k).toBeLessThan(3);
+  it("collapses a straight strip to 4 corners (colinear merge)", () => {
+    // 1 row of 5 cells, all label 0.
+    const loops = cellsToLoops(new Array(5).fill(0), 5, 1).get(0)!;
+    expect(loops).toHaveLength(1);
+    expect(loops[0]).toHaveLength(4);
+    expect(cornerSet(loops[0])).toEqual(["0,0", "0,1", "5,0", "5,1"]);
   });
 
-  it("flags exceededAtK2 when even K=2 is over", () => {
-    const cells: (string | null)[] = [
-      "#ff0000", "#00ff00", "#0000ff",
-      "#ffff00", "#00ffff", "#ff00ff",
-      "#aaaaaa", "#555555", "#000000",
-    ];
-    const result = capFit(cells, 3, 3, 3, /*cap*/ 1);
-    expect(result.k).toBe(2);
-    expect(result.exceededAtK2).toBe(true);
+  it("traces an L-shape as one 6-corner loop", () => {
+    // 2x2 grid, bottom-right is skip:
+    //   0 0
+    //   0 -1
+    const loops = cellsToLoops([0, 0, 0, -1], 2, 2).get(0)!;
+    expect(loops).toHaveLength(1);
+    expect(loops[0]).toHaveLength(6);
+    expect(cornerSet(loops[0])).toEqual(
+      ["0,0", "0,2", "1,1", "1,2", "2,0", "2,1"],
+    );
+  });
+
+  it("traces a ring (hole) as two loops", () => {
+    // 3x3 with the centre skipped → outer loop + hole loop.
+    const labels = [0, 0, 0, 0, -1, 0, 0, 0, 0];
+    const loops = cellsToLoops(labels, 3, 3).get(0)!;
+    expect(loops).toHaveLength(2);
+    const sizes = loops.map((l) => l.length).sort();
+    expect(sizes).toEqual([4, 4]); // outer square + inner square hole
+  });
+
+  it("keeps diagonal-touching cells separate (4-connected)", () => {
+    // 2x2 checkerboard; label 0 sits on the diagonal (0,0) & (1,1).
+    //   0 1
+    //   1 0
+    const loops = cellsToLoops([0, 1, 1, 0], 2, 2).get(0)!;
+    expect(loops).toHaveLength(2); // NOT merged through the pinch
+    for (const l of loops) expect(l).toHaveLength(4);
+  });
+
+  it("omits skip cells from the output map", () => {
+    const m = cellsToLoops([0, -1, 0], 3, 1);
+    expect(m.has(-1)).toBe(false);
+    expect(m.get(0)).toHaveLength(2); // two disjoint single cells
   });
 });

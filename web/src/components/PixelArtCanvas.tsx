@@ -53,6 +53,15 @@ export interface PreviewState {
 
 export type PreviewRenderMode = "representative" | "original";
 
+export type PreviewShapeView = "fill" | "shapes";
+
+/** One enabled colour's merged loops, in CELL coordinates (0..cols /
+ *  0..rows). Used by the "Shapes" overlay; matches what's exported. */
+export interface PreviewShape {
+  color: string;
+  loops: [number, number][][];
+}
+
 export interface PixelArtCanvasProps {
   image: ImageBitmap | null;
   /** Material dimensions — drive the crop frame's aspect lock and the
@@ -68,6 +77,12 @@ export interface PixelArtCanvasProps {
    *  so the user can A/B against the quantised result. */
   previewMode: PreviewRenderMode;
   onPreviewModeChange: (mode: PreviewRenderMode) => void;
+  /** Bottom-preview view. "fill" = flat colours only. "shapes" = flat
+   *  colours + stroked merged outlines. */
+  previewView: PreviewShapeView;
+  onPreviewViewChange: (view: PreviewShapeView) => void;
+  /** Merged geometry for the "shapes" overlay (cell coords). */
+  shapes: PreviewShape[] | null;
   /** When true, the crop frame snaps to the material's W/H aspect
    *  ratio (the original behaviour). When false, the crop is free
    *  and the burn ends up rendering at whatever aspect the user
@@ -160,6 +175,9 @@ export function PixelArtCanvas({
   preview,
   previewMode,
   onPreviewModeChange,
+  previewView,
+  onPreviewViewChange,
+  shapes,
   lockAspect,
   cropEnabled,
   onCropEnabledChange,
@@ -722,6 +740,40 @@ export function PixelArtCanvas({
             )}
           </span>
           <div className="flex items-center gap-1 normal-case tracking-normal">
+            <div
+              role="tablist"
+              aria-label="Preview view"
+              className="inline-flex rounded-[4px] border border-[color:var(--color-border)] overflow-hidden mr-2"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={previewView === "fill"}
+                onClick={() => onPreviewViewChange("fill")}
+                className={cn(
+                  "px-2 py-0.5 text-[10px] tracking-[0.12em] uppercase font-mono",
+                  previewView === "fill"
+                    ? "bg-[color:var(--color-primary)] text-white"
+                    : "text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface)]",
+                )}
+              >
+                Fill
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={previewView === "shapes"}
+                onClick={() => onPreviewViewChange("shapes")}
+                className={cn(
+                  "px-2 py-0.5 text-[10px] tracking-[0.12em] uppercase font-mono border-l border-[color:var(--color-border)]",
+                  previewView === "shapes"
+                    ? "bg-[color:var(--color-primary)] text-white"
+                    : "text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface)]",
+                )}
+              >
+                Shapes
+              </button>
+            </div>
             <span className="text-[10px] tracking-[0.14em] uppercase text-[color:var(--color-ink-subtle)]">
               show
             </span>
@@ -770,23 +822,53 @@ export function PixelArtCanvas({
           style={{ height: preview ? bottomDrawH : 220 }}
         >
           {preview ? (
-            <canvas
-              ref={previewCanvasRef}
-              width={preview.cols}
-              height={preview.rows}
-              style={{
-                width: bottomDrawW,
-                height: bottomDrawH,
-                imageRendering: "pixelated",
-                display: "block",
-              }}
-              role="img"
-              aria-label={
-                previewMode === "representative"
-                  ? "pixelated preview"
-                  : "source means preview"
-              }
-            />
+            <div className="relative" style={{ width: bottomDrawW, height: bottomDrawH }}>
+              <canvas
+                ref={previewCanvasRef}
+                width={preview.cols}
+                height={preview.rows}
+                style={{
+                  width: bottomDrawW,
+                  height: bottomDrawH,
+                  imageRendering: "pixelated",
+                  display: "block",
+                }}
+                role="img"
+                aria-label={
+                  previewMode === "representative"
+                    ? "pixelated preview"
+                    : "source means preview"
+                }
+              />
+              {previewView === "shapes" && shapes && (
+                <svg
+                  aria-label="merged shape outlines"
+                  className="absolute inset-0 pointer-events-none"
+                  width={bottomDrawW}
+                  height={bottomDrawH}
+                  viewBox={`0 0 ${preview.cols} ${preview.rows}`}
+                  preserveAspectRatio="none"
+                >
+                  {shapes.map((s, i) => (
+                    <path
+                      key={i}
+                      d={s.loops
+                        .map(
+                          (loop) =>
+                            "M" +
+                            loop.map(([c, r]) => `${c},${r}`).join("L") +
+                            "Z",
+                        )
+                        .join(" ")}
+                      fill="none"
+                      stroke="#ffffff"
+                      strokeWidth={1}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ))}
+                </svg>
+              )}
+            </div>
           ) : (
             <div className="text-[12.5px] text-[color:var(--color-ink-subtle)] font-mono tracking-[0.04em]">
               preview appears once an image is uploaded
