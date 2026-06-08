@@ -1,11 +1,10 @@
 // web/src/lib/forge/types.ts
 // Shared types for the Contour Forge feature. All geometry is in mm space.
 
-/** A 2D point in millimetres. */
-export interface Pt {
-  x: number;
-  y: number;
-}
+// Canonical Pt lives in the reusable cuttime core; re-export so forge code
+// keeps importing it from here while the two modules share one definition.
+import type { Pt } from "../cuttime/geometry";
+export type { Pt };
 
 /** A polyline contour in mm space. `closed` means the last point joins the first. */
 export interface Contour {

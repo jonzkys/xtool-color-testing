@@ -31,5 +31,6 @@ describe("ring geometry", () => {
   it("empty input is zero, never NaN", () => {
     expect(ringsFillArea([])).toBe(0);
     expect(ringsBBox([])).toEqual({ w: 0, h: 0 });
+    expect(ringsPerimeter([])).toBe(0);
   });
 });

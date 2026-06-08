@@ -40,8 +40,10 @@ export function ringsBBox(rings: Pt[][]): { w: number; h: number } {
 }
 
 /**
- * Even-odd filled area (mm²). Forge rings are `[outer, inner]` (a band) or a
- * single solid loop (a pocket): area = |outer| − Σ|inner|, clamped ≥ 0.
+ * Filled area (mm²): `|outer| − Σ|holes|`, clamped ≥ 0. The first ring is the
+ * outer boundary; all subsequent rings are subtracted as holes. Correct for
+ * Forge's two cases: a single solid loop (pocket, no holes) and a concentric
+ * band (`[outer, inner]`, where the inner ring defines the uncut core).
  */
 export function ringsFillArea(rings: Pt[][]): number {
   if (rings.length === 0) return 0;
