@@ -28,6 +28,7 @@ import { splitSubpaths } from "../lib/forge/contour";
 import { ForgeCanvas } from "../components/forge/ForgeCanvas";
 import { ForgeControls } from "../components/forge/ForgeControls";
 import { ForgeDebugPanel } from "../components/forge/ForgeDebugPanel";
+import { ForgeEstimatePanel } from "../components/forge/ForgeEstimatePanel";
 import { ForgeStageParams } from "../components/forge/ForgeStageParams";
 
 // Bumped v1 → v2 when the default config shape/values changed (beam width
@@ -390,6 +391,7 @@ export function ForgePage() {
                 visible={visible}
                 onToggleVisible={(c) => setVisible((v) => ({ ...v, [c]: !v[c] }))}
               />
+              <ForgeEstimatePanel estimate={result?.stats.estimate ?? null} />
               <ForgeDebugPanel stats={result?.stats ?? null} optimizeScanAngle={config.optimizeScanAngle} />
             </div>
 
