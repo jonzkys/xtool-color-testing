@@ -67,7 +67,7 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
             >
               <option value="lean">Lean (fast)</option>
               <option value="aggressive">Aggressive (deep 1/2/4/8)</option>
-              <option value="custom">Custom</option>
+              <option value="custom" disabled>Custom</option>
             </Select>
           </Field>
           <Field label="Time budget (× incise)">
@@ -187,7 +187,7 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
             </colgroup>
             <thead>
               <tr className="text-left text-[var(--color-muted)]">
-                <th></th><th>name</th><th className="text-right pr-1">cum. layers</th><th className="text-right">×b</th>
+                <th></th><th>name</th><th className="text-right pr-1">cum.</th><th className="text-right">×b</th>
               </tr>
             </thead>
             <tbody>
