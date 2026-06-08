@@ -62,7 +62,7 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
               onChange={(e) => {
                 const id = e.target.value as PresetId | "custom";
                 if (id === "custom") return;
-                onChange({ ...PRESETS[id] });
+                onChange(structuredClone(PRESETS[id]));
               }}
             >
               <option value="lean">Lean (fast)</option>

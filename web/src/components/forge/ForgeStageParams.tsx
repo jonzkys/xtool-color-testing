@@ -119,6 +119,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
     else (next as Record<string, unknown>)[key] = v;
     onChange({
       ...config,
+      activePreset: "custom",
       stageParams: { ...config.stageParams, [current.group]: next },
     });
   }
@@ -126,6 +127,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
   function setCopyFromFirst(checked: boolean) {
     onChange({
       ...config,
+      activePreset: "custom",
       deepen: {
         ...config.deepen,
         groups: config.deepen.groups.map((g, i) =>
@@ -138,6 +140,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
   function resetToSource() {
     onChange({
       ...config,
+      activePreset: "custom",
       stageParams: { ...config.stageParams, [current.group]: {} },
     });
   }

@@ -121,7 +121,7 @@ import { buildGeneratedXcs, exportXcs, extractContourSubpaths } from "./xcs";
 import { runPipeline } from "./pipeline";
 import { DEFAULT_CONFIG } from "./defaults";
 import { AGGRESSIVE } from "./presets";
-import { resolveStageParams } from "./config";
+import { resolveStageParams, STAGE_GROUPS } from "./config";
 
 const SIZES_SAMPLE = resolve(__dirname, "../../../../samples/xcs/sizes_ex.xcs");
 function loadSizes(): ArrayBuffer {
@@ -394,6 +394,39 @@ describe("scan-angle on export", () => {
     const entries = out.device.data.value.flatMap(([, g]) => g.displays.value).filter(([id]) => id.startsWith("forge-"));
     // source incise_emboss INTAGLIO processAngle is 15
     for (const [, e] of entries) expect(e.data.INTAGLIO.parameter.customize.processAngle).toBe(15);
+  });
+});
+
+describe("seed/perforate/clean shallow-slice on export", () => {
+  it("seed, perforate, and clean export their config layerCount as sliceNumber (not the source's deep value)", () => {
+    // Use test-text.xcs (incise-only; sliceNumber=100 in source).
+    // LEAN: seed.layerCount=3, perforate.layerCount=2, clean.layerCount=10.
+    const parsed = parseXcsFile(loadText());
+    const incise = parsed.targets[0];
+    const { paths, stats } = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+    const out = buildGeneratedXcs(
+      parsed,
+      incise.id,
+      paths,
+      stats.mmPerUnit,
+      resolveStageParams(DEFAULT_CONFIG),
+    ) as {
+      device: { data: { value: Array<[string, { displays: { value: Array<[string, { data: { INTAGLIO: { parameter: { customize: Record<string, number> } } } }]> } }]> } };
+    };
+    const entries = out.device.data.value.flatMap(([, g]) => g.displays.value);
+
+    const findEntry = (groupName: string) => {
+      const p = paths.find((x) => x.groupName === groupName);
+      expect(p).toBeDefined();
+      const e = entries.find(([id]) => id === `forge-${p!.operationOrder}`);
+      expect(e).toBeDefined();
+      return e![1].data.INTAGLIO.parameter.customize;
+    };
+
+    // Each fixed stage must use its config layerCount, not the source's 100.
+    expect(findEntry(STAGE_GROUPS.seed).sliceNumber).toBe(DEFAULT_CONFIG.seed.layerCount);       // 3
+    expect(findEntry(STAGE_GROUPS.perforate).sliceNumber).toBe(DEFAULT_CONFIG.perforate.layerCount); // 2
+    expect(findEntry(STAGE_GROUPS.clean).sliceNumber).toBe(DEFAULT_CONFIG.clean.layerCount);     // 10
   });
 });
 
