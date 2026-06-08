@@ -70,6 +70,9 @@ export interface PixelArtLayerPanelProps {
   /** Selected output container for the project download. */
   outputFormat: OutputFormat;
   onOutputFormatChange: (format: OutputFormat) => void;
+  /** Merge contiguous same-colour cells into one outline. */
+  mergeEnabled: boolean;
+  onMergeEnabledChange: (enabled: boolean) => void;
 }
 
 /** Adapt our centroid rows into the ``LayerSpec`` shape the merge
@@ -103,6 +106,8 @@ export function PixelArtLayerPanel({
   generating,
   outputFormat,
   onOutputFormatChange,
+  mergeEnabled,
+  onMergeEnabledChange,
 }: PixelArtLayerPanelProps) {
   const [mergeOpen, setMergeOpen] = useState(false);
 
@@ -155,6 +160,18 @@ export function PixelArtLayerPanel({
             size="sm"
           />
         </div>
+        <label
+          className="flex items-center gap-2 text-[12px] text-[color:var(--color-ink-muted)] cursor-pointer select-none"
+          title="On = each colour region exports as one merged outline. Off = one square per cell."
+        >
+          <input
+            type="checkbox"
+            checked={mergeEnabled}
+            onChange={(e) => onMergeEnabledChange(e.target.checked)}
+            className="accent-[color:var(--color-primary)]"
+          />
+          <span>Merge cells</span>
+        </label>
         <div className="grid grid-cols-2 gap-2">
           <Button
             variant="primary"

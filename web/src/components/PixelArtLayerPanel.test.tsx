@@ -21,6 +21,8 @@ const baseProps = {
   onDownloadSvg: () => {},
   outputFormat: "xs" as const,
   onOutputFormatChange: () => {},
+  mergeEnabled: true,
+  onMergeEnabledChange: () => {},
 };
 
 function row(color: string, areaPct: number, enabled = true): PixelArtLayerRow {
