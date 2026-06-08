@@ -69,7 +69,7 @@ def build_pixel_art_project(req: PixelArtRequest) -> XCSProject:
             fill_rule="evenodd",
             params=_to_processing_params(layer.base_params),
             processing_type="COLOR_FILL_ENGRAVE",
-            layer_color=shape.color,
+            layer_color=layer.display_color or shape.color,
         ))
 
     if not project.paths:
@@ -92,17 +92,18 @@ def pixel_art_to_svg(req: PixelArtRequest) -> str:
 
     Mirrors the .xcs structure: one ``<path>`` per enabled colour, each
     loop a closed subpath. Coordinates are 0-based (no start offset) so
-    the ``viewBox`` is ``0 0 width_mm height_mm``. The fill colour is the
-    centroid hex (the layer key), not the matched palette entry's colour
-    — the SVG is a faithful preview of the pixelation."""
-    enabled = {layer.color for layer in req.layers if layer.enabled}
+    the ``viewBox`` is ``0 0 width_mm height_mm``. The fill is the layer's
+    ``display_color`` (the matched palette entry's hex) when matched, else the
+    centroid hex — mirroring the .xcs layer colour."""
+    enabled = {layer.color: layer for layer in req.layers if layer.enabled}
     parts: list[str] = [
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'viewBox="0 0 {req.width_mm} {req.height_mm}" '
         f'width="{req.width_mm}mm" height="{req.height_mm}mm">'
     ]
     for shape in req.shapes:
-        if shape.color not in enabled:
+        layer = enabled.get(shape.color)
+        if layer is None:
             continue
         d = " ".join(
             _loop_to_d([(px, py) for (px, py) in loop])
@@ -111,6 +112,7 @@ def pixel_art_to_svg(req: PixelArtRequest) -> str:
         )
         if not d:
             continue
-        parts.append(f'<path d="{d}" fill="{shape.color}" fill-rule="evenodd"/>')
+        fill = layer.display_color or shape.color
+        parts.append(f'<path d="{d}" fill="{fill}" fill-rule="evenodd"/>')
     parts.append("</svg>")
     return "".join(parts)

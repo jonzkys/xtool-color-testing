@@ -527,6 +527,9 @@ export interface PixelArtLayerSpec {
   base_params: BaseParams;
   material_id: string | null;
   palette_entry_id: number | null;
+  /** Matched palette entry's hex (drives the emitted layer/SVG colour);
+   *  null when the layer is unmatched → the centroid is used. */
+  display_color: string | null;
 }
 
 export interface PixelArtShapeSpec {

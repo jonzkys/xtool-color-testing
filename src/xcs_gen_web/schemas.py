@@ -1253,6 +1253,11 @@ class PixelArtLayerSpec(BaseModel):
     base_params: BaseParams
     material_id: str | None = None
     palette_entry_id: int | None = None  # audit/debug only
+    # The matched palette entry's hex, when this layer is matched. Drives the
+    # emitted layer_color / SVG fill so the .xcs/.svg swatch shows the colour
+    # the burn actually produces, not the raw k-means centroid. None → use the
+    # centroid (``color``).
+    display_color: str | None = Field(default=None, pattern=_COLOR_PATTERN)
 
 
 class PixelArtShapeSpec(BaseModel):

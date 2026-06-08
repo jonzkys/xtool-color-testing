@@ -28,7 +28,11 @@ import {
 import { defaultBaseParams } from "../defaults";
 import type { BaseParams, LayerSpec, OutputFormat, PaletteEntry } from "../types";
 import type { LibraryState } from "../library";
-import { deltaE2000, hexToLab, type Lab } from "../color/math";
+import {
+  rankByDeltaE,
+  hueSorted,
+  matchesFilter,
+} from "./pixelArtPaletteSections";
 import { MergeColorsDialog } from "./MergeColorsDialog";
 import type { MergeGroup } from "../svg/mergeColors";
 import { FormatToggle } from "./FormatToggle";
@@ -402,32 +406,37 @@ interface ExpandedLayerPanelProps {
   onClose: () => void;
 }
 
-function ExpandedLayerPanel({
+/** How many "Similar" rows to reveal initially and per "Load more" click. */
+const SIMILAR_PAGE = 8;
+
+export function ExpandedLayerPanel({
   row,
   paletteEntries,
   library,
   onChooseMatch,
   onClose,
 }: ExpandedLayerPanelProps) {
-  // Recompute the top-K matches whenever the row colour or the
-  // palette identity changes. Cheap; the page rarely has more than a
-  // few hundred entries.
-  const ranked: { entry: PaletteEntry; dE: number }[] = [];
-  const targetLab = /^#[0-9a-fA-F]{6}$/.test(row.color)
-    ? hexToLab(row.color)
-    : null;
-  for (const e of paletteEntries) {
-    const eLab =
-      e.lab.length >= 3
-        ? ([e.lab[0], e.lab[1], e.lab[2]] as Lab)
-        : hexToLab(e.hex);
-    ranked.push({
-      entry: e,
-      dE: targetLab ? deltaE2000(targetLab, eLab) : 0,
-    });
-  }
-  ranked.sort((a, b) => a.dE - b.dE);
-  const topRanked = ranked.slice(0, 8);
+  const [similarShown, setSimilarShown] = useState(SIMILAR_PAGE);
+  const [allOpen, setAllOpen] = useState(false);
+  const [allFilter, setAllFilter] = useState("");
+
+  // Reset transient picker UI when the selected layer colour or the
+  // palette identity changes — a fresh layer starts collapsed at page 1.
+  useEffect(() => {
+    setSimilarShown(SIMILAR_PAGE);
+    setAllOpen(false);
+    setAllFilter("");
+  }, [row.color, paletteEntries]);
+
+  const ranked = rankByDeltaE(paletteEntries, row.color);
+  const dEById = new Map(ranked.map((r) => [r.entry.id, r.dE]));
+  const favourites = ranked.filter((r) => r.entry.favorited);
+  const allFiltered = hueSorted(paletteEntries).filter((e) =>
+    matchesFilter(allFilter, paletteEntryLabel(e, library), e.hex),
+  );
+
+  const sectionHeader =
+    "px-1.5 pt-1.5 pb-0.5 font-mono text-[9px] tracking-[0.16em] uppercase text-[color:var(--color-ink-subtle)]";
 
   return (
     <div className="rounded-[8px] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] flex flex-col min-h-0">
@@ -451,46 +460,100 @@ function ExpandedLayerPanel({
           ✕
         </button>
       </div>
+
       {paletteEntries.length === 0 ? (
         <div className="px-3 py-3 text-[12px] text-[color:var(--color-ink-subtle)]">
           No palette entries for the active material. Add some on the
           Palette tab and the matcher will fill in.
         </div>
       ) : (
-        <ul className="overflow-y-auto p-1 flex-1 min-h-0" style={{ maxHeight: 200 }}>
-          {topRanked.map(({ entry, dE }) => {
-            const isSel = row.matchedEntry?.id === entry.id;
-            return (
-              <li key={entry.id}>
-                <button
-                  type="button"
-                  onClick={() => onChooseMatch(row.color, entry)}
-                  className={cn(
-                    "w-full flex items-center gap-2 px-2 py-1.5 rounded-[6px] text-left",
-                    "hover:bg-[color:var(--color-primary-tint)]/40",
-                    isSel && "bg-[color:var(--color-primary-tint)]/60",
-                  )}
-                >
-                  <span
-                    aria-hidden
-                    className="h-4 w-4 rounded-[3px] border border-[color:var(--color-border-strong)] shrink-0"
-                    style={{ background: entry.hex }}
+        <div className="overflow-y-auto p-1 flex-1 min-h-0" style={{ maxHeight: 460 }}>
+          {/* Similar */}
+          <div className={sectionHeader}>Similar · nearest ΔE</div>
+          <ul>
+            {ranked.slice(0, similarShown).map(({ entry, dE }) => (
+              <PaletteEntryRow
+                key={entry.id}
+                entry={entry}
+                dE={dE}
+                selected={row.matchedEntry?.id === entry.id}
+                library={library}
+                onPick={() => onChooseMatch(row.color, entry)}
+              />
+            ))}
+          </ul>
+          {similarShown < ranked.length && (
+            <button
+              type="button"
+              onClick={() => setSimilarShown((n) => n + SIMILAR_PAGE)}
+              className="w-full text-left px-2 py-1.5 text-[11px] text-[color:var(--color-primary)] hover:underline"
+            >
+              ⌄ Load more ({similarShown} of {ranked.length})
+            </button>
+          )}
+
+          {/* Favourites (only when present) */}
+          {favourites.length > 0 && (
+            <div className="border-t border-[color:var(--color-border)] mt-1">
+              <div className={sectionHeader}>★ Favourites</div>
+              <ul>
+                {favourites.map(({ entry, dE }) => (
+                  <PaletteEntryRow
+                    key={entry.id}
+                    entry={entry}
+                    dE={dE}
+                    selected={row.matchedEntry?.id === entry.id}
+                    library={library}
+                    onPick={() => onChooseMatch(row.color, entry)}
                   />
-                  <span className="flex-1 min-w-0 truncate text-[11.5px] text-[color:var(--color-ink)]">
-                    {paletteEntryLabel(entry, library)}
-                  </span>
-                  <span className="font-mono text-[10px] tabular-nums text-[color:var(--color-ink-subtle)]">
-                    ΔE {dE.toFixed(1)}
-                  </span>
-                  {isSel && (
-                    <Check className="h-3 w-3 text-[color:var(--color-success)] shrink-0" />
-                  )}
-                </button>
-              </li>
-            );
-          })}
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* All (collapsed by default) */}
+          <div className="border-t border-[color:var(--color-border)] mt-1">
+            <button
+              type="button"
+              onClick={() => setAllOpen((o) => !o)}
+              className={cn(sectionHeader, "w-full text-left hover:text-[color:var(--color-ink)]")}
+            >
+              All · {paletteEntries.length} · sorted by hue {allOpen ? "⌃" : "⌄"}
+            </button>
+            {allOpen && (
+              <>
+                <input
+                  type="text"
+                  aria-label="Filter palette by name or hex"
+                  value={allFilter}
+                  onChange={(e) => setAllFilter(e.target.value)}
+                  placeholder="filter by name or hex…"
+                  className="w-[calc(100%-0.75rem)] mx-1.5 mb-1 px-2 py-1 rounded-[5px] border border-[color:var(--color-border)] bg-[color:var(--color-bg)] text-[11.5px] text-[color:var(--color-ink)] placeholder:text-[color:var(--color-ink-subtle)]"
+                />
+                <ul>
+                  {allFiltered.map((entry) => (
+                    <PaletteEntryRow
+                      key={entry.id}
+                      entry={entry}
+                      dE={dEById.get(entry.id) ?? 0}
+                      selected={row.matchedEntry?.id === entry.id}
+                      library={library}
+                      onPick={() => onChooseMatch(row.color, entry)}
+                    />
+                  ))}
+                </ul>
+                {allFiltered.length === 0 && (
+                  <div className="px-2 py-1.5 text-[11px] text-[color:var(--color-ink-subtle)]">
+                    no matches
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Clear */}
           {row.matchedEntry && (
-            <li className="border-t border-[color:var(--color-border)] mt-1 pt-1">
+            <div className="border-t border-[color:var(--color-border)] mt-1 pt-1">
               <button
                 type="button"
                 onClick={() => onChooseMatch(row.color, null)}
@@ -502,11 +565,57 @@ function ExpandedLayerPanel({
               >
                 Clear match
               </button>
-            </li>
+            </div>
           )}
-        </ul>
+        </div>
       )}
     </div>
+  );
+}
+
+/** One selectable palette row — swatch, label, ΔE, and a ✓ when it's the
+ *  current match. Shared by all three picker sections so an entry looks
+ *  identical wherever it appears. */
+function PaletteEntryRow({
+  entry,
+  dE,
+  selected,
+  library,
+  onPick,
+}: {
+  entry: PaletteEntry;
+  dE: number;
+  selected: boolean;
+  library: LibraryState;
+  onPick: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onPick}
+        className={cn(
+          "w-full flex items-center gap-2 px-2 py-1.5 rounded-[6px] text-left",
+          "hover:bg-[color:var(--color-primary-tint)]/40",
+          selected && "bg-[color:var(--color-primary-tint)]/60",
+        )}
+      >
+        <span
+          aria-hidden
+          className="h-4 w-4 rounded-[3px] border border-[color:var(--color-border-strong)] shrink-0"
+          style={{ background: entry.hex }}
+        />
+        <span className="flex-1 min-w-0 truncate text-[11.5px] text-[color:var(--color-ink)]">
+          {paletteEntryLabel(entry, library)}
+        </span>
+        <span className="font-mono text-[10px] tabular-nums text-[color:var(--color-ink-subtle)]">
+          ΔE {dE.toFixed(1)}
+        </span>
+        {selected && (
+          <Check className="h-3 w-3 text-[color:var(--color-success)] shrink-0" />
+        )}
+      </button>
+    </li>
   );
 }
 

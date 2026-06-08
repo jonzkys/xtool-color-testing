@@ -362,8 +362,13 @@ export function PixelArtPage() {
       labels, centroidsHex, cols, rows: pRows, cellMeansHex,
     } = pipelineResult;
     const enabledMap = new Map(rows.map((r) => [r.color, r.enabled]));
+    // Paint the matched palette colour (what the burn actually produces) when
+    // a layer is matched; fall back to the raw k-means centroid otherwise.
+    const displayByColor = new Map(
+      rows.map((r) => [r.color, r.matchedEntry?.hex ?? r.color]),
+    );
 
-    // Per-cell centroid hex (or null for skipped). Disabled colours
+    // Per-cell display hex (or null for skipped). Disabled colours
     // get an 8-digit alpha hex so the on-screen canvas paint dims
     // them while the export path simply omits them.
     const cellCentroidHex: (string | null)[] = new Array(cols * pRows).fill(null);
@@ -375,9 +380,10 @@ export function PixelArtPage() {
         if (label < 0) continue;
         const color = centroidsHex[label];
         const enabled = enabledMap.get(color) ?? true;
+        const display = displayByColor.get(color) ?? color;
         cellCentroidHex[row * cols + col] = enabled
-          ? color
-          : `${color}55`;
+          ? display
+          : `${display}55`;
         if (enabled && !seen.has(color)) {
           seen.add(color);
           enabledColorCount += 1;
@@ -525,6 +531,7 @@ export function PixelArtPage() {
       base_params: row.baseParams,
       material_id: row.materialId,
       palette_entry_id: row.matchedEntry?.id ?? null,
+      display_color: row.matchedEntry?.hex ?? null,
     }));
     return {
       name: name || "pixel-art",
