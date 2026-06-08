@@ -33,6 +33,7 @@ export const LEAN: ForgeConfig = {
 export const AGGRESSIVE: ForgeConfig = {
   ...COMMON,
   activePreset: "aggressive",
+  timeBudgetX: null,
   seed: { enabled: true, widthMultiplier: 2, layerCount: 3, outsideOnly: true },
   perforate: { enabled: true, spacingMm: 2, cornerBoost: true, cornerAngleThresholdDeg: 35, pocketSizeMm: 0.2, outsideBias: true, layerCount: 2 },
   deepen: {

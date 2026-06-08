@@ -22,4 +22,9 @@ describe("forge presets", () => {
     expect(PRESETS.lean).toBe(LEAN);
     expect(PRESETS.aggressive).toBe(AGGRESSIVE);
   });
+
+  it("LEAN keeps the budget warning; AGGRESSIVE opts out", () => {
+    expect(LEAN.timeBudgetX).toBe(1.5);
+    expect(AGGRESSIVE.timeBudgetX).toBeNull();
+  });
 });

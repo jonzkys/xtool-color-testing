@@ -68,12 +68,17 @@ describe("generatePerforationPaths", () => {
 });
 
 describe("generateDeepenPaths", () => {
-  it("emits one band per enabled group in A→B→C→D order with correct names", () => {
-    const paths = generateDeepenPaths(PART, DEFAULT_CONFIG, SRC);
-    const enabled = DEFAULT_CONFIG.deepen.groups.filter((g) => g.enabled);
-    expect(paths.length).toBe(enabled.length);
+  it("emits one band per enabled group in A→B→C→D order with correct names (AGGRESSIVE 4-group schedule)", () => {
+    const paths = generateDeepenPaths(PART, AGGRESSIVE, SRC);
+    const enabled = AGGRESSIVE.deepen.groups.filter((g) => g.enabled);
+    expect(paths.length).toBe(enabled.length); // 4 groups, all enabled
     expect(paths.every((p) => p.generatedClass === "deepen")).toBe(true);
     expect(paths.map((p) => p.groupName)).toEqual(enabled.map((g) => g.name));
+    // verify A→B→C→D ordering by name
+    expect(paths[0].groupName).toContain("DEEPEN_A");
+    expect(paths[1].groupName).toContain("DEEPEN_B");
+    expect(paths[2].groupName).toContain("DEEPEN_C");
+    expect(paths[3].groupName).toContain("DEEPEN_D");
     expect(paths.every((p) => p.rings.length >= 2)).toBe(true);
   });
   it("a wider group has a larger outer-ring bbox than a narrower one", () => {
@@ -83,16 +88,18 @@ describe("generateDeepenPaths", () => {
     const d = paths.find((p) => p.groupName.includes("DEEPEN_D"))!;
     expect(bboxSpan(d.rings)).toBeGreaterThan(bboxSpan(a.rings));
   });
-  it("skips disabled groups", () => {
+  it("skips disabled groups — disabling groups 1 and 3 of AGGRESSIVE leaves only groups 0 and 2", () => {
     const cfg = {
-      ...DEFAULT_CONFIG,
+      ...AGGRESSIVE,
       deepen: {
-        ...DEFAULT_CONFIG.deepen,
-        groups: DEFAULT_CONFIG.deepen.groups.map((g, i) => ({ ...g, enabled: i === 0 })),
+        ...AGGRESSIVE.deepen,
+        groups: AGGRESSIVE.deepen.groups.map((g, i) => ({ ...g, enabled: i === 0 || i === 2 })),
       },
     };
     const paths = generateDeepenPaths(PART, cfg, SRC);
-    expect(paths.length).toBe(1);
+    expect(paths.length).toBe(2);
+    expect(paths[0].groupName).toContain("DEEPEN_A");
+    expect(paths[1].groupName).toContain("DEEPEN_C");
   });
 });
 
