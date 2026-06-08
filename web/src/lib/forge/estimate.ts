@@ -67,12 +67,7 @@ function baselineSeconds(
 ): number {
   const rings = bandFromRegion(part, config.beamWidthMm, config.sideMode);
   if (rings.length < 2) return 0;
-  const rate: StageRate = {
-    sliceNumber: (source?.sliceNumber as number) ?? RATE_FALLBACK.sliceNumber,
-    repeat: (source?.passes as number) ?? RATE_FALLBACK.repeat,
-    speedMmS: (source?.speed as number) ?? RATE_FALLBACK.speedMmS,
-    densityLpc: (source?.density as number) ?? RATE_FALLBACK.densityLpc,
-  };
+  const rate = effectiveRate(undefined, source);
   return stageSeconds(geomOf(rings), rate, calib);
 }
 

@@ -47,7 +47,16 @@ describe("estimateForge", () => {
     const heavy = [mkPath({ groupName: "CUT_06_DEEPEN_D_256_8X", layerEnd: 256, rings: band(0.24) })];
     const cfg = { ...DEFAULT_CONFIG, timeBudgetX: 1.5 };
     const est = estimateForge(heavy, part, cfg, source);
+    expect(est.baselineSeconds).toBeGreaterThan(0);
     expect(est.overBudget).toBe(est.overheadPct / 100 > 1.5);
+  });
+
+  it("returns finite zeros for empty paths", () => {
+    const est = estimateForge([], part, DEFAULT_CONFIG, source);
+    expect(est.stages).toHaveLength(0);
+    expect(est.totalSeconds).toBe(0);
+    expect(est.overBudget).toBe(false);
+    expect(est.worst).toHaveLength(0);
   });
 
   it("uses RATE_FALLBACK when the source has no params", () => {
