@@ -26,8 +26,8 @@ from xcs_gen_web.schemas import (
     BaseParams,
     LayerSpec,
     PixelArtLayerSpec,
-    PixelArtRectSpec,
     PixelArtRequest,
+    PixelArtShapeSpec,
     SvgLayersRequest,
     SvgStackRequest,
 )
@@ -176,7 +176,7 @@ def _pixel_request(fmt: str | None = None) -> PixelArtRequest:
     kw = dict(
         name="pixel", material_id="mat-1", width_mm=10.0, height_mm=10.0,
         cell_mm=1.0,
-        rects=[PixelArtRectSpec(x=0, y=0, width=2, height=2, color="#000000")],
+        shapes=[PixelArtShapeSpec(color="#000000", loops=[[(0, 0), (2, 0), (2, 2), (0, 2)]])],
         layers=[PixelArtLayerSpec(color="#000000", enabled=True,
                                   base_params=_base_params())],
     )
@@ -242,7 +242,7 @@ def _pixel_payload(**overrides) -> dict:
         "material_id": "mat-1",
         "width_mm": 10.0, "height_mm": 10.0,
         "cell_mm": 1.0,
-        "rects": [{"x": 0, "y": 0, "width": 2, "height": 2, "color": "#000000"}],
+        "shapes": [{"color": "#000000", "loops": [[[0, 0], [2, 0], [2, 2], [0, 2]]]}],
         "layers": [{
             "color": "#000000", "enabled": True,
             "base_params": {
