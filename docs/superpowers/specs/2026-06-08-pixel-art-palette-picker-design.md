@@ -33,8 +33,10 @@ and the selection contract (`onChooseMatch(color, entry)`) is unchanged.
 
 - **No custom-hex / brand-new-colour input.** A layer needs validated burn
   params; an arbitrary colour has none. Out of scope (decided in brainstorm).
-- **No backend / schema / persistence changes.** Everything derives from the
-  `paletteEntries` already loaded for the active material.
+- **No persistence changes.** Everything derives from the `paletteEntries`
+  already loaded for the active material. *(Originally "no backend/schema
+  changes" too — superseded by the Addendum below, which adds one optional
+  `display_color` field so the matched colour reaches the preview + export.)*
 - **No change to the other pickers.** SVG-layers / Loom have their own
   match UIs; bringing them in line is a possible follow-up, not this change.
 - **No change to quantisation, matching defaults, or `onChooseMatch`/`onRematchAll`.**
@@ -157,3 +159,30 @@ After `web/src/**` edits: `cd web && npm run build` (the backend serves
 - Apply the same three-section picker to the **SVG-layers / Loom** match UIs.
 - **"Validated only"** filter chip in All (mirrors the svg-layers toggle).
 - Remember the user's last All-expanded / sort preference across sessions.
+
+---
+
+## Addendum (2026-06-08): matched colour in preview + export
+
+Folded into the same PR after review surfaced that picking a palette colour
+didn't change what you *see*. The Representative canvas painted the raw
+k-means centroid, and the exported `.xcs`/`.svg` layer swatch used the
+centroid hex too — so a matched layer looked like the source colour, not the
+validated palette colour the burn produces.
+
+**Change:** a layer carries its matched palette entry's hex, and that hex (not
+the centroid) drives the preview paint, the `.xcs` `layer_color`, and the SVG
+`fill`. Unmatched layers still use the centroid.
+
+- **Frontend** — `previewState` paints `row.matchedEntry?.hex ?? row.color`
+  (disabled-dimming preserved); `buildRequest` sends `display_color` per layer.
+- **Backend (the one schema change)** — `PixelArtLayerSpec.display_color:
+  str | None` (hex pattern, default `None`); `build_pixel_art_project` emits
+  `layer_color = layer.display_color or shape.color`, and `pixel_art_to_svg`
+  fills with the same. The shape↔layer match key stays the centroid hex.
+- **Tests** — converter test asserts `display_color` overrides both
+  `layer_color` and the SVG fill, and that `None` falls back to the centroid.
+
+Burn parameters are unaffected — they always came from the matched entry. This
+only aligns the *colour you see* (preview + exported swatch) with the *colour
+the burn produces*.

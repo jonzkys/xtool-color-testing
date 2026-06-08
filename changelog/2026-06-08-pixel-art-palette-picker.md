@@ -11,5 +11,6 @@ nearest entries by ΔE — there was no way to reach a favourite that wasn't
 close, or to scroll the whole palette. The picker now has three sections:
 **Similar** (nearest, with a "Load more"), **★ Favourites** (each with its
 ΔE), and **All** — every entry for the material, sorted by hue and
-filterable by name or hex. Picking still uses the colour's validated burn
-parameters; nothing about the export changes.
+filterable by name or hex. Picking a colour now also shows through: the
+Representative preview and the exported `.xs`/`.svg` layer swatch take on the
+matched palette entry's colour (the burn still uses its validated parameters).

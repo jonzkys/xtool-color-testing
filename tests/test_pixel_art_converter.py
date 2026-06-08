@@ -193,3 +193,28 @@ def test_svg_omits_disabled_layer_paths():
     paths = root.findall(".//{http://www.w3.org/2000/svg}path")
     assert len(paths) == 1
     assert paths[0].attrib["fill"] == "#000000"
+
+
+def test_display_color_drives_layer_color_and_svg_fill():
+    """A matched layer's display_color (palette entry hex) overrides the
+    centroid for both the .xcs layer_color and the SVG fill; None falls back
+    to the centroid (covered by the single-shape test above)."""
+    from xml.etree import ElementTree as ET
+
+    req = _req(
+        shapes=[_square(0, 0, 2, "#000000")],
+        layers=[
+            PixelArtLayerSpec(
+                color="#000000",
+                enabled=True,
+                base_params=_params(),
+                display_color="#d4af37",
+            ),
+        ],
+    )
+    path = build_pixel_art_project(req).paths[0]
+    assert path.layer_color == "#d4af37"  # matched palette hex, not the centroid
+
+    root = ET.fromstring(pixel_art_to_svg(req))
+    fill = root.findall(".//{http://www.w3.org/2000/svg}path")[0].attrib["fill"]
+    assert fill == "#d4af37"
