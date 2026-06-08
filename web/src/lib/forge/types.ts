@@ -5,6 +5,7 @@
 // keeps importing it from here while the two modules share one definition.
 import type { Pt } from "../cuttime/geometry";
 export type { Pt };
+import type { ForgeEstimate } from "./estimate";
 
 /** A polyline contour in mm space. `closed` means the last point joins the first. */
 export interface Contour {
@@ -174,6 +175,8 @@ export interface DebugStats {
   /** Percentage reduction in scan lines from using the optimal angle vs the
    *  source angle (0–100). Undefined when the source angle is not known. */
   scanAngleReductionPct?: number;
+  /** Cut-time estimate for the generated strategy. */
+  estimate: ForgeEstimate;
 }
 
 export interface PipelineResult {

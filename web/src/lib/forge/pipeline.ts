@@ -12,6 +12,8 @@ import { extractContourSubpaths, calibrateMmPerUnit } from "./xcs";
 import { optimalScanAngle, perpendicularExtentAt } from "./scanangle";
 import { inferWindingAndOutside } from "./contour";
 import { buildPartRegion } from "./offset";
+import { estimateForge } from "./estimate";
+import { fmtDuration } from "../cuttime/model";
 import {
   generateCleanPaths,
   generateDeepenPaths,
@@ -95,6 +97,11 @@ export function runPipeline(
         scanAngleDeg,
         scanAngleBaselineDeg: baselineDeg,
         scanAngleReductionPct,
+        estimate: {
+          stages: [], totalSeconds: 0, baselineSeconds: 0, overheadPct: 0,
+          pierces: 0, pocketCount: 0, bandCount: 0,
+          budgetX: cfg.timeBudgetX ?? null, overBudget: false, worst: [],
+        },
       },
     };
   }
@@ -108,6 +115,19 @@ export function runPipeline(
 
   const ordered: GeneratedPath[] = [...seed, ...perf, ...deepen, ...clean];
   ordered.forEach((p, i) => (p.operationOrder = i));
+
+  const estimate = estimateForge(ordered, part, cfg, obj.params);
+  if (estimate.overBudget) {
+    const worst = estimate.worst
+      .map((w) => `${w.groupName.replace(/^CUT_\d+_/, "")} ${fmtDuration(w.seconds)}`)
+      .join(", ");
+    warnings.push(
+      `Estimated cut ${fmtDuration(estimate.totalSeconds)} ≈ ` +
+      `${(estimate.overheadPct / 100).toFixed(1)}× a plain incise ` +
+      `(budget ${estimate.budgetX}×). Biggest: ${worst}. ` +
+      `Reduce slices/width, clean passes, or perforation density.`,
+    );
+  }
 
   const pathCounts: Record<GeneratedClass, number> = {
     seed: seed.length,
@@ -125,6 +145,7 @@ export function runPipeline(
     scanAngleDeg,
     scanAngleBaselineDeg: baselineDeg,
     scanAngleReductionPct,
+    estimate,
   };
   return { paths: ordered, stats };
 }
