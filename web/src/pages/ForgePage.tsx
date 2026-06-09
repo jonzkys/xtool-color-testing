@@ -318,13 +318,13 @@ export function ForgePage() {
                     <Badge variant="accent">ready</Badge>
                   ) : (
                     validation.errors.map((e, i) => (
-                      <Badge key={i} variant="destructive">
+                      <Badge key={i} variant="destructive" className="block w-full whitespace-normal break-words rounded-md text-left py-1">
                         {e}
                       </Badge>
                     ))
                   )}
                   {validation.warnings.map((w, i) => (
-                    <Badge key={`w${i}`} variant="warning">
+                    <Badge key={`w${i}`} variant="warning" className="block w-full whitespace-normal break-words rounded-md text-left py-1">
                       {w}
                     </Badge>
                   ))}
