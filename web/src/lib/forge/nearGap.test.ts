@@ -25,6 +25,12 @@ describe("detectNearGaps", () => {
     expect(a.pt.y).toBeLessThan(2.8);
     expect(inPart(part, a.pt)).toBe(false);
     expect(Math.abs(a.dirX)).toBeGreaterThan(Math.abs(a.dirY));
+    expect(Math.hypot(a.dirX, a.dirY)).toBeCloseTo(1, 6);
+  });
+
+  it("returns [] for a non-positive threshold (no hang)", () => {
+    expect(detectNearGaps([[ { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 } ]], 0)).toEqual([]);
+    expect(detectNearGaps([[ { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 } ]], -1)).toEqual([]);
   });
 
   it("does NOT flag a lone convex square (no neck)", () => {

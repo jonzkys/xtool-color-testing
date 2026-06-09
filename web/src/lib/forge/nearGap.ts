@@ -60,6 +60,8 @@ function segDist(p: Pt, a: Pt, b: Pt): number {
 
 /** Detect scrap necks. `gapThresholdMm` = max neck width to vent. */
 export function detectNearGaps(part: Pt[][], gapThresholdMm: number): NearGapAnchor[] {
+  // Guard: a zero/negative/NaN threshold gives step <= 0, which hangs resampleLoop.
+  if (!(gapThresholdMm > 0)) return [];
   const step = gapThresholdMm / 3;
   const minArcSep = Math.PI * gapThresholdMm;
   const loopPerim = part.map(perimeter);
