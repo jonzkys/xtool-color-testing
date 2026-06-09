@@ -138,7 +138,7 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={config.perforate.enabled}
               onChange={(e) => patch({ perforate: { ...config.perforate, enabled: e.target.checked } })} />
-            Perforate (CUT_02)
+            Perforate / Relief (CUT_02)
           </label>
         </CardTitle></CardHeader>
         <div className="grid grid-cols-2 gap-2 p-2">
@@ -167,6 +167,26 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
             <input type="checkbox" checked={config.perforate.outsideBias}
               onChange={(e) => patch({ perforate: { ...config.perforate, outsideBias: e.target.checked } })} />
             Outside bias
+          </label>
+          <Field label="Shape">
+            <Select value={config.perforate.shape}
+              onChange={(e) => patch({ perforate: { ...config.perforate, shape: e.target.value as "pocket" | "slot" } })}>
+              <option value="pocket">pocket</option>
+              <option value="slot">slot</option>
+            </Select>
+          </Field>
+          <Field label="Gap threshold (mm)">
+            <NumberField value={config.perforate.gapThresholdMm} step={0.25} min={0.25}
+              onChange={(v) => patch({ perforate: { ...config.perforate, gapThresholdMm: v } })} />
+          </Field>
+          <Field label="Slot length (mm)">
+            <NumberField value={config.perforate.slotLengthMm} step={0.1} min={0.1}
+              onChange={(v) => patch({ perforate: { ...config.perforate, slotLengthMm: v } })} />
+          </Field>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={config.perforate.nearGap}
+              onChange={(e) => patch({ perforate: { ...config.perforate, nearGap: e.target.checked } })} />
+            Near-gap vents
           </label>
         </div>
       </Card>
