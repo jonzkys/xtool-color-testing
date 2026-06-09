@@ -17,6 +17,7 @@ import type { ForgeConfig, StageParams } from "../../lib/forge/types";
 import type { FieldConstraint } from "../../types";
 import { useCurrentMachine, getValidationProfile } from "../../state/machine";
 import { descentDepthMm } from "../../lib/forge/depth";
+import { STAGE_GROUPS } from "../../lib/forge/config";
 import { RangeField } from "../dynamic-form/RangeField";
 import { SteppedField } from "../dynamic-form/SteppedField";
 import { EnumField } from "../dynamic-form/EnumField";
@@ -33,13 +34,13 @@ export interface ForgeStageParamsProps {
 /** The operations that get exported, in process order, as [groupName, label]. */
 function stageList(config: ForgeConfig): Array<{ group: string; label: string }> {
   const out: Array<{ group: string; label: string }> = [
-    { group: "CUT_01_SEED", label: "Seed" },
-    { group: "CUT_02_PERFORATE", label: "Perforate" },
+    { group: STAGE_GROUPS.seed, label: "Seed" },
+    { group: STAGE_GROUPS.perforate, label: "Perforate" },
   ];
   for (const g of config.deepen.groups) {
     out.push({ group: g.name, label: g.name.replace(/^CUT_\d+_DEEPEN_/, "Deepen ") });
   }
-  out.push({ group: "CUT_07_CLEAN", label: "Clean" });
+  out.push({ group: STAGE_GROUPS.clean, label: "Clean" });
   return out;
 }
 
@@ -118,6 +119,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
     else (next as Record<string, unknown>)[key] = v;
     onChange({
       ...config,
+      activePreset: "custom",
       stageParams: { ...config.stageParams, [current.group]: next },
     });
   }
@@ -125,6 +127,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
   function setCopyFromFirst(checked: boolean) {
     onChange({
       ...config,
+      activePreset: "custom",
       deepen: {
         ...config.deepen,
         groups: config.deepen.groups.map((g, i) =>
@@ -137,6 +140,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
   function resetToSource() {
     onChange({
       ...config,
+      activePreset: "custom",
       stageParams: { ...config.stageParams, [current.group]: {} },
     });
   }
@@ -145,15 +149,18 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
   const zEnabled = override.zAxisMove ?? sourceParams?.zAxisMove ?? false;
   const zLayers = override.zLayers ?? sourceParams?.zLayers ?? Z_DEFAULTS.zLayers;
   const zDecline = override.zDecline ?? sourceParams?.zDecline ?? Z_DEFAULTS.zDecline;
-  // Layer count (slices) is a per-stage property INDEPENDENT of Z-descent — a
-  // design can be sliced into N layers with no Z descent at all. Deepen groups
-  // get their layer count from their from→to range (shown in the deepen table),
-  // so only non-deepen stages expose an editable "Layer count" field; deepen
-  // depth uses the range span.
-  const sliceNumber = override.sliceNumber ?? sourceParams?.sliceNumber ?? Z_DEFAULTS.sliceNumber;
+  // Effective layer count for this stage:
+  //  - deepen groups → their toLayer (0→toLayer);
+  //  - seed/perforate/clean → their config layerCount (the value that actually
+  //    exports now — no longer the source incise's deep sliceNumber).
+  const nonDeepenLayerCount =
+    current.group === STAGE_GROUPS.seed ? config.seed.layerCount
+    : current.group === STAGE_GROUPS.perforate ? config.perforate.layerCount
+    : current.group === STAGE_GROUPS.clean ? config.clean.layerCount
+    : Z_DEFAULTS.sliceNumber; // unreachable given current stage model; sentinel for future non-deepen stages
   const depthLayers = isDeepen
-    ? Math.max(1, config.deepen.groups[deepenIdx].toLayer) // deepen passes run 0→toLayer
-    : sliceNumber;
+    ? Math.max(1, config.deepen.groups[deepenIdx].toLayer)
+    : nonDeepenLayerCount;
   const totalDepth = descentDepthMm(depthLayers, zLayers, zDecline);
   const depthAt256 = descentDepthMm(256, zLayers, zDecline);
 
@@ -286,18 +293,20 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
           </div>
         )}
 
-        {/* Layer count — how many slices the engrave is divided into.
-            Independent of Z-descent. Deepen groups derive it from their from→to
-            range, so they don't get this field. */}
         {!isDeepen && (
           <div className="mt-3 grid grid-cols-3 gap-2">
             <Field label="Layer count">
               <NumberField
-                value={sliceNumber}
+                value={nonDeepenLayerCount}
                 min={1}
                 step={1}
                 integer
-                onChange={(v) => setParam("sliceNumber", v >= 1 ? v : 1)}
+                onChange={(v) => {
+                  const n = Math.max(1, v);
+                  if (current.group === STAGE_GROUPS.seed) onChange({ ...config, seed: { ...config.seed, layerCount: n }, activePreset: "custom" });
+                  else if (current.group === STAGE_GROUPS.perforate) onChange({ ...config, perforate: { ...config.perforate, layerCount: n }, activePreset: "custom" });
+                  else if (current.group === STAGE_GROUPS.clean) onChange({ ...config, clean: { ...config.clean, layerCount: n }, activePreset: "custom" });
+                }}
               />
             </Field>
           </div>

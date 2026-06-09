@@ -1,5 +1,13 @@
 import type { ForgeConfig, StageParams } from "./types";
 
+/** Canonical group names for the fixed (non-deepen) stages — the single source
+ *  of truth shared by the generators, the exporter and the estimator. */
+export const STAGE_GROUPS = {
+  seed: "CUT_01_SEED",
+  perforate: "CUT_02_PERFORATE",
+  clean: "CUT_07_CLEAN",
+} as const;
+
 /**
  * Rename a deepen pass-group, migrating any per-stage param overrides keyed by
  * the old group name to the new name. Export keys overrides by groupName
@@ -43,14 +51,35 @@ export function effectiveScanAngle(config: ForgeConfig, optimalDeg: number): num
  * Pure — returns a new map; never mutates config.
  */
 export function resolveStageParams(config: ForgeConfig): Record<string, StageParams> {
-  const out: Record<string, StageParams> = { ...config.stageParams };
+  const sp = config.stageParams;
+  const out: Record<string, StageParams> = { ...sp };
+
+  // Fixed stages: a shallow, explicit sliceNumber so they never inherit the
+  // source incise's deep slice count (the footgun). Explicit override wins.
+  out[STAGE_GROUPS.seed] = {
+    ...(sp[STAGE_GROUPS.seed] ?? {}),
+    sliceNumber: sp[STAGE_GROUPS.seed]?.sliceNumber ?? config.seed.layerCount,
+  };
+  out[STAGE_GROUPS.perforate] = {
+    ...(sp[STAGE_GROUPS.perforate] ?? {}),
+    sliceNumber: sp[STAGE_GROUPS.perforate]?.sliceNumber ?? config.perforate.layerCount,
+  };
+  out[STAGE_GROUPS.clean] = {
+    ...(sp[STAGE_GROUPS.clean] ?? {}),
+    sliceNumber: sp[STAGE_GROUPS.clean]?.sliceNumber ?? config.clean.layerCount,
+    // `passes` is the StageParams field; applyStageParams maps it → customize.repeat.
+    passes: sp[STAGE_GROUPS.clean]?.passes ?? config.clean.passes,
+  };
+
+  // Deepen groups: linking + each group's own toLayer as sliceNumber (unchanged).
   const groups = config.deepen.groups;
-  if (groups.length === 0) return out;
-  const firstName = groups[0].name;
-  groups.forEach((g, i) => {
-    const linked = i > 0 && (g.copyParamsFromFirst ?? true);
-    const base = linked ? config.stageParams[firstName] ?? {} : config.stageParams[g.name] ?? {};
-    out[g.name] = { ...base, sliceNumber: g.toLayer };
-  });
+  if (groups.length > 0) {
+    const firstName = groups[0].name;
+    groups.forEach((g, i) => {
+      const linked = i > 0 && (g.copyParamsFromFirst ?? true);
+      const base = linked ? sp[firstName] ?? {} : sp[g.name] ?? {};
+      out[g.name] = { ...base, sliceNumber: g.toLayer };
+    });
+  }
   return out;
 }

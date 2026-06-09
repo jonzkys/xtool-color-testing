@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { renameDeepenGroup, resolveStageParams, effectiveScanAngle } from "./config";
+import { renameDeepenGroup, resolveStageParams, effectiveScanAngle, STAGE_GROUPS } from "./config";
 import { DEFAULT_CONFIG } from "./defaults";
+import { AGGRESSIVE } from "./presets";
 
 describe("renameDeepenGroup", () => {
   it("renames the group and migrates its per-stage params to the new key", () => {
@@ -48,12 +49,14 @@ describe("effectiveScanAngle", () => {
 });
 
 describe("resolveStageParams (deepen linking + per-group layer count)", () => {
-  const groups = DEFAULT_CONFIG.deepen.groups;
+  // Use AGGRESSIVE (1/2/4/8 × 50/100/200/256) — this suite exercises the
+  // 4-group A/B/C/D linking behaviour that the deep schedule provides.
+  const groups = AGGRESSIVE.deepen.groups;
   const [A, B, C, D] = groups.map((g) => g.name);
   const to = Object.fromEntries(groups.map((g) => [g.name, g.toLayer])) as Record<string, number>;
 
   it("links laser params from the first group but gives each its own layer count (toLayer)", () => {
-    const cfg = { ...DEFAULT_CONFIG, stageParams: { [A]: { power: 77, speed: 120 } } };
+    const cfg = { ...AGGRESSIVE, stageParams: { [A]: { power: 77, speed: 120 } } };
     const r = resolveStageParams(cfg);
     expect(r[A]).toEqual({ power: 77, speed: 120, sliceNumber: to[A] });
     expect(r[B]).toEqual({ power: 77, speed: 120, sliceNumber: to[B] });
@@ -62,11 +65,11 @@ describe("resolveStageParams (deepen linking + per-group layer count)", () => {
   });
 
   it("leaves an unlinked deepen group with its own params + own layer count", () => {
-    const gs = DEFAULT_CONFIG.deepen.groups.map((g, i) =>
+    const gs = AGGRESSIVE.deepen.groups.map((g, i) =>
       i === 1 ? { ...g, copyParamsFromFirst: false } : g);
     const cfg = {
-      ...DEFAULT_CONFIG,
-      deepen: { ...DEFAULT_CONFIG.deepen, groups: gs },
+      ...AGGRESSIVE,
+      deepen: { ...AGGRESSIVE.deepen, groups: gs },
       stageParams: { [A]: { power: 77 }, [B]: { power: 5 } },
     };
     const r = resolveStageParams(cfg);
@@ -75,9 +78,39 @@ describe("resolveStageParams (deepen linking + per-group layer count)", () => {
   });
 
   it("each deepen group's layer count is its toLayer even with no overrides", () => {
-    const r = resolveStageParams(DEFAULT_CONFIG);
+    const r = resolveStageParams(AGGRESSIVE);
     expect(r[A]).toEqual({ sliceNumber: to[A] });
     expect(r[B]).toEqual({ sliceNumber: to[B] });
     expect(r[D]).toEqual({ sliceNumber: to[D] });
+  });
+});
+
+describe("resolveStageParams — footgun fix", () => {
+  it("seed/perforate/clean get a sliceNumber from their layerCount (not the source's deep value)", () => {
+    const cfg = { ...DEFAULT_CONFIG };
+    const r = resolveStageParams(cfg);
+    expect(r[STAGE_GROUPS.seed].sliceNumber).toBe(cfg.seed.layerCount);
+    expect(r[STAGE_GROUPS.perforate].sliceNumber).toBe(cfg.perforate.layerCount);
+    expect(r[STAGE_GROUPS.clean].sliceNumber).toBe(cfg.clean.layerCount);
+  });
+
+  it("clean.passes flows through as a passes override (→ customize.repeat on export)", () => {
+    const cfg = { ...DEFAULT_CONFIG, clean: { ...DEFAULT_CONFIG.clean, passes: 3 } };
+    expect(resolveStageParams(cfg)[STAGE_GROUPS.clean].passes).toBe(3);
+  });
+
+  it("an explicit per-stage sliceNumber override still wins", () => {
+    const cfg = {
+      ...DEFAULT_CONFIG,
+      stageParams: { [STAGE_GROUPS.seed]: { sliceNumber: 7 } },
+    };
+    expect(resolveStageParams(cfg)[STAGE_GROUPS.seed].sliceNumber).toBe(7);
+  });
+
+  it("each deepen group's sliceNumber is still its own toLayer", () => {
+    const r = resolveStageParams(DEFAULT_CONFIG);
+    for (const g of DEFAULT_CONFIG.deepen.groups) {
+      expect(r[g.name].sliceNumber).toBe(g.toLayer);
+    }
   });
 });

@@ -130,3 +130,23 @@ describe("runPipeline (incise-only sample: test-text.xcs)", () => {
     expect(near(80, 47)).toBe(true); // right ring+dot
   });
 });
+
+describe("pipeline estimate", () => {
+  function parsed() {
+    return parseXcsFile(loadText());
+  }
+
+  it("attaches a ForgeEstimate with a positive total + baseline", () => {
+    const p = parsed();
+    const r = runPipeline(p, p.targets[0].id, DEFAULT_CONFIG);
+    expect(r.stats.estimate.totalSeconds).toBeGreaterThan(0);
+    expect(r.stats.estimate.baselineSeconds).toBeGreaterThan(0);
+  });
+
+  it("pushes a budget warning when over the threshold", () => {
+    const p = parsed();
+    const cfg = { ...DEFAULT_CONFIG, timeBudgetX: 0.01 }; // force over-budget
+    const r = runPipeline(p, p.targets[0].id, cfg);
+    expect(r.stats.warnings.some((w) => /budget|incise|×/i.test(w))).toBe(true);
+  });
+});
