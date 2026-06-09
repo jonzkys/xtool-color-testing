@@ -96,9 +96,14 @@ export function generatePerforationPaths(
   for (const a of anchors) {
     let rings: Pt[][] | null = null;
     if (useSlot) {
+      // Edge slots start AT the kerf (½ a beam onto the scrap side — enough to
+      // clear the part for the guard) and extend OUTWARD, so they overlap the
+      // main/widen cut band and connect the choking kerf to open scrap. Gap slots
+      // are centred on the neck midpoint (the detector already placed it in scrap).
+      const innerOffset = beam / 2;
       let len = cfg.perforate.slotLengthMm;
       while (len >= beam) {
-        const off = a.kind === "edge" ? biasDist + len / 2 : 0;
+        const off = a.kind === "edge" ? innerOffset + len / 2 : 0;
         const center = { x: a.pt.x + a.dirX * off, y: a.pt.y + a.dirY * off };
         const rect = buildSlotRect(center, a.dirX, a.dirY, len, beam);
         if (slotInScrap(rect, center, a.dirX, a.dirY, len, part)) { rings = [rect]; break; }

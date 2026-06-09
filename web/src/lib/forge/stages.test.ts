@@ -192,6 +192,22 @@ describe("relief stage", () => {
     const nearHole = paths.some((p) => p.rings[0].some((c) => c.x > 13 && c.x < 27 && c.y > 13 && c.y < 27));
     expect(nearHole).toBe(true);
   });
+
+  it("edge relief slots start at the kerf (connect to the cut), not offset away", () => {
+    const part = [rectL(0, 0, 20, 12)];
+    const cfg = { ...DEFAULT_CONFIG, perforate: { ...DEFAULT_CONFIG.perforate, shape: "slot" as const, nearGap: false } };
+    const paths = generatePerforationPaths(part, cfg, "s");
+    expect(paths.length).toBeGreaterThan(0);
+    const distToRect = (p: Pt) => Math.hypot(
+      Math.max(0 - p.x, 0, p.x - 20),
+      Math.max(0 - p.y, 0, p.y - 12),
+    );
+    for (const p of paths) {
+      // the slot's inner end hugs the contour (within ~a beam), overlapping the
+      // cut band — NOT pushed ~pocketSizeMm (0.2mm) out into floating scrap.
+      expect(Math.min(...p.rings[0].map(distToRect))).toBeLessThan(cfg.beamWidthMm * 1.5);
+    }
+  });
 });
 
 describe("generateCleanPaths", () => {
