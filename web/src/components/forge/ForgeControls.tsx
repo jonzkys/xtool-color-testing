@@ -179,11 +179,13 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
             <NumberField value={config.perforate.gapThresholdMm} step={0.25} min={0.25}
               onChange={(v) => patch({ perforate: { ...config.perforate, gapThresholdMm: v } })} />
           </Field>
-          <Field label="Slot length (mm)">
-            <NumberField value={config.perforate.slotLengthMm} step={0.1} min={0.1}
-              onChange={(v) => patch({ perforate: { ...config.perforate, slotLengthMm: v } })} />
-          </Field>
-          <label className="flex items-center gap-2">
+          {config.perforate.shape === "slot" && (
+            <Field label="Slot length (mm)">
+              <NumberField value={config.perforate.slotLengthMm} step={0.1} min={0.1}
+                onChange={(v) => patch({ perforate: { ...config.perforate, slotLengthMm: v } })} />
+            </Field>
+          )}
+          <label className="col-span-2 flex items-center gap-2">
             <input type="checkbox" checked={config.perforate.nearGap}
               onChange={(e) => patch({ perforate: { ...config.perforate, nearGap: e.target.checked } })} />
             Near-gap vents
