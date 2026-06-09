@@ -22,7 +22,7 @@ export const LEAN: ForgeConfig = {
   deepen: {
     groups: [
       { name: "CUT_03_MAIN", toLayer: 256, widthMultiplier: 1, enabled: true },
-      { name: "CUT_04_RELIEF", toLayer: 64, widthMultiplier: 2, enabled: false, copyParamsFromFirst: true },
+      { name: "CUT_04_WIDEN", toLayer: 64, widthMultiplier: 2, enabled: false, copyParamsFromFirst: true },
     ],
     outsideOnly: true,
   },
