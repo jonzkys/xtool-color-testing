@@ -108,7 +108,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
   }
 
   function laserValue(): "red" | "blue" | "uv" {
-    return override.laser ?? sourceParams?.laser ?? "blue";
+    return override.laser ?? sourceParams?.laser ?? "red";
   }
 
   // ── writers (no-op while linked) ──────────────────────────────────────────
