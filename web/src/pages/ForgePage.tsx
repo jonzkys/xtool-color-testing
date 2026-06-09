@@ -38,7 +38,8 @@ import { ForgeStageParams } from "../components/forge/ForgeStageParams";
 // (layerCount on perforate/clean, timeBudgetX, activePreset); also clears any
 // stale stageParams.sliceNumber that would otherwise win on export. A new key
 // discards stale saved configs so users pick up the corrected defaults.
-const CONFIG_LS_KEY = "forge.config.v5"; // v4→v5: Lean default + layerCount/timeBudget/activePreset; discards stale saves (also clears any old stageParams.sliceNumber)
+// v5 → v6: perforate relief fields (shape/nearGap/gapThresholdMm/slotLengthMm)
+const CONFIG_LS_KEY = "forge.config.v6"; // v5→v6: perforate relief fields (shape/nearGap/gap/slot)
 
 /** Load the saved config from localStorage, merged onto defaults so new fields
  *  (and the deepen group list) survive older saves. */
@@ -317,13 +318,13 @@ export function ForgePage() {
                     <Badge variant="accent">ready</Badge>
                   ) : (
                     validation.errors.map((e, i) => (
-                      <Badge key={i} variant="destructive">
+                      <Badge key={i} variant="destructive" className="block w-full whitespace-normal break-words rounded-md text-left py-1">
                         {e}
                       </Badge>
                     ))
                   )}
                   {validation.warnings.map((w, i) => (
-                    <Badge key={`w${i}`} variant="warning">
+                    <Badge key={`w${i}`} variant="warning" className="block w-full whitespace-normal break-words rounded-md text-left py-1">
                       {w}
                     </Badge>
                   ))}

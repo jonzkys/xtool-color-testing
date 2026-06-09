@@ -18,11 +18,11 @@ export const LEAN: ForgeConfig = {
   ...COMMON,
   activePreset: "lean",
   seed: { enabled: true, widthMultiplier: 2, layerCount: 3, outsideOnly: true },
-  perforate: { enabled: true, spacingMm: 4, cornerBoost: true, cornerAngleThresholdDeg: 35, pocketSizeMm: 0.2, outsideBias: true, layerCount: 2 },
+  perforate: { enabled: true, spacingMm: 4, cornerBoost: true, cornerAngleThresholdDeg: 35, pocketSizeMm: 0.2, outsideBias: true, layerCount: 2, shape: "slot", nearGap: true, gapThresholdMm: 1.5, slotLengthMm: 0.8 },
   deepen: {
     groups: [
       { name: "CUT_03_MAIN", toLayer: 256, widthMultiplier: 1, enabled: true },
-      { name: "CUT_04_RELIEF", toLayer: 64, widthMultiplier: 2, enabled: false, copyParamsFromFirst: true },
+      { name: "CUT_04_WIDEN", toLayer: 64, widthMultiplier: 2, enabled: false, copyParamsFromFirst: true },
     ],
     outsideOnly: true,
   },
@@ -35,7 +35,7 @@ export const AGGRESSIVE: ForgeConfig = {
   activePreset: "aggressive",
   timeBudgetX: null,
   seed: { enabled: true, widthMultiplier: 2, layerCount: 3, outsideOnly: true },
-  perforate: { enabled: true, spacingMm: 2, cornerBoost: true, cornerAngleThresholdDeg: 35, pocketSizeMm: 0.2, outsideBias: true, layerCount: 2 },
+  perforate: { enabled: true, spacingMm: 2, cornerBoost: true, cornerAngleThresholdDeg: 35, pocketSizeMm: 0.2, outsideBias: true, layerCount: 2, shape: "pocket", nearGap: false, gapThresholdMm: 1.5, slotLengthMm: 0.8 },
   deepen: {
     groups: [
       { name: "CUT_03_DEEPEN_A_50_1X", toLayer: 50, widthMultiplier: 1, enabled: true },

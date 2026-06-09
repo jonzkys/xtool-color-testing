@@ -25,7 +25,7 @@ export function ForgeDebugPanel({
         {stats.warnings.length > 0 && (
           <div className="flex flex-col gap-1 mt-1">
             {stats.warnings.map((w, i) => (
-              <Badge key={i} variant="warning">{w}</Badge>
+              <Badge key={i} variant="warning" className="block w-full whitespace-normal break-words rounded-md text-left py-1">{w}</Badge>
             ))}
           </div>
         )}

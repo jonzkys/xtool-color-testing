@@ -71,6 +71,14 @@ export interface PerforateConfig {
   outsideBias: boolean;
   /** Slice count this stage exports (shallow — starter pockets, not a deep cut). */
   layerCount: number;
+  /** Pocket (square at intervals) or slot (outward/channel-aligned relief tick). */
+  shape: "pocket" | "slot";
+  /** Place extra vents at scrap necks (near-touching edges / ring+dot / i-j dots). */
+  nearGap: boolean;
+  /** Max scrap-neck width to vent (mm). */
+  gapThresholdMm: number;
+  /** Slot length (mm) when shape === "slot". */
+  slotLengthMm: number;
 }
 
 export interface DeepenConfig {

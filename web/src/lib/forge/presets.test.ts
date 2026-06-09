@@ -28,3 +28,16 @@ describe("forge presets", () => {
     expect(AGGRESSIVE.timeBudgetX).toBeNull();
   });
 });
+
+describe("relief perforate fields", () => {
+  it("LEAN uses slot relief with near-gaps on", () => {
+    expect(LEAN.perforate.shape).toBe("slot");
+    expect(LEAN.perforate.nearGap).toBe(true);
+    expect(LEAN.perforate.gapThresholdMm).toBeGreaterThan(0);
+    expect(LEAN.perforate.slotLengthMm).toBeGreaterThan(0);
+  });
+  it("AGGRESSIVE keeps pocket relief (back-compat)", () => {
+    expect(AGGRESSIVE.perforate.shape).toBe("pocket");
+    expect(AGGRESSIVE.perforate.nearGap).toBe(false);
+  });
+});

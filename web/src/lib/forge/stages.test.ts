@@ -155,6 +155,61 @@ describe("degenerate-band guards (no flood-fill, no empty-ring paths)", () => {
   });
 });
 
+import { inPart } from "./nearGap";
+
+const rectL = (x: number, y: number, w: number, h: number): Pt[] => [
+  { x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h },
+];
+
+describe("relief stage", () => {
+  it("pocket back-compat: square 4-corner rings, class perforate", () => {
+    const part = [rectL(0, 0, 20, 12)];
+    const cfg = { ...DEFAULT_CONFIG, perforate: { ...DEFAULT_CONFIG.perforate, shape: "pocket" as const, nearGap: false } };
+    const paths = generatePerforationPaths(part, cfg, "s");
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths.every((p) => p.rings.length === 1 && p.rings[0].length === 4)).toBe(true);
+    expect(paths.every((p) => p.generatedClass === "perforate")).toBe(true);
+  });
+
+  it("slot + near-gap vents land in scrap, never in the part", () => {
+    const part = [rectL(0, 0, 10, 2), rectL(0, 2.6, 10, 2)]; // two bars, scrap neck between
+    const cfg = { ...DEFAULT_CONFIG, perforate: { ...DEFAULT_CONFIG.perforate, shape: "slot" as const, nearGap: true } };
+    const paths = generatePerforationPaths(part, cfg, "s");
+    expect(paths.length).toBeGreaterThan(0);
+    for (const p of paths) for (const c of p.rings[0]) expect(inPart(part, c)).toBe(false);
+    const inNeck = paths.some((p) => {
+      const cs = p.rings[0];
+      const cy = cs.reduce((s, c) => s + c.y, 0) / cs.length;
+      return cy > 1.9 && cy < 2.7;
+    });
+    expect(inNeck).toBe(true);
+  });
+
+  it("anchors over ALL loops (a hole gets vents too)", () => {
+    const part = [rectL(0, 0, 40, 40), rectL(15, 15, 10, 10)]; // outer + a hole
+    const cfg = { ...DEFAULT_CONFIG, perforate: { ...DEFAULT_CONFIG.perforate, shape: "pocket" as const, nearGap: false, spacingMm: 4 } };
+    const paths = generatePerforationPaths(part, cfg, "s");
+    const nearHole = paths.some((p) => p.rings[0].some((c) => c.x > 13 && c.x < 27 && c.y > 13 && c.y < 27));
+    expect(nearHole).toBe(true);
+  });
+
+  it("edge relief slots start at the kerf (connect to the cut), not offset away", () => {
+    const part = [rectL(0, 0, 20, 12)];
+    const cfg = { ...DEFAULT_CONFIG, perforate: { ...DEFAULT_CONFIG.perforate, shape: "slot" as const, nearGap: false } };
+    const paths = generatePerforationPaths(part, cfg, "s");
+    expect(paths.length).toBeGreaterThan(0);
+    const distToRect = (p: Pt) => Math.hypot(
+      Math.max(0 - p.x, 0, p.x - 20),
+      Math.max(0 - p.y, 0, p.y - 12),
+    );
+    for (const p of paths) {
+      // the slot's inner end hugs the contour (within ~a beam), overlapping the
+      // cut band — NOT pushed ~pocketSizeMm (0.2mm) out into floating scrap.
+      expect(Math.min(...p.rings[0].map(distToRect))).toBeLessThan(cfg.beamWidthMm * 1.5);
+    }
+  });
+});
+
 describe("generateCleanPaths", () => {
   it("emits wall band(s) tagged CUT_07_CLEAN", () => {
     const paths = generateCleanPaths(PART, DEFAULT_CONFIG, SRC);
