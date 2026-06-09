@@ -32,7 +32,8 @@ describe("detectNearGaps", () => {
   });
 
   it("flags the annular scrap of a ring+dot", () => {
-    const part = [rect(0, 0, 20, 20), rect(4, 4, 12, 12), rect(9, 9, 2, 2)];
+    // outer 20x20, hole 4..16, dot 13..15 — dot's right edge (15) is 1mm from the hole wall (16): a true near-gap
+    const part = [rect(0, 0, 20, 20), rect(4, 4, 12, 12), rect(13, 9, 2, 2)];
     const anchors = detectNearGaps(part, 2.5);
     expect(anchors.length).toBeGreaterThan(0);
     expect(anchors.every((a) => inPart(part, a.pt) === false)).toBe(true);

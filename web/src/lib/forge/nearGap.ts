@@ -118,38 +118,6 @@ export function detectNearGaps(part: Pt[][], gapThresholdMm: number): NearGapAnc
     seen.add(nk);
     anchors.push({ pt: { x: mx, y: my }, dirX: cx, dirY: cy });
   }
-  // Second pass: detect "floating islands" — loops whose samples lie entirely in
-  // scrap when ignoring that loop itself. The annular channel around such a loop
-  // is fully enclosed and needs a vent regardless of the neck width.
-  for (let li = 0; li < part.length; li++) {
-    const loopSamples = samples.filter((s) => s.loop === li);
-    if (loopSamples.length === 0) continue;
-    // Build the part without this loop to test if the loop lives in scrap.
-    const partWithout = part.filter((_, idx) => idx !== li);
-    if (!loopSamples.every((s) => !inPart(partWithout, s))) continue;
-    // This loop is floating in enclosed scrap. Find the closest sample from any
-    // other loop to place the vent anchor at the midpoint.
-    let bestD = Infinity, bestS: Sample | null = null, bestT: Sample | null = null;
-    for (const s of loopSamples) {
-      for (const t of samples) {
-        if (t.loop === li) continue;
-        const d = Math.hypot(t.x - s.x, t.y - s.y);
-        if (d < bestD) { bestD = d; bestS = s; bestT = t; }
-      }
-    }
-    if (!bestS || !bestT) continue;
-    const mx = (bestS.x + bestT.x) / 2, my = (bestS.y + bestT.y) / 2;
-    if (inPart(part, { x: mx, y: my })) continue;
-    let cx = -(bestT.y - bestS.y), cy = bestT.x - bestS.x;
-    const cl = Math.hypot(cx, cy);
-    if (cl === 0) continue;
-    cx /= cl; cy /= cl;
-    const lo = Math.min(li, bestT.loop), hi = Math.max(li, bestT.loop);
-    const nk = lo + ":" + hi + ":" + Math.round(mx / gapThresholdMm) + ":" + Math.round(my / gapThresholdMm);
-    if (seen.has(nk)) continue;
-    seen.add(nk);
-    anchors.push({ pt: { x: mx, y: my }, dirX: cx, dirY: cy });
-  }
 
   return anchors;
 }
