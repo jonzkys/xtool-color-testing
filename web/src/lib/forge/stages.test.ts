@@ -162,7 +162,7 @@ const rectL = (x: number, y: number, w: number, h: number): Pt[] => [
 ];
 
 describe("relief stage", () => {
-  it("pocket shape is unchanged (back-compat) and on by default", () => {
+  it("pocket back-compat: square 4-corner rings, class perforate", () => {
     const part = [rectL(0, 0, 20, 12)];
     const cfg = { ...DEFAULT_CONFIG, perforate: { ...DEFAULT_CONFIG.perforate, shape: "pocket" as const, nearGap: false } };
     const paths = generatePerforationPaths(part, cfg, "s");
@@ -177,6 +177,12 @@ describe("relief stage", () => {
     const paths = generatePerforationPaths(part, cfg, "s");
     expect(paths.length).toBeGreaterThan(0);
     for (const p of paths) for (const c of p.rings[0]) expect(inPart(part, c)).toBe(false);
+    const inNeck = paths.some((p) => {
+      const cs = p.rings[0];
+      const cy = cs.reduce((s, c) => s + c.y, 0) / cs.length;
+      return cy > 1.9 && cy < 2.7;
+    });
+    expect(inNeck).toBe(true);
   });
 
   it("anchors over ALL loops (a hole gets vents too)", () => {
