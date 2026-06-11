@@ -101,8 +101,8 @@ export interface SpiralConfig {
   channelWidthMm: number;
   /** Spacing between spiral arms (mm); ~beam so arms overlap and the channel fully ablates. */
   pitchMm: number;
-  /** outside = spiral into scrap around the silhouette; inside = into holes; both. */
-  side: "outside" | "inside" | "both";
+  /** outside = spiral into scrap around the silhouette; inside = into holes. */
+  side: "outside" | "inside";
   /** Floor to shrink the channel toward in a thin neck before falling back to a warning. */
   minChannelMm: number;
   /** Vector passes (→ customize.repeat). */
