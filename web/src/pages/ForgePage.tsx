@@ -39,7 +39,8 @@ import { ForgeStageParams } from "../components/forge/ForgeStageParams";
 // stale stageParams.sliceNumber that would otherwise win on export. A new key
 // discards stale saved configs so users pick up the corrected defaults.
 // v5 → v6: perforate relief fields (shape/nearGap/gapThresholdMm/slotLengthMm)
-const CONFIG_LS_KEY = "forge.config.v6"; // v5→v6: perforate relief fields (shape/nearGap/gap/slot)
+// v6 → v7: spiral sub-config (SpiralConfig)
+const CONFIG_LS_KEY = "forge.config.v7"; // v6→v7: spiral sub-config
 
 /** Load the saved config from localStorage, merged onto defaults so new fields
  *  (and the deepen group list) survive older saves. */
@@ -59,6 +60,7 @@ function loadConfig(): ForgeConfig {
         groups: p.deepen?.groups ?? DEFAULT_CONFIG.deepen.groups,
       },
       clean: { ...DEFAULT_CONFIG.clean, ...(p.clean ?? {}) },
+      spiral: { ...DEFAULT_CONFIG.spiral, ...(p.spiral ?? {}) },
       stageParams: p.stageParams ?? {},
       timeBudgetX: p.timeBudgetX ?? DEFAULT_CONFIG.timeBudgetX,
       activePreset: p.activePreset ?? DEFAULT_CONFIG.activePreset,

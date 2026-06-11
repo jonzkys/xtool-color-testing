@@ -3,9 +3,9 @@ import { Card, CardHeader, CardTitle, Field, NumberField, Select } from "../../u
 import type { DeepenGroup, ForgeConfig, GeneratedClass, SideMode } from "../../lib/forge/types";
 import { renameDeepenGroup } from "../../lib/forge/config";
 import { CLASS_COLOR } from "./ForgeCanvas";
-import { PRESETS, type PresetId } from "../../lib/forge/presets";
+import { PRESETS, SPIRAL_CUT, type PresetId } from "../../lib/forge/presets";
 
-const CLASSES: GeneratedClass[] = ["seed", "perforate", "deepen", "clean"];
+const CLASSES: GeneratedClass[] = ["seed", "perforate", "deepen", "clean", "spiral"];
 
 export interface ForgeControlsProps {
   config: ForgeConfig;
@@ -67,9 +67,19 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
             >
               <option value="lean">Lean (fast)</option>
               <option value="aggressive">Aggressive (deep 1/2/4/8)</option>
+              <option value="spiral">Spiral Cut</option>
               <option value="custom" disabled>Custom</option>
             </Select>
           </Field>
+          <div className="col-span-2">
+            <button
+              type="button"
+              className="w-full px-2 py-1 text-[10px] font-mono uppercase rounded border border-[var(--color-border)] text-[var(--color-ink-muted)] hover:text-[var(--color-fg)] transition-colors"
+              onClick={() => onChange(structuredClone(SPIRAL_CUT))}
+            >
+              Load Spiral Cut preset
+            </button>
+          </div>
           <Field label="Time budget (× incise)">
             <Select
               value={String(config.timeBudgetX ?? "off")}
@@ -260,6 +270,50 @@ export function ForgeControls({ config, onChange, visible, onToggleVisible }: Fo
           <Field label="Layers">
             <NumberField value={config.clean.layerCount} step={1} min={1}
               onChange={(v) => patch({ clean: { ...config.clean, layerCount: Math.max(1, v) } })} />
+          </Field>
+        </div>
+      </Card>
+
+      {/* Spiral Cut */}
+      <Card>
+        <CardHeader><CardTitle>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={config.spiral.enabled}
+              onChange={(e) => patch({ spiral: { ...config.spiral, enabled: e.target.checked } })} />
+            Spiral Cut (CUT_08)
+          </label>
+        </CardTitle></CardHeader>
+        <div className="grid grid-cols-2 gap-2 p-2">
+          <Field label="Channel width (mm)">
+            <NumberField value={config.spiral.channelWidthMm} step={0.05} min={0.05}
+              onChange={(v) => patch({ spiral: { ...config.spiral, channelWidthMm: v } })} />
+          </Field>
+          <Field label="Pitch (mm)">
+            <NumberField value={config.spiral.pitchMm} step={0.01} min={0.005}
+              onChange={(v) => patch({ spiral: { ...config.spiral, pitchMm: v } })} />
+          </Field>
+          <Field label="Min channel (mm)">
+            <NumberField value={config.spiral.minChannelMm} step={0.05} min={0.05}
+              onChange={(v) => patch({ spiral: { ...config.spiral, minChannelMm: v } })} />
+          </Field>
+          <Field label="Passes">
+            <NumberField value={config.spiral.passes} step={1} min={1}
+              onChange={(v) => patch({ spiral: { ...config.spiral, passes: Math.max(1, v) } })} />
+          </Field>
+          <Field label="Focus step (mm)">
+            <NumberField value={config.spiral.focusStepMm} step={0.01} min={0}
+              onChange={(v) => patch({ spiral: { ...config.spiral, focusStepMm: v } })} />
+          </Field>
+          <Field label="Focus interval (passes)">
+            <NumberField value={config.spiral.focusIntervalPasses} step={1} min={1}
+              onChange={(v) => patch({ spiral: { ...config.spiral, focusIntervalPasses: Math.max(1, v) } })} />
+          </Field>
+          <Field label="Side" className="col-span-2">
+            <Select value={config.spiral.side}
+              onChange={(e) => patch({ spiral: { ...config.spiral, side: e.target.value as "outside" | "inside" } })}>
+              <option value="outside">outside</option>
+              <option value="inside">inside</option>
+            </Select>
           </Field>
         </div>
       </Card>

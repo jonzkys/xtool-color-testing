@@ -41,6 +41,9 @@ function stageList(config: ForgeConfig): Array<{ group: string; label: string }>
     out.push({ group: g.name, label: g.name.replace(/^CUT_\d+_DEEPEN_/, "Deepen ") });
   }
   out.push({ group: STAGE_GROUPS.clean, label: "Clean" });
+  if (config.spiral.enabled) {
+    out.push({ group: STAGE_GROUPS.spiral, label: "Spiral Cut" });
+  }
   return out;
 }
 
@@ -80,6 +83,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
     ? config.deepen.groups.findIndex((g) => g.name === current.group)
     : -1;
   const isDeepen = deepenIdx >= 0;
+  const isSpiral = current?.group === STAGE_GROUPS.spiral;
   const isDeepenAfterFirst = deepenIdx > 0;
   const firstDeepenName = config.deepen.groups[0]?.name;
   const copyFromFirst = isDeepen ? (config.deepen.groups[deepenIdx].copyParamsFromFirst ?? true) : false;
@@ -157,6 +161,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
     current.group === STAGE_GROUPS.seed ? config.seed.layerCount
     : current.group === STAGE_GROUPS.perforate ? config.perforate.layerCount
     : current.group === STAGE_GROUPS.clean ? config.clean.layerCount
+    : current.group === STAGE_GROUPS.spiral ? config.spiral.passes
     : Z_DEFAULTS.sliceNumber; // unreachable given current stage model; sentinel for future non-deepen stages
   const depthLayers = isDeepen
     ? Math.max(1, config.deepen.groups[deepenIdx].toLayer)
@@ -295,7 +300,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
 
         {!isDeepen && (
           <div className="mt-3 grid grid-cols-3 gap-2">
-            <Field label="Layer count">
+            <Field label={isSpiral ? "Passes" : "Layer count"}>
               <NumberField
                 value={nonDeepenLayerCount}
                 min={1}
@@ -306,9 +311,36 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
                   if (current.group === STAGE_GROUPS.seed) onChange({ ...config, seed: { ...config.seed, layerCount: n }, activePreset: "custom" });
                   else if (current.group === STAGE_GROUPS.perforate) onChange({ ...config, perforate: { ...config.perforate, layerCount: n }, activePreset: "custom" });
                   else if (current.group === STAGE_GROUPS.clean) onChange({ ...config, clean: { ...config.clean, layerCount: n }, activePreset: "custom" });
+                  else if (current.group === STAGE_GROUPS.spiral) onChange({ ...config, spiral: { ...config.spiral, passes: n }, activePreset: "custom" });
                 }}
               />
             </Field>
+          </div>
+        )}
+
+        {/* Spiral focus descent — editable directly on the spiral config, not via stageParams */}
+        {isSpiral && (
+          <div className="mt-3 border border-[var(--color-border)] rounded p-2">
+            <p className="font-mono text-[11px] text-[var(--color-ink-muted)] mb-2">Focus descent (spiral)</p>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="descentPerStep (mm)">
+                <NumberField
+                  value={config.spiral.focusStepMm}
+                  min={0}
+                  step={0.01}
+                  onChange={(v) => onChange({ ...config, spiral: { ...config.spiral, focusStepMm: v >= 0 ? v : 0 }, activePreset: "custom" })}
+                />
+              </Field>
+              <Field label="descentIntervalDescent (passes)">
+                <NumberField
+                  value={config.spiral.focusIntervalPasses}
+                  min={1}
+                  step={1}
+                  integer
+                  onChange={(v) => onChange({ ...config, spiral: { ...config.spiral, focusIntervalPasses: Math.max(1, v) }, activePreset: "custom" })}
+                />
+              </Field>
+            </div>
           </div>
         )}
 
