@@ -10,6 +10,7 @@ import {
 import { ringsBBox, ringsFillArea, ringsPerimeter } from "../cuttime/geometry";
 import { resolveStageParams } from "./config";
 import { bandFromRegion } from "./offset";
+import { spiralPathLength } from "./spiral";
 import type { ForgeConfig, GeneratedClass, GeneratedPath, Pt, StageParams } from "./types";
 
 export interface StageEstimate {
@@ -54,6 +55,13 @@ function effectiveRate(
   };
 }
 
+/** Linear vector cut time: passes × Σ(pathLength)/speed (+ tiny per-pass overhead). */
+function spiralSeconds(path: GeneratedPath, passes: number, speedMmS: number): number {
+  const len = path.rings.reduce((s, arm) => s + spiralPathLength(arm), 0);
+  const PER_PASS_OVERHEAD_S = 0.01;
+  return passes * (len / Math.max(1, speedMmS) + PER_PASS_OVERHEAD_S);
+}
+
 function geomOf(rings: Pt[][]) {
   const b = ringsBBox(rings);
   return { bboxW: b.w, bboxH: b.h, fillAreaMm2: ringsFillArea(rings), perimeterMm: ringsPerimeter(rings) };
@@ -93,6 +101,11 @@ export function estimateForge(
     const rate = effectiveRate(resolved[group], source);
     let seconds = 0, fill = 0, perim = 0;
     for (const p of ps) {
+      if (p.generatedClass === "spiral") {
+        const sp = resolved[p.groupName] ?? {};
+        seconds += spiralSeconds(p, (sp.passes as number | undefined) ?? rate.repeat, (sp.speed as number | undefined) ?? rate.speedMmS);
+        continue; // skip the raster model for spiral
+      }
       const g = geomOf(p.rings);
       seconds += stageSeconds(g, rate, calib);
       fill += g.fillAreaMm2;
