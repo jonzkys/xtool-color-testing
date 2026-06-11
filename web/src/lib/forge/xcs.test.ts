@@ -530,6 +530,164 @@ function buildSquareParsed(): ReturnType<typeof parseXcsFile> {
   return parseXcsFile(new TextEncoder().encode(JSON.stringify(raw)).buffer);
 }
 
+/** Build a minimal ParsedXcs with an INTAGLIO incise target AND a preserved
+ *  RELIEF emboss object — the exact shape that triggers the bug. */
+function buildSquareParsedWithEmboss(): ReturnType<typeof parseXcsFile> {
+  const targetId = "target-incise";
+  const embossId = "target-emboss";
+  const raw = {
+    canvas: [{
+      displays: [
+        {
+          id: targetId,
+          type: "PATH",
+          name: "incise-square",
+          dPath: ringsToDPath([square], 1),
+          scale: { x: 1, y: 1 },
+          offsetX: 0, offsetY: 0, graphicX: 0, graphicY: 0,
+          x: -10, y: -10, width: 20, height: 20,
+          isFill: true, isClosePath: true, fillRule: "evenodd",
+        },
+        {
+          id: embossId,
+          type: "BITMAP",
+          name: "emboss-relief",
+          scale: { x: 1, y: 1 },
+          offsetX: 0, offsetY: 0, graphicX: 0, graphicY: 0,
+          x: -10, y: -10, width: 20, height: 20,
+          layerColor: "#00befe", layerTag: "#00befe",
+        },
+      ],
+      layerData: { "#00befe": { name: "#00BEFE", order: 1, visible: true } },
+    }],
+    device: {
+      data: {
+        dataType: "Map",
+        value: [[
+          "group-1",
+          {
+            mode: "RELIEF_PROCESS",
+            displays: {
+              dataType: "Map",
+              value: [
+                [
+                  targetId,
+                  {
+                    type: "PATH",
+                    processingType: "INTAGLIO",
+                    isFill: true,
+                    data: {
+                      INTAGLIO: {
+                        parameter: {
+                          customize: {
+                            processingLightSource: "blue",
+                            power: 100, speed: 200,
+                            repeat: 1, pulseWidth: 200, mopaFrequency: 65,
+                            density: 100, zAxisMove: false,
+                            zLayers: 1, zDecline: 0.01, sliceNumber: 100,
+                            processAngle: 0,
+                          },
+                        },
+                      },
+                    },
+                  },
+                ],
+                [
+                  embossId,
+                  {
+                    type: "BITMAP",
+                    processingType: "RELIEF",
+                    isFill: false,
+                    data: {
+                      RELIEF: {
+                        parameter: {
+                          customize: {
+                            processingLightSource: "red",
+                            power: 80, speed: 200,
+                            repeat: 1, density: 300,
+                          },
+                        },
+                      },
+                    },
+                  },
+                ],
+              ],
+            },
+          },
+        ]],
+      },
+    },
+  };
+  return parseXcsFile(new TextEncoder().encode(JSON.stringify(raw)).buffer);
+}
+
+// ── Spiral: Embossment-type drop (bug fix) ───────────────────────────────────
+
+describe("spiral export drops INTAGLIO/RELIEF objects (flat-mode fix)", () => {
+  type SpiralOutCanvas = Array<{ displays: Array<{ id: string; isFill?: boolean; isClosePath?: boolean }> }>;
+  type SpiralEntry = { processingType?: string };
+  type SpiralOutDevice = { data: { value: Array<[string, { displays: { value: Array<[string, SpiralEntry]> } }]> } };
+
+  it("removes the RELIEF device entry and its canvas display from a spiral export", () => {
+    const parsed = buildSquareParsedWithEmboss();
+    const incise = parsed.targets[0];
+    const emboss = parsed.emboss[0];
+    const spiralPaths = generateSpiralPaths([square], SPIRAL_CUT, incise.id);
+    expect(spiralPaths.length).toBeGreaterThan(0);
+
+    const out = buildGeneratedXcs(parsed, incise.id, spiralPaths, 1, resolveStageParams(SPIRAL_CUT));
+    const typed = out as unknown as { canvas: SpiralOutCanvas; device: SpiralOutDevice };
+
+    // No RELIEF or INTAGLIO device entries remain.
+    const allEntries = typed.device.data.value.flatMap(([, g]) => g.displays.value);
+    const reliefEntry = allEntries.find(([, e]) => e.processingType === "RELIEF");
+    const intaglioEntry = allEntries.find(([, e]) => e.processingType === "INTAGLIO");
+    expect(reliefEntry).toBeUndefined();
+    expect(intaglioEntry).toBeUndefined();
+
+    // The RELIEF canvas display is gone.
+    const displays = typed.canvas[0].displays;
+    expect(displays.find((d) => d.id === emboss.id)).toBeUndefined();
+
+    // The VECTOR_CUTTING spiral entries ARE present.
+    const spiralEntries = allEntries.filter(([, e]) => e.processingType === "VECTOR_CUTTING");
+    expect(spiralEntries.length).toBe(spiralPaths.length);
+  });
+
+  it("the generated spiral VECTOR_CUTTING entries are the ONLY device entries remaining", () => {
+    const parsed = buildSquareParsedWithEmboss();
+    const incise = parsed.targets[0];
+    const spiralPaths = generateSpiralPaths([square], SPIRAL_CUT, incise.id);
+
+    const out = buildGeneratedXcs(parsed, incise.id, spiralPaths, 1, resolveStageParams(SPIRAL_CUT));
+    const typed = out as unknown as { canvas: SpiralOutCanvas; device: SpiralOutDevice };
+    const allEntries = typed.device.data.value.flatMap(([, g]) => g.displays.value);
+
+    // Only forge-* VECTOR_CUTTING entries remain (no INTAGLIO/RELIEF).
+    expect(allEntries.every(([id, e]) => id.startsWith("forge-") && e.processingType === "VECTOR_CUTTING")).toBe(true);
+    expect(allEntries.length).toBe(spiralPaths.length);
+  });
+
+  it("REGRESSION: non-spiral (incise) export keeps the preserved RELIEF emboss object", () => {
+    const parsed = buildSquareParsedWithEmboss();
+    const incise = parsed.targets[0];
+    const emboss = parsed.emboss[0];
+    const { paths, stats } = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+
+    const out = buildGeneratedXcs(parsed, incise.id, paths, stats.mmPerUnit);
+    const typed = out as unknown as { canvas: SpiralOutCanvas; device: SpiralOutDevice };
+
+    // RELIEF device entry preserved.
+    const allEntries = typed.device.data.value.flatMap(([, g]) => g.displays.value);
+    const reliefEntry = allEntries.find(([, e]) => e.processingType === "RELIEF");
+    expect(reliefEntry).toBeDefined();
+
+    // RELIEF canvas display preserved.
+    const displays = typed.canvas[0].displays;
+    expect(displays.find((d) => d.id === emboss.id)).toBeDefined();
+  });
+});
+
 describe("spiral VECTOR_CUTTING export (A5 round-trip)", () => {
   it("emits VECTOR_CUTTING entries, no INTAGLIO, display isClosePath=false, isFill=false", () => {
     const parsed = buildSquareParsed();

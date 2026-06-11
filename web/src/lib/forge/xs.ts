@@ -380,11 +380,28 @@ function rebuildDeviceAndProfiles(
   const deviceId = baseDevice.id;
   const baseMode: V2Mode =
     baseDevice.processing?.[canvasId]?.modes?.[activeMode] ?? {};
-  const modeData = baseMode.data ?? {};
-  const planType = (modeData.lightSourceMode as string) === "red" ? "red" : "blue";
 
+  // When the retained device has no data block for the (possibly flipped) mode
+  // — e.g. the original was RELIEF_PROCESS but we now need LASER_PLANE — derive
+  // lightSourceMode from the current entries and synthesize the data block.
   const group = legacyData.value?.find(([k]) => k === canvasId)?.[1];
   const entries = group?.displays?.value ?? [];
+
+  const modeData: Record<string, unknown> = baseMode.data ?? (() => {
+    // Determine lightSourceMode: "red" only when every entry with a customize
+    // block declares processingLightSource==="red".
+    const sources = entries
+      .map(([, e]) => {
+        const pt = e.processingType ?? "";
+        const cust = e.data?.[pt]?.parameter?.customize;
+        return (cust as Record<string, unknown> | undefined)?.processingLightSource as string | undefined;
+      })
+      .filter((s): s is string => !!s);
+    const allRed = sources.length > 0 && sources.every((s) => s === "red");
+    return synthModeData(activeMode, allRed ? "red" : "blue");
+  })();
+
+  const planType = (modeData.lightSourceMode as string) === "red" ? "red" : "blue";
 
   for (const [displayId, entry] of entries) {
     const processingType = entry.processingType ?? "UNKNOWN";
@@ -703,8 +720,30 @@ export function legacyRawToXs(raw: unknown, bundle: Bundle | null): ArrayBuffer 
   const deviceName = meta?.deviceName ?? deviceMemberName(bundle);
   const baseDevice = deviceName ? decodeJson<V2Device>(bundle, deviceName) : undefined;
   if (!deviceName || !baseDevice) throw new Error("cannot repack .xs: no device member");
-  const activeMode =
-    meta?.activeMode ?? baseDevice.processing?.[canvasId]?.activeMode ?? "RELIEF_PROCESS";
+  // Recompute activeMode from the CURRENT (Forge-modified) legacy entries rather
+  // than trusting the stale meta sidecar.  The original .xs had RELIEF_PROCESS
+  // because it contained emboss/incise objects; after a spiral export those
+  // entries have been dropped, so we must flip to LASER_PLANE.  Mirrors the rule
+  // in synthesizeXsFromLegacy.
+  const _allEntries: Array<[string, LegacyEntry]> = [];
+  for (const [, grp] of (r.device?.data as LegacyDeviceData | undefined)?.value ?? []) {
+    for (const pair of grp?.displays?.value ?? []) {
+      _allEntries.push(pair);
+    }
+  }
+  const activeMode: string = (() => {
+    if (_allEntries.length === 0) {
+      // No entries at all — fall back to the retained sidecar.
+      return (
+        meta?.activeMode ??
+        baseDevice.processing?.[canvasId]?.activeMode ??
+        "RELIEF_PROCESS"
+      );
+    }
+    return _allEntries.some(([, e]) => _RELIEF_TYPES.has(e.processingType ?? ""))
+      ? "RELIEF_PROCESS"
+      : "LASER_PLANE";
+  })();
 
   const legacyDisplays = r.canvas?.[0]?.displays ?? [];
   const v2Displays = legacyDisplays.map((d, i) => toV2Display(d, i));

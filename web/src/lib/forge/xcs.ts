@@ -549,6 +549,28 @@ export function buildGeneratedXcs(
     }
   }
 
+  // Spiral cut is a flat-mode (LASER_PLANE) job: any remaining INTAGLIO/RELIEF
+  // (incise/emboss) object would force the whole job into Embossment mode, where
+  // VECTOR_CUTTING is "Not supported". Drop those device entries + their canvas
+  // displays so the cut opens correctly; emboss/incise run as a separate job.
+  if (paths.some((p) => p.generatedClass === "spiral")) {
+    const EMBOSSMENT_TYPES = new Set(["INTAGLIO", "RELIEF"]);
+    const droppedIds = new Set<string>();
+    for (const [, grp] of raw.device.data.value) {
+      grp.displays.value = grp.displays.value.filter(([id, entry]) => {
+        const pt = (entry as { processingType?: string }).processingType ?? "";
+        if (EMBOSSMENT_TYPES.has(pt)) {
+          droppedIds.add(id);
+          return false;
+        }
+        return true;
+      });
+    }
+    if (droppedIds.size > 0) {
+      canvas.displays = canvas.displays.filter((d) => !droppedIds.has(d.id));
+    }
+  }
+
   return raw;
 }
 

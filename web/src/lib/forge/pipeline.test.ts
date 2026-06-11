@@ -174,3 +174,36 @@ describe("pipeline spiral", () => {
     ).toBe(true);
   });
 });
+
+describe("pipeline spiral embossment-drop warning", () => {
+  // incise_emboss.xcs has exactly one INTAGLIO incise + one RELIEF emboss.
+  // When spiral is enabled, the export will drop the RELIEF object; the
+  // pipeline must warn the user.
+  it("pushes embossment-drop warning when spiral+emboss file (incise_emboss.xcs)", () => {
+    const parsed = parseXcsFile(loadSample());
+    const incise = findInciseObjects(parsed)[0];
+    const r = runPipeline(parsed, incise.id, SPIRAL_CUT);
+    expect(
+      r.stats.warnings.some((w) => /emboss|flat.surface|separate/i.test(w)),
+    ).toBe(true);
+  });
+
+  it("no embossment-drop warning when spiral on an incise-only file (no other INTAGLIO/RELIEF)", () => {
+    // test-text.xcs has no emboss/preserved objects — no warning expected.
+    const parsed = parseXcsFile(loadText());
+    const r = runPipeline(parsed, parsed.targets[0].id, SPIRAL_CUT);
+    expect(
+      r.stats.warnings.some((w) => /emboss|flat.surface|separate/i.test(w)),
+    ).toBe(false);
+  });
+
+  it("no embossment-drop warning when spiral is disabled (non-spiral run with emboss)", () => {
+    // With spiral disabled (DEFAULT_CONFIG), no embossment-drop warning even if emboss present.
+    const parsed = parseXcsFile(loadSample());
+    const incise = findInciseObjects(parsed)[0];
+    const r = runPipeline(parsed, incise.id, DEFAULT_CONFIG);
+    expect(
+      r.stats.warnings.some((w) => /emboss|flat.surface|separate/i.test(w)),
+    ).toBe(false);
+  });
+});

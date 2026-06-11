@@ -128,6 +128,20 @@ export function runPipeline(
     );
   }
 
+  // Embossment-drop warning: spiral export is flat-mode (LASER_PLANE), so any
+  // preserved INTAGLIO/RELIEF object in the file will be dropped from the export
+  // (they would force Embossment mode, where VECTOR_CUTTING is unsupported).
+  if (
+    cfg.spiral.enabled &&
+    parsed.objects.some(
+      (o) => o.id !== inciseId && (o.processingType === "INTAGLIO" || o.processingType === "RELIEF"),
+    )
+  ) {
+    warnings.push(
+      "Spiral Cut is a flat-surface job — emboss / other incise layers in this file are dropped from the export so the cut runs (Embossment can't share a file with a flat cut). Process them as a separate job.",
+    );
+  }
+
   const ordered: GeneratedPath[] = [...seed, ...perf, ...deepen, ...clean, ...spiralPaths];
   ordered.forEach((p, i) => (p.operationOrder = i));
 
