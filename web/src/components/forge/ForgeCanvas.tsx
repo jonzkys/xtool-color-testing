@@ -8,6 +8,7 @@ const CLASS_COLOR: Record<GeneratedClass, string> = {
   perforate: "#facc15", // amber
   deepen: "#f97316", // orange (depth)
   clean: "#a3e635", // lime
+  spiral: "#ec4899", // pink
 };
 const SOURCE_COLOR = "#64748b"; // slate — the original contour
 

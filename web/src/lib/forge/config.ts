@@ -6,6 +6,7 @@ export const STAGE_GROUPS = {
   seed: "CUT_01_SEED",
   perforate: "CUT_02_PERFORATE",
   clean: "CUT_07_CLEAN",
+  spiral: "CUT_08_SPIRAL",
 } as const;
 
 /**
@@ -69,6 +70,18 @@ export function resolveStageParams(config: ForgeConfig): Record<string, StagePar
     sliceNumber: sp[STAGE_GROUPS.clean]?.sliceNumber ?? config.clean.layerCount,
     // `passes` is the StageParams field; applyStageParams maps it → customize.repeat.
     passes: sp[STAGE_GROUPS.clean]?.passes ?? config.clean.passes,
+  };
+
+  out[STAGE_GROUPS.spiral] = {
+    ...(sp[STAGE_GROUPS.spiral] ?? {}),
+    // Vector cut: passes → customize.repeat, NOT raster slices. sliceNumber stays 1.
+    passes: sp[STAGE_GROUPS.spiral]?.passes ?? config.spiral.passes,
+    sliceNumber: 1,
+    // Focus step-down so the cut follows focus down through the thickness.
+    cuttingDrop: true,
+    sinkingMethod: "one",
+    descentIntervalDescent: config.spiral.focusIntervalPasses,
+    descentPerStep: config.spiral.focusStepMm,
   };
 
   // Deepen groups: linking + each group's own toLayer as sliceNumber (unchanged).

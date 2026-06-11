@@ -10,6 +10,10 @@ const COMMON = {
   optimizeScanAngle: false,
   manualScanAngleDeg: null,
   timeBudgetX: 1.5,
+  spiral: {
+    enabled: false, channelWidthMm: 0.8, pitchMm: 0.04, side: "outside" as const,
+    minChannelMm: 0.4, passes: 500, focusStepMm: 0.06, focusIntervalPasses: 10,
+  },
 };
 
 /** LEAN — one main full-depth incise + shallow seed/clean, sparse perforation,
@@ -48,5 +52,24 @@ export const AGGRESSIVE: ForgeConfig = {
   clean: { enabled: true, offsetSelection: "walls", passes: 1, layerCount: 10 },
 };
 
-export const PRESETS = { lean: LEAN, aggressive: AGGRESSIVE } as const;
+/** SPIRAL_CUT — standalone continuous-spiral cut. All incise stages off; one
+ *  flat-mode VECTOR_CUTTING strategy with the confirmed 3mm-brass recipe. */
+export const SPIRAL_CUT: ForgeConfig = {
+  ...COMMON,
+  activePreset: "spiral",
+  timeBudgetX: null,
+  seed: { enabled: false, widthMultiplier: 2, layerCount: 3, outsideOnly: true },
+  perforate: { enabled: false, spacingMm: 4, cornerBoost: false, cornerAngleThresholdDeg: 35, pocketSizeMm: 0.2, outsideBias: true, layerCount: 2, shape: "slot", nearGap: false, gapThresholdMm: 1.5, slotLengthMm: 0.8 },
+  deepen: { groups: [], outsideOnly: true },
+  clean: { enabled: false, offsetSelection: "walls", passes: 1, layerCount: 10 },
+  spiral: {
+    enabled: true, channelWidthMm: 0.8, pitchMm: 0.04, side: "outside",
+    minChannelMm: 0.4, passes: 500, focusStepMm: 0.06, focusIntervalPasses: 10,
+  },
+  stageParams: {
+    CUT_08_SPIRAL: { power: 100, speed: 1500, frequency: 65, pulseWidth: 80, laser: "red" },
+  },
+};
+
+export const PRESETS = { lean: LEAN, aggressive: AGGRESSIVE, spiral: SPIRAL_CUT } as const;
 export type PresetId = keyof typeof PRESETS;

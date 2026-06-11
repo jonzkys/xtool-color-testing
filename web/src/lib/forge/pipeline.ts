@@ -85,7 +85,7 @@ export function runPipeline(
   const part = buildPartRegion(subpaths);
   if (part.length === 0) {
     warnings.push("Could not reconstruct a part region from the incise contour; no paths generated.");
-    const empty: Record<GeneratedClass, number> = { seed: 0, perforate: 0, deepen: 0, clean: 0 };
+    const empty: Record<GeneratedClass, number> = { seed: 0, perforate: 0, deepen: 0, clean: 0, spiral: 0 };
     return {
       paths: [],
       stats: {
@@ -134,6 +134,7 @@ export function runPipeline(
     perforate: perf.length,
     deepen: deepen.length,
     clean: clean.length,
+    spiral: 0,
   };
 
   const stats: DebugStats = {

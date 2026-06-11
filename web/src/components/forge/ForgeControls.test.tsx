@@ -13,6 +13,7 @@ function Harness() {
     perforate: true,
     deepen: true,
     clean: true,
+    spiral: true,
   });
   return (
     <>

@@ -86,6 +86,7 @@ const ALL_VISIBLE: Record<GeneratedClass, boolean> = {
   perforate: true,
   deepen: true,
   clean: true,
+  spiral: true,
 };
 
 export function ForgePage() {
