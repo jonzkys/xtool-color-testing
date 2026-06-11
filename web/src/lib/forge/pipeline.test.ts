@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { parseXcsFile, findInciseObjects } from "./xcs";
 import { runPipeline } from "./pipeline";
 import { DEFAULT_CONFIG } from "./defaults";
+import { SPIRAL_CUT, LEAN } from "./presets";
 
 const SAMPLE = resolve(__dirname, "../../../../samples/xcs/incise_emboss.xcs");
 function loadSample(): ArrayBuffer {
@@ -148,5 +149,28 @@ describe("pipeline estimate", () => {
     const cfg = { ...DEFAULT_CONFIG, timeBudgetX: 0.01 }; // force over-budget
     const r = runPipeline(p, p.targets[0].id, cfg);
     expect(r.stats.warnings.some((w) => /budget|incise|×/i.test(w))).toBe(true);
+  });
+});
+
+describe("pipeline spiral", () => {
+  function parsed() {
+    return parseXcsFile(loadText());
+  }
+
+  it("SPIRAL_CUT preset yields pathCounts.spiral > 0 and pathCounts.deepen === 0", () => {
+    const p = parsed();
+    const r = runPipeline(p, p.targets[0].id, SPIRAL_CUT);
+    expect(r.stats.pathCounts.spiral).toBeGreaterThan(0);
+    expect(r.stats.pathCounts.deepen).toBe(0);
+  });
+
+  it("LEAN with spiral.enabled:true produces the standalone warning", () => {
+    // LEAN has incise stages enabled; enabling spiral on top triggers the guard.
+    const cfg = { ...LEAN, spiral: { ...LEAN.spiral, enabled: true } };
+    const p = parsed();
+    const r = runPipeline(p, p.targets[0].id, cfg);
+    expect(
+      r.stats.warnings.some((w) => /standalone|spiral/i.test(w)),
+    ).toBe(true);
   });
 });

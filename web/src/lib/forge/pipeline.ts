@@ -20,6 +20,7 @@ import {
   generatePerforationPaths,
   generateSeedPaths,
 } from "./stages";
+import { generateSpiralPaths } from "./spiral";
 
 /** Scale a contour's points from path units → mm. */
 function toMm(c: Contour, mmPerUnit: number): Contour {
@@ -112,8 +113,22 @@ export function runPipeline(
   const perf = generatePerforationPaths(part, cfg, inciseId);
   const deepen = generateDeepenPaths(part, cfg, inciseId);
   const clean = generateCleanPaths(part, cfg, inciseId);
+  const spiralPaths = generateSpiralPaths(part, cfg, inciseId);
 
-  const ordered: GeneratedPath[] = [...seed, ...perf, ...deepen, ...clean];
+  // Standalone guard: spiral is mutually exclusive with incise stages.
+  if (
+    cfg.spiral.enabled &&
+    (cfg.seed.enabled ||
+      cfg.perforate.enabled ||
+      cfg.clean.enabled ||
+      cfg.deepen.groups.some((g) => g.enabled))
+  ) {
+    warnings.push(
+      "Spiral Cut is standalone — incise stages are enabled too; export will emit spiral-only (mixed cut+incise is unsupported).",
+    );
+  }
+
+  const ordered: GeneratedPath[] = [...seed, ...perf, ...deepen, ...clean, ...spiralPaths];
   ordered.forEach((p, i) => (p.operationOrder = i));
 
   const estimate = estimateForge(ordered, part, cfg, obj.params);
@@ -134,7 +149,7 @@ export function runPipeline(
     perforate: perf.length,
     deepen: deepen.length,
     clean: clean.length,
-    spiral: 0,
+    spiral: spiralPaths.length,
   };
 
   const stats: DebugStats = {
