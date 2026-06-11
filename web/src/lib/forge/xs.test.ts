@@ -237,3 +237,89 @@ describe("legacyRawToXs from a legacy .xcs (no retained bundle → synthesize)",
 function toBuf(raw: unknown): ArrayBuffer {
   return new TextEncoder().encode(JSON.stringify(raw)).buffer;
 }
+
+// ── Part B: flat LASER_PLANE + red laser detection ───────────────────────────
+
+/** Build a minimal legacy-shaped raw with a single VECTOR_CUTTING entry that
+ *  uses processingLightSource="red" (simulating a spiral-only export). */
+function redVectorCuttingRaw(): unknown {
+  const canvasId = "canvas-red-spiral";
+  const displayId = "spiral-1";
+  return {
+    canvas: [{
+      displays: [{
+        id: displayId, type: "PATH", name: "spiral",
+        dPath: "M0,0 L10,0 L10,10",
+        scale: { x: 1, y: 1 }, offsetX: 0, offsetY: 0,
+        isFill: false, isClosePath: false,
+      }],
+      layerData: {},
+    }],
+    device: {
+      data: {
+        dataType: "Map",
+        value: [[canvasId, {
+          mode: "LASER_PLANE",
+          displays: {
+            dataType: "Map",
+            value: [[displayId, {
+              type: "PATH",
+              processingType: "VECTOR_CUTTING",
+              isFill: false,
+              data: {
+                VECTOR_CUTTING: {
+                  materialType: "customize",
+                  planType: "blue",
+                  parameter: {
+                    customize: {
+                      processingLightSource: "red",
+                      power: 100, speed: 1500, repeat: 500,
+                      pulseWidth: 80, mopaFrequency: 65,
+                      cuttingDrop: true, sinkingMethod: "one",
+                      descentIntervalDescent: 10, descentPerStep: 0.06,
+                    },
+                  },
+                },
+              },
+            }]],
+          },
+        }]],
+      },
+    },
+  };
+}
+
+describe("synthModeData — lightSourceMode param (Part B)", () => {
+  it("LASER_PLANE defaults to lightSourceMode=blue", () => {
+    const out = legacyRawToXs(redVectorCuttingRaw(), null);
+    const m = unzipSync(new Uint8Array(out));
+    const devKey = Object.keys(m).find((k) => k.startsWith("devices/device-"))!;
+    const device = JSON.parse(strFromU8(m[devKey])) as {
+      processing: Record<string, { activeMode: string; modes: Record<string, { data?: Record<string, unknown> }> }>;
+    };
+    // There is exactly one canvas — find the processing entry.
+    const proc = Object.values(device.processing)[0];
+    expect(proc.activeMode).toBe("LASER_PLANE");
+    const modeData = proc.modes["LASER_PLANE"]?.data ?? {};
+    // Because this raw carries red VECTOR_CUTTING, lightSourceMode should be "red".
+    expect(modeData.lightSourceMode).toBe("red");
+  });
+
+  it("LASER_PLANE with blue VECTOR_CUTTING keeps lightSourceMode=blue", () => {
+    // Mutate the raw to use blue laser.
+    const raw = redVectorCuttingRaw() as { device: { data: { value: Array<[string, { displays: { value: Array<[string, { data: { VECTOR_CUTTING: { parameter: { customize: Record<string, unknown> } } } }]> } }]> } } };
+    const customize = raw.device.data.value[0][1].displays.value[0][1].data.VECTOR_CUTTING.parameter.customize;
+    customize.processingLightSource = "blue";
+
+    const out = legacyRawToXs(raw, null);
+    const m = unzipSync(new Uint8Array(out));
+    const devKey = Object.keys(m).find((k) => k.startsWith("devices/device-"))!;
+    const device = JSON.parse(strFromU8(m[devKey])) as {
+      processing: Record<string, { activeMode: string; modes: Record<string, { data?: Record<string, unknown> }> }>;
+    };
+    const proc = Object.values(device.processing)[0];
+    expect(proc.activeMode).toBe("LASER_PLANE");
+    const modeData = proc.modes["LASER_PLANE"]?.data ?? {};
+    expect(modeData.lightSourceMode).toBe("blue");
+  });
+});

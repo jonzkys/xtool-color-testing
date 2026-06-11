@@ -526,12 +526,14 @@ function synthResources(pngs: Map<string, Uint8Array>): Bundle {
   return out;
 }
 
-/** Build the `data` block for a device mode, mirroring devices.py `_mode_data`. */
-function synthModeData(mode: string): Record<string, unknown> {
+/** Build the `data` block for a device mode, mirroring devices.py `_mode_data`.
+ *  `lightSourceMode` defaults to "blue" for LASER_PLANE; pass "red" when the
+ *  job uses the MOPA IR laser (e.g. a spiral VECTOR_CUTTING-only job). */
+function synthModeData(mode: string, lightSourceMode = "blue"): Record<string, unknown> {
   const isRelief = mode === "RELIEF_PROCESS";
   return {
     material: 0,
-    lightSourceMode: isRelief ? "red" : "blue",
+    lightSourceMode: isRelief ? "red" : lightSourceMode,
     thickness: isRelief ? null : null,
     isProcessByLayer: false,
     pathPlanning: "auto",
@@ -559,12 +561,27 @@ function synthesizeXsFromLegacy(r: LegacyRaw): ArrayBuffer {
   const group = legacyData.value?.[0];
   const canvasId = group?.[0] ?? "00000000-0000-4000-8000-000000000000";
 
-  const processingTypes = (group?.[1]?.displays?.value ?? []).map(
-    ([, e]) => e.processingType ?? "",
-  );
+  const entries = group?.[1]?.displays?.value ?? [];
+  const processingTypes = entries.map(([, e]) => e.processingType ?? "");
   const activeMode = processingTypes.some((pt) => _RELIEF_TYPES.has(pt))
     ? "RELIEF_PROCESS"
     : "LASER_PLANE";
+
+  // For a LASER_PLANE job, detect whether every customize block uses the red
+  // MOPA IR laser (e.g. a spiral VECTOR_CUTTING-only job). If so, the mode
+  // data's lightSourceMode must be "red" so Studio opens in flat+IR mode.
+  const flatLightSource: string = (() => {
+    if (activeMode !== "LASER_PLANE") return "blue";
+    const sources = entries
+      .map(([, e]) => {
+        const pt = e.processingType ?? "";
+        const cust = e.data?.[pt]?.parameter?.customize;
+        return (cust as Record<string, unknown> | undefined)?.processingLightSource as string | undefined;
+      })
+      .filter((s): s is string => !!s);
+    // Only flip to "red" when every entry explicitly declares red.
+    return sources.length > 0 && sources.every((s) => s === "red") ? "red" : "blue";
+  })();
 
   // Extract inline base64 rasters -> content-addressed PNGs; rewrite each
   // BITMAP display to a resourcePath, matching displays.py.
@@ -594,7 +611,7 @@ function synthesizeXsFromLegacy(r: LegacyRaw): ArrayBuffer {
       [canvasId]: {
         id: canvasId,
         activeMode,
-        modes: { [activeMode]: { data: synthModeData(activeMode) } },
+        modes: { [activeMode]: { data: synthModeData(activeMode, flatLightSource) } },
       },
     },
     customProjectData: {},
