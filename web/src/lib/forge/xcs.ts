@@ -462,7 +462,7 @@ export function buildGeneratedXcs(
         processingLightSource: "red",
         power: 100,
         speed: 1500,
-        repeat: 1,
+        repeat: path.layerEnd, // = cfg.spiral.passes; applyStageParams may override
         pulseWidth: 80,
         mopaFrequency: 65,
         cuttingDrop: true,

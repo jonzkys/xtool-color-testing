@@ -131,7 +131,13 @@ export function runPipeline(
   const ordered: GeneratedPath[] = [...seed, ...perf, ...deepen, ...clean, ...spiralPaths];
   ordered.forEach((p, i) => (p.operationOrder = i));
 
-  const estimate = estimateForge(ordered, part, cfg, obj.params);
+  // Estimate the paths that will actually EXPORT: when spiral is present the
+  // exporter drops incise (spiral-only), so the estimate must match — otherwise
+  // a mixed config shows an inflated time the machine never runs.
+  const forEstimate = ordered.some((p) => p.generatedClass === "spiral")
+    ? ordered.filter((p) => p.generatedClass === "spiral")
+    : ordered;
+  const estimate = estimateForge(forEstimate, part, cfg, obj.params);
   if (estimate.overBudget) {
     const worst = estimate.worst
       .map((w) => `${w.groupName.replace(/^CUT_\d+_/, "")} ${fmtDuration(w.seconds)}`)
