@@ -29,6 +29,9 @@ export interface ForgeStageParamsProps {
   /** Source incise's laser params; widgets pre-fill from these when an
    *  override is unset. */
   sourceParams?: StageParams;
+  /** Render without the Card/title frame — for embedding in the page's
+   *  stage-parameters tray, which provides its own chrome. */
+  frameless?: boolean;
 }
 
 /** The operations that get exported, in process order, as [groupName, label]. */
@@ -66,7 +69,7 @@ const NUMERIC_FIELDS: Array<{
  *  supplies one. */
 const Z_DEFAULTS = { zLayers: 1, zDecline: 0.01, sliceNumber: 256 } as const;
 
-export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageParamsProps) {
+export function ForgeStageParams({ config, onChange, sourceParams, frameless }: ForgeStageParamsProps) {
   const { registry, machineId } = useCurrentMachine();
   const profile = getValidationProfile(registry, machineId, "color_engrave");
 
@@ -169,12 +172,8 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
   const totalDepth = descentDepthMm(depthLayers, zLayers, zDecline);
   const depthAt256 = descentDepthMm(256, zLayers, zDecline);
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Stage parameters</CardTitle>
-      </CardHeader>
-      <div className="p-2">
+  const body = (
+      <div className={frameless ? "px-4 py-3" : "p-2"}>
         {/* tabs */}
         <div className="flex flex-wrap gap-1 mb-3">
           {stages.map((s, i) => (
@@ -416,6 +415,15 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
           )}
         </div>
       </div>
+  );
+
+  if (frameless) return body;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Stage parameters</CardTitle>
+      </CardHeader>
+      {body}
     </Card>
   );
 }

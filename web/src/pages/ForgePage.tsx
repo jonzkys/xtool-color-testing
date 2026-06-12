@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   PageContainer,
-  Section,
-  Toolbar,
   MetalBar,
   Button,
   EmptyState,
@@ -25,10 +23,10 @@ import type {
 } from "../lib/forge/types";
 import { DEFAULT_CONFIG } from "../lib/forge/defaults";
 import { splitSubpaths } from "../lib/forge/contour";
-import { ForgeCanvas } from "../components/forge/ForgeCanvas";
+import { ForgeCanvas, CLASS_COLOR } from "../components/forge/ForgeCanvas";
 import { ForgeControls } from "../components/forge/ForgeControls";
 import { ForgeDebugPanel } from "../components/forge/ForgeDebugPanel";
-import { ForgeEstimatePanel } from "../components/forge/ForgeEstimatePanel";
+import { ForgeEstimateStrip } from "../components/forge/ForgeEstimateStrip";
 import { ForgeStageParams } from "../components/forge/ForgeStageParams";
 
 // Bumped v1 → v2 when the default config shape/values changed (beam width
@@ -91,6 +89,8 @@ const ALL_VISIBLE: Record<GeneratedClass, boolean> = {
   spiral: true,
 };
 
+const CLASSES: GeneratedClass[] = ["seed", "perforate", "deepen", "clean", "spiral"];
+
 export function ForgePage() {
   const [state, setState] = useState<State>({ kind: "idle" });
   const [config, setConfig] = useState<ForgeConfig>(loadConfig);
@@ -150,14 +150,16 @@ export function ForgePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // responsive canvas
+  // Canvas fills its grid cell: the wrapper is the flex-1 cell and the
+  // ResizeObserver feeds BOTH dimensions to the canvas (no width-derived
+  // aspect ratio — height is whatever the viewport row leaves us).
   useEffect(() => {
     const el = canvasWrapRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
       setCanvasSize({
         w: Math.max(320, el.clientWidth),
-        h: Math.max(320, Math.round(el.clientWidth * 0.8)),
+        h: Math.max(240, el.clientHeight),
       });
     });
     ro.observe(el);
@@ -257,167 +259,231 @@ export function ForgePage() {
   }
 
   return (
-    <PageContainer>
-      <Section title="Contour Forge" dense>
-        <Toolbar
-          trailing={
-            <>
-              <label className="px-3 py-1.5 text-xs font-mono uppercase rounded bg-[var(--color-primary)] text-white cursor-pointer hover:bg-[var(--color-primary-hover)] transition-colors">
-                Upload .xcs / .xs
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xcs,.xs,application/json,application/zip"
-                  className="sr-only"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleFile(f);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-              <FormatToggle value={exportFormat} onChange={setExportFormat} />
-              <Button disabled={!canExport} onClick={onExport}>
-                {exportFormat === "xs" ? "Export modified .xs" : "Export modified .xcs"}
-              </Button>
-            </>
-          }
-        >
+    <div
+      className="relative flex flex-col"
+      // The TopBar is 56 px (h-14). Subtract it so the workbench sizes exactly
+      // to the available viewport — the rails scroll internally, never the page.
+      style={{ height: "calc(100dvh - 56px)" }}
+    >
+      {/* Diagonal warp backdrop — quiet, always-on brand motif. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-[0.04]"
+        style={{
+          backgroundImage:
+            "repeating-linear-gradient(135deg, var(--color-ink) 0 1px, transparent 1px 24px)",
+        }}
+      />
+      <PageContainer
+        maxWidth="wide"
+        className="relative pt-3 pb-3 flex-1 min-h-0 flex flex-col overflow-hidden"
+      >
+        {/* header row: title · file · actions */}
+        <div className="shrink-0 flex items-center gap-3 pb-2">
+          <h1 className="font-mono text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-ink-subtle)]">
+            Contour Forge
+          </h1>
           {state.kind === "ready" && (
             <span className="font-mono text-xs text-[var(--color-ink-muted)]">
               {state.fileName}
             </span>
           )}
-        </Toolbar>
-        <MetalBar variant="soft" />
+          <div className="ml-auto flex items-center gap-2">
+            <label className="px-3 py-1.5 text-xs font-mono uppercase rounded bg-[var(--color-primary)] text-white cursor-pointer hover:bg-[var(--color-primary-hover)] transition-colors">
+              Upload .xcs / .xs
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xcs,.xs,application/json,application/zip"
+                className="sr-only"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleFile(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <FormatToggle value={exportFormat} onChange={setExportFormat} />
+            <Button disabled={!canExport} onClick={onExport}>
+              {exportFormat === "xs" ? "Export modified .xs" : "Export modified .xcs"}
+            </Button>
+          </div>
+        </div>
+        <div className="shrink-0">
+          <MetalBar variant="soft" />
+        </div>
 
         {state.kind === "idle" && (
-          <EmptyState
-            title="Upload an xTool .xcs or .xs"
-            description="Legacy .xcs and xcs-workspace-v2 .xs bundles are both supported; the export round-trips back to whichever you uploaded. The file needs at least one incise (INTAGLIO) contour — the cut target. Forge converts the selected contour into staged seed / perforate / deepen / clean cut paths; any emboss or score layers are preserved untouched."
-          />
+          <div className="flex-1 min-h-0 flex items-center justify-center">
+            <EmptyState
+              title="Upload an xTool .xcs or .xs"
+              description="Legacy .xcs and xcs-workspace-v2 .xs bundles are both supported; the export round-trips back to whichever you uploaded. The file needs at least one incise (INTAGLIO) contour — the cut target. Forge converts the selected contour into staged seed / perforate / deepen / clean cut paths; any emboss or score layers are preserved untouched."
+            />
+          </div>
         )}
         {state.kind === "loading" && (
-          <div className="p-6 font-mono text-sm text-[var(--color-ink-muted)]">
+          <div className="flex-1 min-h-0 flex items-center justify-center p-6 font-mono text-sm text-[var(--color-ink-muted)]">
             Parsing {state.fileName}…
           </div>
         )}
         {state.kind === "error" && (
-          <div className="p-6 font-mono text-sm text-[color:var(--color-destructive)]">
+          <div className="flex-1 min-h-0 flex items-center justify-center p-6 font-mono text-sm text-[color:var(--color-destructive)]">
             Error: {state.message}
           </div>
         )}
 
         {state.kind === "ready" && (
-          <div className="grid grid-cols-[260px_1fr_320px] items-start gap-3">
-            {/* LEFT: validation + object lists */}
-            <div className="flex flex-col gap-3 text-xs">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Validation</CardTitle>
-                </CardHeader>
-                <div className="p-2 flex flex-col gap-1">
-                  {validation.errors.length === 0 ? (
-                    <Badge variant="accent">ready</Badge>
-                  ) : (
-                    validation.errors.map((e, i) => (
-                      <Badge key={i} variant="destructive" className="block w-full whitespace-normal break-words rounded-md text-left py-1">
-                        {e}
+          <>
+            {/* instrument readout: always visible, never reflows */}
+            <div className="shrink-0 pt-3">
+              <ForgeEstimateStrip estimate={result?.stats.estimate ?? null} />
+            </div>
+
+            {/* workbench: rails scroll internally, canvas takes the slack */}
+            <div className="flex-1 min-h-0 pt-3 grid grid-cols-[248px_minmax(0,1fr)_332px] gap-3 items-stretch">
+              {/* LEFT: source & validation */}
+              <div className="min-h-0 overflow-y-auto pr-1 flex flex-col gap-3 text-xs">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Validation</CardTitle>
+                  </CardHeader>
+                  <div className="p-2 flex flex-col gap-1">
+                    {validation.errors.length === 0 ? (
+                      <Badge variant="accent">ready</Badge>
+                    ) : (
+                      validation.errors.map((e, i) => (
+                        <Badge key={i} variant="destructive" className="block w-full whitespace-normal break-words rounded-md text-left py-1">
+                          {e}
+                        </Badge>
+                      ))
+                    )}
+                    {validation.warnings.map((w, i) => (
+                      <Badge key={`w${i}`} variant="warning" className="block w-full whitespace-normal break-words rounded-md text-left py-1">
+                        {w}
                       </Badge>
-                    ))
-                  )}
-                  {validation.warnings.map((w, i) => (
-                    <Badge key={`w${i}`} variant="warning" className="block w-full whitespace-normal break-words rounded-md text-left py-1">
-                      {w}
-                    </Badge>
-                  ))}
-                </div>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Cut target</CardTitle>
-                </CardHeader>
-                <div className="p-2 font-mono flex flex-col gap-1">
-                  {state.targetIds.map((id) => {
-                    const o = state.objects.find((x) => x.id === id);
-                    return (
-                      <label key={id} className="flex items-center gap-2">
+                    ))}
+                  </div>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Cut target</CardTitle>
+                  </CardHeader>
+                  <div className="p-2 font-mono flex flex-col gap-1">
+                    {state.targetIds.map((id) => {
+                      const o = state.objects.find((x) => x.id === id);
+                      return (
+                        <label key={id} className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="incise"
+                            checked={selectedIncise === id}
+                            onChange={() => setSelectedIncise(id)}
+                          />
+                          {id.slice(0, 8)} · {o?.processingType ?? "INTAGLIO"}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Preserved layers</CardTitle>
+                  </CardHeader>
+                  <div className="p-2 font-mono flex flex-col gap-1 text-[var(--color-ink-muted)]">
+                    {state.preservedIds.length === 0 ? (
+                      <span>None — only the cut target is present.</span>
+                    ) : (
+                      <>
+                        {state.preservedIds.map((id) => {
+                          const o = state.objects.find((x) => x.id === id);
+                          return (
+                            <div key={id}>
+                              {id.slice(0, 8)} · {o?.processingType ?? "—"}
+                            </div>
+                          );
+                        })}
+                        <span className="mt-1 text-[10px]">passed through untouched</span>
+                      </>
+                    )}
+                  </div>
+                </Card>
+              </div>
+
+              {/* CENTER: preview fills the column; legend rides with it */}
+              <div className="min-w-0 min-h-0 flex flex-col gap-2">
+                <Card variant="inset" padded={false} className="flex-1 min-h-0 p-2 flex flex-col">
+                  <div ref={canvasWrapRef} className="flex-1 min-h-0 min-w-0 overflow-hidden">
+                    <ForgeCanvas
+                      source={sourceContour}
+                      paths={result?.paths ?? []}
+                      visible={visible}
+                      width={canvasSize.w}
+                      height={canvasSize.h}
+                    />
+                  </div>
+                  {/* legend doubles as the layer-visibility filter */}
+                  <div className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-1 px-2 pt-2">
+                    {CLASSES.map((c) => (
+                      <label
+                        key={c}
+                        className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-ink-muted)] cursor-pointer"
+                      >
                         <input
-                          type="radio"
-                          name="incise"
-                          checked={selectedIncise === id}
-                          onChange={() => setSelectedIncise(id)}
+                          type="checkbox"
+                          checked={visible[c]}
+                          onChange={() => setVisible((v) => ({ ...v, [c]: !v[c] }))}
                         />
-                        {id.slice(0, 8)} · {o?.processingType ?? "INTAGLIO"}
+                        <span
+                          className="inline-block h-3 w-3 rounded-[2px] border border-black/10"
+                          style={{ backgroundColor: CLASS_COLOR[c] }}
+                          aria-hidden
+                        />
+                        {c}
                       </label>
-                    );
-                  })}
+                    ))}
+                  </div>
+                </Card>
+
+                {/* per-stage laser params: docked open under the canvas so the
+                    preview and estimate stay in view while editing */}
+                <div className="shrink-0 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
+                  <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-2">
+                    <span className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-muted)]">
+                      Stage parameters
+                    </span>
+                    <span className="ml-auto font-mono text-[10px] text-[var(--color-ink-subtle)]">
+                      per-stage laser overrides · applied on export
+                    </span>
+                  </div>
+                  <div className="max-h-[340px] overflow-y-auto">
+                    <ForgeStageParams
+                      frameless
+                      config={config}
+                      onChange={setConfig}
+                      sourceParams={
+                        selectedIncise
+                          ? state.objects.find((o) => o.id === selectedIncise)?.params
+                          : undefined
+                      }
+                    />
+                  </div>
                 </div>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Preserved layers</CardTitle>
-                </CardHeader>
-                <div className="p-2 font-mono flex flex-col gap-1 text-[var(--color-ink-muted)]">
-                  {state.preservedIds.length === 0 ? (
-                    <span>None — only the cut target is present.</span>
-                  ) : (
-                    <>
-                      {state.preservedIds.map((id) => {
-                        const o = state.objects.find((x) => x.id === id);
-                        return (
-                          <div key={id}>
-                            {id.slice(0, 8)} · {o?.processingType ?? "—"}
-                          </div>
-                        );
-                      })}
-                      <span className="mt-1 text-[10px]">passed through untouched</span>
-                    </>
-                  )}
-                </div>
-              </Card>
-            </div>
+              </div>
 
-            {/* CENTER: preview */}
-            <div ref={canvasWrapRef} className="min-w-0">
-              <ForgeCanvas
-                source={sourceContour}
-                paths={result?.paths ?? []}
-                visible={visible}
-                width={canvasSize.w}
-                height={canvasSize.h}
-              />
+              {/* RIGHT: strategy & stage controls, scrolls internally */}
+              <div className="min-h-0 overflow-y-auto pr-1 flex flex-col gap-3">
+                <ForgeControls
+                  config={config}
+                  onChange={setConfig}
+                  visible={visible}
+                  onToggleVisible={(c) => setVisible((v) => ({ ...v, [c]: !v[c] }))}
+                />
+                <ForgeDebugPanel stats={result?.stats ?? null} optimizeScanAngle={config.optimizeScanAngle} />
+              </div>
             </div>
-
-            {/* RIGHT: controls + debug. No internal scroll/height cap — the
-                page scrolls as one document (main is the scroller), so the
-                full-width Stage-parameters row below is always reachable. */}
-            <div className="flex flex-col gap-3">
-              <ForgeControls
-                config={config}
-                onChange={setConfig}
-                visible={visible}
-                onToggleVisible={(c) => setVisible((v) => ({ ...v, [c]: !v[c] }))}
-              />
-              <ForgeEstimatePanel estimate={result?.stats.estimate ?? null} />
-              <ForgeDebugPanel stats={result?.stats ?? null} optimizeScanAngle={config.optimizeScanAngle} />
-            </div>
-
-            {/* BOTTOM (full width): per-stage laser params */}
-            <div className="col-span-3">
-              <ForgeStageParams
-                config={config}
-                onChange={setConfig}
-                sourceParams={
-                  state.kind === "ready" && selectedIncise
-                    ? state.objects.find((o) => o.id === selectedIncise)?.params
-                    : undefined
-                }
-              />
-            </div>
-          </div>
+          </>
         )}
-      </Section>
-    </PageContainer>
+      </PageContainer>
+    </div>
   );
 }
