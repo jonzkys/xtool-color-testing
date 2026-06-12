@@ -15,7 +15,7 @@ export function ForgeDebugPanel({
       <CardHeader><CardTitle>Debug</CardTitle></CardHeader>
       <div className="p-2 font-mono text-[11px] flex flex-col gap-1">
         <div>mm/unit: {stats.mmPerUnit.toFixed(4)} {stats.mmPerUnitConfident ? "✓" : "⚠ unconfident"}</div>
-        <div>paths: total {stats.totalPaths} — seed {stats.pathCounts.seed}, perforate {stats.pathCounts.perforate}, deepen {stats.pathCounts.deepen}, clean {stats.pathCounts.clean}</div>
+        <div>paths: total {stats.totalPaths} — seed {stats.pathCounts.seed}, perforate {stats.pathCounts.perforate}, deepen {stats.pathCounts.deepen}, clean {stats.pathCounts.clean}, spiral {stats.pathCounts.spiral}</div>
         <div>
           scan ∠: {stats.scanAngleDeg}° {optimizeScanAngle ? "(applied)" : "(off)"}
           {stats.scanAngleReductionPct != null && stats.scanAngleReductionPct > 0 && (

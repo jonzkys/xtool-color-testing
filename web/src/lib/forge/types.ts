@@ -17,7 +17,7 @@ export interface Contour {
 export type SideMode = "outside" | "inside" | "symmetric" | "flip";
 
 /** The four functional path classes the tool emits. */
-export type GeneratedClass = "seed" | "perforate" | "deepen" | "clean";
+export type GeneratedClass = "seed" | "perforate" | "deepen" | "clean" | "spiral";
 
 /**
  * One generated path with full provenance metadata. Kept internally for
@@ -95,6 +95,24 @@ export interface CleanConfig {
   layerCount: number;
 }
 
+export interface SpiralConfig {
+  enabled: boolean;
+  /** Total venting channel width swept on the scrap side (mm); 0.8 cuts clean. */
+  channelWidthMm: number;
+  /** Spacing between spiral arms (mm); ~beam so arms overlap and the channel fully ablates. */
+  pitchMm: number;
+  /** outside = spiral into scrap around the silhouette; inside = into holes. */
+  side: "outside" | "inside";
+  /** Floor to shrink the channel toward in a thin neck before falling back to a warning. */
+  minChannelMm: number;
+  /** Vector passes (→ customize.repeat). */
+  passes: number;
+  /** Focus descent per step (mm) — follows focus down through the thickness. */
+  focusStepMm: number;
+  /** Step the focus every N passes. */
+  focusIntervalPasses: number;
+}
+
 export interface ForgeConfig {
   beamWidthMm: number;
   sideMode: SideMode;
@@ -104,6 +122,7 @@ export interface ForgeConfig {
   perforate: PerforateConfig;
   deepen: DeepenConfig;
   clean: CleanConfig;
+  spiral: SpiralConfig;
   /** Per-stage laser-param overrides, keyed by groupName (e.g. CUT_01_SEED).
    *  Any field left undefined inherits the source incise object's value. */
   stageParams: Record<string, StageParams>;
@@ -118,7 +137,7 @@ export interface ForgeConfig {
   /** Warn when estimated time exceeds this multiple of a plain incise. null = off. */
   timeBudgetX?: number | null;
   /** Which preset the staged config currently matches (UI hint). */
-  activePreset?: "lean" | "aggressive" | "custom";
+  activePreset?: "lean" | "aggressive" | "spiral" | "custom";
 }
 
 /** Rough per-stage laser params. All optional — undefined = inherit source. */
@@ -134,6 +153,10 @@ export interface StageParams {
   zLayers?: number; // descend every N layers (→ customize.zLayers)
   zDecline?: number; // mm per descent step (→ customize.zDecline)
   sliceNumber?: number; // total layers/slices (→ customize.sliceNumber)
+  cuttingDrop?: boolean;            // → customize.cuttingDrop (focus descent on)
+  sinkingMethod?: string;           // → customize.sinkingMethod ("one")
+  descentIntervalDescent?: number;  // → customize.descentIntervalDescent (every N passes)
+  descentPerStep?: number;          // → customize.descentPerStep (mm per step)
 }
 
 /** One object detected inside the uploaded XCS. */

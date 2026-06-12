@@ -60,7 +60,7 @@ function clipExecute(clipType: number, subj: Pt[][], clip: Pt[][], evenOdd = fal
  * outer boundary outward and shrinks holes inward; negative does the reverse.
  * clipper-lib handles both correctly and keeps holes consistent.
  */
-function offsetRegion(part: Pt[][], deltaMm: number): Pt[][] {
+export function offsetRegion(part: Pt[][], deltaMm: number): Pt[][] {
   if (deltaMm === 0) return part;
   const co = new ClipperLib.ClipperOffset(MITER_LIMIT, ARC_TOL);
   co.AddPaths(toClipperPaths(part), ClipperLib.JoinType.jtRound, ClipperLib.EndType.etClosedPolygon);

@@ -8,6 +8,7 @@ const CLASS_COLOR: Record<GeneratedClass, string> = {
   perforate: "#facc15", // amber
   deepen: "#f97316", // orange (depth)
   clean: "#a3e635", // lime
+  spiral: "#ec4899", // pink
 };
 const SOURCE_COLOR = "#64748b"; // slate — the original contour
 
@@ -116,12 +117,19 @@ export function ForgeCanvas({ source, paths, visible, width, height }: ForgeCanv
     const seed = drawn.filter((p) => p.generatedClass === "seed");
     const clean = drawn.filter((p) => p.generatedClass === "clean");
     const perforate = drawn.filter((p) => p.generatedClass === "perforate");
+    const spiral = drawn.filter((p) => p.generatedClass === "spiral");
 
     for (const p of deepen) fillBand(p.rings, CLASS_COLOR.deepen, 0.22);
     for (const p of seed) fillBand(p.rings, CLASS_COLOR.seed, 0.3);
     for (const p of clean) fillBand(p.rings, CLASS_COLOR.clean, 0.35);
     // perforation pockets are small solid features — fill opaque-ish
     for (const p of perforate) fillBand(p.rings, CLASS_COLOR.perforate, 0.85);
+    // spiral paths are open polylines — stroke only, no fill
+    for (const p of spiral) {
+      if (p.rings[0] && p.rings[0].length > 0) {
+        strokeLoop(p.rings[0], false, CLASS_COLOR.spiral, 1);
+      }
+    }
   }, [source, paths, visible, width, height]);
 
   return <canvas ref={ref} style={{ width, height }} className="block rounded bg-[var(--color-surface)]" />;

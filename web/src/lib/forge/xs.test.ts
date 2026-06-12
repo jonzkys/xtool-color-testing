@@ -10,10 +10,13 @@ import {
   findEmbossObjects,
   extractContourGeometry,
   buildGeneratedXcs,
+  ringsToDPath,
 } from "./xcs";
 import { runPipeline } from "./pipeline";
 import { DEFAULT_CONFIG } from "./defaults";
+import { SPIRAL_CUT } from "./presets";
 import { resolveStageParams } from "./config";
+import { generateSpiralPaths } from "./spiral";
 
 const XS_SAMPLE = resolve(__dirname, "../../../../samples/xcs/incise_emboss.xs");
 const XCS_SAMPLE = resolve(__dirname, "../../../../samples/xcs/incise_emboss.xcs");
@@ -237,3 +240,328 @@ describe("legacyRawToXs from a legacy .xcs (no retained bundle → synthesize)",
 function toBuf(raw: unknown): ArrayBuffer {
   return new TextEncoder().encode(JSON.stringify(raw)).buffer;
 }
+
+// ── Retained-bundle (.xs-input) path: spiral export flips RELIEF→LASER_PLANE ─
+
+describe("legacyRawToXs (retained .xs bundle) — spiral export flips activeMode", () => {
+  // This is the real user path: user uploads incise_emboss.xs, Forge runs spiral
+  // export, and legacyRawToXs(modifiedRaw, bundle) must recompute activeMode from
+  // the current entries (VECTOR_CUTTING only → LASER_PLANE) rather than trusting
+  // the stale meta sidecar (was RELIEF_PROCESS because the original .xs had emboss).
+
+  function buildSpiralModifiedRaw() {
+    const { raw, bundle } = xsToLegacyRaw(loadXs());
+    const parsed = parseXcsFile(toBuf(raw));
+
+    // Grab the INTAGLIO incise target.
+    const incise = parsed.targets[0];
+    expect(incise).toBeDefined();
+    expect(incise.processingType).toBe("INTAGLIO");
+
+    // Generate spiral paths on the contour geometry.
+    const contour = extractContourGeometry(incise);
+    expect(contour.points.length).toBeGreaterThan(3);
+    const spiralPaths = generateSpiralPaths([contour.points], SPIRAL_CUT, incise.id);
+    expect(spiralPaths.length).toBeGreaterThan(0);
+
+    // Build the Forge-modified legacy raw — drops INTAGLIO/RELIEF, emits VECTOR_CUTTING.
+    const modified = buildGeneratedXcs(
+      parsed,
+      incise.id,
+      spiralPaths,
+      1,
+      resolveStageParams(SPIRAL_CUT),
+    );
+    return { modified, bundle, spiralPaths, inciseId: incise.id };
+  }
+
+  it("activeMode is LASER_PLANE (not RELIEF_PROCESS) in the repacked .xs device", () => {
+    const { modified, bundle } = buildSpiralModifiedRaw();
+    const out = legacyRawToXs(modified, bundle);
+    expect(isXsBuffer(out)).toBe(true);
+
+    const m = unzipSync(new Uint8Array(out));
+    const devKey = Object.keys(m).find((k) => k.startsWith("devices/device-"))!;
+    expect(devKey).toBeDefined();
+    const device = JSON.parse(strFromU8(m[devKey])) as {
+      processing: Record<string, { activeMode: string; modes: Record<string, { data?: Record<string, unknown> }> }>;
+    };
+    const proc = Object.values(device.processing)[0];
+    expect(proc.activeMode).toBe("LASER_PLANE");
+  });
+
+  it("mode data.lightSourceMode is 'red' (spiral VECTOR_CUTTING uses MOPA IR)", () => {
+    const { modified, bundle } = buildSpiralModifiedRaw();
+    const out = legacyRawToXs(modified, bundle);
+
+    const m = unzipSync(new Uint8Array(out));
+    const devKey = Object.keys(m).find((k) => k.startsWith("devices/device-"))!;
+    const device = JSON.parse(strFromU8(m[devKey])) as {
+      processing: Record<string, { activeMode: string; modes: Record<string, { data?: Record<string, unknown> }> }>;
+    };
+    const proc = Object.values(device.processing)[0];
+    const modeData = proc.modes["LASER_PLANE"]?.data ?? {};
+    expect(modeData.lightSourceMode).toBe("red");
+  });
+
+  it("no profile or binding has processingType INTAGLIO or RELIEF", () => {
+    const { modified, bundle } = buildSpiralModifiedRaw();
+    const out = legacyRawToXs(modified, bundle);
+
+    const m = unzipSync(new Uint8Array(out));
+    const profilesDoc = JSON.parse(strFromU8(m["profiles.json"])) as {
+      profiles: Record<string, { processingType: string }>;
+    };
+    const profileTypes = Object.values(profilesDoc.profiles).map((p) => p.processingType);
+    expect(profileTypes.some((t) => t === "INTAGLIO" || t === "RELIEF")).toBe(false);
+
+    const devKey = Object.keys(m).find((k) => k.startsWith("devices/device-"))!;
+    const device = JSON.parse(strFromU8(m[devKey])) as {
+      processing: Record<string, { modes: Record<string, { bindings?: Array<{ baseProfileId: string }> }> }>;
+    };
+    const proc = Object.values(device.processing)[0];
+    const bindings = proc.modes["LASER_PLANE"]?.bindings ?? [];
+    for (const b of bindings) {
+      const pt = profilesDoc.profiles[b.baseProfileId]?.processingType ?? "";
+      expect(pt === "INTAGLIO" || pt === "RELIEF").toBe(false);
+    }
+  });
+
+  it("a VECTOR_CUTTING profile IS present in the repacked bundle", () => {
+    const { modified, bundle } = buildSpiralModifiedRaw();
+    const out = legacyRawToXs(modified, bundle);
+
+    const m = unzipSync(new Uint8Array(out));
+    const profilesDoc = JSON.parse(strFromU8(m["profiles.json"])) as {
+      profiles: Record<string, { processingType: string }>;
+    };
+    const profileTypes = Object.values(profilesDoc.profiles).map((p) => p.processingType);
+    expect(profileTypes.some((t) => t === "VECTOR_CUTTING")).toBe(true);
+  });
+
+  it("re-reading the repacked bundle gives LASER_PLANE activeMode via xsToLegacyRaw", () => {
+    const { modified, bundle } = buildSpiralModifiedRaw();
+    const out = legacyRawToXs(modified, bundle);
+
+    const { raw: reparsedRaw } = xsToLegacyRaw(out);
+    const reparsed = reparsedRaw as { __xsMeta?: { activeMode?: string } };
+    expect(reparsed.__xsMeta?.activeMode).toBe("LASER_PLANE");
+  });
+});
+
+// ── Part B: flat LASER_PLANE + red laser detection ───────────────────────────
+
+/** Build a minimal legacy-shaped raw with a single VECTOR_CUTTING entry that
+ *  uses processingLightSource="red" (simulating a spiral-only export). */
+function redVectorCuttingRaw(): unknown {
+  const canvasId = "canvas-red-spiral";
+  const displayId = "spiral-1";
+  return {
+    canvas: [{
+      displays: [{
+        id: displayId, type: "PATH", name: "spiral",
+        dPath: "M0,0 L10,0 L10,10",
+        scale: { x: 1, y: 1 }, offsetX: 0, offsetY: 0,
+        isFill: false, isClosePath: false,
+      }],
+      layerData: {},
+    }],
+    device: {
+      data: {
+        dataType: "Map",
+        value: [[canvasId, {
+          mode: "LASER_PLANE",
+          displays: {
+            dataType: "Map",
+            value: [[displayId, {
+              type: "PATH",
+              processingType: "VECTOR_CUTTING",
+              isFill: false,
+              data: {
+                VECTOR_CUTTING: {
+                  materialType: "customize",
+                  planType: "blue",
+                  parameter: {
+                    customize: {
+                      processingLightSource: "red",
+                      power: 100, speed: 1500, repeat: 500,
+                      pulseWidth: 80, mopaFrequency: 65,
+                      cuttingDrop: true, sinkingMethod: "one",
+                      descentIntervalDescent: 10, descentPerStep: 0.06,
+                    },
+                  },
+                },
+              },
+            }]],
+          },
+        }]],
+      },
+    },
+  };
+}
+
+describe("synthModeData — lightSourceMode param (Part B)", () => {
+  it("LASER_PLANE defaults to lightSourceMode=blue", () => {
+    const out = legacyRawToXs(redVectorCuttingRaw(), null);
+    const m = unzipSync(new Uint8Array(out));
+    const devKey = Object.keys(m).find((k) => k.startsWith("devices/device-"))!;
+    const device = JSON.parse(strFromU8(m[devKey])) as {
+      processing: Record<string, { activeMode: string; modes: Record<string, { data?: Record<string, unknown> }> }>;
+    };
+    // There is exactly one canvas — find the processing entry.
+    const proc = Object.values(device.processing)[0];
+    expect(proc.activeMode).toBe("LASER_PLANE");
+    const modeData = proc.modes["LASER_PLANE"]?.data ?? {};
+    // Because this raw carries red VECTOR_CUTTING, lightSourceMode should be "red".
+    expect(modeData.lightSourceMode).toBe("red");
+  });
+
+  it("LASER_PLANE with blue VECTOR_CUTTING keeps lightSourceMode=blue", () => {
+    // Mutate the raw to use blue laser.
+    const raw = redVectorCuttingRaw() as { device: { data: { value: Array<[string, { displays: { value: Array<[string, { data: { VECTOR_CUTTING: { parameter: { customize: Record<string, unknown> } } } }]> } }]> } } };
+    const customize = raw.device.data.value[0][1].displays.value[0][1].data.VECTOR_CUTTING.parameter.customize;
+    customize.processingLightSource = "blue";
+
+    const out = legacyRawToXs(raw, null);
+    const m = unzipSync(new Uint8Array(out));
+    const devKey = Object.keys(m).find((k) => k.startsWith("devices/device-"))!;
+    const device = JSON.parse(strFromU8(m[devKey])) as {
+      processing: Record<string, { activeMode: string; modes: Record<string, { data?: Record<string, unknown> }> }>;
+    };
+    const proc = Object.values(device.processing)[0];
+    expect(proc.activeMode).toBe("LASER_PLANE");
+    const modeData = proc.modes["LASER_PLANE"]?.data ?? {};
+    expect(modeData.lightSourceMode).toBe("blue");
+  });
+});
+
+// ── Spiral + emboss fixture: flat-mode round-trip through .xs synth ──────────
+
+const embossSquare: import("./types").Pt[] = [
+  { x: -10, y: -10 }, { x: 10, y: -10 }, { x: 10, y: 10 }, { x: -10, y: 10 },
+];
+
+/** Minimal legacy-shaped raw with an INTAGLIO incise target + a RELIEF emboss object.
+ *  This is the exact configuration that triggered the Embossment-mode bug. */
+function embossInciseRaw(): unknown {
+  const targetId = "target-incise";
+  const embossId = "target-emboss";
+  const canvasId = "canvas-emboss-incise";
+  return {
+    canvas: [{
+      displays: [
+        {
+          id: targetId,
+          type: "PATH",
+          name: "incise-square",
+          dPath: ringsToDPath([embossSquare], 1),
+          scale: { x: 1, y: 1 },
+          offsetX: 0, offsetY: 0, graphicX: 0, graphicY: 0,
+          x: -10, y: -10, width: 20, height: 20,
+          isFill: true, isClosePath: true, fillRule: "evenodd",
+        },
+        {
+          id: embossId,
+          type: "BITMAP",
+          name: "emboss-relief",
+          scale: { x: 1, y: 1 },
+          offsetX: 0, offsetY: 0, graphicX: 0, graphicY: 0,
+          x: -10, y: -10, width: 20, height: 20,
+          layerColor: "#00befe", layerTag: "#00befe",
+        },
+      ],
+      layerData: { "#00befe": { name: "#00BEFE", order: 1, visible: true } },
+    }],
+    device: {
+      data: {
+        dataType: "Map",
+        value: [[canvasId, {
+          mode: "RELIEF_PROCESS",
+          displays: {
+            dataType: "Map",
+            value: [
+              [targetId, {
+                type: "PATH", processingType: "INTAGLIO", isFill: true,
+                data: {
+                  INTAGLIO: {
+                    parameter: {
+                      customize: {
+                        processingLightSource: "blue",
+                        power: 100, speed: 200, repeat: 1,
+                        pulseWidth: 200, mopaFrequency: 65,
+                        density: 100, zAxisMove: false,
+                        zLayers: 1, zDecline: 0.01, sliceNumber: 100,
+                      },
+                    },
+                  },
+                },
+              }],
+              [embossId, {
+                type: "BITMAP", processingType: "RELIEF", isFill: false,
+                data: {
+                  RELIEF: {
+                    parameter: {
+                      customize: {
+                        processingLightSource: "red",
+                        power: 80, speed: 200, repeat: 1, density: 300,
+                      },
+                    },
+                  },
+                },
+              }],
+            ],
+          },
+        }]],
+      },
+    },
+  };
+}
+
+describe("spiral .xs synth from emboss+incise file — activeMode must be LASER_PLANE", () => {
+  it("synthesizes LASER_PLANE when spiral export drops all INTAGLIO/RELIEF entries", () => {
+    const raw = embossInciseRaw();
+    const parsed = parseXcsFile(new TextEncoder().encode(JSON.stringify(raw)).buffer);
+    const incise = parsed.targets[0];
+    expect(incise).toBeDefined();
+
+    const spiralPaths = generateSpiralPaths([embossSquare], SPIRAL_CUT, incise.id);
+    expect(spiralPaths.length).toBeGreaterThan(0);
+
+    // Build the Forge-modified legacy raw (drops INTAGLIO/RELIEF, emits VECTOR_CUTTING).
+    const modified = buildGeneratedXcs(parsed, incise.id, spiralPaths, 1, resolveStageParams(SPIRAL_CUT));
+
+    // Synthesize a .xs bundle from the modified legacy raw.
+    const xs = legacyRawToXs(modified, null);
+    expect(isXsBuffer(xs)).toBe(true);
+
+    // Read the device file and verify activeMode is LASER_PLANE (not RELIEF_PROCESS).
+    const m = unzipSync(new Uint8Array(xs));
+    const devKey = Object.keys(m).find((k) => k.startsWith("devices/device-"))!;
+    expect(devKey).toBeDefined();
+    const device = JSON.parse(strFromU8(m[devKey])) as {
+      processing: Record<string, { activeMode: string }>;
+    };
+    const proc = Object.values(device.processing)[0];
+    expect(proc.activeMode).toBe("LASER_PLANE");
+  });
+
+  it("the spiral VECTOR_CUTTING display survives the .xs synth round-trip", () => {
+    const raw = embossInciseRaw();
+    const parsed = parseXcsFile(new TextEncoder().encode(JSON.stringify(raw)).buffer);
+    const incise = parsed.targets[0];
+    const spiralPaths = generateSpiralPaths([embossSquare], SPIRAL_CUT, incise.id);
+
+    const modified = buildGeneratedXcs(parsed, incise.id, spiralPaths, 1, resolveStageParams(SPIRAL_CUT));
+    const xs = legacyRawToXs(modified, null);
+
+    // Re-read the bundle: the spiral forge-* displays must survive in the displays chunk.
+    const m = unzipSync(new Uint8Array(xs));
+    const dispKey = Object.keys(m).find((k) => /canvases\/.+\/displays-0\.json$/.test(k))!;
+    expect(dispKey).toBeDefined();
+    const chunk = JSON.parse(strFromU8(m[dispKey])) as { displays: Array<{ id: string; type: string }> };
+    const forgeDisplays = chunk.displays.filter((d) => d.id.startsWith("forge-"));
+    expect(forgeDisplays.length).toBe(spiralPaths.length);
+    // No BITMAP (emboss) display — it was dropped.
+    expect(chunk.displays.some((d) => d.type === "BITMAP")).toBe(false);
+  });
+});

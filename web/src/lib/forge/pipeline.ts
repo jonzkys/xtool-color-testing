@@ -20,6 +20,7 @@ import {
   generatePerforationPaths,
   generateSeedPaths,
 } from "./stages";
+import { generateSpiralPaths } from "./spiral";
 
 /** Scale a contour's points from path units → mm. */
 function toMm(c: Contour, mmPerUnit: number): Contour {
@@ -85,7 +86,7 @@ export function runPipeline(
   const part = buildPartRegion(subpaths);
   if (part.length === 0) {
     warnings.push("Could not reconstruct a part region from the incise contour; no paths generated.");
-    const empty: Record<GeneratedClass, number> = { seed: 0, perforate: 0, deepen: 0, clean: 0 };
+    const empty: Record<GeneratedClass, number> = { seed: 0, perforate: 0, deepen: 0, clean: 0, spiral: 0 };
     return {
       paths: [],
       stats: {
@@ -112,11 +113,45 @@ export function runPipeline(
   const perf = generatePerforationPaths(part, cfg, inciseId);
   const deepen = generateDeepenPaths(part, cfg, inciseId);
   const clean = generateCleanPaths(part, cfg, inciseId);
+  const spiralPaths = generateSpiralPaths(part, cfg, inciseId);
 
-  const ordered: GeneratedPath[] = [...seed, ...perf, ...deepen, ...clean];
+  // Standalone guard: spiral is mutually exclusive with incise stages.
+  if (
+    cfg.spiral.enabled &&
+    (cfg.seed.enabled ||
+      cfg.perforate.enabled ||
+      cfg.clean.enabled ||
+      cfg.deepen.groups.some((g) => g.enabled))
+  ) {
+    warnings.push(
+      "Spiral Cut is standalone — incise stages are enabled too; export will emit spiral-only (mixed cut+incise is unsupported).",
+    );
+  }
+
+  // Embossment-drop warning: spiral export is flat-mode (LASER_PLANE), so any
+  // preserved INTAGLIO/RELIEF object in the file will be dropped from the export
+  // (they would force Embossment mode, where VECTOR_CUTTING is unsupported).
+  if (
+    cfg.spiral.enabled &&
+    parsed.objects.some(
+      (o) => o.id !== inciseId && (o.processingType === "INTAGLIO" || o.processingType === "RELIEF"),
+    )
+  ) {
+    warnings.push(
+      "Spiral Cut is a flat-surface job — emboss / other incise layers in this file are dropped from the export so the cut runs (Embossment can't share a file with a flat cut). Process them as a separate job.",
+    );
+  }
+
+  const ordered: GeneratedPath[] = [...seed, ...perf, ...deepen, ...clean, ...spiralPaths];
   ordered.forEach((p, i) => (p.operationOrder = i));
 
-  const estimate = estimateForge(ordered, part, cfg, obj.params);
+  // Estimate the paths that will actually EXPORT: when spiral is present the
+  // exporter drops incise (spiral-only), so the estimate must match — otherwise
+  // a mixed config shows an inflated time the machine never runs.
+  const forEstimate = ordered.some((p) => p.generatedClass === "spiral")
+    ? ordered.filter((p) => p.generatedClass === "spiral")
+    : ordered;
+  const estimate = estimateForge(forEstimate, part, cfg, obj.params);
   if (estimate.overBudget) {
     const worst = estimate.worst
       .map((w) => `${w.groupName.replace(/^CUT_\d+_/, "")} ${fmtDuration(w.seconds)}`)
@@ -134,6 +169,7 @@ export function runPipeline(
     perforate: perf.length,
     deepen: deepen.length,
     clean: clean.length,
+    spiral: spiralPaths.length,
   };
 
   const stats: DebugStats = {

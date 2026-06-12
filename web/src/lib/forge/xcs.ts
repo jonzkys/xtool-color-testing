@@ -411,51 +411,136 @@ export function buildGeneratedXcs(
     return tag;
   };
 
+  // A1: If any path is a spiral, export ONLY spiral paths (drop the rest) so the
+  // job stays flat LASER_PLANE mode; mixed jobs become spiral-only, matching the
+  // pipeline's standalone warning.
+  const gen = paths.some((p) => p.generatedClass === "spiral")
+    ? paths.filter((p) => p.generatedClass === "spiral")
+    : paths;
+
   // append generated displays + processing entries
-  for (const path of paths) {
+  for (const path of gen) {
     const id = `forge-${path.operationOrder}`;
-    const dPath = ringsToDPath(path.rings, mmPerUnit);
+    const isSpiral = path.generatedClass === "spiral";
     const tag = layerTagForGroup(path.groupName);
 
-    // Recompute this display's own canvas bbox from its geometry, reusing the
-    // source's scale + offset mapping so it stays aligned with the source contour.
-    const b = ringsBoundsUnits(path.rings, mmPerUnit);
-    const display: RawDisplay = {
-      ...(sourceTemplateDisplay ?? ({} as RawDisplay)),
-      id,
-      type: "PATH",
-      name: path.groupName,
-      dPath,
-      isClosePath: true,
-      isFill: true,
-      fillRule: "evenodd",
-      layerTag: tag,
-      layerColor: tag,
-      scale: srcScale,
-      angle: 0,
-      pivot: { x: 0, y: 0 },
-      offsetX: offX,
-      offsetY: offY,
-      graphicX: gX,
-      graphicY: gY,
-      x: b.minX * srcScale.x + offX,
-      y: b.minY * srcScale.y + offY,
-      width: (b.maxX - b.minX) * srcScale.x,
-      height: (b.maxY - b.minY) * srcScale.y,
-    };
-    canvas.displays.push(display);
+    let dPath: string;
+    let display: RawDisplay;
+    let baseEntry: Record<string, unknown>;
 
-    if (groupPair) {
+    if (isSpiral) {
+      // A2: Spiral path — open polyline, no fill, no fillRule.
+      dPath = contourToDPath(path.rings[0] ?? [], false, mmPerUnit);
+      const b = ringsBoundsUnits(path.rings, mmPerUnit);
+      display = {
+        ...(sourceTemplateDisplay ?? ({} as RawDisplay)),
+        id,
+        type: "PATH",
+        name: path.groupName,
+        dPath,
+        isClosePath: false,
+        isFill: false,
+        layerTag: tag,
+        layerColor: tag,
+        scale: srcScale,
+        angle: 0,
+        pivot: { x: 0, y: 0 },
+        offsetX: offX,
+        offsetY: offY,
+        graphicX: gX,
+        graphicY: gY,
+        x: b.minX * srcScale.x + offX,
+        y: b.minY * srcScale.y + offY,
+        width: (b.maxX - b.minX) * srcScale.x,
+        height: (b.maxY - b.minY) * srcScale.y,
+      };
+      // Strip fillRule if it was carried over from the template.
+      delete display.fillRule;
+
+      // A3: Fresh VECTOR_CUTTING entry with flat-mode defaults.
+      const vc_customize: Record<string, unknown> = {
+        processingLightSource: "red",
+        power: 100,
+        speed: 1500,
+        repeat: path.layerEnd, // = cfg.spiral.passes; applyStageParams may override
+        pulseWidth: 80,
+        mopaFrequency: 65,
+        cuttingDrop: true,
+        sinkingMethod: "one",
+        firstCuttingDropValue: 0.06,
+        cuttingDropValue: 0.06,
+        descentIntervalDescent: 10,
+        descentPerStep: 0.06,
+        enableKerf: false,
+        kerfDistance: 0,
+        enableBreakPoint: false,
+        breakPointGenMode: "auto",
+        breakPointSize: 0.5,
+        breakPointCount: 2,
+        breakPointMode: "count",
+        breakPointDistance: 100,
+        breakPointPower: 0,
+        wobbleEnable: false,
+        wobbleDiameter: 0.05,
+        wobbleSpacing: 0.015,
+      };
+      baseEntry = {
+        isFill: false,
+        type: "PATH",
+        processingType: "VECTOR_CUTTING",
+        data: {
+          VECTOR_CUTTING: {
+            materialType: "customize",
+            planType: "blue",
+            parameter: { customize: vc_customize },
+          },
+        },
+        processIgnore: false,
+        isWhiteModel: true,
+      };
+    } else {
+      // Non-spiral path — keep existing INTAGLIO/closed-fill behaviour.
+      dPath = ringsToDPath(path.rings, mmPerUnit);
+      const b = ringsBoundsUnits(path.rings, mmPerUnit);
+      display = {
+        ...(sourceTemplateDisplay ?? ({} as RawDisplay)),
+        id,
+        type: "PATH",
+        name: path.groupName,
+        dPath,
+        isClosePath: true,
+        isFill: true,
+        fillRule: "evenodd",
+        layerTag: tag,
+        layerColor: tag,
+        scale: srcScale,
+        angle: 0,
+        pivot: { x: 0, y: 0 },
+        offsetX: offX,
+        offsetY: offY,
+        graphicX: gX,
+        graphicY: gY,
+        x: b.minX * srcScale.x + offX,
+        y: b.minY * srcScale.y + offY,
+        width: (b.maxX - b.minX) * srcScale.x,
+        height: (b.maxY - b.minY) * srcScale.y,
+      };
       // clone the source INTAGLIO entry so params/processingType carry over
-      const baseEntry = sourceEntryPair
+      baseEntry = sourceEntryPair
         ? JSON.parse(JSON.stringify(sourceEntryPair[1]))
         : { isFill: true, type: "PATH", processingType: "INTAGLIO" };
       baseEntry.processingType = "INTAGLIO";
       baseEntry.type = "PATH";
       baseEntry.isFill = true;
+    }
+
+    canvas.displays.push(display);
+
+    if (groupPair) {
+      // A4: apply stage param overrides (handles both INTAGLIO and VECTOR_CUTTING).
       applyStageParams(baseEntry, stageParams[path.groupName]);
-      // Global speed-optimal scan angle (same for every generated display).
-      if (typeof scanAngleDeg === "number" && Number.isFinite(scanAngleDeg)) {
+      // Global speed-optimal scan angle (INTAGLIO only — VECTOR_CUTTING has no processAngle).
+      if (!isSpiral && typeof scanAngleDeg === "number" && Number.isFinite(scanAngleDeg)) {
         const customize = (baseEntry.data as Record<string, { parameter?: { customize?: Record<string, unknown> } }> | undefined)
           ?.INTAGLIO?.parameter?.customize;
         if (customize) customize.processAngle = Math.round(scanAngleDeg);
@@ -464,18 +549,44 @@ export function buildGeneratedXcs(
     }
   }
 
+  // Spiral cut is a flat-mode (LASER_PLANE) job: any remaining INTAGLIO/RELIEF
+  // (incise/emboss) object would force the whole job into Embossment mode, where
+  // VECTOR_CUTTING is "Not supported". Drop those device entries + their canvas
+  // displays so the cut opens correctly; emboss/incise run as a separate job.
+  if (paths.some((p) => p.generatedClass === "spiral")) {
+    const EMBOSSMENT_TYPES = new Set(["INTAGLIO", "RELIEF"]);
+    const droppedIds = new Set<string>();
+    for (const [, grp] of raw.device.data.value) {
+      grp.displays.value = grp.displays.value.filter(([id, entry]) => {
+        const pt = (entry as { processingType?: string }).processingType ?? "";
+        if (EMBOSSMENT_TYPES.has(pt)) {
+          droppedIds.add(id);
+          return false;
+        }
+        return true;
+      });
+    }
+    if (droppedIds.size > 0) {
+      canvas.displays = canvas.displays.filter((d) => !droppedIds.has(d.id));
+    }
+  }
+
   return raw;
 }
 
-/** Apply per-stage param overrides onto a cloned INTAGLIO entry's customize
- *  block. Undefined fields are left at the source value. */
+/** Apply per-stage param overrides onto a cloned entry's customize block.
+ *  Supports both INTAGLIO and VECTOR_CUTTING entries (looks up whichever mode
+ *  key is present). Undefined fields are left at the source value. */
 function applyStageParams(
   entry: Record<string, unknown>,
   params: import("./types").StageParams | undefined,
 ): void {
   if (!params) return;
   const data = entry.data as Record<string, { parameter?: { customize?: Record<string, unknown> } }> | undefined;
-  const customize = data?.INTAGLIO?.parameter?.customize;
+  // Resolve customize from whichever mode key is present (INTAGLIO or VECTOR_CUTTING).
+  const customize =
+    data?.INTAGLIO?.parameter?.customize ??
+    data?.VECTOR_CUTTING?.parameter?.customize;
   if (!customize) return;
   const set = (key: string, v: number | undefined) => {
     if (typeof v === "number" && Number.isFinite(v)) customize[key] = v;
@@ -497,6 +608,11 @@ function applyStageParams(
   set("zLayers", params.zLayers);
   set("zDecline", params.zDecline);
   set("sliceNumber", params.sliceNumber);
+  // VECTOR_CUTTING focus-step fields (spiral job).
+  setBool("cuttingDrop", params.cuttingDrop);
+  setStr("sinkingMethod", params.sinkingMethod);
+  set("descentIntervalDescent", params.descentIntervalDescent);
+  set("descentPerStep", params.descentPerStep);
 }
 
 /** Serialise a built XCS document to UTF-8 bytes (compact JSON, like write_xcs). */
