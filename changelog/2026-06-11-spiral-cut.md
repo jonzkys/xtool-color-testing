@@ -13,10 +13,10 @@ Forge has always cut by **incise**: rastering a kerf band, layer after layer, un
 contour drops. It works — but it sweeps the whole bounding box every pass, and on thick
 brass it is slow.
 
-**Spiral Cut** takes a different path. It traces the contour as a single continuous
-*vector* line that spirals outward through a narrow venting channel — concentric offset
-loops packed at roughly a beam width, stitched into one open polyline, with the focus
-stepping down each set of passes. Because the beam only ever travels along the channel
+**Spiral Cut** takes a different path. It traces the contour as continuous *vector*
+spirals through a narrow venting channel — concentric offset loops packed at roughly a
+beam width and stitched into continuous open polylines, with the focus stepping down each
+set of passes. Because the beam only ever travels along the channel
 (not back-and-forth across the part), it removes the same material in **about half the
 time**, and the open channel lets molten metal escape upward instead of re-welding the
 kerf — so the wall comes out cleaner.
@@ -41,10 +41,13 @@ around 57 % of the incise time for the same part.
 **Notes**
 
 - Spiral Cut is **standalone**: it doesn't mix with the incise stages. If you leave incise
-  stages on, Forge warns and exports spiral-only (a mixed cut+incise file would force the
-  whole job into Embossment, where the cut won't run).
+  stages on, Forge warns and exports spiral-only — and any emboss/incise layers already in
+  the uploaded file are dropped from the cut export (run them as a separate Embossment job),
+  so the cut always opens in flat-surface mode rather than Embossment, where it can't run.
 - It handles arbitrary contours — holes spiral inward, separate parts get their own
   spirals, and a concave neck that splits an offset forks into independent arms. A scrap
-  neck too thin for even the minimum channel is skipped with a warning.
+  neck too thin for even the minimum channel is skipped with a warning. **Fine, detailed
+  artwork** (names, monograms) cuts cleanly: the path hugs each contour and never jumps
+  across the part — narrow gaps are fully ablated, open edges get the full venting channel.
 - The defaults are tuned for 3 mm brass on the F2 Ultra. Spiral direction and seam
   placement are exposed as tunables — dial them in on your stock.
