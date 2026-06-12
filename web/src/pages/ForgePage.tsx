@@ -159,7 +159,7 @@ export function ForgePage() {
     const ro = new ResizeObserver(() => {
       setCanvasSize({
         w: Math.max(320, el.clientWidth),
-        h: Math.max(240, el.clientHeight),
+        h: Math.max(160, el.clientHeight),
       });
     });
     ro.observe(el);
@@ -455,7 +455,9 @@ export function ForgePage() {
                       per-stage laser overrides · applied on export
                     </span>
                   </div>
-                  <div className="max-h-[340px] overflow-y-auto">
+                  {/* Sized to content — the canvas gives up the space instead.
+                      The max-h is only a guard for very tall tab states. */}
+                  <div className="max-h-[480px] overflow-y-auto">
                     <ForgeStageParams
                       frameless
                       config={config}
