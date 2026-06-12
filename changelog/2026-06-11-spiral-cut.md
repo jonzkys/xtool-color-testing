@@ -45,9 +45,10 @@ around 57 % of the incise time for the same part.
   the uploaded file are dropped from the cut export (run them as a separate Embossment job),
   so the cut always opens in flat-surface mode rather than Embossment, where it can't run.
 - It handles arbitrary contours — holes spiral inward, separate parts get their own
-  spirals, and a concave neck that splits an offset forks into independent arms. A scrap
-  neck too thin for even the minimum channel is skipped with a warning. **Fine, detailed
-  artwork** (names, monograms) cuts cleanly: the path hugs each contour and never jumps
-  across the part — narrow gaps are fully ablated, open edges get the full venting channel.
+  spirals, and a concave neck that splits an offset forks into independent arms. **Fine,
+  detailed artwork** (names, monograms) cuts cleanly: the spiral starts on the contour
+  itself and walks outward, so every edge gets a through-cut and the path never jumps
+  across the part. A scrap neck too thin for a venting channel still gets that contour
+  through-cut (so it severs), with a warning that thick brass may not fully vent there.
 - The defaults are tuned for 3 mm brass on the F2 Ultra. Spiral direction and seam
   placement are exposed as tunables — dial them in on your stock.
