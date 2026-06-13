@@ -14,9 +14,10 @@ Spiral Cut now speaks **SVG**, both directions.
 **Import.** Drop an `.svg` onto the Spiral page and it becomes a cut. The file is
 converted to a vector-cutting project (reusing the same SVG engine behind the
 SVG Layers and Loom pages), and its **largest shape is auto-selected** as the
-spiral target — every other shape stays in the list so you can switch. From
-there it's the normal Spiral workflow: tune the channel, watch the estimate,
-export.
+spiral target — every other shape stays in the list so you can switch. The
+import size is read from the SVG and can be **adjusted with a Width control** (it
+re-imports at the new physical size). From there it's the normal Spiral
+workflow: tune the channel, watch the estimate, export.
 
 **Export.** Any source — `.xcs`, `.xs`, or `.svg` — can now be exported to any of
 the three. Pick `.xs`/`.xcs` to run the spiral on the machine, or `.svg` to pull

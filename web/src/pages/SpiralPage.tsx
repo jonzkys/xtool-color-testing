@@ -5,6 +5,10 @@ import {
   Button,
   EmptyState,
   Card,
+  CardHeader,
+  CardTitle,
+  Field,
+  NumberField,
 } from "../ui";
 import type { ForgeFormat } from "../lib/forge/forge.worker";
 import { FormatToggle } from "../components/FormatToggle";
@@ -43,7 +47,9 @@ function svgWidthMm(svg: string): number {
     else if (unit === "in") mm = v * 25.4;
     // unitless/px → keep the 100mm default
   }
-  return Math.min(500, Math.max(1, mm || 100));
+  // Round to 1 decimal so the width field shows a clean value (in→mm etc. can
+  // produce long decimals).
+  return Math.min(500, Math.max(1, Math.round((mm || 100) * 10) / 10));
 }
 
 /** Pick the largest target (by source-contour bbox area) — the usual silhouette
@@ -104,6 +110,11 @@ export function SpiralPage() {
   const [materialId, setMaterialId] = useState<string | null>(null);
   const [converting, setConverting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  // The imported SVG (text + name) and its target physical width (mm). Held so
+  // changing the width can re-convert at the new size — width_mm is baked at
+  // svg-stack time, so a re-import is the only way to rescale.
+  const [svgImport, setSvgImport] = useState<{ text: string; name: string } | null>(null);
+  const [svgWidth, setSvgWidth] = useState(100);
 
   const { state, result, selectedIncise, setSelectedIncise, handleFile, loadBuffer, exportAs } =
     useForgeEngine(config);
@@ -130,12 +141,14 @@ export function SpiralPage() {
     }
   }, [state, selectedIncise, setSelectedIncise]);
 
-  /** Route an upload: SVG goes through /api/svg-stack (→ VECTOR_CUTTING .xcs),
-   *  everything else through the worker's file reader. */
+  /** Route an upload: SVG is held (text + derived width) so the size control can
+   *  re-convert it; everything else goes through the worker's file reader. The
+   *  actual svg-stack conversion runs in the debounced effect below. */
   function handleUpload(f: File) {
     setImportError(null);
     const isSvg = f.name.toLowerCase().endsWith(".svg") || f.type === "image/svg+xml";
     if (!isSvg) {
+      setSvgImport(null);
       handleFile(f);
       return;
     }
@@ -143,32 +156,43 @@ export function SpiralPage() {
       setImportError("No material available — add one in the Library before importing an SVG.");
       return;
     }
-    setConverting(true);
     f.text()
-      .then((svg) => {
-        const req: SvgStackRequest = {
-          name: f.name.replace(/\.svg$/i, "") || "spiral",
-          svg_content: svg,
-          width_mm: svgWidthMm(svg),
-          height_mm: null,
-          start_x: 10,
-          start_y: 10,
-          base_params: defaultBaseParams(),
-          processing_type: "VECTOR_CUTTING",
-          scan_angle: 90,
-          stack_passes: 1,
-          stack_step_deg: 90,
-          material_id: materialId,
-          subtract_overlaps: false,
-          format: "xcs",
-        };
-        return svgStackToBytes(req).then((buf) => loadBuffer(buf, f.name));
+      .then((text) => {
+        setSvgWidth(svgWidthMm(text));
+        setSvgImport({ text, name: f.name });
       })
-      .catch((err: unknown) => {
-        setImportError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => setConverting(false));
+      .catch((err: unknown) => setImportError(err instanceof Error ? err.message : String(err)));
   }
+
+  // Convert the held SVG via /api/svg-stack whenever it or its target width
+  // changes (debounced, so dragging the width field doesn't spam the endpoint).
+  useEffect(() => {
+    if (!svgImport || !materialId) return;
+    const t = setTimeout(() => {
+      setConverting(true);
+      const req: SvgStackRequest = {
+        name: svgImport.name.replace(/\.svg$/i, "") || "spiral",
+        svg_content: svgImport.text,
+        width_mm: Math.min(500, Math.max(1, svgWidth)),
+        height_mm: null,
+        start_x: 10,
+        start_y: 10,
+        base_params: defaultBaseParams(),
+        processing_type: "VECTOR_CUTTING",
+        scan_angle: 90,
+        stack_passes: 1,
+        stack_step_deg: 90,
+        material_id: materialId,
+        subtract_overlaps: false,
+        format: "xcs",
+      };
+      svgStackToBytes(req)
+        .then((buf) => loadBuffer(buf, svgImport.name))
+        .catch((err: unknown) => setImportError(err instanceof Error ? err.message : String(err)))
+        .finally(() => setConverting(false));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [svgImport, svgWidth, materialId, loadBuffer]);
 
   /** Export: SVG is built page-side from the generated paths; .xs/.xcs go
    *  through the worker's export (round-trips the parsed document). */
@@ -357,6 +381,22 @@ export function SpiralPage() {
 
               {/* RIGHT: cut geometry + laser/focus controls */}
               <div className="min-h-0 overflow-y-auto pr-1 flex flex-col gap-3">
+                {svgImport && (
+                  <Card>
+                    <CardHeader><CardTitle>Imported SVG</CardTitle></CardHeader>
+                    <div className="grid grid-cols-2 gap-2 p-2 text-xs">
+                      <Field label="Width (mm)">
+                        <NumberField
+                          value={svgWidth}
+                          step={1}
+                          min={1}
+                          max={500}
+                          onChange={(v) => setSvgWidth(Math.min(500, Math.max(1, v)))}
+                        />
+                      </Field>
+                    </div>
+                  </Card>
+                )}
                 <SpiralControls config={config} onChange={setConfig} />
                 {/* Laser & focus — single spiral stage, cut-mode (no density / no Z-descent) */}
                 <div className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">

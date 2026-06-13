@@ -8,7 +8,7 @@
 // in; the hook owns everything worker-side plus the selected cut target (which
 // it auto-selects on parse when there's exactly one). Both ForgePage (eventually)
 // and SpiralPage compose from this so the wiring lives in one place.
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { notify } from "../ui";
 import ForgeWorker from "../lib/forge/forge.worker?worker";
 import type { ForgeFormat, ForgeRequest, ForgeResponse } from "../lib/forge/forge.worker";
@@ -106,13 +106,14 @@ export function useForgeEngine(config: ForgeConfig): ForgeEngine {
 
   /** Mark loading and hand an already-read project buffer to the worker. Used
    *  directly when the bytes come from somewhere other than a File read (e.g.
-   *  an SVG converted via /api/svg-stack). */
-  function loadBuffer(buf: ArrayBuffer, fileName: string) {
+   *  an SVG converted via /api/svg-stack). Stable identity (only stable refs +
+   *  state setters inside) so consumers can safely list it in effect deps. */
+  const loadBuffer = useCallback((buf: ArrayBuffer, fileName: string) => {
     setState({ kind: "loading", fileName });
     setResult(null);
     const req: ForgeRequest = { type: "parse", buf };
     workerRef.current?.postMessage(req, [buf]);
-  }
+  }, []);
 
   function handleFile(f: File) {
     setState({ kind: "loading", fileName: f.name });
