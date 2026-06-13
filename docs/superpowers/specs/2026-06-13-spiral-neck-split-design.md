@@ -100,12 +100,12 @@ defaults (`?? false` / `?? 50` / `?? channelWidthMm`).
 ## Preview & estimate
 
 - The estimate strip already sums per-arm time, so it updates automatically as
-  arms split.
-- The schematic caption reports how many detail-arms were split off.
-- Stretch (not required for v1): tint split-off arms a distinct colour in the
-  schematic so the user can see *where* it will split before cutting. Note the
-  schematic re-derives its own arms (`SpiralCanvas`), so showing real split points
-  there would require mirroring the neck logic; deferred unless wanted.
+  arms split (real-time feedback on the cut cost of splitting).
+- Deferred (the schematic re-derives its own arms in `SpiralCanvas` and has no
+  neck logic, so it cannot reflect real split points without mirroring the
+  generator): a detail-arm count in the caption, and tinting split-off arms a
+  distinct colour. Not built in v1 — revisit if the preview needs to show *where*
+  it splits before cutting.
 
 ## Out of scope
 
