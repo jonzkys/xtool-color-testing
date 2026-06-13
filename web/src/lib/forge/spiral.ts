@@ -39,9 +39,17 @@ function rotateOpen(loop: Pt[], start: number): Pt[] {
   return loop.map((_, i) => loop[(start + i) % loop.length]);
 }
 
-/** Per-level offset rings for one side; stops when an offset collapses. Level 0 = innermost. */
+/**
+ * Per-level offset rings for one side; stops when an offset collapses.
+ * Level 0 = the part CONTOUR itself (k=0), so the spiral starts on the actual
+ * boundary and walks outward. This is what guarantees severance: in tight scrap
+ * the +pitch (and beyond) offsets merge/vanish across the narrow gap and never
+ * reach the boundary, leaving it uncut — but the contour ring always traces the
+ * exact edge, so every part feature gets a through-cut. The outer offsets add
+ * the venting channel where the scrap is wide enough to hold one.
+ */
 function offsetLevels(part: Pt[][], opts: SpiralOptions, sign: 1 | -1): Pt[][][] {
-  const levels: Pt[][][] = [];
+  const levels: Pt[][][] = [part];
   const n = Math.max(1, Math.ceil(opts.channelWidthMm / opts.pitchMm));
   for (let k = 1; k <= n; k++) {
     const rings = offsetRegion(part, sign * k * opts.pitchMm);
@@ -284,12 +292,17 @@ export function spiralFromRegion(part: Pt[][], opts: SpiralOptions): SpiralResul
     return { arms: [], warnings };
   }
   const sign: 1 | -1 = opts.side === "inside" ? -1 : 1;
-  // FIX 2: compute levels once; the first offset is always ±pitchMm regardless
-  // of channelWidthMm, so halving the channel and retrying is identical — drop
-  // the no-op fallback loop entirely.
+  // levels[0] is ALWAYS the part contour (see offsetLevels), so the boundary is
+  // always cut — even where no venting offset fits. The first offset is always
+  // ±pitchMm regardless of channelWidthMm, so there is no channel-halving retry.
   const levels = offsetLevels(part, opts, sign);
-  if (levels.length === 0) {
-    return { arms: [], warnings: ["spiral: region too thin to fit a pass — skipped (re-enable incise here)"] };
+  // Only the contour fit (no offset ring on top): the scrap is too thin for a
+  // venting channel. We still cut the contour so the feature severs, but warn —
+  // thick brass may not fully vent in a contour-only kerf.
+  if (levels.length <= 1) {
+    warnings.push(
+      "spiral: scrap too thin for a venting channel — cutting the contour only here (may not fully sever thick brass; consider incise for this region)",
+    );
   }
   return { arms: buildStrands(levels, opts.pitchMm), warnings };
 }

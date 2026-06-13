@@ -46,10 +46,12 @@ describe("spiralFromRegion (topology)", () => {
 });
 
 describe("spiralFromRegion (fallback) + generateSpiralPaths", () => {
-  it("tiny region (inside) → empty arms + warning, never throws", () => {
+  it("tiny region (inside) → contour-only cut + warning, never throws", () => {
+    // Too thin for a venting channel, but the contour is still cut so the feature
+    // severs (the under-cut-narrow-region fix); warns that brass may not fully vent.
     const tiny: Pt[] = [{ x: 0, y: 0 }, { x: 0.05, y: 0 }, { x: 0.05, y: 0.05 }, { x: 0, y: 0.05 }];
     const r = spiralFromRegion([tiny], { channelWidthMm: 0.8, pitchMm: 0.04, side: "inside", minChannelMm: 0.4 });
-    expect(r.arms.length).toBe(0);
+    expect(r.arms.length).toBe(1);
     expect(r.warnings.length).toBeGreaterThan(0);
   });
   it("generateSpiralPaths → GeneratedPath per arm, class spiral, open polyline in rings[0]", () => {
