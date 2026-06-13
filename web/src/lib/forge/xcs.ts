@@ -501,7 +501,10 @@ export function buildGeneratedXcs(
         pulseWidth: 80,
         mopaFrequency: 65,
         cuttingDrop: true,
-        sinkingMethod: "one",
+        // "step" = stepwise descent (descentPerStep every descentIntervalDescent
+        // passes). resolveStageParams overrides these with the live config; this
+        // is just the standalone default. (Studio enum: J.ONE="one"/J.STEP="step".)
+        sinkingMethod: "step",
         firstCuttingDropValue: 0.06,
         cuttingDropValue: 0.06,
         descentIntervalDescent: 10,

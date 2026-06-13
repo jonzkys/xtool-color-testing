@@ -726,7 +726,9 @@ describe("spiral VECTOR_CUTTING export (A5 round-trip)", () => {
       expect(customize).toBeDefined();
       expect(customize?.cuttingDrop).toBe(true);
       expect(customize?.descentPerStep as number).toBeCloseTo(0.06, 4);
-      expect(customize?.sinkingMethod).toBe("one");
+      // stepwise descent (descentPerStep every descentIntervalDescent passes),
+      // not a single drop — see config.ts / Studio J.STEP="step".
+      expect(customize?.sinkingMethod).toBe("step");
       // Laser overrides from SPIRAL_CUT.stageParams applied.
       expect(customize?.processingLightSource).toBe("red");
       expect(customize?.power).toBe(100);

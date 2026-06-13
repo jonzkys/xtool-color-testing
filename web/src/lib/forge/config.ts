@@ -78,8 +78,12 @@ export function resolveStageParams(config: ForgeConfig): Record<string, StagePar
     passes: sp[STAGE_GROUPS.spiral]?.passes ?? config.spiral.passes,
     sliceNumber: 1,
     // Focus step-down so the cut follows focus down through the thickness.
+    // "step" = stepwise descent (descend `descentPerStep` mm every
+    // `descentIntervalDescent` passes); "one" is a single drop that ignores the
+    // per-step/interval values, making the interval redundant. Studio enum:
+    // J.ONE="one", J.STEP="step".
     cuttingDrop: true,
-    sinkingMethod: "one",
+    sinkingMethod: "step",
     descentIntervalDescent: config.spiral.focusIntervalPasses,
     descentPerStep: config.spiral.focusStepMm,
   };
