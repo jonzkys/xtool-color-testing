@@ -293,6 +293,27 @@ export function ringsToDPath(rings: { x: number; y: number }[][], mmPerUnit: num
     .join(" ");
 }
 
+/**
+ * xTool Studio silently drops a single vector path above ~1570 coordinate
+ * pairs on import (its own exporter never emits more — see samples/Pikachu2).
+ * A long continuous spiral easily exceeds that, so a polyline over the cap is
+ * split into contiguous chunks before export. Each chunk overlaps its
+ * neighbour by one point, so the laser re-enters exactly where it left off and
+ * the channel stays continuous across the (negligible) lift.
+ */
+export const MAX_PATH_POINTS = 1500;
+
+function chunkPolyline(pts: { x: number; y: number }[], max: number): { x: number; y: number }[][] {
+  if (pts.length <= max) return [pts];
+  const chunks: { x: number; y: number }[][] = [];
+  for (let start = 0; start < pts.length - 1; ) {
+    const end = Math.min(start + max, pts.length);
+    chunks.push(pts.slice(start, end));
+    start = end - 1; // share the seam vertex with the next chunk
+  }
+  return chunks;
+}
+
 /** Bounding box (in path units) of all rings, after the mm→units conversion. */
 function ringsBoundsUnits(
   rings: { x: number; y: number }[][],
@@ -418,9 +439,23 @@ export function buildGeneratedXcs(
     ? paths.filter((p) => p.generatedClass === "spiral")
     : paths;
 
-  // append generated displays + processing entries
+  // Split any spiral arm that would exceed the Studio per-path cap into
+  // contiguous chunks. Chunk 0 keeps the plain `forge-N` id so output for
+  // arms that fit is byte-identical; overflow chunks get `forge-N-k`.
+  const genExpanded: Array<{ path: GeneratedPath; chunkIndex: number }> = [];
   for (const path of gen) {
-    const id = `forge-${path.operationOrder}`;
+    if (path.generatedClass === "spiral" && (path.rings[0]?.length ?? 0) > MAX_PATH_POINTS) {
+      chunkPolyline(path.rings[0], MAX_PATH_POINTS).forEach((chunk, i) =>
+        genExpanded.push({ path: { ...path, rings: [chunk] }, chunkIndex: i }),
+      );
+    } else {
+      genExpanded.push({ path, chunkIndex: 0 });
+    }
+  }
+
+  // append generated displays + processing entries
+  for (const { path, chunkIndex } of genExpanded) {
+    const id = chunkIndex === 0 ? `forge-${path.operationOrder}` : `forge-${path.operationOrder}-${chunkIndex}`;
     const isSpiral = path.generatedClass === "spiral";
     const tag = layerTagForGroup(path.groupName);
 

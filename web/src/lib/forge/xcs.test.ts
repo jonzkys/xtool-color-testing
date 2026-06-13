@@ -117,7 +117,7 @@ describe("contourToDPath", () => {
   });
 });
 
-import { buildGeneratedXcs, exportXcs, extractContourSubpaths, ringsToDPath } from "./xcs";
+import { buildGeneratedXcs, exportXcs, extractContourSubpaths, ringsToDPath, MAX_PATH_POINTS } from "./xcs";
 import { runPipeline } from "./pipeline";
 import { DEFAULT_CONFIG } from "./defaults";
 import { AGGRESSIVE, SPIRAL_CUT } from "./presets";
@@ -762,5 +762,60 @@ describe("spiral VECTOR_CUTTING export (A5 round-trip)", () => {
     expect(genIds).not.toContain("forge-99");
     // Only spiral entries (operationOrder from spiralPaths) remain.
     expect(genIds.length).toBe(spiralPaths.length);
+  });
+});
+
+describe("spiral path-length cap (Studio drops paths over ~1570 coord pairs)", () => {
+  type ChunkCanvas = Array<{ displays: Array<{ id: string; dPath?: string }> }>;
+  type ChunkDevice = { data: { value: Array<[string, { displays: { value: Array<[string, unknown]> } }]> } };
+  const ptCount = (d: string) => (d.match(/[ML]/gi) ?? []).length;
+
+  // One long open polyline well over the cap (a zig-zag so it's a real path).
+  const longArm = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ x: i * 0.05, y: (i % 2) * 0.05 }));
+
+  const armPath = (pts: { x: number; y: number }[]): import("./types").GeneratedPath => ({
+    sourceObjectId: "s", generatedClass: "spiral", groupName: STAGE_GROUPS.spiral,
+    layerStart: 0, layerEnd: 1, widthMultiplier: 1, offsetMm: 0.8,
+    sideMode: "outside", operationOrder: 0, enabled: true, rings: [pts],
+  });
+
+  it("splits an over-cap spiral arm into multiple sub-cap displays", () => {
+    const parsed = buildSquareParsed();
+    const incise = parsed.targets[0];
+    const out = buildGeneratedXcs(parsed, incise.id, [armPath(longArm(3500))], 1, resolveStageParams(SPIRAL_CUT)) as { canvas: ChunkCanvas; device: ChunkDevice };
+
+    const gen = out.canvas[0].displays.filter((d) => d.id.startsWith("forge-"));
+    expect(gen.length).toBeGreaterThan(1); // it was split
+    // Every emitted path is under the Studio cap.
+    for (const d of gen) expect(ptCount(d.dPath ?? "")).toBeLessThanOrEqual(MAX_PATH_POINTS);
+    // First chunk keeps the plain id; overflow chunks are forge-0-k.
+    expect(gen.map((d) => d.id)).toContain("forge-0");
+    expect(gen.some((d) => /^forge-0-\d+$/.test(d.id))).toBe(true);
+    // A device entry exists for every emitted display (each cuts).
+    const entryIds = out.device.data.value.flatMap(([, g]) => g.displays.value.map(([id]) => id));
+    for (const d of gen) expect(entryIds).toContain(d.id);
+  });
+
+  it("leaves an under-cap arm untouched (single display, plain id)", () => {
+    const parsed = buildSquareParsed();
+    const incise = parsed.targets[0];
+    const out = buildGeneratedXcs(parsed, incise.id, [armPath(longArm(800))], 1, resolveStageParams(SPIRAL_CUT)) as { canvas: ChunkCanvas };
+    const gen = out.canvas[0].displays.filter((d) => d.id.startsWith("forge-"));
+    expect(gen.length).toBe(1);
+    expect(gen[0].id).toBe("forge-0");
+  });
+
+  it("chunks share a seam vertex so the cut stays continuous", () => {
+    const parsed = buildSquareParsed();
+    const incise = parsed.targets[0];
+    const out = buildGeneratedXcs(parsed, incise.id, [armPath(longArm(3500))], 1, resolveStageParams(SPIRAL_CUT)) as { canvas: ChunkCanvas };
+    const gen = out.canvas[0].displays.filter((d) => d.id.startsWith("forge-")).sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+    const firstPt = (d: string) => d.match(/-?[\d.]+,-?[\d.]+/)![0];
+    const lastPt = (d: string) => [...d.matchAll(/-?[\d.]+,-?[\d.]+/g)].pop()![0];
+    // Each chunk's last vertex equals the next chunk's first vertex.
+    for (let i = 1; i < gen.length; i++) {
+      expect(firstPt(gen[i].dPath ?? "")).toBe(lastPt(gen[i - 1].dPath ?? ""));
+    }
   });
 });
