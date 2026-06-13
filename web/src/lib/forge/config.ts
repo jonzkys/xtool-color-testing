@@ -7,6 +7,7 @@ export const STAGE_GROUPS = {
   perforate: "CUT_02_PERFORATE",
   clean: "CUT_07_CLEAN",
   spiral: "CUT_08_SPIRAL",
+  spiralDetail: "CUT_09_SPIRAL_DETAIL",
 } as const;
 
 /**
@@ -86,6 +87,13 @@ export function resolveStageParams(config: ForgeConfig): Record<string, StagePar
     sinkingMethod: "step",
     descentIntervalDescent: config.spiral.focusIntervalPasses,
     descentPerStep: config.spiral.focusStepMm,
+  };
+
+  // Detail arms (necks split off) get their own group/layer so they can carry
+  // independent machine params later; v1 mirrors the main spiral group.
+  out[STAGE_GROUPS.spiralDetail] = {
+    ...out[STAGE_GROUPS.spiral],
+    ...(sp[STAGE_GROUPS.spiralDetail] ?? {}),
   };
 
   // Deepen groups: linking + each group's own toLayer as sliceNumber (unchanged).

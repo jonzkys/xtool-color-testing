@@ -111,6 +111,12 @@ export interface SpiralConfig {
   focusStepMm: number;
   /** Step the focus every N passes. */
   focusIntervalPasses: number;
+  /** Split thin features off the perimeter spiral into their own arms. */
+  splitNecks: boolean;
+  /** A location counts as a neck when local width < this % of channel width. */
+  neckThresholdPct: number;
+  /** Overlap (mm) each split arm shares with its neighbour at the neck. */
+  neckOverlapMm: number;
 }
 
 export interface ForgeConfig {
