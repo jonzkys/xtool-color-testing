@@ -111,6 +111,8 @@ export interface SpiralConfig {
   focusStepMm: number;
   /** Step the focus every N passes. */
   focusIntervalPasses: number;
+  /** Initial focus drop (mm) applied before the stepwise descent begins. */
+  focusInitialMm: number;
 }
 
 export interface ForgeConfig {
@@ -154,9 +156,11 @@ export interface StageParams {
   zDecline?: number; // mm per descent step (→ customize.zDecline)
   sliceNumber?: number; // total layers/slices (→ customize.sliceNumber)
   cuttingDrop?: boolean;            // → customize.cuttingDrop (focus descent on)
-  sinkingMethod?: string;           // → customize.sinkingMethod ("one")
+  sinkingMethod?: string;           // → customize.sinkingMethod ("one" single | "step" stepwise)
   descentIntervalDescent?: number;  // → customize.descentIntervalDescent (every N passes)
   descentPerStep?: number;          // → customize.descentPerStep (mm per step)
+  firstCuttingDropValue?: number;   // → customize.firstCuttingDropValue (initial focus drop, mm)
+  cuttingDropValue?: number;        // → customize.cuttingDropValue (mirrors initial focus drop)
 }
 
 /** One object detected inside the uploaded XCS. */
