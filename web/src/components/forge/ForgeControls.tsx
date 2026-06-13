@@ -86,8 +86,7 @@ export function ForgeControls({ config, onChange }: ForgeControlsProps) {
 
   const presetLabel =
     config.activePreset === "lean" ? "Lean" :
-    config.activePreset === "aggressive" ? "Aggressive" :
-    config.activePreset === "spiral" ? "Spiral Cut" : "Custom";
+    config.activePreset === "aggressive" ? "Aggressive" : "Custom";
 
   return (
     <div className="flex flex-col gap-2 text-xs">
@@ -105,7 +104,6 @@ export function ForgeControls({ config, onChange }: ForgeControlsProps) {
             >
               <option value="lean">Lean (fast)</option>
               <option value="aggressive">Aggressive (deep 1/2/4/8)</option>
-              <option value="spiral">Spiral Cut</option>
               <option value="custom" disabled>Custom</option>
             </Select>
           </Field>
@@ -286,49 +284,6 @@ export function ForgeControls({ config, onChange }: ForgeControlsProps) {
           <Field label="Layers">
             <NumberField value={config.clean.layerCount} step={1} min={1}
               onChange={(v) => patch({ clean: { ...config.clean, layerCount: Math.max(1, v) } })} />
-          </Field>
-        </div>
-      </RailSection>
-
-      {/* Spiral Cut */}
-      <RailSection
-        title="Spiral Cut (CUT_08)"
-        check={{
-          checked: config.spiral.enabled,
-          onChange: (v) => patch({ spiral: { ...config.spiral, enabled: v } }),
-        }}
-      >
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Channel width (mm)">
-            <NumberField value={config.spiral.channelWidthMm} step={0.05} min={0.05}
-              onChange={(v) => patch({ spiral: { ...config.spiral, channelWidthMm: v } })} />
-          </Field>
-          <Field label="Pitch (mm)">
-            <NumberField value={config.spiral.pitchMm} step={0.01} min={0.005}
-              onChange={(v) => patch({ spiral: { ...config.spiral, pitchMm: v } })} />
-          </Field>
-          <Field label="Min channel (mm)">
-            <NumberField value={config.spiral.minChannelMm} step={0.05} min={0.05}
-              onChange={(v) => patch({ spiral: { ...config.spiral, minChannelMm: v } })} />
-          </Field>
-          <Field label="Passes">
-            <NumberField value={config.spiral.passes} step={1} min={1}
-              onChange={(v) => patch({ spiral: { ...config.spiral, passes: Math.max(1, v) } })} />
-          </Field>
-          <Field label="Focus step (mm)">
-            <NumberField value={config.spiral.focusStepMm} step={0.01} min={0}
-              onChange={(v) => patch({ spiral: { ...config.spiral, focusStepMm: v } })} />
-          </Field>
-          <Field label="Focus interval (passes)">
-            <NumberField value={config.spiral.focusIntervalPasses} step={1} min={1}
-              onChange={(v) => patch({ spiral: { ...config.spiral, focusIntervalPasses: Math.max(1, v) } })} />
-          </Field>
-          <Field label="Side" className="col-span-2">
-            <Select value={config.spiral.side}
-              onChange={(e) => patch({ spiral: { ...config.spiral, side: e.target.value as "outside" | "inside" } })}>
-              <option value="outside">outside</option>
-              <option value="inside">inside</option>
-            </Select>
           </Field>
         </div>
       </RailSection>

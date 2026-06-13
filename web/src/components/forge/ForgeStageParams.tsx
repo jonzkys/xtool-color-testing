@@ -32,6 +32,9 @@ export interface ForgeStageParamsProps {
   /** Render without the Card/title frame — for embedding in the page's
    *  stage-parameters tray, which provides its own chrome. */
   frameless?: boolean;
+  /** Lock to a single stage group and hide the tab strip — for the Spiral
+   *  page, which has exactly one operation. */
+  lockToGroup?: string;
 }
 
 /** The operations that get exported, in process order, as [groupName, label]. */
@@ -69,11 +72,14 @@ const NUMERIC_FIELDS: Array<{
  *  supplies one. */
 const Z_DEFAULTS = { zLayers: 1, zDecline: 0.01, sliceNumber: 256 } as const;
 
-export function ForgeStageParams({ config, onChange, sourceParams, frameless }: ForgeStageParamsProps) {
+export function ForgeStageParams({ config, onChange, sourceParams, frameless, lockToGroup }: ForgeStageParamsProps) {
   const { registry, machineId } = useCurrentMachine();
   const profile = getValidationProfile(registry, machineId, "color_engrave");
 
-  const stages = stageList(config);
+  // In lockToGroup mode only the one named stage is shown and the tab strip is
+  // hidden; otherwise every exported stage gets a tab.
+  const allStages = stageList(config);
+  const stages = lockToGroup ? allStages.filter((s) => s.group === lockToGroup) : allStages;
   // Track the active stage by POSITION, not its (user-editable) group name, so a
   // deepen-group rename keeps the tab on that group instead of silently falling
   // back to Seed.
@@ -195,24 +201,26 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless }: 
 
   const body = (
       <div className={frameless ? "px-4 py-2.5" : "p-2"}>
-        {/* tabs */}
-        <div className={cn("flex flex-wrap gap-1", frameless ? "mb-2" : "mb-3")}>
-          {stages.map((s, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => setActiveIdx(i)}
-              className={cn(
-                "px-2 py-1 text-[11px] font-mono uppercase rounded transition-colors",
-                i === idx
-                  ? "bg-[var(--color-primary)] text-[var(--color-on-primary,#fff)]"
-                  : "text-[var(--color-ink-muted)] hover:text-[var(--color-fg)] border border-[var(--color-border)]",
-              )}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+        {/* tabs — hidden in lockToGroup (single-stage) mode */}
+        {!lockToGroup && (
+          <div className={cn("flex flex-wrap gap-1", frameless ? "mb-2" : "mb-3")}>
+            {stages.map((s, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setActiveIdx(i)}
+                className={cn(
+                  "px-2 py-1 text-[11px] font-mono uppercase rounded transition-colors",
+                  i === idx
+                    ? "bg-[var(--color-primary)] text-[var(--color-on-primary,#fff)]"
+                    : "text-[var(--color-ink-muted)] hover:text-[var(--color-fg)] border border-[var(--color-border)]",
+                )}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* "Copy from first deepen stage" — only for deepen groups after the first */}
         {isDeepenAfterFirst && (

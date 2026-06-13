@@ -34,6 +34,9 @@ describe("ForgeControls deepen name field", () => {
     render(<Harness />);
     const firstName = DEFAULT_CONFIG.deepen.groups[0].name;
 
+    // Rail sections start collapsed — open "Deepen groups" before its inputs mount.
+    await user.click(screen.getByRole("button", { name: /Deepen groups/i }));
+
     const input = screen.getByDisplayValue(firstName);
     await user.click(input);
     await user.type(input, "_Z9");

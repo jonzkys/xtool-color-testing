@@ -5,9 +5,6 @@ import {
   Button,
   EmptyState,
   Card,
-  CardHeader,
-  CardTitle,
-  Badge,
   notify,
 } from "../ui";
 import ForgeWorker from "../lib/forge/forge.worker?worker";
@@ -25,6 +22,7 @@ import { DEFAULT_CONFIG } from "../lib/forge/defaults";
 import { splitSubpaths } from "../lib/forge/contour";
 import { ForgeCanvas, CLASS_COLOR } from "../components/forge/ForgeCanvas";
 import { ForgeControls } from "../components/forge/ForgeControls";
+import { ForgeSourcePanel } from "../components/forge/ForgeSourcePanel";
 import { ForgeDebugPanel } from "../components/forge/ForgeDebugPanel";
 import { ForgeEstimateStrip } from "../components/forge/ForgeEstimateStrip";
 import { ForgeStageParams } from "../components/forge/ForgeStageParams";
@@ -47,7 +45,7 @@ function loadConfig(): ForgeConfig {
     const raw = localStorage.getItem(CONFIG_LS_KEY);
     if (!raw) return DEFAULT_CONFIG;
     const p = JSON.parse(raw) as Partial<ForgeConfig>;
-    return {
+    const merged: ForgeConfig = {
       ...DEFAULT_CONFIG,
       ...p,
       seed: { ...DEFAULT_CONFIG.seed, ...(p.seed ?? {}) },
@@ -63,6 +61,20 @@ function loadConfig(): ForgeConfig {
       timeBudgetX: p.timeBudgetX ?? DEFAULT_CONFIG.timeBudgetX,
       activePreset: p.activePreset ?? DEFAULT_CONFIG.activePreset,
     };
+    // Spiral Cut moved to its own page (#/spiral); this deprecated page never
+    // runs it, so force any stale spiral-on state off (also keeps the removed
+    // spiral stage tab from resurfacing).
+    merged.spiral = { ...merged.spiral, enabled: false };
+    // A config carried over from Spiral has every incise stage off, which would
+    // render an empty Forge — fall back to the default staged setup if nothing
+    // is left enabled.
+    const anyStage =
+      merged.seed.enabled ||
+      merged.perforate.enabled ||
+      merged.clean.enabled ||
+      merged.deepen.groups.length > 0;
+    if (!anyStage) return DEFAULT_CONFIG;
+    return merged;
   } catch {
     return DEFAULT_CONFIG;
   }
@@ -86,10 +98,11 @@ const ALL_VISIBLE: Record<GeneratedClass, boolean> = {
   perforate: true,
   deepen: true,
   clean: true,
-  spiral: true,
+  // Spiral lives on its own page now; never rendered here.
+  spiral: false,
 };
 
-const CLASSES: GeneratedClass[] = ["seed", "perforate", "deepen", "clean", "spiral"];
+const CLASSES: GeneratedClass[] = ["seed", "perforate", "deepen", "clean"];
 
 export function ForgePage() {
   const [state, setState] = useState<State>({ kind: "idle" });
@@ -334,6 +347,15 @@ export function ForgePage() {
 
         {state.kind === "ready" && (
           <>
+            {/* deprecation signpost — Forge is being phased out for Spiral Cut */}
+            <div className="shrink-0 mt-3 rounded-[8px] border border-[color:var(--color-warning)]/30 bg-[color:var(--color-warning-tint)] px-3 py-2 text-[12px] text-[color:var(--color-warning)]">
+              Forge is being phased out — use{" "}
+              <a href="#/spiral" className="font-semibold text-[var(--color-primary)] hover:underline">
+                Spiral Cut
+              </a>{" "}
+              for severing cuts. This page stays for the staged seed / perforate / deepen / clean workflow.
+            </div>
+
             {/* instrument readout: always visible, never reflows */}
             <div className="shrink-0 pt-3">
               <ForgeEstimateStrip estimate={result?.stats.estimate ?? null} />
@@ -342,72 +364,14 @@ export function ForgePage() {
             {/* workbench: rails scroll internally, canvas takes the slack */}
             <div className="flex-1 min-h-0 pt-3 grid grid-cols-[248px_minmax(0,1fr)_332px] gap-3 items-stretch">
               {/* LEFT: source & validation */}
-              <div className="min-h-0 overflow-y-auto pr-1 flex flex-col gap-3 text-xs">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Validation</CardTitle>
-                  </CardHeader>
-                  <div className="p-2 flex flex-col gap-1">
-                    {validation.errors.length === 0 ? (
-                      <Badge variant="accent">ready</Badge>
-                    ) : (
-                      validation.errors.map((e, i) => (
-                        <Badge key={i} variant="destructive" className="block w-full whitespace-normal break-words rounded-md text-left py-1">
-                          {e}
-                        </Badge>
-                      ))
-                    )}
-                    {validation.warnings.map((w, i) => (
-                      <Badge key={`w${i}`} variant="warning" className="block w-full whitespace-normal break-words rounded-md text-left py-1">
-                        {w}
-                      </Badge>
-                    ))}
-                  </div>
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Cut target</CardTitle>
-                  </CardHeader>
-                  <div className="p-2 font-mono flex flex-col gap-1">
-                    {state.targetIds.map((id) => {
-                      const o = state.objects.find((x) => x.id === id);
-                      return (
-                        <label key={id} className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            name="incise"
-                            checked={selectedIncise === id}
-                            onChange={() => setSelectedIncise(id)}
-                          />
-                          {id.slice(0, 8)} · {o?.processingType ?? "INTAGLIO"}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Preserved layers</CardTitle>
-                  </CardHeader>
-                  <div className="p-2 font-mono flex flex-col gap-1 text-[var(--color-ink-muted)]">
-                    {state.preservedIds.length === 0 ? (
-                      <span>None — only the cut target is present.</span>
-                    ) : (
-                      <>
-                        {state.preservedIds.map((id) => {
-                          const o = state.objects.find((x) => x.id === id);
-                          return (
-                            <div key={id}>
-                              {id.slice(0, 8)} · {o?.processingType ?? "—"}
-                            </div>
-                          );
-                        })}
-                        <span className="mt-1 text-[10px]">passed through untouched</span>
-                      </>
-                    )}
-                  </div>
-                </Card>
-              </div>
+              <ForgeSourcePanel
+                validation={validation}
+                targetIds={state.targetIds}
+                selectedIncise={selectedIncise}
+                onSelectIncise={setSelectedIncise}
+                preservedIds={state.preservedIds}
+                objects={state.objects}
+              />
 
               {/* CENTER: preview fills the column; legend rides with it */}
               <div className="min-w-0 min-h-0 flex flex-col gap-2">
