@@ -7,6 +7,7 @@
 import { Card, CardHeader, CardTitle, Field, NumberField, Select } from "../../ui";
 import type { ForgeConfig, SpiralConfig } from "../../lib/forge/types";
 import { SPIRAL_CUT } from "../../lib/forge/presets";
+import { SpiralGeometryHelp } from "./SpiralGeometryHelp";
 
 export interface SpiralControlsProps {
   config: ForgeConfig;
@@ -50,6 +51,7 @@ export function SpiralControls({ config, onChange }: SpiralControlsProps) {
               <span aria-hidden className="text-[11px] leading-none">↺</span>
             </button>
             <CardTitle>Cut geometry</CardTitle>
+            <SpiralGeometryHelp />
           </div>
         </CardHeader>
         <div className="grid grid-cols-2 gap-2 p-2">
