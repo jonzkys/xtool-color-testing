@@ -184,6 +184,29 @@ export function buildPartRegion(subpaths: Contour[]): Pt[][] {
 }
 
 /**
+ * Reconstruct a vector SHAPE's filled region using the canonical SVG even-odd
+ * fill rule: a point is solid iff it lies inside an odd number of the loops.
+ * A union under the even-odd fill type does exactly this in one step and is
+ * winding-independent, so it is robust to imported geometry whose loop
+ * orientation isn't guaranteed (e.g. an .svg routed through /api/svg-stack).
+ *
+ * This is the right region for the spiral cut, whose target is a shape outline
+ * (outer boundary + counters), NOT a doubled-wall incise kerf. `buildPartRegion`
+ * exists for the latter; do not conflate them. For a single-loop target both
+ * produce the same solid, so simple shapes (the brass cut-test) are unaffected.
+ *
+ * Returns rings (Pt[][]); clipper normalises orientation, so positive/negative
+ * area still distinguishes outer boundaries from holes for downstream banding.
+ */
+export function buildFillRegion(subpaths: Contour[]): Pt[][] {
+  const loops = subpaths
+    .map((c) => simplifyLoop(c.points, SIMPLIFY_EPS_MM))
+    .filter((r) => r.length >= 3);
+  if (loops.length === 0) return [];
+  return clipExecute(ClipperLib.ClipType.ctUnion, loops, [], true);
+}
+
+/**
  * Scrap-side band of width `widthMm` around the part region.
  *
  *   outside   → outer = offset(part, +w),  inner = part

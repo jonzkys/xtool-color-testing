@@ -11,7 +11,7 @@ import type {
 import { extractContourSubpaths, calibrateMmPerUnit } from "./xcs";
 import { optimalScanAngle, perpendicularExtentAt } from "./scanangle";
 import { inferWindingAndOutside } from "./contour";
-import { buildPartRegion } from "./offset";
+import { buildPartRegion, buildFillRegion } from "./offset";
 import { estimateForge } from "./estimate";
 import { fmtDuration } from "../cuttime/model";
 import {
@@ -84,7 +84,14 @@ export function runPipeline(
   // kerf is a scrap-side band around this region (the part body is a hole in
   // each band), so there are no per-subpath tiny displays.
   const part = buildPartRegion(subpaths);
-  if (part.length === 0) {
+  // The spiral cut targets a vector SHAPE outline (outer boundary + counters),
+  // which follows the canonical even-odd fill rule. buildPartRegion is tuned for
+  // doubled-wall incise kerfs and drops a single-walled outer outline (its level-0
+  // loop), so a holed shape like text loses its main external cut. Give the spiral
+  // its own even-odd region; the incise stages keep `part`.
+  const spiralRegion = cfg.spiral.enabled ? buildFillRegion(subpaths) : part;
+  const activeRegion = cfg.spiral.enabled ? spiralRegion : part;
+  if (activeRegion.length === 0) {
     warnings.push("Could not reconstruct a part region from the incise contour; no paths generated.");
     const empty: Record<GeneratedClass, number> = { seed: 0, perforate: 0, deepen: 0, clean: 0, spiral: 0 };
     return {
@@ -113,7 +120,7 @@ export function runPipeline(
   const perf = generatePerforationPaths(part, cfg, inciseId);
   const deepen = generateDeepenPaths(part, cfg, inciseId);
   const clean = generateCleanPaths(part, cfg, inciseId);
-  const spiralPaths = generateSpiralPaths(part, cfg, inciseId);
+  const spiralPaths = generateSpiralPaths(spiralRegion, cfg, inciseId);
 
   // Standalone guard: spiral is mutually exclusive with incise stages.
   if (
@@ -151,7 +158,7 @@ export function runPipeline(
   const forEstimate = ordered.some((p) => p.generatedClass === "spiral")
     ? ordered.filter((p) => p.generatedClass === "spiral")
     : ordered;
-  const estimate = estimateForge(forEstimate, part, cfg, obj.params);
+  const estimate = estimateForge(forEstimate, activeRegion, cfg, obj.params);
   if (estimate.overBudget) {
     const worst = estimate.worst
       .map((w) => `${w.groupName.replace(/^CUT_\d+_/, "")} ${fmtDuration(w.seconds)}`)
