@@ -29,6 +29,12 @@ export interface ForgeStageParamsProps {
   /** Source incise's laser params; widgets pre-fill from these when an
    *  override is unset. */
   sourceParams?: StageParams;
+  /** Render without the Card/title frame — for embedding in the page's
+   *  stage-parameters tray, which provides its own chrome. */
+  frameless?: boolean;
+  /** Lock to a single stage group and hide the tab strip — for the Spiral
+   *  page, which has exactly one operation. */
+  lockToGroup?: string;
 }
 
 /** The operations that get exported, in process order, as [groupName, label]. */
@@ -66,11 +72,14 @@ const NUMERIC_FIELDS: Array<{
  *  supplies one. */
 const Z_DEFAULTS = { zLayers: 1, zDecline: 0.01, sliceNumber: 256 } as const;
 
-export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageParamsProps) {
+export function ForgeStageParams({ config, onChange, sourceParams, frameless, lockToGroup }: ForgeStageParamsProps) {
   const { registry, machineId } = useCurrentMachine();
   const profile = getValidationProfile(registry, machineId, "color_engrave");
 
-  const stages = stageList(config);
+  // In lockToGroup mode only the one named stage is shown and the tab strip is
+  // hidden; otherwise every exported stage gets a tab.
+  const allStages = stageList(config);
+  const stages = lockToGroup ? allStages.filter((s) => s.group === lockToGroup) : allStages;
   // Track the active stage by POSITION, not its (user-editable) group name, so a
   // deepen-group rename keeps the tab on that group instead of silently falling
   // back to Seed.
@@ -169,30 +178,49 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
   const totalDepth = descentDepthMm(depthLayers, zLayers, zDecline);
   const depthAt256 = descentDepthMm(256, zLayers, zDecline);
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Stage parameters</CardTitle>
-      </CardHeader>
-      <div className="p-2">
-        {/* tabs */}
-        <div className="flex flex-wrap gap-1 mb-3">
-          {stages.map((s, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => setActiveIdx(i)}
-              className={cn(
-                "px-2 py-1 text-[11px] font-mono uppercase rounded transition-colors",
-                i === idx
-                  ? "bg-[var(--color-primary)] text-[var(--color-on-primary,#fff)]"
-                  : "text-[var(--color-ink-muted)] hover:text-[var(--color-fg)] border border-[var(--color-border)]",
-              )}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+  // Layer count (slices; "Passes" on the spiral tab) — one definition, slotted
+  // into the param grid next to Laser in frameless mode, or its own row in the
+  // framed layout.
+  const layerCountField = !isDeepen ? (
+    <Field label={isSpiral ? "Passes" : "Layer count"}>
+      <NumberField
+        value={nonDeepenLayerCount}
+        min={1}
+        step={1}
+        integer
+        onChange={(v) => {
+          const n = Math.max(1, v);
+          if (current.group === STAGE_GROUPS.seed) onChange({ ...config, seed: { ...config.seed, layerCount: n }, activePreset: "custom" });
+          else if (current.group === STAGE_GROUPS.perforate) onChange({ ...config, perforate: { ...config.perforate, layerCount: n }, activePreset: "custom" });
+          else if (current.group === STAGE_GROUPS.clean) onChange({ ...config, clean: { ...config.clean, layerCount: n }, activePreset: "custom" });
+          else if (current.group === STAGE_GROUPS.spiral) onChange({ ...config, spiral: { ...config.spiral, passes: n }, activePreset: "custom" });
+        }}
+      />
+    </Field>
+  ) : null;
+
+  const body = (
+      <div className={frameless ? "px-4 py-2.5" : "p-2"}>
+        {/* tabs — hidden in lockToGroup (single-stage) mode */}
+        {!lockToGroup && (
+          <div className={cn("flex flex-wrap gap-1", frameless ? "mb-2" : "mb-3")}>
+            {stages.map((s, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setActiveIdx(i)}
+                className={cn(
+                  "px-2 py-1 text-[11px] font-mono uppercase rounded transition-colors",
+                  i === idx
+                    ? "bg-[var(--color-primary)] text-[var(--color-on-primary,#fff)]"
+                    : "text-[var(--color-ink-muted)] hover:text-[var(--color-fg)] border border-[var(--color-border)]",
+                )}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* "Copy from first deepen stage" — only for deepen groups after the first */}
         {isDeepenAfterFirst && (
@@ -213,7 +241,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
 
         {/* laser-param fields */}
         {profile ? (
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+          <div className={cn("grid gap-x-3 gap-y-2", frameless ? "grid-cols-3" : "grid-cols-2")}>
             {NUMERIC_FIELDS.map(({ snake, param, label, unit }) => {
               const c = profile[snake];
               if (!c || c.kind === "not_applicable") return null;
@@ -272,6 +300,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
                 />
               );
             })()}
+            {frameless && layerCountField}
           </div>
         ) : (
           // Off-F2 / registry not loaded: fall back to free numeric inputs.
@@ -295,35 +324,29 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
                 />
               </Field>
             ))}
+            {frameless && layerCountField}
           </div>
         )}
 
-        {!isDeepen && (
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            <Field label={isSpiral ? "Passes" : "Layer count"}>
-              <NumberField
-                value={nonDeepenLayerCount}
-                min={1}
-                step={1}
-                integer
-                onChange={(v) => {
-                  const n = Math.max(1, v);
-                  if (current.group === STAGE_GROUPS.seed) onChange({ ...config, seed: { ...config.seed, layerCount: n }, activePreset: "custom" });
-                  else if (current.group === STAGE_GROUPS.perforate) onChange({ ...config, perforate: { ...config.perforate, layerCount: n }, activePreset: "custom" });
-                  else if (current.group === STAGE_GROUPS.clean) onChange({ ...config, clean: { ...config.clean, layerCount: n }, activePreset: "custom" });
-                  else if (current.group === STAGE_GROUPS.spiral) onChange({ ...config, spiral: { ...config.spiral, passes: n }, activePreset: "custom" });
-                }}
-              />
-            </Field>
-          </div>
+        {!frameless && !isDeepen && (
+          <div className="mt-3 grid grid-cols-3 gap-2">{layerCountField}</div>
         )}
 
         {/* Spiral focus descent — editable directly on the spiral config, not via stageParams */}
         {isSpiral && (
-          <div className="mt-3 border border-[var(--color-border)] rounded p-2">
-            <p className="font-mono text-[11px] text-[var(--color-ink-muted)] mb-2">Focus descent (spiral)</p>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="descentPerStep (mm)">
+          <div className={cn(
+            "border border-[var(--color-border)] rounded",
+            frameless ? "mt-2 flex flex-wrap items-end gap-x-4 gap-y-1 px-2 py-1.5" : "mt-3 p-2",
+          )}>
+            {frameless ? (
+              <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-ink-subtle)] pb-2.5">
+                Focus descent
+              </span>
+            ) : (
+              <p className="font-mono text-[11px] text-[var(--color-ink-muted)] mb-2">Focus descent (spiral)</p>
+            )}
+            <div className={frameless ? "flex items-end gap-2" : "grid grid-cols-2 gap-2"}>
+              <Field label={frameless ? "per step (mm)" : "descentPerStep (mm)"} className={frameless ? "w-28" : undefined}>
                 <NumberField
                   value={config.spiral.focusStepMm}
                   min={0}
@@ -331,7 +354,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
                   onChange={(v) => onChange({ ...config, spiral: { ...config.spiral, focusStepMm: v >= 0 ? v : 0 }, activePreset: "custom" })}
                 />
               </Field>
-              <Field label="descentIntervalDescent (passes)">
+              <Field label={frameless ? "every N passes" : "descentIntervalDescent (passes)"} className={frameless ? "w-28" : undefined}>
                 <NumberField
                   value={config.spiral.focusIntervalPasses}
                   min={1}
@@ -344,9 +367,15 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
           </div>
         )}
 
-        {/* Z-axis descent group */}
-        <div className="mt-3 border border-[var(--color-border)] rounded p-2">
-          <label className="flex items-center gap-2 font-mono text-[11px] text-[var(--color-ink-muted)]">
+        {/* Z-axis descent group — one horizontal row in the frameless tray */}
+        <div className={cn(
+          "border border-[var(--color-border)] rounded",
+          frameless ? "mt-2 flex flex-wrap items-end gap-x-4 gap-y-1 px-2 py-1.5" : "mt-3 p-2",
+        )}>
+          <label className={cn(
+            "flex items-center gap-2 font-mono text-[11px] text-[var(--color-ink-muted)]",
+            frameless && zEnabled && "pb-2.5",
+          )}>
             <input
               type="checkbox"
               checked={zEnabled}
@@ -357,8 +386,8 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
           </label>
           {zEnabled && (
             <>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <Field label="Every N layers">
+              <div className={frameless ? "flex items-end gap-2" : "grid grid-cols-2 gap-2 mt-2"}>
+                <Field label={frameless ? "Every N" : "Every N layers"} className={frameless ? "w-24" : undefined}>
                   <NumberField
                     value={zLayers}
                     min={1}
@@ -368,7 +397,7 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
                     onChange={(v) => setParam("zLayers", v >= 1 ? v : 1)}
                   />
                 </Field>
-                <Field label="By mm">
+                <Field label="By mm" className={frameless ? "w-24" : undefined}>
                   <NumberField
                     value={zDecline}
                     min={0}
@@ -378,7 +407,10 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
                   />
                 </Field>
               </div>
-              <div className="grid grid-cols-2 gap-2 mt-2 font-mono text-[11px] text-[var(--color-ink-muted)]">
+              <div className={cn(
+                "font-mono text-[11px] text-[var(--color-ink-muted)]",
+                frameless ? "flex items-center gap-2 pb-1" : "grid grid-cols-2 gap-2 mt-2",
+              )}>
                 <div className="flex items-baseline justify-between gap-2 rounded bg-[var(--color-bg)] px-2 py-1">
                   <span className="uppercase tracking-[0.08em] text-[9.5px] text-[var(--color-ink-subtle)]">
                     Total depth
@@ -416,6 +448,15 @@ export function ForgeStageParams({ config, onChange, sourceParams }: ForgeStageP
           )}
         </div>
       </div>
+  );
+
+  if (frameless) return body;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Stage parameters</CardTitle>
+      </CardHeader>
+      {body}
     </Card>
   );
 }

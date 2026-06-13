@@ -22,6 +22,11 @@ describe("parseRoute", () => {
     expect(parseRoute("#/stability")).toEqual({ name: "stability" });
     expect(parseRoute("#/stability/42")).toEqual({ name: "stability", id: 42 });
   });
+  test("Cut menu routes", () => {
+    expect(parseRoute("#/spiral")).toEqual({ name: "spiral" });
+    // Forge stays at #/forge so old links/bookmarks survive the split.
+    expect(parseRoute("#/forge")).toEqual({ name: "forge" });
+  });
 });
 
 describe("formatRoute", () => {
@@ -35,6 +40,8 @@ describe("formatRoute", () => {
       { name: "palette" },
       { name: "stability" },
       { name: "stability", id: 7 },
+      { name: "spiral" },
+      { name: "forge" },
     ] as const) {
       expect(parseRoute(formatRoute(r))).toEqual(r);
     }
