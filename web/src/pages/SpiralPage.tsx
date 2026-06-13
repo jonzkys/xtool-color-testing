@@ -351,9 +351,13 @@ export function SpiralPage() {
               <ForgeEstimateStrip estimate={result?.stats.estimate ?? null} variant="spiral" />
             </div>
 
-            <div className="flex-1 min-h-0 pt-3 grid grid-cols-[248px_minmax(0,1fr)_332px] gap-3 items-stretch">
+            {/* grid-rows-[minmax(0,1fr)] bounds the single row to the container
+                height; without it the row is auto-sized to the tallest column's
+                content, so the right control rail overflows the height-capped
+                parent (overflow-hidden) and its own overflow-y-auto never scrolls. */}
+            <div className="flex-1 min-h-0 pt-3 grid grid-cols-[248px_minmax(0,1fr)_332px] grid-rows-[minmax(0,1fr)] gap-3 items-stretch">
               {/* LEFT: source + debug (debug lives here, not on the right) */}
-              <div className="min-h-0 overflow-y-auto pr-1 flex flex-col gap-3">
+              <div className="min-h-0 overflow-y-auto pr-1 flex flex-col gap-3 [&>*]:shrink-0">
                 <ForgeSourcePanel
                   validation={validation}
                   targetIds={state.targetIds}
@@ -380,7 +384,7 @@ export function SpiralPage() {
               </Card>
 
               {/* RIGHT: cut geometry + laser/focus controls */}
-              <div className="min-h-0 overflow-y-auto pr-1 flex flex-col gap-3">
+              <div className="min-h-0 overflow-y-auto pr-1 flex flex-col gap-3 [&>*]:shrink-0">
                 {svgImport && (
                   <Card>
                     <CardHeader><CardTitle>Imported SVG</CardTitle></CardHeader>
