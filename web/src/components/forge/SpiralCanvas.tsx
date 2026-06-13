@@ -12,7 +12,7 @@
 // involvement. The literal cut still drives the estimate/debug elsewhere.
 import { useEffect, useRef, useState } from "react";
 import type { Contour, Pt } from "../../lib/forge/types";
-import { offsetRegion, simplifyLoop } from "../../lib/forge/offset";
+import { offsetRegion, simplifyLoop, buildFillRegion } from "../../lib/forge/offset";
 
 const SPIRAL = "#ec4899"; // brand pink — matches CLASS_COLOR.spiral / the legend
 // Cap on rendered arms — the schematic shows the *true* arm count
@@ -59,7 +59,13 @@ function buildSchematic(
   pitchMm: number,
   side: "outside" | "inside",
 ): Schematic | null {
-  const raw = source.map((c) => c.points).filter((pts) => pts.length >= 3);
+  // Build arms from the SAME canonical even-odd region the real cut uses
+  // (buildFillRegion), not the raw SVG subpaths. Raw imported subpaths can have
+  // inconsistent winding, which makes the clipper "outside" offset collapse on
+  // some sides — leaving the venting band missing along, e.g., the bottom of the
+  // rightmost strokes. Normalising first keeps the schematic symmetric AND
+  // faithful to what gets exported.
+  const raw = buildFillRegion(source).filter((pts) => pts.length >= 3);
   if (raw.length === 0) return null;
 
   const cb = bboxOf(raw);
