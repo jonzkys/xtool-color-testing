@@ -207,6 +207,34 @@ export function buildFillRegion(subpaths: Contour[]): Pt[][] {
 }
 
 /**
+ * Group a flat ring set (outer loops + holes, as produced by offsetRegion /
+ * clipExecute) into connected solid regions. Each component is
+ * `[outerLoop, ...holeLoops]`. A loop's nesting level = how many OTHER loops
+ * contain its first vertex; even levels are outer boundaries, odd levels are
+ * holes. Each hole attaches to the smallest-area even-level loop containing it.
+ */
+export function regionComponents(rings: Pt[][]): Pt[][][] {
+  const loops = rings.filter((r) => r.length >= 3);
+  const level = loops.map((loop, i) =>
+    loops.reduce((n, other, j) => (j !== i && pointInPolygon(other, loop[0]) ? n + 1 : n), 0),
+  );
+  const outerIdx = loops.map((_, i) => i).filter((i) => level[i] % 2 === 0);
+  const comps: Pt[][][] = outerIdx.map((i) => [loops[i]]);
+  loops.forEach((loop, i) => {
+    if (level[i] % 2 === 0) return; // outer, already a component head
+    let best = -1, bestArea = Infinity;
+    outerIdx.forEach((oi, ci) => {
+      if (pointInPolygon(loops[oi], loop[0])) {
+        const a = Math.abs(signedRingArea(loops[oi]));
+        if (a < bestArea) { bestArea = a; best = ci; }
+      }
+    });
+    if (best >= 0) comps[best].push(loop);
+  });
+  return comps;
+}
+
+/**
  * Scrap-side band of width `widthMm` around the part region.
  *
  *   outside   → outer = offset(part, +w),  inner = part

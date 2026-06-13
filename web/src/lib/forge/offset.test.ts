@@ -1,6 +1,6 @@
 // web/src/lib/forge/offset.test.ts
 import { describe, it, expect } from "vitest";
-import { buildPartRegion, buildFillRegion, bandFromRegion, partOuterLoop } from "./offset";
+import { buildPartRegion, buildFillRegion, bandFromRegion, partOuterLoop, regionComponents } from "./offset";
 import { signedArea } from "./contour";
 import type { Contour, Pt } from "./types";
 
@@ -156,5 +156,25 @@ describe("partOuterLoop", () => {
   });
   it("returns [] for an empty region", () => {
     expect(partOuterLoop([])).toEqual([]);
+  });
+});
+
+describe("regionComponents", () => {
+  it("groups two disjoint squares into two components", () => {
+    const comps = regionComponents([
+      rect(0, 0, 10, 10, true).points,
+      rect(20, 0, 30, 10, true).points,
+    ]);
+    expect(comps.length).toBe(2);
+    expect(comps.every((c) => c.length === 1)).toBe(true); // each: one outer, no holes
+  });
+
+  it("attaches a hole to its containing outer (one component with 2 rings)", () => {
+    const comps = regionComponents([
+      rect(0, 0, 20, 20, true).points,   // outer
+      rect(5, 5, 15, 15, false).points,  // hole (opposite winding)
+    ]);
+    expect(comps.length).toBe(1);
+    expect(comps[0].length).toBe(2);
   });
 });
