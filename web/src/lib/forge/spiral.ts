@@ -2,7 +2,7 @@
 // Continuous-spiral VECTOR_CUTTING path generator. A spiral is a single open
 // polyline that sweeps a venting-width channel along the part boundary by
 // walking concentric offsets and bridging them — the vectorised open trench.
-import { offsetRegion } from "./offset";
+import { offsetRegion, splitLobesAtNecks } from "./offset";
 import { STAGE_GROUPS } from "./config";
 import type { ForgeConfig, GeneratedPath, Pt } from "./types";
 
@@ -310,18 +310,33 @@ export function spiralFromRegion(part: Pt[][], opts: SpiralOptions): SpiralResul
 export function generateSpiralPaths(part: Pt[][], cfg: ForgeConfig, sourceObjectId: string): GeneratedPath[] {
   if (!cfg.spiral.enabled) return [];
   const { channelWidthMm, pitchMm, side, minChannelMm } = cfg.spiral;
-  const result = spiralFromRegion(part, { channelWidthMm, pitchMm, side, minChannelMm });
-  return result.arms.map((arm, i) => ({
-    sourceObjectId,
-    generatedClass: "spiral" as const,
-    groupName: STAGE_GROUPS.spiral,
-    layerStart: 0,
-    layerEnd: cfg.spiral.passes,
-    widthMultiplier: channelWidthMm / cfg.beamWidthMm,
-    offsetMm: channelWidthMm,
-    sideMode: side === "inside" ? "inside" : "outside",
-    operationOrder: i,
-    enabled: true,
-    rings: [arm], // open polyline carried as the sole "ring"
-  }));
+  const opts: SpiralOptions = { channelWidthMm, pitchMm, side, minChannelMm };
+
+  // Split thin features off into their own lobes (and group) when enabled;
+  // otherwise a single main lobe reproduces the un-split spiral exactly.
+  const lobes = cfg.spiral.splitNecks
+    ? splitLobesAtNecks(part, (cfg.spiral.neckThresholdPct / 100) * channelWidthMm, cfg.spiral.neckOverlapMm ?? channelWidthMm)
+    : [{ region: part, kind: "main" as const }];
+
+  const out: GeneratedPath[] = [];
+  let order = 0;
+  for (const lobe of lobes) {
+    const group = lobe.kind === "detail" ? STAGE_GROUPS.spiralDetail : STAGE_GROUPS.spiral;
+    for (const arm of spiralFromRegion(lobe.region, opts).arms) {
+      out.push({
+        sourceObjectId,
+        generatedClass: "spiral",
+        groupName: group,
+        layerStart: 0,
+        layerEnd: cfg.spiral.passes,
+        widthMultiplier: channelWidthMm / cfg.beamWidthMm,
+        offsetMm: channelWidthMm,
+        sideMode: side === "inside" ? "inside" : "outside",
+        operationOrder: order++,
+        enabled: true,
+        rings: [arm],
+      });
+    }
+  }
+  return out;
 }

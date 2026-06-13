@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { spiralFromRegion, spiralPathLength, generateSpiralPaths, buildStrands } from "./spiral";
 import { SPIRAL_CUT } from "./presets";
+import { STAGE_GROUPS } from "./config";
 import type { Pt } from "./types";
 
 const square: Pt[] = [
@@ -61,6 +62,37 @@ describe("spiralFromRegion (fallback) + generateSpiralPaths", () => {
     expect(paths[0].groupName).toBe("CUT_08_SPIRAL");
     expect(paths[0].rings.length).toBe(1);
     expect(paths[0].rings[0].length).toBeGreaterThan(40);
+  });
+});
+
+const dumbbell: { x: number; y: number }[][] = [[
+  { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 4.85 },
+  { x: 14, y: 4.85 }, { x: 14, y: 0 }, { x: 24, y: 0 },
+  { x: 24, y: 10 }, { x: 14, y: 10 }, { x: 14, y: 5.15 },
+  { x: 10, y: 5.15 }, { x: 10, y: 10 }, { x: 0, y: 10 },
+]];
+
+describe("generateSpiralPaths — neck split", () => {
+  it("OFF: every arm is the main spiral group (regression-safe path)", () => {
+    const cfg = structuredClone(SPIRAL_CUT);
+    cfg.spiral.enabled = true;
+    cfg.spiral.splitNecks = false;
+    const paths = generateSpiralPaths(dumbbell, cfg, "obj1");
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths.every((p) => p.groupName === STAGE_GROUPS.spiral)).toBe(true);
+    expect(paths.every((p) => p.generatedClass === "spiral")).toBe(true);
+  });
+
+  it("ON: emits at least one detail-group arm, all still generatedClass spiral", () => {
+    const cfg = structuredClone(SPIRAL_CUT);
+    cfg.spiral.enabled = true;
+    cfg.spiral.splitNecks = true;
+    cfg.spiral.neckThresholdPct = 50;
+    cfg.spiral.neckOverlapMm = 0.4;
+    const paths = generateSpiralPaths(dumbbell, cfg, "obj1");
+    expect(paths.some((p) => p.groupName === STAGE_GROUPS.spiralDetail)).toBe(true);
+    expect(paths.every((p) => p.generatedClass === "spiral")).toBe(true);
+    expect(paths.map((p) => p.operationOrder)).toEqual(paths.map((_, i) => i));
   });
 });
 
