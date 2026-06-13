@@ -14,7 +14,7 @@ import { SPIRAL_CUT } from "../lib/forge/presets";
 import { STAGE_GROUPS } from "../lib/forge/config";
 import { splitSubpaths } from "../lib/forge/contour";
 import { useForgeEngine } from "../hooks/useForgeEngine";
-import { ForgeCanvas, CLASS_COLOR } from "../components/forge/ForgeCanvas";
+import { SpiralCanvas } from "../components/forge/SpiralCanvas";
 import { ForgeSourcePanel } from "../components/forge/ForgeSourcePanel";
 import { ForgeDebugPanel } from "../components/forge/ForgeDebugPanel";
 import { ForgeEstimateStrip } from "../components/forge/ForgeEstimateStrip";
@@ -51,7 +51,6 @@ function loadConfig(): ForgeConfig {
 export function SpiralPage() {
   const [config, setConfig] = useState<ForgeConfig>(loadConfig);
   const [canvasSize, setCanvasSize] = useState({ w: 600, h: 480 });
-  const [spiralVisible, setSpiralVisible] = useState(true);
   const [exportFormat, setExportFormat] = useState<ForgeFormat>(DEFAULT_OUTPUT_FORMAT);
 
   const { state, result, selectedIncise, setSelectedIncise, handleFile, exportAs } =
@@ -116,12 +115,6 @@ export function SpiralPage() {
 
   const canExport =
     state.kind === "ready" && !!selectedIncise && validation.errors.length === 0 && !!result;
-
-  // only the spiral class ever renders here; the legend toggles it
-  const visible = useMemo(
-    () => ({ seed: false, perforate: false, deepen: false, clean: false, spiral: spiralVisible }),
-    [spiralVisible],
-  );
 
   return (
     <div className="relative flex flex-col" style={{ height: "calc(100dvh - 56px)" }}>
@@ -192,51 +185,42 @@ export function SpiralPage() {
         {state.kind === "ready" && (
           <>
             <div className="shrink-0 pt-3">
-              <ForgeEstimateStrip estimate={result?.stats.estimate ?? null} />
+              <ForgeEstimateStrip estimate={result?.stats.estimate ?? null} variant="spiral" />
             </div>
 
             <div className="flex-1 min-h-0 pt-3 grid grid-cols-[248px_minmax(0,1fr)_332px] gap-3 items-stretch">
-              {/* LEFT */}
-              <ForgeSourcePanel
-                validation={validation}
-                targetIds={state.targetIds}
-                selectedIncise={selectedIncise}
-                onSelectIncise={setSelectedIncise}
-                preservedIds={state.preservedIds}
-                objects={state.objects}
-              />
+              {/* LEFT: source + debug (debug lives here, not on the right) */}
+              <div className="min-h-0 overflow-y-auto pr-1 flex flex-col gap-3">
+                <ForgeSourcePanel
+                  validation={validation}
+                  targetIds={state.targetIds}
+                  selectedIncise={selectedIncise}
+                  onSelectIncise={setSelectedIncise}
+                  preservedIds={state.preservedIds}
+                  objects={state.objects}
+                />
+                <ForgeDebugPanel stats={result?.stats ?? null} spiral />
+              </div>
 
-              {/* CENTER */}
-              <div className="min-w-0 min-h-0 flex flex-col gap-2">
-                <Card variant="inset" padded={false} className="flex-1 min-h-0 p-2 flex flex-col">
-                  <div ref={canvasWrapRef} className="flex-1 min-h-0 min-w-0 overflow-hidden">
-                    <ForgeCanvas
-                      source={sourceContour}
-                      paths={result?.paths ?? []}
-                      visible={visible}
-                      width={canvasSize.w}
-                      height={canvasSize.h}
-                    />
-                  </div>
-                  <div className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-1 px-2 pt-2">
-                    <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-ink-muted)] cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={spiralVisible}
-                        onChange={() => setSpiralVisible((v) => !v)}
-                      />
-                      <span
-                        className="inline-block h-3 w-3 rounded-[2px] border border-black/10"
-                        style={{ backgroundColor: CLASS_COLOR.spiral }}
-                        aria-hidden
-                      />
-                      spiral
-                    </label>
-                  </div>
-                </Card>
+              {/* CENTER: schematic spiral preview — the hero, full height */}
+              <Card variant="inset" padded={false} className="min-w-0 min-h-0 p-2">
+                <div ref={canvasWrapRef} className="h-full w-full min-h-0 min-w-0 overflow-hidden">
+                  <SpiralCanvas
+                    source={sourceContour}
+                    channelWidthMm={config.spiral.channelWidthMm}
+                    pitchMm={config.spiral.pitchMm}
+                    side={config.spiral.side}
+                    width={canvasSize.w}
+                    height={canvasSize.h}
+                  />
+                </div>
+              </Card>
 
-                {/* docked laser & focus tray — single spiral stage, no tabs */}
-                <div className="shrink-0 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
+              {/* RIGHT: cut geometry + laser/focus controls */}
+              <div className="min-h-0 overflow-y-auto pr-1 flex flex-col gap-3">
+                <SpiralControls config={config} onChange={setConfig} />
+                {/* Laser & focus — single spiral stage, cut-mode (no density / no Z-descent) */}
+                <div className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
                   <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-2">
                     <span className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-muted)]">
                       Laser &amp; focus
@@ -245,26 +229,19 @@ export function SpiralPage() {
                       applied on export
                     </span>
                   </div>
-                  <div className="max-h-[480px] overflow-y-auto">
-                    <ForgeStageParams
-                      frameless
-                      lockToGroup={STAGE_GROUPS.spiral}
-                      config={config}
-                      onChange={setConfig}
-                      sourceParams={
-                        selectedIncise
-                          ? state.objects.find((o) => o.id === selectedIncise)?.params
-                          : undefined
-                      }
-                    />
-                  </div>
+                  <ForgeStageParams
+                    frameless
+                    cutMode
+                    lockToGroup={STAGE_GROUPS.spiral}
+                    config={config}
+                    onChange={setConfig}
+                    sourceParams={
+                      selectedIncise
+                        ? state.objects.find((o) => o.id === selectedIncise)?.params
+                        : undefined
+                    }
+                  />
                 </div>
-              </div>
-
-              {/* RIGHT */}
-              <div className="min-h-0 overflow-y-auto pr-1 flex flex-col gap-3">
-                <SpiralControls config={config} onChange={setConfig} />
-                <ForgeDebugPanel stats={result?.stats ?? null} optimizeScanAngle={config.optimizeScanAngle} />
               </div>
             </div>
           </>

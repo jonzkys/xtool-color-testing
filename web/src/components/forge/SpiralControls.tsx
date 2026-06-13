@@ -6,6 +6,7 @@
 // has exactly one widget.
 import { Card, CardHeader, CardTitle, Field, NumberField, Select } from "../../ui";
 import type { ForgeConfig, SpiralConfig } from "../../lib/forge/types";
+import { SPIRAL_CUT } from "../../lib/forge/presets";
 
 export interface SpiralControlsProps {
   config: ForgeConfig;
@@ -15,14 +16,42 @@ export interface SpiralControlsProps {
 const SUMMARY_CLS =
   "cursor-pointer select-none list-none font-mono text-[10.5px] font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-colors px-1 py-0.5";
 
+// The geometry fields the reset button restores to their Spiral-preset defaults.
+const GEO_DEFAULTS: Pick<SpiralConfig, "channelWidthMm" | "pitchMm" | "minChannelMm" | "side"> = {
+  channelWidthMm: SPIRAL_CUT.spiral.channelWidthMm,
+  pitchMm: SPIRAL_CUT.spiral.pitchMm,
+  minChannelMm: SPIRAL_CUT.spiral.minChannelMm,
+  side: SPIRAL_CUT.spiral.side,
+};
+
 export function SpiralControls({ config, onChange }: SpiralControlsProps) {
   const patch = (p: Partial<ForgeConfig>) => onChange({ ...config, ...p, activePreset: "custom" });
   const patchSpiral = (p: Partial<SpiralConfig>) => patch({ spiral: { ...config.spiral, ...p } });
 
+  const geoChanged =
+    config.spiral.channelWidthMm !== GEO_DEFAULTS.channelWidthMm ||
+    config.spiral.pitchMm !== GEO_DEFAULTS.pitchMm ||
+    config.spiral.minChannelMm !== GEO_DEFAULTS.minChannelMm ||
+    config.spiral.side !== GEO_DEFAULTS.side;
+
   return (
     <div className="flex flex-col gap-2 text-xs">
       <Card>
-        <CardHeader><CardTitle>Cut geometry</CardTitle></CardHeader>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => patchSpiral(GEO_DEFAULTS)}
+              disabled={!geoChanged}
+              title="Reset cut geometry to defaults"
+              aria-label="Reset cut geometry to defaults"
+              className="shrink-0 grid h-5 w-5 place-items-center rounded-[5px] border border-[var(--color-border)] text-[var(--color-ink-muted)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)]/50 disabled:opacity-40 disabled:hover:text-[var(--color-ink-muted)] disabled:hover:border-[var(--color-border)] transition-colors"
+            >
+              <span aria-hidden className="text-[11px] leading-none">↺</span>
+            </button>
+            <CardTitle>Cut geometry</CardTitle>
+          </div>
+        </CardHeader>
         <div className="grid grid-cols-2 gap-2 p-2">
           <Field label="Channel width (mm)">
             <NumberField value={config.spiral.channelWidthMm} step={0.05} min={0.05}
