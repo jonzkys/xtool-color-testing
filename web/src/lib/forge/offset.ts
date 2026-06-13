@@ -314,6 +314,9 @@ export function splitLobesAtNecks(part: Pt[][], neckWidthMm: number, overlapMm: 
   const ov = Math.max(0, overlapMm);
 
   const cores = regionComponents(offsetRegion(part, -r));
+  // No core survived erosion → the whole part is narrower than the neck width;
+  // there is no neck to split around, so keep it as a single main lobe.
+  if (cores.length === 0) return whole;
   const mains = cores
     .map((core) => clipExecute(ClipperLib.ClipType.ctIntersection, offsetRegion(core, r + ov), part))
     .filter((reg) => reg.length > 0);

@@ -187,6 +187,16 @@ describe("splitLobesAtNecks", () => {
     expect(lobes.length).toBe(1);
     expect(lobes[0].kind).toBe("main");
   });
+
+  it("returns whole (single main) when the entire part is narrower than neckWidth", () => {
+    // 20 × 0.5 mm bar — thinner than neckWidth 1.0 everywhere, so no neck
+    const bar = [[
+      { x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 0.5 }, { x: 0, y: 0.5 },
+    ]];
+    const lobes = splitLobesAtNecks(bar, 1.0, 0.4);
+    expect(lobes.length).toBe(1);
+    expect(lobes[0].kind).toBe("main");
+  });
 });
 
 describe("regionComponents", () => {
