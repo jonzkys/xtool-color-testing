@@ -355,6 +355,14 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
               Focus descent
             </p>
             <div className="grid grid-cols-2 gap-2">
+              <Field label="initial focus (mm)">
+                <NumberField
+                  value={config.spiral.focusInitialMm ?? 0.01}
+                  min={0}
+                  step={0.01}
+                  onChange={(v) => onChange({ ...config, spiral: { ...config.spiral, focusInitialMm: v >= 0 ? v : 0 }, activePreset: "custom" })}
+                />
+              </Field>
               <Field label="per step (mm)">
                 <NumberField
                   value={config.spiral.focusStepMm}

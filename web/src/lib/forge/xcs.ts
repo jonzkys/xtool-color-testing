@@ -505,8 +505,8 @@ export function buildGeneratedXcs(
         // passes). resolveStageParams overrides these with the live config; this
         // is just the standalone default. (Studio enum: J.ONE="one"/J.STEP="step".)
         sinkingMethod: "step",
-        firstCuttingDropValue: 0.06,
-        cuttingDropValue: 0.06,
+        firstCuttingDropValue: 0.01, // initial focus drop; resolveStageParams overrides
+        cuttingDropValue: 0.01,
         descentIntervalDescent: 10,
         descentPerStep: 0.06,
         enableKerf: false,
@@ -651,6 +651,8 @@ function applyStageParams(
   setStr("sinkingMethod", params.sinkingMethod);
   set("descentIntervalDescent", params.descentIntervalDescent);
   set("descentPerStep", params.descentPerStep);
+  set("firstCuttingDropValue", params.firstCuttingDropValue);
+  set("cuttingDropValue", params.cuttingDropValue);
 }
 
 /** Serialise a built XCS document to UTF-8 bytes (compact JSON, like write_xcs). */
