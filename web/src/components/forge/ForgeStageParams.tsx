@@ -35,6 +35,10 @@ export interface ForgeStageParamsProps {
   /** Lock to a single stage group and hide the tab strip — for the Spiral
    *  page, which has exactly one operation. */
   lockToGroup?: string;
+  /** Cut mode (vector): drop engrave-only controls — Density (lines/cm) and the
+   *  generic Z-axis-descent group — and show a single Passes field. A cut steps
+   *  focus via Focus descent, not the engrave Z group. For the Spiral page. */
+  cutMode?: boolean;
 }
 
 /** The operations that get exported, in process order, as [groupName, label]. */
@@ -72,9 +76,15 @@ const NUMERIC_FIELDS: Array<{
  *  supplies one. */
 const Z_DEFAULTS = { zLayers: 1, zDecline: 0.01, sliceNumber: 256 } as const;
 
-export function ForgeStageParams({ config, onChange, sourceParams, frameless, lockToGroup }: ForgeStageParamsProps) {
+export function ForgeStageParams({ config, onChange, sourceParams, frameless, lockToGroup, cutMode }: ForgeStageParamsProps) {
   const { registry, machineId } = useCurrentMachine();
   const profile = getValidationProfile(registry, machineId, "color_engrave");
+
+  // Cut mode hides engrave-only laser params: Density (lines/cm) and the
+  // separate Passes range field (cut passes are the single spiral.passes field).
+  const numericFields = cutMode
+    ? NUMERIC_FIELDS.filter((f) => f.param !== "density" && f.param !== "passes")
+    : NUMERIC_FIELDS;
 
   // In lockToGroup mode only the one named stage is shown and the tab strip is
   // hidden; otherwise every exported stage gets a tab.
@@ -178,6 +188,11 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
   const totalDepth = descentDepthMm(depthLayers, zLayers, zDecline);
   const depthAt256 = descentDepthMm(256, zLayers, zDecline);
 
+  // Focus-descent depth (cut mode): how far the focus walks down over the run.
+  // Mirrors the engrave Z readouts but driven by focusStepMm / focusIntervalPasses.
+  const focusTotal = descentDepthMm(config.spiral.passes, config.spiral.focusIntervalPasses, config.spiral.focusStepMm);
+  const focusAt256 = descentDepthMm(256, config.spiral.focusIntervalPasses, config.spiral.focusStepMm);
+
   // Layer count (slices; "Passes" on the spiral tab) — one definition, slotted
   // into the param grid next to Laser in frameless mode, or its own row in the
   // framed layout.
@@ -241,8 +256,8 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
 
         {/* laser-param fields */}
         {profile ? (
-          <div className={cn("grid gap-x-3 gap-y-2", frameless ? "grid-cols-3" : "grid-cols-2")}>
-            {NUMERIC_FIELDS.map(({ snake, param, label, unit }) => {
+          <div className={cn("grid gap-x-3 gap-y-2", frameless && !cutMode ? "grid-cols-3" : "grid-cols-2")}>
+            {numericFields.map(({ snake, param, label, unit }) => {
               const c = profile[snake];
               if (!c || c.kind === "not_applicable") return null;
               if (c.kind === "range") {
@@ -313,7 +328,7 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
                 { param: "pulseWidth", label: "Pulse width (ns)", step: 10 },
                 { param: "frequency", label: "Frequency (kHz)", step: 1 },
               ] as const
-            ).map(({ param, label, step }) => (
+            ).filter((f) => !(cutMode && f.param === "passes")).map(({ param, label, step }) => (
               <Field key={param} label={label}>
                 <NumberField
                   value={override[param] ?? sourceParams?.[param] ?? 0}
@@ -332,21 +347,15 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
           <div className="mt-3 grid grid-cols-3 gap-2">{layerCountField}</div>
         )}
 
-        {/* Spiral focus descent — editable directly on the spiral config, not via stageParams */}
+        {/* Spiral focus descent — the cut's Z mechanism (replaces engrave Z-descent).
+            Stacked block: label, the two fields, then the descent-depth readouts. */}
         {isSpiral && (
-          <div className={cn(
-            "border border-[var(--color-border)] rounded",
-            frameless ? "mt-2 flex flex-wrap items-end gap-x-4 gap-y-1 px-2 py-1.5" : "mt-3 p-2",
-          )}>
-            {frameless ? (
-              <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-ink-subtle)] pb-2.5">
-                Focus descent
-              </span>
-            ) : (
-              <p className="font-mono text-[11px] text-[var(--color-ink-muted)] mb-2">Focus descent (spiral)</p>
-            )}
-            <div className={frameless ? "flex items-end gap-2" : "grid grid-cols-2 gap-2"}>
-              <Field label={frameless ? "per step (mm)" : "descentPerStep (mm)"} className={frameless ? "w-28" : undefined}>
+          <div className={cn("border border-[var(--color-border)] rounded", frameless ? "mt-2 p-2" : "mt-3 p-2")}>
+            <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-ink-subtle)] mb-2">
+              Focus descent
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="per step (mm)">
                 <NumberField
                   value={config.spiral.focusStepMm}
                   min={0}
@@ -354,7 +363,7 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
                   onChange={(v) => onChange({ ...config, spiral: { ...config.spiral, focusStepMm: v >= 0 ? v : 0 }, activePreset: "custom" })}
                 />
               </Field>
-              <Field label={frameless ? "every N passes" : "descentIntervalDescent (passes)"} className={frameless ? "w-28" : undefined}>
+              <Field label="every N passes">
                 <NumberField
                   value={config.spiral.focusIntervalPasses}
                   min={1}
@@ -364,10 +373,26 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
                 />
               </Field>
             </div>
+            {/* descent depth — total over the configured passes, and at 256 */}
+            <div className="grid grid-cols-2 gap-2 mt-2 font-mono text-[11px] text-[var(--color-ink-muted)]">
+              <div className="flex items-baseline justify-between gap-2 rounded bg-[var(--color-bg)] px-2 py-1">
+                <span className="uppercase tracking-[0.08em] text-[9.5px] text-[var(--color-ink-subtle)]">
+                  Total @ {config.spiral.passes}p
+                </span>
+                <span className="tabular-nums text-[var(--color-ink)]">{focusTotal.toFixed(3)} mm</span>
+              </div>
+              <div className="flex items-baseline justify-between gap-2 rounded bg-[var(--color-bg)] px-2 py-1">
+                <span className="uppercase tracking-[0.08em] text-[9.5px] text-[var(--color-ink-subtle)]">
+                  @ 256
+                </span>
+                <span className="tabular-nums text-[var(--color-ink)]">{focusAt256.toFixed(3)} mm</span>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Z-axis descent group — one horizontal row in the frameless tray */}
+        {/* Z-axis descent group — engrave-only; cut mode steps focus instead */}
+        {!cutMode && (
         <div className={cn(
           "border border-[var(--color-border)] rounded",
           frameless ? "mt-2 flex flex-wrap items-end gap-x-4 gap-y-1 px-2 py-1.5" : "mt-3 p-2",
@@ -431,6 +456,7 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
             </>
           )}
         </div>
+        )}
 
         {/* footer + reset */}
         <div className="mt-2 flex items-center justify-between gap-2">

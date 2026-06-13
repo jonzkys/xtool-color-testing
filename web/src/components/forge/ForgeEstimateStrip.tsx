@@ -24,10 +24,63 @@ function classOf(groupName: string): GeneratedClass {
 
 const label = (group: string) => group.replace(/^CUT_\d+_/, "").replace(/_/g, " ");
 
-export function ForgeEstimateStrip({ estimate }: { estimate: ForgeEstimate | null }) {
+export function ForgeEstimateStrip({
+  estimate,
+  variant = "full",
+}: {
+  estimate: ForgeEstimate | null;
+  /** "spiral" trims the multi-stage chrome (share bar, per-stage chips,
+   *  pockets/bands/budget) that is meaningless for a single continuous cut. */
+  variant?: "full" | "spiral";
+}) {
   const has = !!estimate && estimate.stages.length > 0;
   const total = has ? estimate.totalSeconds : 0;
   const pctText = has && estimate.overheadPct ? `${Math.round(estimate.overheadPct)}% of incise` : "—";
+
+  if (variant === "spiral") {
+    const stage = has ? estimate!.stages[0] : null;
+    return (
+      <Card padded={false} className="shrink-0 flex items-center gap-5 px-4 py-2.5">
+        <div className="shrink-0">
+          <div className="font-mono text-[9.5px] font-semibold uppercase tracking-[0.22em] text-[var(--color-ink-subtle)]">
+            Estimated cut time
+          </div>
+          <div className="mt-0.5 font-mono text-[26px] leading-none tabular-nums text-[var(--color-primary)]">
+            {has ? fmtDuration(total) : "—:——"}
+          </div>
+        </div>
+
+        <div aria-hidden className="h-10 w-px shrink-0 bg-[var(--color-border)]" />
+
+        {/* continuity + passes — the spiral's own readout, not a stage breakdown */}
+        <div className="min-w-0 flex-1 font-mono text-[11px] tabular-nums text-[var(--color-ink-muted)]">
+          {has && stage ? (
+            <span className="inline-flex items-center gap-2">
+              <span
+                aria-hidden
+                className="inline-block h-2 w-2 rounded-[2px]"
+                style={{ backgroundColor: CLASS_COLOR.spiral }}
+              />
+              <span className="uppercase tracking-[0.08em] text-[var(--color-ink-subtle)]">
+                {stage.pathCount <= 1 ? "continuous spiral" : `${stage.pathCount} spirals`}
+              </span>
+              · {stage.repeat} pass{stage.repeat === 1 ? "" : "es"}
+            </span>
+          ) : (
+            <span className="text-[var(--color-ink-subtle)]">awaiting first result…</span>
+          )}
+        </div>
+
+        {/* % of incise + baseline only */}
+        <div className="shrink-0 text-right">
+          <span className="font-mono text-[12px] tabular-nums text-[var(--color-ink-muted)]">{pctText}</span>
+          <div className="mt-1 font-mono text-[10px] tabular-nums text-[var(--color-ink-subtle)]">
+            {has ? <>vs baseline {fmtDuration(estimate!.baselineSeconds)}</> : <>&nbsp;</>}
+          </div>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card padded={false} className="shrink-0 flex items-center gap-5 px-4 py-2.5">
