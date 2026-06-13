@@ -292,6 +292,55 @@ export function partOuterLoop(part: Pt[][]): Pt[] {
   return best;
 }
 
+/** Reject detail fragments smaller than this (mm²) — clipper rounding noise. */
+const MIN_DETAIL_AREA_MM2 = 0.02;
+
+export interface NeckLobe {
+  region: Pt[][];
+  kind: "main" | "detail";
+}
+
+/**
+ * Split a part region at necks narrower than `neckWidthMm`. Erodes by
+ * neckWidthMm/2 so thin necks pinch off; each surviving core is recovered
+ * (dilated back + overlap, clipped to the part) as a MAIN lobe, and thin
+ * material no core covers becomes DETAIL lobes (grown by overlap so the join is
+ * double-cut). Returns the part as a single main lobe when no neck is found.
+ */
+export function splitLobesAtNecks(part: Pt[][], neckWidthMm: number, overlapMm: number): NeckLobe[] {
+  const whole: NeckLobe[] = [{ region: part, kind: "main" }];
+  if (part.length === 0 || !(neckWidthMm > 0)) return whole;
+  const r = neckWidthMm / 2;
+  const ov = Math.max(0, overlapMm);
+
+  const cores = regionComponents(offsetRegion(part, -r));
+  const mains = cores
+    .map((core) => clipExecute(ClipperLib.ClipType.ctIntersection, offsetRegion(core, r + ov), part))
+    .filter((reg) => reg.length > 0);
+
+  // Use r+ov (same as mains recovery) so round-corner roundtrip artifacts from
+  // clipper don't leak through as spurious detail fragments.
+  const thick = clipExecute(
+    ClipperLib.ClipType.ctUnion,
+    cores.flatMap((core) => offsetRegion(core, r + ov)),
+    [],
+  );
+  const residual = clipExecute(ClipperLib.ClipType.ctDifference, part, thick);
+  const details = regionComponents(residual)
+    .filter((comp) => Math.abs(signedRingArea(comp[0])) >= MIN_DETAIL_AREA_MM2)
+    .map((comp) => clipExecute(ClipperLib.ClipType.ctIntersection, offsetRegion(comp, ov), part))
+    .filter((reg) => reg.length > 0);
+
+  // No neck: a single thick core and no meaningful thin residual — leave whole
+  // so the un-split spiral path is reproduced exactly.
+  if (mains.length <= 1 && details.length === 0) return whole;
+
+  return [
+    ...mains.map((region) => ({ region, kind: "main" as const })),
+    ...details.map((region) => ({ region, kind: "detail" as const })),
+  ];
+}
+
 /** Walk a closed loop and emit a sample every `spacingMm` of arc length, each
  *  with the OUTWARD unit normal at that point (away from the part interior).
  *  Used to place perforation pockets on the scrap side of the part edge. */

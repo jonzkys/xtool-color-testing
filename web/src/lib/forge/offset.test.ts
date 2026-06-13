@@ -1,6 +1,6 @@
 // web/src/lib/forge/offset.test.ts
 import { describe, it, expect } from "vitest";
-import { buildPartRegion, buildFillRegion, bandFromRegion, partOuterLoop, regionComponents } from "./offset";
+import { buildPartRegion, buildFillRegion, bandFromRegion, partOuterLoop, regionComponents, splitLobesAtNecks } from "./offset";
 import { signedArea } from "./contour";
 import type { Contour, Pt } from "./types";
 
@@ -156,6 +156,36 @@ describe("partOuterLoop", () => {
   });
   it("returns [] for an empty region", () => {
     expect(partOuterLoop([])).toEqual([]);
+  });
+});
+
+describe("splitLobesAtNecks", () => {
+  // dumbbell: left square 0..10, right square 14..24, thin bridge y 4.85..5.15 (0.3 tall)
+  const dumbbell: { x: number; y: number }[][] = [[
+    { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 4.85 },
+    { x: 14, y: 4.85 }, { x: 14, y: 0 }, { x: 24, y: 0 },
+    { x: 24, y: 10 }, { x: 14, y: 10 }, { x: 14, y: 5.15 },
+    { x: 10, y: 5.15 }, { x: 10, y: 10 }, { x: 0, y: 10 },
+  ]];
+
+  it("splits a thin bridge into two main lobes + a detail", () => {
+    const lobes = splitLobesAtNecks(dumbbell, 1.0, 0.4);
+    const mains = lobes.filter((l) => l.kind === "main");
+    const details = lobes.filter((l) => l.kind === "detail");
+    expect(mains.length).toBe(2);       // the two squares
+    expect(details.length).toBeGreaterThanOrEqual(1); // the thin bridge
+  });
+
+  it("leaves a solid square as a single main lobe", () => {
+    const lobes = splitLobesAtNecks([rect(0, 0, 10, 10, true).points], 1.0, 0.4);
+    expect(lobes.length).toBe(1);
+    expect(lobes[0].kind).toBe("main");
+  });
+
+  it("returns the part unsplit when neckWidth is non-positive", () => {
+    const lobes = splitLobesAtNecks([rect(0, 0, 10, 10, true).points], 0, 0.4);
+    expect(lobes.length).toBe(1);
+    expect(lobes[0].kind).toBe("main");
   });
 });
 
