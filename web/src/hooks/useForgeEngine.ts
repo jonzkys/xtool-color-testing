@@ -34,6 +34,8 @@ export interface ForgeEngine {
   setSelectedIncise: (id: string | null) => void;
   /** Read a dropped/chosen file and kick off a parse. */
   handleFile: (f: File) => void;
+  /** Parse an already-read project buffer (e.g. SVG converted via svg-stack). */
+  loadBuffer: (buf: ArrayBuffer, fileName: string) => void;
   /** Export the current config for the selected target in the given format. */
   exportAs: (format: ForgeFormat) => void;
 }
@@ -102,6 +104,16 @@ export function useForgeEngine(config: ForgeConfig): ForgeEngine {
     return () => clearTimeout(t);
   }, [state, selectedIncise, config]);
 
+  /** Mark loading and hand an already-read project buffer to the worker. Used
+   *  directly when the bytes come from somewhere other than a File read (e.g.
+   *  an SVG converted via /api/svg-stack). */
+  function loadBuffer(buf: ArrayBuffer, fileName: string) {
+    setState({ kind: "loading", fileName });
+    setResult(null);
+    const req: ForgeRequest = { type: "parse", buf };
+    workerRef.current?.postMessage(req, [buf]);
+  }
+
   function handleFile(f: File) {
     setState({ kind: "loading", fileName: f.name });
     setResult(null);
@@ -124,5 +136,5 @@ export function useForgeEngine(config: ForgeConfig): ForgeEngine {
     workerRef.current?.postMessage(req);
   }
 
-  return { state, result, selectedIncise, setSelectedIncise, handleFile, exportAs };
+  return { state, result, selectedIncise, setSelectedIncise, handleFile, loadBuffer, exportAs };
 }

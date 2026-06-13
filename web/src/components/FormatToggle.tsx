@@ -1,14 +1,18 @@
 import { cn } from "../ui";
 import type { OutputFormat } from "../types";
 
-/** The selectable output containers, in display order. ``xs`` (the
- *  default / first option) returns a ZIP; ``xcs`` is the legacy
- *  single-file XCS JSON. */
-const FORMATS: readonly OutputFormat[] = ["xs", "xcs"] as const;
+/** Per-format hover copy; unknown formats fall back to a generic label. */
+const FORMAT_TITLE: Record<string, string> = {
+  xs: "Download as .xs (ZIP — the new default)",
+  xcs: "Download as legacy .xcs",
+  svg: "Download as .svg (vector cut outlines)",
+};
 
-export interface FormatToggleProps {
-  value: OutputFormat;
-  onChange: (format: OutputFormat) => void;
+export interface FormatToggleProps<T extends string = OutputFormat> {
+  value: T;
+  onChange: (format: T) => void;
+  /** Selectable formats, in display order. Defaults to .xs / .xcs. */
+  formats?: readonly T[];
   /** Disable the whole control (e.g. while a download is in flight). */
   disabled?: boolean;
   /** Extra classes for the outer segmented container. */
@@ -18,32 +22,32 @@ export interface FormatToggleProps {
 }
 
 /**
- * FormatToggle — segmented `.xs / .xcs` output-format control.
- *
- * Mirrors the export-colour-source segmented control on the SVG-layers
- * page: JetBrains Mono uppercase tracking, ember-primary active segment.
- * Default selection is `.xs` (the parent owns state and should seed it
- * with `DEFAULT_OUTPUT_FORMAT`).
+ * FormatToggle — segmented output-format control (`.xs / .xcs`, plus `.svg`
+ * where a page offers it). JetBrains Mono uppercase tracking, ember-primary
+ * active segment. Default selection is `.xs` (the parent owns state and should
+ * seed it with `DEFAULT_OUTPUT_FORMAT`).
  */
-export function FormatToggle({
+export function FormatToggle<T extends string = OutputFormat>({
   value,
   onChange,
+  formats,
   disabled,
   className,
   size = "md",
-}: FormatToggleProps) {
+}: FormatToggleProps<T>) {
+  const opts = formats ?? (["xs", "xcs"] as unknown as readonly T[]);
   return (
     <div
       role="radiogroup"
       aria-label="Output format"
-      title="Choose the download format — .xs (ZIP, default) or legacy .xcs"
+      title="Choose the download format"
       className={cn(
         "inline-flex items-stretch rounded-[6px] border border-[color:var(--color-border)] overflow-hidden",
         disabled && "opacity-50",
         className,
       )}
     >
-      {FORMATS.map((fmt) => {
+      {opts.map((fmt) => {
         const active = value === fmt;
         return (
           <button
@@ -53,11 +57,7 @@ export function FormatToggle({
             aria-checked={active}
             disabled={disabled}
             onClick={() => onChange(fmt)}
-            title={
-              fmt === "xs"
-                ? "Download as .xs (ZIP — the new default)"
-                : "Download as legacy .xcs"
-            }
+            title={FORMAT_TITLE[fmt] ?? `Download as .${fmt}`}
             className={cn(
               "font-mono tracking-[0.16em] uppercase font-semibold transition-colors",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/50 focus-visible:ring-inset",

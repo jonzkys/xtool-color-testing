@@ -67,6 +67,32 @@ export async function svgStackAndDownload(request: SvgStackRequest): Promise<voi
   );
 }
 
+/** Convert an SVG via /api/svg-stack and return the project bytes (no download).
+ *  Used by the Spiral page to import an SVG as a VECTOR_CUTTING document that
+ *  the Forge worker then parses like any .xcs/.xs upload. */
+export async function svgStackToBytes(request: SvgStackRequest): Promise<ArrayBuffer> {
+  const format = request.format ?? DEFAULT_OUTPUT_FORMAT;
+  const resp = await fetch("/api/svg-stack", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...request, format }),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    let detail = `HTTP ${resp.status}`;
+    try {
+      detail = JSON.parse(text).detail ?? detail;
+    } catch { /* keep default */ }
+    const err = new ApiError({ status: resp.status, url: resp.url, body: text, message: detail });
+    captureHandledError(err, {
+      tags: { api_status: String(resp.status), api_url: resp.url.split("?")[0] },
+      extras: { body: text.slice(0, 1000) },
+    });
+    throw err;
+  }
+  return resp.arrayBuffer();
+}
+
 export async function svgLayersAndDownload(request: SvgLayersRequest): Promise<void> {
   const format = request.format ?? DEFAULT_OUTPUT_FORMAT;
   return postAndDownload(
