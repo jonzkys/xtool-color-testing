@@ -1,6 +1,6 @@
 // web/src/lib/forge/offset.test.ts
 import { describe, it, expect } from "vitest";
-import { buildPartRegion, bandFromRegion, partOuterLoop } from "./offset";
+import { buildPartRegion, buildFillRegion, bandFromRegion, partOuterLoop } from "./offset";
 import { signedArea } from "./contour";
 import type { Contour, Pt } from "./types";
 
@@ -62,6 +62,43 @@ describe("buildPartRegion", () => {
 
   it("returns [] for empty input", () => {
     expect(buildPartRegion([])).toEqual([]);
+  });
+});
+
+describe("buildFillRegion (canonical even-odd shape fill — the spiral target)", () => {
+  it("KEEPS the outer boundary of a holed shape (the regression: outer+counter → outer with a hole, not the counter)", () => {
+    // A letter-like shape: outer outline (0..20) with a counter (5..15).
+    const outer = rect(0, 0, 20, 20, true);
+    const counter = rect(5, 5, 15, 15, false);
+    const region = buildFillRegion([outer, counter]);
+    // The largest ring is the OUTER outline (≈20×20), NOT the 10×10 counter.
+    const outerLoop = partOuterLoop(region);
+    expect(loopArea(outerLoop)).toBeCloseTo(400, 0);
+    const b = bbox(region);
+    expect(b.minX).toBeCloseTo(0, 1);
+    expect(b.maxX).toBeCloseTo(20, 1);
+    // The counter survives as a hole (≥2 rings, and total solid area = 400-100).
+    expect(region.length).toBeGreaterThanOrEqual(2);
+
+    // Contrast: buildPartRegion (incise, doubled-wall) drops the outer → inner solid.
+    const incise = buildPartRegion([outer, counter]);
+    expect(bbox(incise).maxX - bbox(incise).minX).toBeLessThan(15);
+  });
+
+  it("a single loop yields the solid (same as buildPartRegion's union branch)", () => {
+    const region = buildFillRegion([rect(0, 0, 10, 10, true)]);
+    expect(region.length).toBe(1);
+    expect(loopArea(region[0])).toBeCloseTo(100, 0);
+  });
+
+  it("is winding-independent (counter wound the same way as the outer still cuts a hole)", () => {
+    const region = buildFillRegion([rect(0, 0, 20, 20, true), rect(5, 5, 15, 15, true)]);
+    expect(bbox(region).maxX).toBeCloseTo(20, 1); // outer preserved regardless of winding
+    expect(region.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("returns [] for empty input", () => {
+    expect(buildFillRegion([])).toEqual([]);
   });
 });
 
