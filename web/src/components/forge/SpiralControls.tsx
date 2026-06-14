@@ -74,6 +74,36 @@ export function SpiralControls({ config, onChange }: SpiralControlsProps) {
               <option value="inside">inside</option>
             </Select>
           </Field>
+          <Field label="Split internal detail">
+            <Select
+              value={config.spiral.splitNecks ? "on" : "off"}
+              onChange={(e) => patchSpiral({ splitNecks: e.target.value === "on" })}
+            >
+              <option value="off">off</option>
+              <option value="on">on</option>
+            </Select>
+          </Field>
+          {config.spiral.splitNecks && (
+            <>
+              <Field label="Neck threshold (% width)">
+                <NumberField
+                  value={config.spiral.neckThresholdPct ?? 50}
+                  step={5}
+                  min={5}
+                  max={100}
+                  onChange={(v) => patchSpiral({ neckThresholdPct: Math.min(100, Math.max(5, v)) })}
+                />
+              </Field>
+              <Field label="Split overlap (mm)">
+                <NumberField
+                  value={config.spiral.neckOverlapMm ?? config.spiral.channelWidthMm}
+                  step={0.05}
+                  min={0}
+                  onChange={(v) => patchSpiral({ neckOverlapMm: v >= 0 ? v : 0 })}
+                />
+              </Field>
+            </>
+          )}
         </div>
       </Card>
 

@@ -1,6 +1,6 @@
 // web/src/lib/forge/offset.test.ts
 import { describe, it, expect } from "vitest";
-import { buildPartRegion, buildFillRegion, bandFromRegion, partOuterLoop } from "./offset";
+import { buildPartRegion, buildFillRegion, bandFromRegion, partOuterLoop, regionComponents, splitLobesAtNecks } from "./offset";
 import { signedArea } from "./contour";
 import type { Contour, Pt } from "./types";
 
@@ -156,5 +156,65 @@ describe("partOuterLoop", () => {
   });
   it("returns [] for an empty region", () => {
     expect(partOuterLoop([])).toEqual([]);
+  });
+});
+
+describe("splitLobesAtNecks", () => {
+  // dumbbell: left square 0..10, right square 14..24, thin bridge y 4.85..5.15 (0.3 tall)
+  const dumbbell: { x: number; y: number }[][] = [[
+    { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 4.85 },
+    { x: 14, y: 4.85 }, { x: 14, y: 0 }, { x: 24, y: 0 },
+    { x: 24, y: 10 }, { x: 14, y: 10 }, { x: 14, y: 5.15 },
+    { x: 10, y: 5.15 }, { x: 10, y: 10 }, { x: 0, y: 10 },
+  ]];
+
+  it("splits a thin bridge into two main lobes + a detail", () => {
+    const lobes = splitLobesAtNecks(dumbbell, 1.0, 0.4);
+    const mains = lobes.filter((l) => l.kind === "main");
+    const details = lobes.filter((l) => l.kind === "detail");
+    expect(mains.length).toBe(2);       // the two squares
+    expect(details.length).toBeGreaterThanOrEqual(1); // the thin bridge
+  });
+
+  it("leaves a solid square as a single main lobe", () => {
+    const lobes = splitLobesAtNecks([rect(0, 0, 10, 10, true).points], 1.0, 0.4);
+    expect(lobes.length).toBe(1);
+    expect(lobes[0].kind).toBe("main");
+  });
+
+  it("returns the part unsplit when neckWidth is non-positive", () => {
+    const lobes = splitLobesAtNecks([rect(0, 0, 10, 10, true).points], 0, 0.4);
+    expect(lobes.length).toBe(1);
+    expect(lobes[0].kind).toBe("main");
+  });
+
+  it("returns whole (single main) when the entire part is narrower than neckWidth", () => {
+    // 20 × 0.5 mm bar — thinner than neckWidth 1.0 everywhere, so no neck
+    const bar = [[
+      { x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 0.5 }, { x: 0, y: 0.5 },
+    ]];
+    const lobes = splitLobesAtNecks(bar, 1.0, 0.4);
+    expect(lobes.length).toBe(1);
+    expect(lobes[0].kind).toBe("main");
+  });
+});
+
+describe("regionComponents", () => {
+  it("groups two disjoint squares into two components", () => {
+    const comps = regionComponents([
+      rect(0, 0, 10, 10, true).points,
+      rect(20, 0, 30, 10, true).points,
+    ]);
+    expect(comps.length).toBe(2);
+    expect(comps.every((c) => c.length === 1)).toBe(true); // each: one outer, no holes
+  });
+
+  it("attaches a hole to its containing outer (one component with 2 rings)", () => {
+    const comps = regionComponents([
+      rect(0, 0, 20, 20, true).points,   // outer
+      rect(5, 5, 15, 15, false).points,  // hole (opposite winding)
+    ]);
+    expect(comps.length).toBe(1);
+    expect(comps[0].length).toBe(2);
   });
 });

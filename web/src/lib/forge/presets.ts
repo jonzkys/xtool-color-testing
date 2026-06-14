@@ -14,6 +14,7 @@ const COMMON = {
     enabled: false, channelWidthMm: 0.8, pitchMm: 0.04, side: "outside" as const,
     minChannelMm: 0.4, passes: 500, focusStepMm: 0.06, focusIntervalPasses: 10,
     focusInitialMm: 0.01,
+    splitNecks: false, neckThresholdPct: 50, neckOverlapMm: 0.8,
   },
 };
 
@@ -67,6 +68,7 @@ export const SPIRAL_CUT: ForgeConfig = {
     enabled: true, channelWidthMm: 0.8, pitchMm: 0.04, side: "outside",
     minChannelMm: 0.4, passes: 500, focusStepMm: 0.06, focusIntervalPasses: 10,
     focusInitialMm: 0.01,
+    splitNecks: false, neckThresholdPct: 50, neckOverlapMm: 0.8,
   },
   stageParams: {
     CUT_08_SPIRAL: { power: 100, speed: 1500, frequency: 65, pulseWidth: 80, laser: "red" },

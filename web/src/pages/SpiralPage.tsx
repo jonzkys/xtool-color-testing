@@ -377,6 +377,9 @@ export function SpiralPage() {
                     channelWidthMm={config.spiral.channelWidthMm}
                     pitchMm={config.spiral.pitchMm}
                     side={config.spiral.side}
+                    splitNecks={config.spiral.splitNecks}
+                    neckThresholdPct={config.spiral.neckThresholdPct}
+                    neckOverlapMm={config.spiral.neckOverlapMm}
                     width={canvasSize.w}
                     height={canvasSize.h}
                   />

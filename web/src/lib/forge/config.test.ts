@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renameDeepenGroup, resolveStageParams, effectiveScanAngle, STAGE_GROUPS } from "./config";
 import { DEFAULT_CONFIG } from "./defaults";
-import { AGGRESSIVE } from "./presets";
+import { AGGRESSIVE, SPIRAL_CUT } from "./presets";
 
 describe("renameDeepenGroup", () => {
   it("renames the group and migrates its per-stage params to the new key", () => {
@@ -82,6 +82,22 @@ describe("resolveStageParams (deepen linking + per-group layer count)", () => {
     expect(r[A]).toEqual({ sliceNumber: to[A] });
     expect(r[B]).toEqual({ sliceNumber: to[B] });
     expect(r[D]).toEqual({ sliceNumber: to[D] });
+  });
+});
+
+describe("resolveStageParams — spiral detail group", () => {
+  it("emits a CUT_09_SPIRAL_DETAIL group mirroring the spiral group's focus params", () => {
+    const cfg = structuredClone(SPIRAL_CUT);
+    cfg.spiral.enabled = true;
+    const sp = resolveStageParams(cfg);
+    const main = sp[STAGE_GROUPS.spiral];
+    const detail = sp[STAGE_GROUPS.spiralDetail];
+    expect(detail).toBeDefined();
+    expect(detail.sinkingMethod).toBe("step");
+    expect(detail.descentPerStep).toBe(main.descentPerStep);
+    expect(detail.descentIntervalDescent).toBe(main.descentIntervalDescent);
+    // detail mirrors every resolved key of the main spiral group (v1)
+    expect(detail).toEqual(main);
   });
 });
 

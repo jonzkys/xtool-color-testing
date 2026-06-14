@@ -207,6 +207,34 @@ export function buildFillRegion(subpaths: Contour[]): Pt[][] {
 }
 
 /**
+ * Group a flat ring set (outer loops + holes, as produced by offsetRegion /
+ * clipExecute) into connected solid regions. Each component is
+ * `[outerLoop, ...holeLoops]`. A loop's nesting level = how many OTHER loops
+ * contain its first vertex; even levels are outer boundaries, odd levels are
+ * holes. Each hole attaches to the smallest-area even-level loop containing it.
+ */
+export function regionComponents(rings: Pt[][]): Pt[][][] {
+  const loops = rings.filter((r) => r.length >= 3);
+  const level = loops.map((loop, i) =>
+    loops.reduce((n, other, j) => (j !== i && pointInPolygon(other, loop[0]) ? n + 1 : n), 0),
+  );
+  const outerIdx = loops.map((_, i) => i).filter((i) => level[i] % 2 === 0);
+  const comps: Pt[][][] = outerIdx.map((i) => [loops[i]]);
+  loops.forEach((loop, i) => {
+    if (level[i] % 2 === 0) return; // outer, already a component head
+    let best = -1, bestArea = Infinity;
+    outerIdx.forEach((oi, ci) => {
+      if (pointInPolygon(loops[oi], loop[0])) {
+        const a = Math.abs(signedRingArea(loops[oi]));
+        if (a < bestArea) { bestArea = a; best = ci; }
+      }
+    });
+    if (best >= 0) comps[best].push(loop);
+  });
+  return comps;
+}
+
+/**
  * Scrap-side band of width `widthMm` around the part region.
  *
  *   outside   → outer = offset(part, +w),  inner = part
@@ -262,6 +290,58 @@ export function partOuterLoop(part: Pt[][]): Pt[] {
     }
   }
   return best;
+}
+
+/** Reject detail fragments smaller than this (mm²) — clipper rounding noise. */
+const MIN_DETAIL_AREA_MM2 = 0.02;
+
+export interface NeckLobe {
+  region: Pt[][];
+  kind: "main" | "detail";
+}
+
+/**
+ * Split a part region at necks narrower than `neckWidthMm`. Erodes by
+ * neckWidthMm/2 so thin necks pinch off; each surviving core is recovered
+ * (dilated back + overlap, clipped to the part) as a MAIN lobe, and thin
+ * material no core covers becomes DETAIL lobes (grown by overlap so the join is
+ * double-cut). Returns the part as a single main lobe when no neck is found.
+ */
+export function splitLobesAtNecks(part: Pt[][], neckWidthMm: number, overlapMm: number): NeckLobe[] {
+  const whole: NeckLobe[] = [{ region: part, kind: "main" }];
+  if (part.length === 0 || !(neckWidthMm > 0)) return whole;
+  const r = neckWidthMm / 2;
+  const ov = Math.max(0, overlapMm);
+
+  const cores = regionComponents(offsetRegion(part, -r));
+  // No core survived erosion → the whole part is narrower than the neck width;
+  // there is no neck to split around, so keep it as a single main lobe.
+  if (cores.length === 0) return whole;
+  const mains = cores
+    .map((core) => clipExecute(ClipperLib.ClipType.ctIntersection, offsetRegion(core, r + ov), part))
+    .filter((reg) => reg.length > 0);
+
+  // Use r+ov (same as mains recovery) so round-corner roundtrip artifacts from
+  // clipper don't leak through as spurious detail fragments.
+  const thick = clipExecute(
+    ClipperLib.ClipType.ctUnion,
+    cores.flatMap((core) => offsetRegion(core, r + ov)),
+    [],
+  );
+  const residual = clipExecute(ClipperLib.ClipType.ctDifference, part, thick);
+  const details = regionComponents(residual)
+    .filter((comp) => Math.abs(signedRingArea(comp[0])) >= MIN_DETAIL_AREA_MM2)
+    .map((comp) => clipExecute(ClipperLib.ClipType.ctIntersection, offsetRegion(comp, ov), part))
+    .filter((reg) => reg.length > 0);
+
+  // No neck: a single thick core and no meaningful thin residual — leave whole
+  // so the un-split spiral path is reproduced exactly.
+  if (mains.length <= 1 && details.length === 0) return whole;
+
+  return [
+    ...mains.map((region) => ({ region, kind: "main" as const })),
+    ...details.map((region) => ({ region, kind: "detail" as const })),
+  ];
 }
 
 /** Walk a closed loop and emit a sample every `spacingMm` of arc length, each
