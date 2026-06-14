@@ -634,6 +634,21 @@ export function buildGeneratedXcs(
     }
   }
 
+  // Layer cut order. The machine processes layers in DESCENDING layerData.order
+  // (verified on hardware: a By-Layer job with internal=order 1 / external=order 2
+  // cut the EXTERNAL layer first). Arms are emitted in intended cut order, so the
+  // first-seen group must get the HIGHEST order to cut first. layerTagForGroup
+  // assigns ascending (first-seen lowest), so flip the generated layers when we
+  // own the order (userOrder). Off → leave ascending (auto planning ignores it).
+  if (userOrder) {
+    const tags = [...tagFor.values()]; // first-seen order
+    const n = tags.length;
+    tags.forEach((tag, i) => {
+      const ld = canvas.layerData![tag] as LayerDataEntry | undefined;
+      if (ld) ld.order = existingLayers + (n - i); // first-seen (i=0) → highest
+    });
+  }
+
   return raw;
 }
 
