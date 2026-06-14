@@ -119,6 +119,12 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
   const overrideKey = linkedDeepen ? firstDeepenName : current?.group;
   const override: StageParams = (overrideKey ? config.stageParams[overrideKey] : undefined) ?? {};
 
+  // Detail (CUT_09) inherits Main (CUT_08) for un-overridden fields, mirroring
+  // resolveStageParams (out[CUT_09] = { ...out[CUT_08], ...overrides }). So the
+  // Detail tab must fall back to Main's overrides before the source incise.
+  const isDetailSpiral = current?.group === STAGE_GROUPS.spiralDetail;
+  const mainOverride: StageParams = config.stageParams[STAGE_GROUPS.spiral] ?? {};
+
   if (!current) return null;
 
   // ── per-field displayed value resolution ──────────────────────────────────
@@ -126,7 +132,7 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
     param: "power" | "density" | "frequency" | "speed" | "passes" | "pulseWidth",
     constraint: FieldConstraint | undefined,
   ): number {
-    const v = override[param] ?? sourceParams?.[param];
+    const v = override[param] ?? (isDetailSpiral ? mainOverride[param] : undefined) ?? sourceParams?.[param];
     if (v !== undefined) return v;
     // Fallbacks per kind.
     if (constraint?.kind === "range") return constraint.min;
@@ -136,7 +142,7 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
   }
 
   function laserValue(): "red" | "blue" | "uv" {
-    return override.laser ?? sourceParams?.laser ?? "red";
+    return override.laser ?? (isDetailSpiral ? mainOverride.laser : undefined) ?? sourceParams?.laser ?? "red";
   }
 
   // ── writers (no-op while linked) ──────────────────────────────────────────
@@ -477,7 +483,7 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
         {/* footer + reset */}
         <div className="mt-2 flex items-center justify-between gap-2">
           <p className="text-[11px] text-[var(--color-ink-muted)] font-mono">
-            {current.group} · overrides apply on export; cleared fields use the source incise value.
+            {current.group} · overrides apply on export; cleared fields {isDetailSpiral ? "inherit Main" : "use the source incise value"}.
           </p>
           {!linkedDeepen && (
             <button
