@@ -3,9 +3,10 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseXcsFile, findInciseObjects } from "./xcs";
-import { runPipeline } from "./pipeline";
+import { runPipeline, spiralRegionFor } from "./pipeline";
 import { DEFAULT_CONFIG } from "./defaults";
 import { SPIRAL_CUT, LEAN } from "./presets";
+import type { Contour, Pt } from "./types";
 
 const SAMPLE = resolve(__dirname, "../../../../samples/xcs/incise_emboss.xcs");
 function loadSample(): ArrayBuffer {
@@ -205,5 +206,32 @@ describe("pipeline spiral embossment-drop warning", () => {
     expect(
       r.stats.warnings.some((w) => /emboss|flat.surface|separate/i.test(w)),
     ).toBe(false);
+  });
+});
+
+describe("spiralRegionFor — region by target type (INTAGLIO vs VECTOR)", () => {
+  const width = (rings: Pt[][]) => {
+    let mn = Infinity, mx = -Infinity;
+    for (const r of rings) for (const p of r) { mn = Math.min(mn, p.x); mx = Math.max(mx, p.x); }
+    return mx - mn;
+  };
+  // A doubled-wall frame: outer 0..20 + concentric inner 4..16 (a thick outline).
+  const frame: Contour[] = [
+    { points: [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }], closed: true },
+    { points: [{ x: 4, y: 4 }, { x: 16, y: 4 }, { x: 16, y: 16 }, { x: 4, y: 16 }], closed: true },
+  ];
+
+  it("VECTOR_CUTTING → even-odd fill keeps the outer 20mm boundary (single-walled silhouette)", () => {
+    expect(width(spiralRegionFor("VECTOR_CUTTING", frame))).toBeCloseTo(20, 0);
+  });
+
+  it("INTAGLIO → buildPartRegion rebuilds the solid object (doubled-wall → inner region, not the 20mm outer)", () => {
+    const w = width(spiralRegionFor("INTAGLIO", frame));
+    expect(w).toBeGreaterThan(10);
+    expect(w).toBeLessThan(18); // the inner ~12mm region, not the full 20mm outline
+  });
+
+  it("a null/other processingType falls back to the incise (buildPartRegion) interpretation", () => {
+    expect(width(spiralRegionFor(null, frame))).toBeLessThan(18);
   });
 });

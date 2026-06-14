@@ -2,7 +2,18 @@ import { describe, it, expect } from "vitest";
 import { spiralFromRegion, spiralPathLength, generateSpiralPaths, buildStrands } from "./spiral";
 import { SPIRAL_CUT } from "./presets";
 import { STAGE_GROUPS } from "./config";
+import { splitLobesAtNecks, offsetRegion, unionRegions, subtractRegion, pointInPolygon } from "./offset";
 import type { Pt } from "./types";
+
+function rectLoop(x0: number, y0: number, x1: number, y1: number): Pt[] {
+  return [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+}
+/** even-odd point-in-region over a ring set. */
+function insideRegion(region: Pt[][], p: Pt): boolean {
+  let inside = false;
+  for (const r of region) if (pointInPolygon(r, p)) inside = !inside;
+  return inside;
+}
 
 const square: Pt[] = [
   { x: -10, y: -10 }, { x: 10, y: -10 }, { x: 10, y: 10 }, { x: -10, y: 10 },
@@ -65,11 +76,13 @@ describe("spiralFromRegion (fallback) + generateSpiralPaths", () => {
   });
 });
 
-const dumbbell: { x: number; y: number }[][] = [[
-  { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 4.85 },
-  { x: 14, y: 4.85 }, { x: 14, y: 0 }, { x: 24, y: 0 },
-  { x: 24, y: 10 }, { x: 14, y: 10 }, { x: 14, y: 5.15 },
-  { x: 10, y: 5.15 }, { x: 10, y: 10 }, { x: 0, y: 10 },
+// lollipop: big 12x12 body + small 3x3 feature joined by a thin 0.3mm bridge —
+// the small feature is the "internal detail" that splits off; the body stays main.
+const lollipop: { x: number; y: number }[][] = [[
+  { x: 0, y: 0 }, { x: 12, y: 0 }, { x: 12, y: 5.85 },
+  { x: 16, y: 5.85 }, { x: 16, y: 3 }, { x: 19, y: 3 },
+  { x: 19, y: 6 }, { x: 16, y: 6 }, { x: 16, y: 6.15 },
+  { x: 12, y: 6.15 }, { x: 12, y: 12 }, { x: 0, y: 12 },
 ]];
 
 describe("generateSpiralPaths — neck split", () => {
@@ -77,22 +90,84 @@ describe("generateSpiralPaths — neck split", () => {
     const cfg = structuredClone(SPIRAL_CUT);
     cfg.spiral.enabled = true;
     cfg.spiral.splitNecks = false;
-    const paths = generateSpiralPaths(dumbbell, cfg, "obj1");
+    const paths = generateSpiralPaths(lollipop, cfg, "obj1");
     expect(paths.length).toBeGreaterThan(0);
     expect(paths.every((p) => p.groupName === STAGE_GROUPS.spiral)).toBe(true);
     expect(paths.every((p) => p.generatedClass === "spiral")).toBe(true);
   });
 
-  it("ON: emits at least one detail-group arm, all still generatedClass spiral", () => {
+  it("ON: splits the small feature into the detail group while keeping a main", () => {
     const cfg = structuredClone(SPIRAL_CUT);
     cfg.spiral.enabled = true;
     cfg.spiral.splitNecks = true;
     cfg.spiral.neckThresholdPct = 50;
     cfg.spiral.neckOverlapMm = 0.4;
-    const paths = generateSpiralPaths(dumbbell, cfg, "obj1");
+    const paths = generateSpiralPaths(lollipop, cfg, "obj1");
     expect(paths.some((p) => p.groupName === STAGE_GROUPS.spiralDetail)).toBe(true);
+    expect(paths.some((p) => p.groupName === STAGE_GROUPS.spiral)).toBe(true);
     expect(paths.every((p) => p.generatedClass === "spiral")).toBe(true);
     expect(paths.map((p) => p.operationOrder)).toEqual(paths.map((_, i) => i));
+  });
+});
+
+describe("detail keep-out — main spiral does not re-cut a split-off island", () => {
+  // 30×30 body with a C-shaped channel isolating an 8×8 centre island, joined to
+  // the body by a thin 0.3 mm neck — the internal-detail case (an "i" dot / flower
+  // centre) where the main's +offsets used to bloom into the carved hole.
+  function islandPart(): Pt[][] {
+    const body = [rectLoop(0, 0, 30, 30)];
+    const annulus = subtractRegion([rectLoop(9, 9, 21, 21)], [rectLoop(11, 11, 19, 19)]);
+    const channel = subtractRegion(annulus, [rectLoop(14, 9, 14.3, 11)]); // 0.3 mm neck bridge
+    return subtractRegion(body, channel);
+  }
+  const channelW = 0.45, pitch = 0.04;
+  const opts = { channelWidthMm: channelW, pitchMm: pitch, side: "outside" as const, minChannelMm: 0.4 };
+
+  it("the island splits off and the main keeps clear of it (with keep-out)", () => {
+    const lobes = splitLobesAtNecks(islandPart(), 0.45, channelW);
+    const main = lobes.find((l) => l.kind === "main")!;
+    const details = lobes.filter((l) => l.kind === "detail");
+    expect(details.length).toBe(1);
+    const detailRegion = details.flatMap((d) => d.region);
+    const keepOut = offsetRegion(unionRegions(details.map((d) => d.region)), channelW);
+
+    const armsClipped = spiralFromRegion(main.region, opts, keepOut).arms;
+    let pts = 0, inside = 0;
+    for (const a of armsClipped) for (const p of a) { pts++; if (insideRegion(detailRegion, p)) inside++; }
+    expect(pts).toBeGreaterThan(0);
+    expect(inside).toBe(0); // the fix: the main never enters the detail's region
+
+    // Sanity: WITHOUT the keep-out the old behaviour double-draws into the island.
+    const armsRaw = spiralFromRegion(main.region, opts).arms;
+    let insideRaw = 0;
+    for (const a of armsRaw) for (const p of a) if (insideRegion(detailRegion, p)) insideRaw++;
+    expect(insideRaw).toBeGreaterThan(0);
+  });
+
+  it("generateSpiralPaths wires the keep-out through (main group avoids the detail region)", () => {
+    const part = islandPart();
+    const cfg = structuredClone(SPIRAL_CUT);
+    cfg.spiral.enabled = true;
+    cfg.spiral.splitNecks = true;
+    cfg.spiral.channelWidthMm = channelW;
+    cfg.spiral.pitchMm = pitch;
+    cfg.spiral.side = "outside";
+    cfg.spiral.neckThresholdPct = 100; // neckWidth = channelWidth → pinches the 0.3 mm neck
+    cfg.spiral.neckOverlapMm = channelW;
+    const paths = generateSpiralPaths(part, cfg, "obj1");
+    const detailArms = paths.filter((p) => p.groupName === STAGE_GROUPS.spiralDetail).flatMap((p) => p.rings);
+    const mainArms = paths.filter((p) => p.groupName === STAGE_GROUPS.spiral).flatMap((p) => p.rings);
+    expect(detailArms.length).toBeGreaterThan(0);
+    expect(mainArms.length).toBeGreaterThan(0);
+
+    // Reconstruct the detail region the generator split off and assert no
+    // main-group point lands inside it — the precise no-double-draw invariant.
+    const lobes = splitLobesAtNecks(part, (cfg.spiral.neckThresholdPct / 100) * channelW, cfg.spiral.neckOverlapMm);
+    const detailRegion = lobes.filter((l) => l.kind === "detail").flatMap((l) => l.region);
+    expect(detailRegion.length).toBeGreaterThan(0);
+    let mainInsideDetail = 0;
+    for (const a of mainArms) for (const p of a) if (insideRegion(detailRegion, p)) mainInsideDetail++;
+    expect(mainInsideDetail).toBe(0);
   });
 });
 

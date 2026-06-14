@@ -55,6 +55,19 @@ function clipExecute(clipType: number, subj: Pt[][], clip: Pt[][], evenOdd = fal
   return fromClipperPaths(solution);
 }
 
+/** Union a set of regions into one ring set (NonZero). */
+export function unionRegions(regions: Pt[][][]): Pt[][] {
+  const all = regions.flat();
+  if (all.length === 0) return [];
+  return clipExecute(ClipperLib.ClipType.ctUnion, all, []);
+}
+
+/** `subj` minus `clip` (NonZero). Returns `subj` unchanged when `clip` is empty. */
+export function subtractRegion(subj: Pt[][], clip: Pt[][]): Pt[][] {
+  if (clip.length === 0) return subj;
+  return clipExecute(ClipperLib.ClipType.ctDifference, subj, clip);
+}
+
 /**
  * Offset a region (polygon with holes) by `deltaMm` (signed). Positive grows the
  * outer boundary outward and shrinks holes inward; negative does the reverse.
@@ -300,12 +313,22 @@ export interface NeckLobe {
   kind: "main" | "detail";
 }
 
+/** A detail feature must be no larger than this fraction of the main body's
+ *  core, so co-equal pieces (e.g. two similar letters) both stay in the main
+ *  rather than one being labelled "detail". */
+const MAX_DETAIL_FRAC = 0.25;
+/** Cap on how many features split off, so a stroke-heavy design can't shatter
+ *  into dozens of tiny cuts; the smaller leftovers stay in the main. */
+const MAX_DETAIL_LOBES = 16;
+
 /**
- * Split a part region at necks narrower than `neckWidthMm`. Erodes by
- * neckWidthMm/2 so thin necks pinch off; each surviving core is recovered
- * (dilated back + overlap, clipped to the part) as a MAIN lobe, and thin
- * material no core covers becomes DETAIL lobes (grown by overlap so the join is
- * double-cut). Returns the part as a single main lobe when no neck is found.
+ * Split genuinely-small features off a part at necks narrower than `neckWidthMm`,
+ * keeping the bulk as ONE main region. Erodes by neckWidthMm/2 so features joined
+ * by a sub-neck-width link pinch off into separate cores; the LARGEST core is the
+ * main body. Only cores that are small relative to it (≤ MAX_DETAIL_FRAC, capped
+ * to MAX_DETAIL_LOBES) carve off as DETAIL lobes (dilated back + overlap so the
+ * neck is double-cut); everything else — connecting strokes, larger pieces —
+ * stays in the single main region. Returns the part whole when nothing qualifies.
  */
 export function splitLobesAtNecks(part: Pt[][], neckWidthMm: number, overlapMm: number): NeckLobe[] {
   const whole: NeckLobe[] = [{ region: part, kind: "main" }];
@@ -314,32 +337,33 @@ export function splitLobesAtNecks(part: Pt[][], neckWidthMm: number, overlapMm: 
   const ov = Math.max(0, overlapMm);
 
   const cores = regionComponents(offsetRegion(part, -r));
-  // No core survived erosion → the whole part is narrower than the neck width;
-  // there is no neck to split around, so keep it as a single main lobe.
-  if (cores.length === 0) return whole;
-  const mains = cores
-    .map((core) => clipExecute(ClipperLib.ClipType.ctIntersection, offsetRegion(core, r + ov), part))
-    .filter((reg) => reg.length > 0);
+  if (cores.length <= 1) return whole; // nothing pinches off
 
-  // Use r+ov (same as mains recovery) so round-corner roundtrip artifacts from
-  // clipper don't leak through as spurious detail fragments.
-  const thick = clipExecute(
-    ClipperLib.ClipType.ctUnion,
-    cores.flatMap((core) => offsetRegion(core, r + ov)),
-    [],
-  );
-  const residual = clipExecute(ClipperLib.ClipType.ctDifference, part, thick);
-  const details = regionComponents(residual)
-    .filter((comp) => Math.abs(signedRingArea(comp[0])) >= MIN_DETAIL_AREA_MM2)
-    .map((comp) => clipExecute(ClipperLib.ClipType.ctIntersection, offsetRegion(comp, ov), part))
-    .filter((reg) => reg.length > 0);
+  // Size each core by its outer-loop area; the largest is the main body.
+  const sized = cores
+    .map((core) => ({ core, area: Math.abs(signedRingArea(core[0])) }))
+    .sort((a, b) => b.area - a.area);
+  const detailCores = sized
+    .slice(1)
+    .filter((c) => c.area >= MIN_DETAIL_AREA_MM2 && c.area <= sized[0].area * MAX_DETAIL_FRAC)
+    .slice(0, MAX_DETAIL_LOBES);
+  if (detailCores.length === 0) return whole;
 
-  // No neck: a single thick core and no meaningful thin residual — leave whole
-  // so the un-split spiral path is reproduced exactly.
-  if (mains.length <= 1 && details.length === 0) return whole;
+  // Each detail = its small core dilated back + overlap, clipped to the part
+  // (feature + its neck + a margin into the body).
+  const details = detailCores
+    .map((c) => clipExecute(ClipperLib.ClipType.ctIntersection, offsetRegion(c.core, r + ov), part))
+    .filter((reg) => reg.length > 0);
+  if (details.length === 0) return whole;
+  // The main keeps everything except the detail regions: part minus their union,
+  // so it stays one region with no leftover slivers; main and detail share the
+  // cut boundary (both spirals trace it → the neck is severed).
+  const carve = clipExecute(ClipperLib.ClipType.ctUnion, details.flat(), []);
+  const mainRegion = clipExecute(ClipperLib.ClipType.ctDifference, part, carve);
+  if (mainRegion.length === 0) return whole;
 
   return [
-    ...mains.map((region) => ({ region, kind: "main" as const })),
+    { region: mainRegion, kind: "main" },
     ...details.map((region) => ({ region, kind: "detail" as const })),
   ];
 }

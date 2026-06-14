@@ -160,7 +160,14 @@ describe("partOuterLoop", () => {
 });
 
 describe("splitLobesAtNecks", () => {
-  // dumbbell: left square 0..10, right square 14..24, thin bridge y 4.85..5.15 (0.3 tall)
+  // lollipop: big 12x12 body + small 3x3 feature joined by a thin 0.3mm bridge.
+  const lollipop: { x: number; y: number }[][] = [[
+    { x: 0, y: 0 }, { x: 12, y: 0 }, { x: 12, y: 5.85 },
+    { x: 16, y: 5.85 }, { x: 16, y: 3 }, { x: 19, y: 3 },
+    { x: 19, y: 6 }, { x: 16, y: 6 }, { x: 16, y: 6.15 },
+    { x: 12, y: 6.15 }, { x: 12, y: 12 }, { x: 0, y: 12 },
+  ]];
+  // even dumbbell: two CO-EQUAL 10x10 squares joined by a thin bridge.
   const dumbbell: { x: number; y: number }[][] = [[
     { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 4.85 },
     { x: 14, y: 4.85 }, { x: 14, y: 0 }, { x: 24, y: 0 },
@@ -168,12 +175,20 @@ describe("splitLobesAtNecks", () => {
     { x: 10, y: 5.15 }, { x: 10, y: 10 }, { x: 0, y: 10 },
   ]];
 
-  it("splits a thin bridge into two main lobes + a detail", () => {
-    const lobes = splitLobesAtNecks(dumbbell, 1.0, 0.4);
+  it("keeps the big body as ONE main and splits the small feature off as detail", () => {
+    const lobes = splitLobesAtNecks(lollipop, 1.0, 0.4);
     const mains = lobes.filter((l) => l.kind === "main");
     const details = lobes.filter((l) => l.kind === "detail");
-    expect(mains.length).toBe(2);       // the two squares
-    expect(details.length).toBeGreaterThanOrEqual(1); // the thin bridge
+    expect(mains.length).toBe(1);   // the big body stays one main, not fragmented
+    expect(details.length).toBe(1); // only the small feature splits off
+    // the small feature (out to x=19) is carved off the main; the main is the
+    // big body (+ the connecting bridge), well short of the full 19mm span.
+    expect(bbox(mains[0].region).maxX).toBeLessThan(17);
+  });
+
+  it("two co-equal bodies both stay in the main (neither is 'small' detail)", () => {
+    const lobes = splitLobesAtNecks(dumbbell, 1.0, 0.4);
+    expect(lobes.every((l) => l.kind === "main")).toBe(true);
   });
 
   it("leaves a solid square as a single main lobe", () => {

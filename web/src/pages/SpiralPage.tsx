@@ -250,6 +250,14 @@ export function SpiralPage() {
     }));
   }, [state, selectedIncise, result?.stats.mmPerUnit]);
 
+  // Doubled-wall incise target (INTAGLIO) → the schematic rebuilds the solid
+  // object (buildPartRegion), matching the generator; a VECTOR/SVG silhouette
+  // uses the even-odd fill. Mirrors the dispatch in pipeline.ts.
+  const intaglioTarget = useMemo(() => {
+    if (state.kind !== "ready" || !selectedIncise) return false;
+    return state.objects.find((o) => o.id === selectedIncise)?.processingType !== "VECTOR_CUTTING";
+  }, [state, selectedIncise]);
+
   // ---- validation ----
   const validation = useMemo(() => {
     const errors: string[] = [];
@@ -377,6 +385,7 @@ export function SpiralPage() {
                     channelWidthMm={config.spiral.channelWidthMm}
                     pitchMm={config.spiral.pitchMm}
                     side={config.spiral.side}
+                    intaglio={intaglioTarget}
                     splitNecks={config.spiral.splitNecks}
                     neckThresholdPct={config.spiral.neckThresholdPct}
                     neckOverlapMm={config.spiral.neckOverlapMm}

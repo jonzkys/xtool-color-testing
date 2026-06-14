@@ -7,6 +7,7 @@ import type {
   GeneratedPath,
   ParsedXcs,
   PipelineResult,
+  Pt,
 } from "./types";
 import { extractContourSubpaths, calibrateMmPerUnit } from "./xcs";
 import { optimalScanAngle, perpendicularExtentAt } from "./scanangle";
@@ -25,6 +26,21 @@ import { generateSpiralPaths } from "./spiral";
 /** Scale a contour's points from path units → mm. */
 function toMm(c: Contour, mmPerUnit: number): Contour {
   return { points: c.points.map((p) => ({ x: p.x * mmPerUnit, y: p.y * mmPerUnit })), closed: c.closed };
+}
+
+/**
+ * The region the spiral cut runs on, chosen by how the target's geometry is drawn:
+ *  - VECTOR_CUTTING / SVG imports are SINGLE-walled silhouettes (outer outline +
+ *    counters). buildPartRegion would drop the single-walled outer loop, so use
+ *    the canonical even-odd fill (buildFillRegion) to keep the whole shape.
+ *  - INTAGLIO (and other incise) designs from Studio are DOUBLED-wall line-art
+ *    (the cut is the outline kerf). buildPartRegion reconstructs the SOLID object
+ *    from the wall pairs; buildFillRegion would instead keep the thin outline
+ *    ribbons and the spiral would ablate the whole interior.
+ * The schematic preview (SpiralCanvas) mirrors this choice.
+ */
+export function spiralRegionFor(processingType: string | null, subpaths: Contour[]): Pt[][] {
+  return processingType === "VECTOR_CUTTING" ? buildFillRegion(subpaths) : buildPartRegion(subpaths);
 }
 
 /**
@@ -84,12 +100,7 @@ export function runPipeline(
   // kerf is a scrap-side band around this region (the part body is a hole in
   // each band), so there are no per-subpath tiny displays.
   const part = buildPartRegion(subpaths);
-  // The spiral cut targets a vector SHAPE outline (outer boundary + counters),
-  // which follows the canonical even-odd fill rule. buildPartRegion is tuned for
-  // doubled-wall incise kerfs and drops a single-walled outer outline (its level-0
-  // loop), so a holed shape like text loses its main external cut. Give the spiral
-  // its own even-odd region; the incise stages keep `part`.
-  const spiralRegion = cfg.spiral.enabled ? buildFillRegion(subpaths) : part;
+  const spiralRegion = cfg.spiral.enabled ? spiralRegionFor(obj.processingType, subpaths) : part;
   const activeRegion = cfg.spiral.enabled ? spiralRegion : part;
   if (activeRegion.length === 0) {
     warnings.push("Could not reconstruct a part region from the incise contour; no paths generated.");
