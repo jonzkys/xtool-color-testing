@@ -16,7 +16,7 @@
 // involvement. The literal cut still drives the estimate/debug elsewhere.
 import { useEffect, useRef, useState } from "react";
 import type { Contour, Pt } from "../../lib/forge/types";
-import { offsetRegion, simplifyLoop, buildFillRegion, splitLobesAtNecks } from "../../lib/forge/offset";
+import { offsetRegion, simplifyLoop, buildFillRegion, buildPartRegion, splitLobesAtNecks } from "../../lib/forge/offset";
 
 const SPIRAL = "#ec4899"; // brand pink — main lobe / matches CLASS_COLOR.spiral
 const DETAIL = "#f59e0b"; // amber — split-off detail lobes (CUT_09_SPIRAL_DETAIL)
@@ -31,6 +31,9 @@ export interface SpiralCanvasProps {
   channelWidthMm: number;
   pitchMm: number;
   side: "outside" | "inside";
+  /** True for a doubled-wall incise target (INTAGLIO): rebuild the solid object
+   *  with buildPartRegion to match the generator, instead of the even-odd fill. */
+  intaglio: boolean;
   /** Mirror the generator's neck split in the preview (and tint detail lobes). */
   splitNecks: boolean;
   neckThresholdPct: number;
@@ -75,17 +78,16 @@ function buildSchematic(
   channelWidthMm: number,
   pitchMm: number,
   side: "outside" | "inside",
+  intaglio: boolean,
   splitNecks: boolean,
   neckThresholdPct: number,
   neckOverlapMm: number,
 ): Schematic | null {
-  // Build arms from the SAME canonical even-odd region the real cut uses
-  // (buildFillRegion), not the raw SVG subpaths. Raw imported subpaths can have
-  // inconsistent winding, which makes the clipper "outside" offset collapse on
-  // some sides — leaving the venting band missing along, e.g., the bottom of the
-  // rightmost strokes. Normalising first keeps the schematic symmetric AND
-  // faithful to what gets exported.
-  const region0 = buildFillRegion(source).filter((pts) => pts.length >= 3);
+  // Reconstruct the region the SAME way the generator (pipeline.ts) does, so the
+  // preview matches the cut: a doubled-wall INTAGLIO target → buildPartRegion (the
+  // solid object); a single-walled VECTOR/SVG silhouette → buildFillRegion (the
+  // canonical even-odd fill, which keeps the outer outline and is winding-robust).
+  const region0 = (intaglio ? buildPartRegion(source) : buildFillRegion(source)).filter((pts) => pts.length >= 3);
   if (region0.length === 0) return null;
 
   const cb = bboxOf(region0);
@@ -145,7 +147,7 @@ function buildSchematic(
   return { groups, bbox: bboxOf(allLoops), trueArms, shownArms, detailLobes };
 }
 
-export function SpiralCanvas({ source, channelWidthMm, pitchMm, side, splitNecks, neckThresholdPct, neckOverlapMm, width, height }: SpiralCanvasProps) {
+export function SpiralCanvas({ source, channelWidthMm, pitchMm, side, intaglio, splitNecks, neckThresholdPct, neckOverlapMm, width, height }: SpiralCanvasProps) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const [schematic, setSchematic] = useState<Schematic | null>(null);
 
@@ -158,11 +160,11 @@ export function SpiralCanvas({ source, channelWidthMm, pitchMm, side, splitNecks
       return;
     }
     const t = setTimeout(
-      () => setSchematic(buildSchematic(source, channelWidthMm, pitchMm, side, splitNecks, neckThresholdPct, neckOverlapMm)),
+      () => setSchematic(buildSchematic(source, channelWidthMm, pitchMm, side, intaglio, splitNecks, neckThresholdPct, neckOverlapMm)),
       110,
     );
     return () => clearTimeout(t);
-  }, [source, channelWidthMm, pitchMm, side, splitNecks, neckThresholdPct, neckOverlapMm]);
+  }, [source, channelWidthMm, pitchMm, side, intaglio, splitNecks, neckThresholdPct, neckOverlapMm]);
 
   useEffect(() => {
     const canvas = ref.current;
