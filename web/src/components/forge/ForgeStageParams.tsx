@@ -32,13 +32,16 @@ export interface ForgeStageParamsProps {
   /** Render without the Card/title frame — for embedding in the page's
    *  stage-parameters tray, which provides its own chrome. */
   frameless?: boolean;
-  /** Lock to a single stage group and hide the tab strip — for the Spiral
-   *  page, which has exactly one operation. */
+  /** Lock to a single stage group and hide the tab strip. (The Spiral page now
+   *  uses `cutGroups` instead to show Main/Detail tabs.) */
   lockToGroup?: string;
   /** Cut mode (vector): drop engrave-only controls — Density (lines/cm) and the
    *  generic Z-axis-descent group — and show a single Passes field. A cut steps
    *  focus via Focus descent, not the engrave Z group. For the Spiral page. */
   cutMode?: boolean;
+  /** Explicit spiral groups to show as tabs (Spiral page). When provided it
+   *  replaces the stageList and is NOT locked to one group. */
+  cutGroups?: Array<{ group: string; label: string }>;
 }
 
 /** The operations that get exported, in process order, as [groupName, label]. */
@@ -76,7 +79,7 @@ const NUMERIC_FIELDS: Array<{
  *  supplies one. */
 const Z_DEFAULTS = { zLayers: 1, zDecline: 0.01, sliceNumber: 256 } as const;
 
-export function ForgeStageParams({ config, onChange, sourceParams, frameless, lockToGroup, cutMode }: ForgeStageParamsProps) {
+export function ForgeStageParams({ config, onChange, sourceParams, frameless, lockToGroup, cutMode, cutGroups }: ForgeStageParamsProps) {
   const { registry, machineId } = useCurrentMachine();
   const profile = getValidationProfile(registry, machineId, "color_engrave");
 
@@ -87,8 +90,9 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
     : NUMERIC_FIELDS;
 
   // In lockToGroup mode only the one named stage is shown and the tab strip is
-  // hidden; otherwise every exported stage gets a tab.
-  const allStages = stageList(config);
+  // hidden; otherwise every exported stage gets a tab. cutGroups overrides
+  // stageList entirely (Spiral page).
+  const allStages = cutGroups ?? stageList(config);
   const stages = lockToGroup ? allStages.filter((s) => s.group === lockToGroup) : allStages;
   // Track the active stage by POSITION, not its (user-editable) group name, so a
   // deepen-group rename keeps the tab on that group instead of silently falling
@@ -102,7 +106,8 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
     ? config.deepen.groups.findIndex((g) => g.name === current.group)
     : -1;
   const isDeepen = deepenIdx >= 0;
-  const isSpiral = current?.group === STAGE_GROUPS.spiral;
+  const isSpiral = current?.group === STAGE_GROUPS.spiral || current?.group === STAGE_GROUPS.spiralDetail;
+  const isMainSpiral = current?.group === STAGE_GROUPS.spiral;
   const isDeepenAfterFirst = deepenIdx > 0;
   const firstDeepenName = config.deepen.groups[0]?.name;
   const copyFromFirst = isDeepen ? (config.deepen.groups[deepenIdx].copyParamsFromFirst ?? true) : false;
@@ -116,12 +121,18 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
 
   if (!current) return null;
 
+  // Detail (CUT_09) inherits Main (CUT_08) for un-overridden fields, mirroring
+  // resolveStageParams (out[CUT_09] = { ...out[CUT_08], ...overrides }). So the
+  // Detail tab must fall back to Main's overrides before the source incise.
+  const isDetailSpiral = current.group === STAGE_GROUPS.spiralDetail;
+  const mainOverride: StageParams = config.stageParams[STAGE_GROUPS.spiral] ?? {};
+
   // ── per-field displayed value resolution ──────────────────────────────────
   function numericValue(
     param: "power" | "density" | "frequency" | "speed" | "passes" | "pulseWidth",
     constraint: FieldConstraint | undefined,
   ): number {
-    const v = override[param] ?? sourceParams?.[param];
+    const v = override[param] ?? (isDetailSpiral ? mainOverride[param] : undefined) ?? sourceParams?.[param];
     if (v !== undefined) return v;
     // Fallbacks per kind.
     if (constraint?.kind === "range") return constraint.min;
@@ -131,7 +142,7 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
   }
 
   function laserValue(): "red" | "blue" | "uv" {
-    return override.laser ?? sourceParams?.laser ?? "red";
+    return override.laser ?? (isDetailSpiral ? mainOverride.laser : undefined) ?? sourceParams?.laser ?? "red";
   }
 
   // ── writers (no-op while linked) ──────────────────────────────────────────
@@ -180,7 +191,11 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
     current.group === STAGE_GROUPS.seed ? config.seed.layerCount
     : current.group === STAGE_GROUPS.perforate ? config.perforate.layerCount
     : current.group === STAGE_GROUPS.clean ? config.clean.layerCount
-    : current.group === STAGE_GROUPS.spiral ? config.spiral.passes
+    : isMainSpiral ? config.spiral.passes
+    : current.group === STAGE_GROUPS.spiralDetail
+      ? (config.stageParams[STAGE_GROUPS.spiralDetail]?.passes
+          ?? config.stageParams[STAGE_GROUPS.spiral]?.passes
+          ?? config.spiral.passes)
     : Z_DEFAULTS.sliceNumber; // unreachable given current stage model; sentinel for future non-deepen stages
   const depthLayers = isDeepen
     ? Math.max(1, config.deepen.groups[deepenIdx].toLayer)
@@ -209,6 +224,7 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
           else if (current.group === STAGE_GROUPS.perforate) onChange({ ...config, perforate: { ...config.perforate, layerCount: n }, activePreset: "custom" });
           else if (current.group === STAGE_GROUPS.clean) onChange({ ...config, clean: { ...config.clean, layerCount: n }, activePreset: "custom" });
           else if (current.group === STAGE_GROUPS.spiral) onChange({ ...config, spiral: { ...config.spiral, passes: n }, activePreset: "custom" });
+          else if (current.group === STAGE_GROUPS.spiralDetail) setParam("passes", n);
         }}
       />
     </Field>
@@ -216,8 +232,8 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
 
   const body = (
       <div className={frameless ? "px-4 py-2.5" : "p-2"}>
-        {/* tabs — hidden in lockToGroup (single-stage) mode */}
-        {!lockToGroup && (
+        {/* tabs — hidden in lockToGroup (single-stage) mode; shown when >1 stage */}
+        {!lockToGroup && stages.length > 1 && (
           <div className={cn("flex flex-wrap gap-1", frameless ? "mb-2" : "mb-3")}>
             {stages.map((s, i) => (
               <button
@@ -331,7 +347,7 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
             ).filter((f) => !(cutMode && f.param === "passes")).map(({ param, label, step }) => (
               <Field key={param} label={label}>
                 <NumberField
-                  value={override[param] ?? sourceParams?.[param] ?? 0}
+                  value={numericValue(param, undefined)}
                   min={0}
                   step={step}
                   disabled={linkedDeepen}
@@ -348,8 +364,8 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
         )}
 
         {/* Spiral focus descent — the cut's Z mechanism (replaces engrave Z-descent).
-            Stacked block: label, the two fields, then the descent-depth readouts. */}
-        {isSpiral && (
+            Only on the Main spiral tab; Detail inherits Main's focus settings. */}
+        {isMainSpiral && (
           <div className={cn("border border-[var(--color-border)] rounded", frameless ? "mt-2 p-2" : "mt-3 p-2")}>
             <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-ink-subtle)] mb-2">
               Focus descent
@@ -469,7 +485,7 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
         {/* footer + reset */}
         <div className="mt-2 flex items-center justify-between gap-2">
           <p className="text-[11px] text-[var(--color-ink-muted)] font-mono">
-            {current.group} · overrides apply on export; cleared fields use the source incise value.
+            {current.group} · overrides apply on export; cleared fields {isDetailSpiral ? "inherit Main" : "use the source incise value"}.
           </p>
           {!linkedDeepen && (
             <button

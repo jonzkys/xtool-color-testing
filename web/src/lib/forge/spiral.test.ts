@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { spiralFromRegion, spiralPathLength, generateSpiralPaths, buildStrands } from "./spiral";
+import { spiralFromRegion, spiralPathLength, generateSpiralPaths, buildStrands, classifyLevel0 } from "./spiral";
 import { SPIRAL_CUT } from "./presets";
 import { STAGE_GROUPS } from "./config";
 import { splitLobesAtNecks, offsetRegion, unionRegions, subtractRegion, pointInPolygon } from "./offset";
@@ -221,6 +221,32 @@ describe("detail keep-out — main spiral does not re-cut a split-off island", (
     for (const a of mainArms) for (const p of a) if (insideRegion(detailRegion, p)) mainInsideDetail++;
     expect(mainInsideDetail).toBe(0);
   });
+
+  it("generateSpiralPaths: main-group arms stay a gap clear of the neck-split detail", () => {
+    const part = islandPart();
+    const cfg = structuredClone(SPIRAL_CUT);
+    cfg.spiral.enabled = true;
+    cfg.spiral.channelWidthMm = channelW;
+    cfg.spiral.pitchMm = pitch;
+    cfg.spiral.side = "outside";
+    cfg.spiral.splitNecks = true;
+    cfg.spiral.neckThresholdPct = 100; // pinch the 0.3mm neck
+    cfg.spiral.neckOverlapMm = channelW;
+    cfg.spiral.cutShortestFirst = false;
+    const paths = generateSpiralPaths(part, cfg, "o");
+    const detailLobes = splitLobesAtNecks(part, (cfg.spiral.neckThresholdPct / 100) * channelW, cfg.spiral.neckOverlapMm)
+      .filter((l) => l.kind === "detail").map((l) => l.region);
+    expect(detailLobes.length).toBeGreaterThan(0);
+    // The GAP zone = detail dilated by channelWidth + 1 pitch (BETWEEN the old
+    // keepout of channelWidth and the new channelWidth + 2*pitch). No CUT_08
+    // (main/external) arm point may fall inside it — proving the 2-pitch gap.
+    const gapZone = offsetRegion(unionRegions(detailLobes), channelW + pitch);
+    const mainArms = paths.filter((p) => p.groupName === STAGE_GROUPS.spiral).flatMap((p) => p.rings);
+    let inside = 0;
+    for (const a of mainArms) for (const pt of a) if (insideRegion(gapZone, pt)) inside++;
+    expect(mainArms.length).toBeGreaterThan(0);
+    expect(inside).toBe(0);
+  });
 });
 
 describe("buildStrands (coverage invariant)", () => {
@@ -251,7 +277,7 @@ describe("buildStrands (coverage invariant)", () => {
     // Total input points: 5 rings × 4 pts = 20.
     const inputPoints = levels.flat().reduce((acc, loop) => acc + loop.length, 0);
 
-    const arms = buildStrands(levels, 0.1);
+    const arms = buildStrands(levels, 0.1).map((s) => s.arm);
 
     // Total output points across all stitched arms must equal input.
     const outputPoints = arms.reduce((acc, arm) => acc + arm.length, 0);
@@ -272,7 +298,7 @@ describe("buildStrands (coverage invariant)", () => {
       sq(0, 0, 5 - k * 0.04),
       sq(30, 0, 5 - k * 0.04),
     ]);
-    const arms = buildStrands(levels, pitch);
+    const arms = buildStrands(levels, pitch).map((s) => s.arm);
     // Each column should produce exactly one strand (5 rings each).
     expect(arms.length).toBe(2);
     // Both strands cover all 5 levels' points: 4 pts per ring × 5 levels = 20 pts each.
@@ -312,7 +338,7 @@ describe("buildStrands (coverage invariant)", () => {
     ];
 
     const totalInput = levels.flat().reduce((acc, loop) => acc + loop.length, 0); // 20
-    const arms = buildStrands(levels, pitch);
+    const arms = buildStrands(levels, pitch).map((s) => s.arm);
 
     // Coverage invariant: every input point appears in exactly one arm.
     const totalOutput = arms.reduce((acc, a) => acc + a.length, 0);
@@ -328,5 +354,104 @@ describe("buildStrands (coverage invariant)", () => {
       return mx;
     }, 0);
     expect(maxSeg).toBeLessThanOrEqual(5 * pitch);
+  });
+});
+
+describe("buildStrands — seed class", () => {
+  function sq(cx: number, cy: number, s: number): Pt[] {
+    return [{ x: cx - s, y: cy - s }, { x: cx + s, y: cy - s }, { x: cx + s, y: cy + s }, { x: cx - s, y: cy + s }];
+  }
+  it("each arm keeps its seed loop's class", () => {
+    // two columns 30mm apart; one external, one internal.
+    const levels: Pt[][][] = Array.from({ length: 4 }, (_, k) => [sq(0, 0, 5 - k * 0.04), sq(30, 0, 5 - k * 0.04)]);
+    const out = buildStrands(levels, 0.04, ["external", "internal"]);
+    expect(out.length).toBe(2);
+    const byX = out.slice().sort((a, b) => a.arm[0].x - b.arm[0].x);
+    expect(byX[0].cls).toBe("external");
+    expect(byX[1].cls).toBe("internal");
+  });
+  it("defaults to external when no seedClass", () => {
+    const out = buildStrands([[sq(0, 0, 4)]], 0.04);
+    expect(out[0].cls).toBe("external");
+  });
+  it("a new mid-level strand inherits the nearest seed's class", () => {
+    const pitch = 0.04;
+    // level-0 seeds: external at x=0, internal at x=30.
+    // a 3rd loop appears at level 1 near the internal seed (x≈29) but 20mm away
+    // in y → matches no strand → seeds a NEW strand → inherits nearest seed (internal).
+    const levels: Pt[][][] = [
+      [sq(0, 0, 4), sq(30, 0, 4)],
+      [sq(0, 0, 3.96), sq(30, 0, 3.96), sq(29, 20, 1)],
+    ];
+    const out = buildStrands(levels, pitch, ["external", "internal"]);
+    const newStrand = out.find((s) => s.arm.some((p) => p.y > 15));
+    expect(newStrand).toBeDefined();
+    expect(newStrand!.cls).toBe("internal");
+  });
+});
+
+describe("spiralFromRegion — armClass", () => {
+  it("a holed body yields an external outer arm and internal hole arm(s)", () => {
+    const outer: Pt[] = [{ x: -10, y: -10 }, { x: 10, y: -10 }, { x: 10, y: 10 }, { x: -10, y: 10 }];
+    const hole: Pt[] = [{ x: -3, y: -3 }, { x: 3, y: -3 }, { x: 3, y: 3 }, { x: -3, y: 3 }];
+    const r = spiralFromRegion([outer, hole], { channelWidthMm: 0.8, pitchMm: 0.04, side: "outside", minChannelMm: 0.4 });
+    expect(r.arms.length).toBe(r.armClass.length);
+    expect(r.armClass).toContain("external");
+    expect(r.armClass).toContain("internal");
+    // the longest arm (the big outer silhouette) is external
+    let maxI = 0;
+    for (let i = 1; i < r.arms.length; i++) if (spiralPathLength(r.arms[i]) > spiralPathLength(r.arms[maxI])) maxI = i;
+    expect(r.armClass[maxI]).toBe("external");
+  });
+});
+
+describe("classifyLevel0", () => {
+  // big 40x40 outer with a 10x10 hole, plus a separate 6x6 island.
+  const bigOuter: Pt[] = [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 40 }, { x: 0, y: 40 }];
+  const hole: Pt[] = [{ x: 15, y: 15 }, { x: 25, y: 15 }, { x: 25, y: 25 }, { x: 15, y: 25 }];
+  const island: Pt[] = [{ x: 60, y: 0 }, { x: 66, y: 0 }, { x: 66, y: 6 }, { x: 60, y: 6 }];
+
+  it("largest body's outer is external; its hole and other islands are internal", () => {
+    const cls = classifyLevel0([bigOuter, hole, island]);
+    expect(cls).toEqual(["external", "internal", "internal"]);
+  });
+
+  it("a single solid loop is external", () => {
+    expect(classifyLevel0([bigOuter])).toEqual(["external"]);
+  });
+
+  it("empty input → empty", () => {
+    expect(classifyLevel0([])).toEqual([]);
+  });
+});
+
+describe("generateSpiralPaths — internal/external grouping", () => {
+  function rect(x0: number, y0: number, x1: number, y1: number): Pt[] {
+    return [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+  }
+  it("big body outer → CUT_08; hole and separate island → CUT_09", () => {
+    const body = rect(0, 0, 40, 40);
+    const hole = rect(15, 15, 25, 25);
+    const island = rect(60, 0, 66, 6);
+    const cfg = structuredClone(SPIRAL_CUT);
+    cfg.spiral.enabled = true; cfg.spiral.splitNecks = false; cfg.spiral.cutShortestFirst = false;
+    const paths = generateSpiralPaths([body, hole, island], cfg, "o");
+    const external = paths.filter((p) => p.groupName === STAGE_GROUPS.spiral);
+    const internal = paths.filter((p) => p.groupName === STAGE_GROUPS.spiralDetail);
+    expect(external.length).toBeGreaterThan(0);
+    expect(internal.length).toBeGreaterThan(0);
+    const longest = paths.slice().sort((a, b) => spiralPathLength(b.rings[0]) - spiralPathLength(a.rings[0]))[0];
+    expect(longest.groupName).toBe(STAGE_GROUPS.spiral);
+  });
+
+  it("cutShortestFirst orders all internal arms before all external", () => {
+    const body = rect(0, 0, 40, 40);
+    const island = rect(60, 0, 66, 6);
+    const cfg = structuredClone(SPIRAL_CUT);
+    cfg.spiral.enabled = true; cfg.spiral.splitNecks = false; cfg.spiral.cutShortestFirst = true;
+    const paths = generateSpiralPaths([body, island], cfg, "o");
+    const lastInternal = Math.max(...paths.filter((p) => p.groupName === STAGE_GROUPS.spiralDetail).map((p) => p.operationOrder));
+    const firstExternal = Math.min(...paths.filter((p) => p.groupName === STAGE_GROUPS.spiral).map((p) => p.operationOrder));
+    expect(lastInternal).toBeLessThan(firstExternal);
   });
 });

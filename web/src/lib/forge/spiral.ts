@@ -2,9 +2,43 @@
 // Continuous-spiral VECTOR_CUTTING path generator. A spiral is a single open
 // polyline that sweeps a venting-width channel along the part boundary by
 // walking concentric offsets and bridging them — the vectorised open trench.
-import { offsetRegion, splitLobesAtNecks, unionRegions, subtractRegion } from "./offset";
+import { offsetRegion, splitLobesAtNecks, unionRegions, subtractRegion, regionComponents } from "./offset";
 import { STAGE_GROUPS } from "./config";
 import type { ForgeConfig, GeneratedPath, Pt } from "./types";
+
+/** An arm is External when it grows from the single largest body's outer
+ *  silhouette; Internal for that body's holes/counters, every other
+ *  disconnected component, and neck-split pieces. */
+export type ArmClass = "external" | "internal";
+
+/** Absolute shoelace area of one closed ring (orientation-agnostic). */
+function ringArea(loop: Pt[]): number {
+  let a = 0;
+  for (let i = 0, n = loop.length; i < n; i++) {
+    const j = (i + 1) % n;
+    a += loop[i].x * loop[j].y - loop[j].x * loop[i].y;
+  }
+  return Math.abs(a) / 2;
+}
+
+/**
+ * Classify each loop in a flat ring set (one offset level): the largest
+ * connected component's OUTER loop is "external"; every other loop — that
+ * body's holes and all loops of every smaller component — is "internal".
+ * Identity-based: regionComponents returns the same loop refs, so the largest
+ * component's outer is matched by reference.
+ */
+export function classifyLevel0(loops: Pt[][]): ArmClass[] {
+  if (loops.length === 0) return [];
+  const comps = regionComponents(loops); // [outer, ...holes][]
+  let bestOuter: Pt[] | null = null;
+  let bestArea = -Infinity;
+  for (const comp of comps) {
+    const a = ringArea(comp[0]);
+    if (a > bestArea) { bestArea = a; bestOuter = comp[0]; }
+  }
+  return loops.map((loop) => (loop === bestOuter ? "external" : "internal"));
+}
 
 export interface SpiralOptions {
   channelWidthMm: number;
@@ -12,7 +46,7 @@ export interface SpiralOptions {
   side: "outside" | "inside";
   minChannelMm: number;
 }
-export interface SpiralResult { arms: Pt[][]; warnings: string[]; }
+export interface SpiralResult { arms: Pt[][]; armClass: ArmClass[]; warnings: string[]; }
 
 /** Total polyline length (mm). */
 export function spiralPathLength(arm: Pt[]): number {
@@ -75,6 +109,26 @@ function sampleLoop(loop: Pt[], n: number): Pt[] {
   const out: Pt[] = [];
   for (let i = 0; i < n; i++) out.push(loop[Math.floor(i * step)]);
   return out;
+}
+
+/** Polygon (shoelace) centroid; falls back to vertex average for ~zero-area loops. */
+function loopCentroid(loop: Pt[]): { cx: number; cy: number } {
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0, n = loop.length; i < n; i++) {
+    const j = (i + 1) % n;
+    const cross = loop[i].x * loop[j].y - loop[j].x * loop[i].y;
+    a += cross;
+    cx += (loop[i].x + loop[j].x) * cross;
+    cy += (loop[i].y + loop[j].y) * cross;
+  }
+  if (Math.abs(a) < 1e-9) {
+    let sx = 0, sy = 0;
+    for (const p of loop) { sx += p.x; sy += p.y; }
+    const n = loop.length || 1;
+    return { cx: sx / n, cy: sy / n };
+  }
+  a *= 0.5;
+  return { cx: cx / (6 * a), cy: cy / (6 * a) };
 }
 
 /** Axis-aligned bounding box for a loop. */
@@ -159,7 +213,9 @@ function loopToStrandDist2(childSamples: Pt[], strandFrontier: Pt[]): number {
  * prevents the classic long-bridge bug where a small inner-ring strand grabs
  * the distant outer ring after the inner ring collapses.
  */
-export function buildStrands(levels: Pt[][][], pitchMm: number): Pt[][] {
+export interface StrandArm { arm: Pt[]; cls: ArmClass; }
+
+export function buildStrands(levels: Pt[][][], pitchMm: number, seedClass?: ArmClass[]): StrandArm[] {
   if (levels.length === 0) return [];
   // Gate: distance must be within DIST_GATE×pitch to even consider a match.
   const DIST_GATE = 2.5; // generous enough to survive multi-level topology transients
@@ -189,11 +245,28 @@ export function buildStrands(levels: Pt[][][], pitchMm: number): Pt[][] {
     frontier: Pt[];     // current outermost loop (for proximity matching)
     frontierBbox: Bbox;
     active: boolean;
+    cls: ArmClass;
   }
 
-  const strands: Strand[] = levels[0].map((loop) => {
+  // Class for level-0 seeds; new mid-level strands inherit the nearest seed's class.
+  const seedInfo = levels[0].map((loop, i) => {
+    const { cx, cy } = loopCentroid(loop);
+    return { cx, cy, cls: seedClass?.[i] ?? ("external" as ArmClass) };
+  });
+  const nearestCls = (loop: Pt[]): ArmClass => {
+    if (seedInfo.length === 0) return "external";
+    const { cx, cy } = loopCentroid(loop);
+    let best = seedInfo[0], bd = Infinity;
+    for (const s of seedInfo) {
+      const d = (s.cx - cx) ** 2 + (s.cy - cy) ** 2;
+      if (d < bd) { bd = d; best = s; }
+    }
+    return best.cls;
+  };
+
+  const strands: Strand[] = levels[0].map((loop, i) => {
     const loopBb = loopBbox(loop);
-    return { out: rotateOpen(loop, 0), frontier: loop, frontierBbox: loopBb, active: true };
+    return { out: rotateOpen(loop, 0), frontier: loop, frontierBbox: loopBb, active: true, cls: seedClass?.[i] ?? "external" };
   });
 
   for (let i = 1; i < levels.length; i++) {
@@ -285,20 +358,20 @@ export function buildStrands(levels: Pt[][][], pitchMm: number): Pt[][] {
     for (const c of children) {
       if (c.assigned < 0) {
         const loopBb = loopBbox(c.loop);
-        newStrands.push({ out: rotateOpen(c.loop, 0), frontier: c.loop, frontierBbox: loopBb, active: true });
+        newStrands.push({ out: rotateOpen(c.loop, 0), frontier: c.loop, frontierBbox: loopBb, active: true, cls: nearestCls(c.loop) });
       }
     }
 
     strands.push(...newStrands);
   }
 
-  return strands.filter((s) => s.out.length > 0).map((s) => s.out);
+  return strands.filter((s) => s.out.length > 0).map((s) => ({ arm: s.out, cls: s.cls }));
 }
 
 export function spiralFromRegion(part: Pt[][], opts: SpiralOptions, exclude?: Pt[][]): SpiralResult {
   const warnings: string[] = [];
   if (part.length === 0 || !(opts.pitchMm > 0) || !(opts.channelWidthMm > 0)) {
-    return { arms: [], warnings };
+    return { arms: [], armClass: [], warnings };
   }
   const sign: 1 | -1 = opts.side === "inside" ? -1 : 1;
   // levels[0] is ALWAYS the part contour (see offsetLevels), so the boundary is
@@ -314,9 +387,17 @@ export function spiralFromRegion(part: Pt[][], opts: SpiralOptions, exclude?: Pt
       "spiral: scrap too thin for a venting channel — cutting the contour only here (may not fully sever thick brass; consider incise for this region)",
     );
   }
-  return { arms: buildStrands(levels, opts.pitchMm), warnings };
+  // Per-arm class from the seed loop: the largest body's outer is external, its
+  // holes and every other component are internal.
+  const seedClass = classifyLevel0(levels[0] ?? []);
+  const strands = buildStrands(levels, opts.pitchMm, seedClass);
+  return { arms: strands.map((s) => s.arm), armClass: strands.map((s) => s.cls), warnings };
 }
 
+/** Pull the main lobe this many pitches CLEAR of a neck-split detail's venting
+ *  zone, so no main arm coincides with the detail's outermost arm (no double-
+ *  trace). The thin scrap gap drops out. */
+const NECK_GAP_PITCHES = 2;
 export function generateSpiralPaths(part: Pt[][], cfg: ForgeConfig, sourceObjectId: string): GeneratedPath[] {
   if (!cfg.spiral.enabled) return [];
   const { channelWidthMm, pitchMm, side, minChannelMm } = cfg.spiral;
@@ -328,41 +409,42 @@ export function generateSpiralPaths(part: Pt[][], cfg: ForgeConfig, sourceObject
     ? splitLobesAtNecks(part, (cfg.spiral.neckThresholdPct / 100) * channelWidthMm, cfg.spiral.neckOverlapMm ?? channelWidthMm)
     : [{ region: part, kind: "main" as const }];
 
-  // Detail lobes own their region AND the venting channel they sweep outward
-  // (~channelWidth). Keep the main spiral out of that zone so it doesn't bloom
-  // back over the detail — each region is cut once, not twice.
+  // Neck-split detail owns its region + the channel it sweeps; keep the main
+  // clear of it PLUS a small gap so no main arm lands on the detail's outer arm.
   const detailUnion = unionRegions(lobes.filter((l) => l.kind === "detail").map((l) => l.region));
-  const detailKeepOut = detailUnion.length > 0 ? offsetRegion(detailUnion, channelWidthMm) : [];
+  const detailKeepOut = detailUnion.length > 0
+    ? offsetRegion(detailUnion, channelWidthMm + NECK_GAP_PITCHES * pitchMm)
+    : [];
 
-  // Collect every arm with its lobe kind first, so we can order the whole set
-  // before stamping operationOrder (which the emitter turns into display/cut
-  // sequence). Default order = main lobe then detail lobes, each in strand order.
-  const collected: { kind: "main" | "detail"; arm: Pt[] }[] = [];
+  // Collect every arm with its FINAL class. Main lobe → per-arm seed class
+  // (external outer vs internal holes/islands). Neck-split detail lobes → all
+  // internal.
+  const collected: { cls: ArmClass; arm: Pt[] }[] = [];
   for (const lobe of lobes) {
     const exclude = lobe.kind === "main" ? detailKeepOut : undefined;
-    for (const arm of spiralFromRegion(lobe.region, opts, exclude).arms) {
-      collected.push({ kind: lobe.kind, arm });
-    }
+    const { arms, armClass } = spiralFromRegion(lobe.region, opts, exclude);
+    arms.forEach((arm, i) => {
+      collected.push({ cls: lobe.kind === "detail" ? "internal" : armClass[i], arm });
+    });
   }
 
-  // Cut-shortest-first: small detail features punch through first (venting +
-  // relief for the long passes), then the main perimeter — each block ascending
-  // by arm length. The export sets user-defined path planning so the machine
-  // honours this order instead of auto-optimising it.
+  // Cut-shortest-first: internal pieces first (vent + relief), then external —
+  // each block ascending by length. Ordering keys off the final class, NOT the
+  // lobe kind (internal arms now also come from the main lobe).
   const sequence = cfg.spiral.cutShortestFirst
     ? (() => {
         const byLen = (a: { arm: Pt[] }, b: { arm: Pt[] }) => spiralPathLength(a.arm) - spiralPathLength(b.arm);
         return [
-          ...collected.filter((c) => c.kind === "detail").sort(byLen),
-          ...collected.filter((c) => c.kind === "main").sort(byLen),
+          ...collected.filter((c) => c.cls === "internal").sort(byLen),
+          ...collected.filter((c) => c.cls === "external").sort(byLen),
         ];
       })()
     : collected;
 
   const out: GeneratedPath[] = [];
   let order = 0;
-  for (const { kind, arm } of sequence) {
-    const group = kind === "detail" ? STAGE_GROUPS.spiralDetail : STAGE_GROUPS.spiral;
+  for (const { cls, arm } of sequence) {
+    const group = cls === "internal" ? STAGE_GROUPS.spiralDetail : STAGE_GROUPS.spiral;
     out.push({
       sourceObjectId,
       generatedClass: "spiral",
