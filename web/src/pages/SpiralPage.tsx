@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   PageContainer,
   MetalBar,
@@ -17,7 +17,9 @@ import { defaultBaseParams } from "../defaults";
 import { listMaterials } from "../api/library";
 import type { SvgStackRequest } from "../types";
 import type { Contour, ForgeConfig, XcsObject } from "../lib/forge/types";
-import { SPIRAL_CUT } from "../lib/forge/presets";
+import { loadMaterialState, serializeMaterialState, MATERIAL_LS_KEY, OLD_CONFIG_LS_KEY, type MaterialState } from "../lib/forge/materialState";
+import { MaterialSelector } from "../components/forge/MaterialSelector";
+import type { MaterialThicknessMm } from "../lib/forge/types";
 import { STAGE_GROUPS } from "../lib/forge/config";
 import { splitSubpaths } from "../lib/forge/contour";
 import { useForgeEngine } from "../hooks/useForgeEngine";
@@ -74,35 +76,16 @@ function largestTargetId(objects: XcsObject[], targetIds: string[]): string | nu
   return best;
 }
 
-// Separate key from Forge's `forge.config.v7` so the two pages never clobber
-// each other's setup. The stored value is a spiral-locked ForgeConfig.
-const CONFIG_LS_KEY = "spiral.config.v1";
-
-/** Load the spiral config: SPIRAL_CUT preset as the floor, with the fields this
- *  page actually mutates (spiral.*, beam width, mm/unit) restored from a prior
- *  save. The spiral-only invariants (other stages off, spiral on) always come
- *  from the preset, so an old save can never resurrect a non-spiral stage. */
-function loadConfig(): ForgeConfig {
-  const base = structuredClone(SPIRAL_CUT);
-  try {
-    const raw = localStorage.getItem(CONFIG_LS_KEY);
-    if (!raw) return base;
-    const p = JSON.parse(raw) as Partial<ForgeConfig>;
-    return {
-      ...base,
-      beamWidthMm: p.beamWidthMm ?? base.beamWidthMm,
-      mmPerUnitOverride: p.mmPerUnitOverride ?? base.mmPerUnitOverride,
-      spiral: { ...base.spiral, ...(p.spiral ?? {}), enabled: true },
-      stageParams: p.stageParams ?? base.stageParams,
-      activePreset: "spiral",
-    };
-  } catch {
-    return base;
-  }
-}
 
 export function SpiralPage() {
-  const [config, setConfig] = useState<ForgeConfig>(loadConfig);
+  const [material, setMaterial] = useState<MaterialState>(() => loadMaterialState((k) => localStorage.getItem(k)));
+  const config = material.configs[String(material.activeThicknessMm)];
+  const setConfig = useCallback((next: ForgeConfig) => {
+    setMaterial((m) => ({ ...m, configs: { ...m.configs, [String(m.activeThicknessMm)]: next } }));
+  }, []);
+  const setActiveThickness = useCallback((mm: MaterialThicknessMm) => {
+    setMaterial((m) => ({ ...m, activeThicknessMm: mm }));
+  }, []);
   const [canvasSize, setCanvasSize] = useState({ w: 600, h: 480 });
   const [exportFormat, setExportFormat] = useState<SpiralExportFormat>(DEFAULT_OUTPUT_FORMAT);
   // SVG import: a material id (seeds the svg-stack request; spiral export
@@ -212,14 +195,15 @@ export function SpiralPage() {
     URL.revokeObjectURL(url);
   }
 
-  // persist config to localStorage
+  // Persist the per-thickness material map; drop the pre-material single-config key.
   useEffect(() => {
     try {
-      localStorage.setItem(CONFIG_LS_KEY, JSON.stringify(config));
+      localStorage.setItem(MATERIAL_LS_KEY, serializeMaterialState(material));
+      localStorage.removeItem(OLD_CONFIG_LS_KEY);
     } catch {
       /* ignore quota / private-mode errors */
     }
-  }, [config]);
+  }, [material]);
 
   // canvas fills its grid cell (both dimensions measured)
   useEffect(() => {
@@ -419,6 +403,7 @@ export function SpiralPage() {
                     </div>
                   </Card>
                 )}
+                <MaterialSelector value={material.activeThicknessMm} onChange={setActiveThickness} />
                 <SpiralControls config={config} onChange={setConfig} />
                 {/* Laser & focus — single spiral stage, cut-mode (no density / no Z-descent) */}
                 <div className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
