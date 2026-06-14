@@ -334,26 +334,48 @@ export function generateSpiralPaths(part: Pt[][], cfg: ForgeConfig, sourceObject
   const detailUnion = unionRegions(lobes.filter((l) => l.kind === "detail").map((l) => l.region));
   const detailKeepOut = detailUnion.length > 0 ? offsetRegion(detailUnion, channelWidthMm) : [];
 
-  const out: GeneratedPath[] = [];
-  let order = 0;
+  // Collect every arm with its lobe kind first, so we can order the whole set
+  // before stamping operationOrder (which the emitter turns into display/cut
+  // sequence). Default order = main lobe then detail lobes, each in strand order.
+  const collected: { kind: "main" | "detail"; arm: Pt[] }[] = [];
   for (const lobe of lobes) {
-    const group = lobe.kind === "detail" ? STAGE_GROUPS.spiralDetail : STAGE_GROUPS.spiral;
     const exclude = lobe.kind === "main" ? detailKeepOut : undefined;
     for (const arm of spiralFromRegion(lobe.region, opts, exclude).arms) {
-      out.push({
-        sourceObjectId,
-        generatedClass: "spiral",
-        groupName: group,
-        layerStart: 0,
-        layerEnd: cfg.spiral.passes,
-        widthMultiplier: channelWidthMm / cfg.beamWidthMm,
-        offsetMm: channelWidthMm,
-        sideMode: side === "inside" ? "inside" : "outside",
-        operationOrder: order++,
-        enabled: true,
-        rings: [arm],
-      });
+      collected.push({ kind: lobe.kind, arm });
     }
+  }
+
+  // Cut-shortest-first: small detail features punch through first (venting +
+  // relief for the long passes), then the main perimeter — each block ascending
+  // by arm length. The export sets user-defined path planning so the machine
+  // honours this order instead of auto-optimising it.
+  const sequence = cfg.spiral.cutShortestFirst
+    ? (() => {
+        const byLen = (a: { arm: Pt[] }, b: { arm: Pt[] }) => spiralPathLength(a.arm) - spiralPathLength(b.arm);
+        return [
+          ...collected.filter((c) => c.kind === "detail").sort(byLen),
+          ...collected.filter((c) => c.kind === "main").sort(byLen),
+        ];
+      })()
+    : collected;
+
+  const out: GeneratedPath[] = [];
+  let order = 0;
+  for (const { kind, arm } of sequence) {
+    const group = kind === "detail" ? STAGE_GROUPS.spiralDetail : STAGE_GROUPS.spiral;
+    out.push({
+      sourceObjectId,
+      generatedClass: "spiral",
+      groupName: group,
+      layerStart: 0,
+      layerEnd: cfg.spiral.passes,
+      widthMultiplier: channelWidthMm / cfg.beamWidthMm,
+      offsetMm: channelWidthMm,
+      sideMode: side === "inside" ? "inside" : "outside",
+      operationOrder: order++,
+      enabled: true,
+      rings: [arm],
+    });
   }
   return out;
 }

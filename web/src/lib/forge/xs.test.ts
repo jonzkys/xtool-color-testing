@@ -10,6 +10,7 @@ import {
   findEmbossObjects,
   extractContourGeometry,
   buildGeneratedXcs,
+  exportXcs,
   ringsToDPath,
 } from "./xcs";
 import { runPipeline } from "./pipeline";
@@ -346,6 +347,60 @@ describe("legacyRawToXs (retained .xs bundle) — spiral export flips activeMode
     const { raw: reparsedRaw } = xsToLegacyRaw(out);
     const reparsed = reparsedRaw as { __xsMeta?: { activeMode?: string } };
     expect(reparsed.__xsMeta?.activeMode).toBe("LASER_PLANE");
+  });
+
+  function modeDataOf(out: ArrayBuffer): Record<string, unknown> {
+    const m = unzipSync(new Uint8Array(out));
+    const devKey = Object.keys(m).find((k) => k.startsWith("devices/device-"))!;
+    const device = JSON.parse(strFromU8(m[devKey])) as {
+      processing: Record<string, { modes: Record<string, { data?: Record<string, unknown> }> }>;
+    };
+    return Object.values(device.processing)[0].modes["LASER_PLANE"]?.data ?? {};
+  }
+
+  it("userOrder=true sets By Layer + user-defined path planning (custom)", () => {
+    const { modified, bundle } = buildSpiralModifiedRaw();
+    const data = modeDataOf(legacyRawToXs(modified, bundle, true));
+    expect(data.isProcessByLayer).toBe(true);
+    expect(data.pathPlanning).toBe("custom");
+  });
+
+  it("userOrder=false leaves the auto optimiser (default)", () => {
+    const { modified, bundle } = buildSpiralModifiedRaw();
+    const data = modeDataOf(legacyRawToXs(modified, bundle, false));
+    expect(data.isProcessByLayer).toBe(false);
+    expect(data.pathPlanning).toBe("auto");
+  });
+
+  // .xs source → .xcs OUTPUT: the .xs-sourced legacy group is {mode, displays}
+  // with no group-level data block. buildGeneratedXcs must synthesize one so the
+  // planning flags reach the .xcs the user downloads (regression: the loop used
+  // to `continue` past these groups, silently dropping the flags).
+  function xcsModeBlock(userOrder: boolean): Record<string, unknown> | undefined {
+    const { raw, bundle: _b } = xsToLegacyRaw(loadXs());
+    void _b;
+    const parsed = parseXcsFile(toBuf(raw));
+    const incise = parsed.targets[0];
+    const contour = extractContourGeometry(incise);
+    const spiralPaths = generateSpiralPaths([contour.points], SPIRAL_CUT, incise.id);
+    const doc = buildGeneratedXcs(parsed, incise.id, spiralPaths, 1, resolveStageParams(SPIRAL_CUT), undefined, userOrder);
+    const json = JSON.parse(new TextDecoder().decode(exportXcs(doc))) as {
+      device: { data: { value: Array<[string, { mode?: string; data?: Record<string, Record<string, unknown>> }]> } };
+    };
+    const grp = json.device.data.value[0][1];
+    return grp.data?.[grp.mode ?? "LASER_PLANE"];
+  }
+
+  it(".xs→.xcs with userOrder=true writes the planning flags into the synthesized mode block", () => {
+    const block = xcsModeBlock(true);
+    expect(block).toBeDefined();
+    expect(block!.isProcessByLayer).toBe(true);
+    expect(block!.pathPlanning).toBe("custom");
+  });
+
+  it(".xs→.xcs with userOrder=false leaves the group untouched (no synthesized block)", () => {
+    const block = xcsModeBlock(false);
+    expect(block).toBeUndefined();
   });
 });
 

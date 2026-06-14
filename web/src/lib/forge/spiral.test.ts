@@ -110,6 +110,58 @@ describe("generateSpiralPaths — neck split", () => {
   });
 });
 
+describe("generateSpiralPaths — cut shortest first", () => {
+  // Two disjoint squares of very different size → two main arms of very
+  // different length, in [big, small] region order.
+  const big: Pt[] = [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 40 }, { x: 0, y: 40 }];
+  const small: Pt[] = [{ x: 60, y: 0 }, { x: 66, y: 0 }, { x: 66, y: 6 }, { x: 60, y: 6 }];
+  const armLen = (p: { rings: Pt[][] }) => spiralPathLength(p.rings[0]);
+
+  it("ON: arms come out ascending by length (shortest first)", () => {
+    const cfg = structuredClone(SPIRAL_CUT);
+    cfg.spiral.enabled = true;
+    cfg.spiral.splitNecks = false;
+    cfg.spiral.cutShortestFirst = true;
+    const paths = generateSpiralPaths([big, small], cfg, "o");
+    expect(paths.length).toBeGreaterThanOrEqual(2);
+    const lens = paths.map(armLen);
+    for (let i = 1; i < lens.length; i++) expect(lens[i]).toBeGreaterThanOrEqual(lens[i - 1]);
+    // operationOrder is a dense 0..n-1 sequence in emit order.
+    expect(paths.map((p) => p.operationOrder)).toEqual(paths.map((_, i) => i));
+  });
+
+  it("OFF: arms keep region order (big region first → not length-sorted)", () => {
+    const cfg = structuredClone(SPIRAL_CUT);
+    cfg.spiral.enabled = true;
+    cfg.spiral.splitNecks = false;
+    cfg.spiral.cutShortestFirst = false;
+    const paths = generateSpiralPaths([big, small], cfg, "o");
+    // first arm is the BIG region's (longer) — i.e. NOT shortest-first.
+    expect(armLen(paths[0])).toBeGreaterThan(armLen(paths[paths.length - 1]));
+  });
+
+  it("ON + split: detail arms all cut before the main arms (details first)", () => {
+    const cfg = structuredClone(SPIRAL_CUT);
+    cfg.spiral.enabled = true;
+    cfg.spiral.splitNecks = true;
+    cfg.spiral.neckThresholdPct = 50;
+    cfg.spiral.cutShortestFirst = true;
+    const paths = generateSpiralPaths(lollipop, cfg, "o");
+    const detail = paths.filter((p) => p.groupName === STAGE_GROUPS.spiralDetail);
+    const main = paths.filter((p) => p.groupName === STAGE_GROUPS.spiral);
+    expect(detail.length).toBeGreaterThan(0);
+    expect(main.length).toBeGreaterThan(0);
+    const lastDetail = Math.max(...detail.map((p) => p.operationOrder));
+    const firstMain = Math.min(...main.map((p) => p.operationOrder));
+    expect(lastDetail).toBeLessThan(firstMain);
+    // within each group, ascending by length
+    for (const grp of [detail, main]) {
+      const lens = grp.sort((a, b) => a.operationOrder - b.operationOrder).map(armLen);
+      for (let i = 1; i < lens.length; i++) expect(lens[i]).toBeGreaterThanOrEqual(lens[i - 1]);
+    }
+  });
+});
+
 describe("detail keep-out — main spiral does not re-cut a split-off island", () => {
   // 30×30 body with a C-shaped channel isolating an 8×8 centre island, joined to
   // the body by a thin 0.3 mm neck — the internal-detail case (an "i" dot / flower

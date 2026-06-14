@@ -379,6 +379,7 @@ export function buildGeneratedXcs(
   mmPerUnit: number,
   stageParams: Record<string, import("./types").StageParams> = {},
   scanAngleDeg?: number,
+  userOrder = false,
 ): unknown {
   const raw = JSON.parse(JSON.stringify(parsed.raw)) as {
     canvas: Array<{ displays: RawDisplay[]; layerData?: Record<string, LayerDataEntry> }>;
@@ -606,6 +607,30 @@ export function buildGeneratedXcs(
     }
     if (droppedIds.size > 0) {
       canvas.displays = canvas.displays.filter((d) => !droppedIds.has(d.id));
+    }
+  }
+
+  // Planning flags (legacy .xcs mode block): cut-shortest-first needs the machine
+  // to honour the authored display order — By Layer + user-defined ("custom")
+  // planning — instead of optimising it. Forge owns these flags, so set them
+  // deterministically on every mode block. .xs-sourced raws carry no group-level
+  // data block ({mode, displays} only), so synthesize a minimal one keyed by the
+  // group's mode — but ONLY when the flags are needed, so an off export leaves
+  // the prior .xs→.xcs output unchanged.
+  for (const [, grp] of raw.device.data.value) {
+    const g = grp as { mode?: string; data?: Record<string, unknown> };
+    let data = g.data;
+    if (!data || typeof data !== "object") {
+      if (!userOrder) continue;
+      data = { [g.mode ?? "LASER_PLANE"]: {} };
+      g.data = data;
+    }
+    for (const modeKey of Object.keys(data)) {
+      const block = data[modeKey];
+      if (block && typeof block === "object") {
+        (block as Record<string, unknown>).isProcessByLayer = userOrder;
+        (block as Record<string, unknown>).pathPlanning = userOrder ? "custom" : "auto";
+      }
     }
   }
 
