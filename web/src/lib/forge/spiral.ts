@@ -111,6 +111,26 @@ function sampleLoop(loop: Pt[], n: number): Pt[] {
   return out;
 }
 
+/** Polygon (shoelace) centroid; falls back to vertex average for ~zero-area loops. */
+function loopCentroid(loop: Pt[]): { cx: number; cy: number } {
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0, n = loop.length; i < n; i++) {
+    const j = (i + 1) % n;
+    const cross = loop[i].x * loop[j].y - loop[j].x * loop[i].y;
+    a += cross;
+    cx += (loop[i].x + loop[j].x) * cross;
+    cy += (loop[i].y + loop[j].y) * cross;
+  }
+  if (Math.abs(a) < 1e-9) {
+    let sx = 0, sy = 0;
+    for (const p of loop) { sx += p.x; sy += p.y; }
+    const n = loop.length || 1;
+    return { cx: sx / n, cy: sy / n };
+  }
+  a *= 0.5;
+  return { cx: cx / (6 * a), cy: cy / (6 * a) };
+}
+
 /** Axis-aligned bounding box for a loop. */
 interface Bbox { minX: number; minY: number; maxX: number; maxY: number; }
 function loopBbox(loop: Pt[]): Bbox {
@@ -230,13 +250,12 @@ export function buildStrands(levels: Pt[][][], pitchMm: number, seedClass?: ArmC
 
   // Class for level-0 seeds; new mid-level strands inherit the nearest seed's class.
   const seedInfo = levels[0].map((loop, i) => {
-    const b = loopBbox(loop);
-    return { cx: (b.minX + b.maxX) / 2, cy: (b.minY + b.maxY) / 2, cls: seedClass?.[i] ?? ("external" as ArmClass) };
+    const { cx, cy } = loopCentroid(loop);
+    return { cx, cy, cls: seedClass?.[i] ?? ("external" as ArmClass) };
   });
   const nearestCls = (loop: Pt[]): ArmClass => {
     if (seedInfo.length === 0) return "external";
-    const b = loopBbox(loop);
-    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
+    const { cx, cy } = loopCentroid(loop);
     let best = seedInfo[0], bd = Infinity;
     for (const s of seedInfo) {
       const d = (s.cx - cx) ** 2 + (s.cy - cy) ** 2;

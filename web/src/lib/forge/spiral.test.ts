@@ -348,6 +348,20 @@ describe("buildStrands — seed class", () => {
     const out = buildStrands([[sq(0, 0, 4)]], 0.04);
     expect(out[0].cls).toBe("external");
   });
+  it("a new mid-level strand inherits the nearest seed's class", () => {
+    const pitch = 0.04;
+    // level-0 seeds: external at x=0, internal at x=30.
+    // a 3rd loop appears at level 1 near the internal seed (x≈29) but 20mm away
+    // in y → matches no strand → seeds a NEW strand → inherits nearest seed (internal).
+    const levels: Pt[][][] = [
+      [sq(0, 0, 4), sq(30, 0, 4)],
+      [sq(0, 0, 3.96), sq(30, 0, 3.96), sq(29, 20, 1)],
+    ];
+    const out = buildStrands(levels, pitch, ["external", "internal"]);
+    const newStrand = out.find((s) => s.arm.some((p) => p.y > 15));
+    expect(newStrand).toBeDefined();
+    expect(newStrand!.cls).toBe("internal");
+  });
 });
 
 describe("classifyLevel0", () => {
