@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { spiralFromRegion, spiralPathLength, generateSpiralPaths, buildStrands } from "./spiral";
+import { spiralFromRegion, spiralPathLength, generateSpiralPaths, buildStrands, classifyLevel0 } from "./spiral";
 import { SPIRAL_CUT } from "./presets";
 import { STAGE_GROUPS } from "./config";
 import { splitLobesAtNecks, offsetRegion, unionRegions, subtractRegion, pointInPolygon } from "./offset";
@@ -328,5 +328,25 @@ describe("buildStrands (coverage invariant)", () => {
       return mx;
     }, 0);
     expect(maxSeg).toBeLessThanOrEqual(5 * pitch);
+  });
+});
+
+describe("classifyLevel0", () => {
+  // big 40x40 outer with a 10x10 hole, plus a separate 6x6 island.
+  const bigOuter: Pt[] = [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 40 }, { x: 0, y: 40 }];
+  const hole: Pt[] = [{ x: 15, y: 15 }, { x: 25, y: 15 }, { x: 25, y: 25 }, { x: 15, y: 25 }];
+  const island: Pt[] = [{ x: 60, y: 0 }, { x: 66, y: 0 }, { x: 66, y: 6 }, { x: 60, y: 6 }];
+
+  it("largest body's outer is external; its hole and other islands are internal", () => {
+    const cls = classifyLevel0([bigOuter, hole, island]);
+    expect(cls).toEqual(["external", "internal", "internal"]);
+  });
+
+  it("a single solid loop is external", () => {
+    expect(classifyLevel0([bigOuter])).toEqual(["external"]);
+  });
+
+  it("empty input → empty", () => {
+    expect(classifyLevel0([])).toEqual([]);
   });
 });

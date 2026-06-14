@@ -2,9 +2,43 @@
 // Continuous-spiral VECTOR_CUTTING path generator. A spiral is a single open
 // polyline that sweeps a venting-width channel along the part boundary by
 // walking concentric offsets and bridging them — the vectorised open trench.
-import { offsetRegion, splitLobesAtNecks, unionRegions, subtractRegion } from "./offset";
+import { offsetRegion, splitLobesAtNecks, unionRegions, subtractRegion, regionComponents } from "./offset";
 import { STAGE_GROUPS } from "./config";
 import type { ForgeConfig, GeneratedPath, Pt } from "./types";
+
+/** An arm is External when it grows from the single largest body's outer
+ *  silhouette; Internal for that body's holes/counters, every other
+ *  disconnected component, and neck-split pieces. */
+export type ArmClass = "external" | "internal";
+
+/** Absolute shoelace area of one closed ring (orientation-agnostic). */
+function ringArea(loop: Pt[]): number {
+  let a = 0;
+  for (let i = 0, n = loop.length; i < n; i++) {
+    const j = (i + 1) % n;
+    a += loop[i].x * loop[j].y - loop[j].x * loop[i].y;
+  }
+  return Math.abs(a) / 2;
+}
+
+/**
+ * Classify each loop in a flat ring set (one offset level): the largest
+ * connected component's OUTER loop is "external"; every other loop — that
+ * body's holes and all loops of every smaller component — is "internal".
+ * Identity-based: regionComponents returns the same loop refs, so the largest
+ * component's outer is matched by reference.
+ */
+export function classifyLevel0(loops: Pt[][]): ArmClass[] {
+  if (loops.length === 0) return [];
+  const comps = regionComponents(loops); // [outer, ...holes][]
+  let bestOuter: Pt[] | null = null;
+  let bestArea = -Infinity;
+  for (const comp of comps) {
+    const a = ringArea(comp[0]);
+    if (a > bestArea) { bestArea = a; bestOuter = comp[0]; }
+  }
+  return loops.map((loop) => (loop === bestOuter ? "external" : "internal"));
+}
 
 export interface SpiralOptions {
   channelWidthMm: number;
