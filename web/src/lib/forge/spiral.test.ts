@@ -251,7 +251,7 @@ describe("buildStrands (coverage invariant)", () => {
     // Total input points: 5 rings × 4 pts = 20.
     const inputPoints = levels.flat().reduce((acc, loop) => acc + loop.length, 0);
 
-    const arms = buildStrands(levels, 0.1);
+    const arms = buildStrands(levels, 0.1).map((s) => s.arm);
 
     // Total output points across all stitched arms must equal input.
     const outputPoints = arms.reduce((acc, arm) => acc + arm.length, 0);
@@ -272,7 +272,7 @@ describe("buildStrands (coverage invariant)", () => {
       sq(0, 0, 5 - k * 0.04),
       sq(30, 0, 5 - k * 0.04),
     ]);
-    const arms = buildStrands(levels, pitch);
+    const arms = buildStrands(levels, pitch).map((s) => s.arm);
     // Each column should produce exactly one strand (5 rings each).
     expect(arms.length).toBe(2);
     // Both strands cover all 5 levels' points: 4 pts per ring × 5 levels = 20 pts each.
@@ -312,7 +312,7 @@ describe("buildStrands (coverage invariant)", () => {
     ];
 
     const totalInput = levels.flat().reduce((acc, loop) => acc + loop.length, 0); // 20
-    const arms = buildStrands(levels, pitch);
+    const arms = buildStrands(levels, pitch).map((s) => s.arm);
 
     // Coverage invariant: every input point appears in exactly one arm.
     const totalOutput = arms.reduce((acc, a) => acc + a.length, 0);
@@ -328,6 +328,25 @@ describe("buildStrands (coverage invariant)", () => {
       return mx;
     }, 0);
     expect(maxSeg).toBeLessThanOrEqual(5 * pitch);
+  });
+});
+
+describe("buildStrands — seed class", () => {
+  function sq(cx: number, cy: number, s: number): Pt[] {
+    return [{ x: cx - s, y: cy - s }, { x: cx + s, y: cy - s }, { x: cx + s, y: cy + s }, { x: cx - s, y: cy + s }];
+  }
+  it("each arm keeps its seed loop's class", () => {
+    // two columns 30mm apart; one external, one internal.
+    const levels: Pt[][][] = Array.from({ length: 4 }, (_, k) => [sq(0, 0, 5 - k * 0.04), sq(30, 0, 5 - k * 0.04)]);
+    const out = buildStrands(levels, 0.04, ["external", "internal"]);
+    expect(out.length).toBe(2);
+    const byX = out.slice().sort((a, b) => a.arm[0].x - b.arm[0].x);
+    expect(byX[0].cls).toBe("external");
+    expect(byX[1].cls).toBe("internal");
+  });
+  it("defaults to external when no seedClass", () => {
+    const out = buildStrands([[sq(0, 0, 4)]], 0.04);
+    expect(out[0].cls).toBe("external");
   });
 });
 

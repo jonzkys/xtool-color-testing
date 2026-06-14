@@ -193,7 +193,9 @@ function loopToStrandDist2(childSamples: Pt[], strandFrontier: Pt[]): number {
  * prevents the classic long-bridge bug where a small inner-ring strand grabs
  * the distant outer ring after the inner ring collapses.
  */
-export function buildStrands(levels: Pt[][][], pitchMm: number): Pt[][] {
+export interface StrandArm { arm: Pt[]; cls: ArmClass; }
+
+export function buildStrands(levels: Pt[][][], pitchMm: number, seedClass?: ArmClass[]): StrandArm[] {
   if (levels.length === 0) return [];
   // Gate: distance must be within DIST_GATE×pitch to even consider a match.
   const DIST_GATE = 2.5; // generous enough to survive multi-level topology transients
@@ -223,11 +225,29 @@ export function buildStrands(levels: Pt[][][], pitchMm: number): Pt[][] {
     frontier: Pt[];     // current outermost loop (for proximity matching)
     frontierBbox: Bbox;
     active: boolean;
+    cls: ArmClass;
   }
 
-  const strands: Strand[] = levels[0].map((loop) => {
+  // Class for level-0 seeds; new mid-level strands inherit the nearest seed's class.
+  const seedInfo = levels[0].map((loop, i) => {
+    const b = loopBbox(loop);
+    return { cx: (b.minX + b.maxX) / 2, cy: (b.minY + b.maxY) / 2, cls: seedClass?.[i] ?? ("external" as ArmClass) };
+  });
+  const nearestCls = (loop: Pt[]): ArmClass => {
+    if (seedInfo.length === 0) return "external";
+    const b = loopBbox(loop);
+    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
+    let best = seedInfo[0], bd = Infinity;
+    for (const s of seedInfo) {
+      const d = (s.cx - cx) ** 2 + (s.cy - cy) ** 2;
+      if (d < bd) { bd = d; best = s; }
+    }
+    return best.cls;
+  };
+
+  const strands: Strand[] = levels[0].map((loop, i) => {
     const loopBb = loopBbox(loop);
-    return { out: rotateOpen(loop, 0), frontier: loop, frontierBbox: loopBb, active: true };
+    return { out: rotateOpen(loop, 0), frontier: loop, frontierBbox: loopBb, active: true, cls: seedClass?.[i] ?? "external" };
   });
 
   for (let i = 1; i < levels.length; i++) {
@@ -319,14 +339,14 @@ export function buildStrands(levels: Pt[][][], pitchMm: number): Pt[][] {
     for (const c of children) {
       if (c.assigned < 0) {
         const loopBb = loopBbox(c.loop);
-        newStrands.push({ out: rotateOpen(c.loop, 0), frontier: c.loop, frontierBbox: loopBb, active: true });
+        newStrands.push({ out: rotateOpen(c.loop, 0), frontier: c.loop, frontierBbox: loopBb, active: true, cls: nearestCls(c.loop) });
       }
     }
 
     strands.push(...newStrands);
   }
 
-  return strands.filter((s) => s.out.length > 0).map((s) => s.out);
+  return strands.filter((s) => s.out.length > 0).map((s) => ({ arm: s.out, cls: s.cls }));
 }
 
 export function spiralFromRegion(part: Pt[][], opts: SpiralOptions, exclude?: Pt[][]): SpiralResult {
@@ -348,7 +368,7 @@ export function spiralFromRegion(part: Pt[][], opts: SpiralOptions, exclude?: Pt
       "spiral: scrap too thin for a venting channel — cutting the contour only here (may not fully sever thick brass; consider incise for this region)",
     );
   }
-  return { arms: buildStrands(levels, opts.pitchMm), warnings };
+  return { arms: buildStrands(levels, opts.pitchMm).map((s) => s.arm), warnings };
 }
 
 export function generateSpiralPaths(part: Pt[][], cfg: ForgeConfig, sourceObjectId: string): GeneratedPath[] {
