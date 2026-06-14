@@ -16,7 +16,7 @@
 // involvement. The literal cut still drives the estimate/debug elsewhere.
 import { useEffect, useRef, useState } from "react";
 import type { Contour, Pt } from "../../lib/forge/types";
-import { offsetRegion, simplifyLoop, buildFillRegion, buildPartRegion, splitLobesAtNecks } from "../../lib/forge/offset";
+import { offsetRegion, simplifyLoop, buildFillRegion, buildPartRegion, splitLobesAtNecks, unionRegions, subtractRegion } from "../../lib/forge/offset";
 
 const SPIRAL = "#ec4899"; // brand pink — main lobe / matches CLASS_COLOR.spiral
 const DETAIL = "#f59e0b"; // amber — split-off detail lobes (CUT_09_SPIRAL_DETAIL)
@@ -112,20 +112,35 @@ function buildSchematic(
   const trueArms = Math.max(1, Math.ceil(channelWidthMm / Math.max(pitchMm, 1e-6)));
   const drawArms = Math.min(trueArms, ARM_CAP);
   const maxFrac = side === "inside" ? 0.1 : 0.14;
-  const band = partMin * Math.min(maxFrac, Math.max(0.04, drawArms * 0.0055));
+  const bandFrac = Math.min(maxFrac, Math.max(0.04, drawArms * 0.0055));
+
+  // The exaggerated fan width for a lobe, scaled to that LOBE's own size (not the
+  // whole part) so a small split-off detail draws a tight ribbon instead of a
+  // part-sized balloon. Clamped to the part band so the main never under-fans.
+  const lobeBand = (region: Pt[][]): number => {
+    const b = bboxOf(region);
+    const m = Math.min(b.maxX - b.minX, b.maxY - b.minY);
+    return (isFinite(m) && m > 0 ? m : partMin) * bandFrac;
+  };
 
   // Concentric arms for one lobe region: index 0 = contour; the rest fan out (or
-  // in) evenly across the band. Each offset ring is re-simplified — large
+  // in) evenly across the lobe's band. Each offset ring is re-simplified — large
   // round-join offsets emit many arc points. Returned outermost-first for draw-on.
-  const buildArms = (region: Pt[][]): Pt[][][] => {
+  // `exclude` keeps the main lobe's arms out of the detail lobes' zone so the
+  // preview tiles (no pink halo over the amber) — mirrors the generator's keep-out.
+  const buildArms = (region: Pt[][], exclude?: Pt[][]): Pt[][][] => {
+    const clip = (rings: Pt[][]) => (exclude && exclude.length ? subtractRegion(rings, exclude) : rings);
     const r = region.map(simp).filter((p) => p.length >= 3);
     if (r.length === 0) return [];
-    const inner: Pt[][][] = [r];
+    const lb = lobeBand(r);
+    const c0 = clip(r).map(simp).filter((p) => p.length >= 3);
+    const inner: Pt[][][] = [c0.length > 0 ? c0 : r];
     for (let k = 1; k < drawArms; k++) {
-      const dist = sign * (k / Math.max(1, drawArms - 1)) * band;
-      const rings = offsetRegion(r, dist).map(simp);
-      if (rings.length === 0) break; // collapsed — stop, draw what fits
-      inner.push(rings);
+      const dist = sign * (k / Math.max(1, drawArms - 1)) * lb;
+      const raw = offsetRegion(r, dist);
+      if (raw.length === 0) break; // collapsed — stop, draw what fits
+      const rings = clip(raw).map(simp).filter((p) => p.length >= 3);
+      if (rings.length > 0) inner.push(rings);
     }
     return inner.slice().reverse();
   };
@@ -136,8 +151,15 @@ function buildSchematic(
     ? splitLobesAtNecks(part, (neckThresholdPct / 100) * channelWidthMm, neckOverlapMm ?? channelWidthMm)
     : [{ region: part, kind: "main" as const }];
 
+  // Keep-out for the main lobe = each detail dilated by its OWN fan width, so the
+  // main pulls back exactly as far as the detail's amber reaches — they tile with
+  // no overlap (no pink over amber) and no part-sized gap around small details.
+  const keepOut = unionRegions(
+    lobes.filter((l) => l.kind === "detail").map((l) => offsetRegion(l.region, lobeBand(l.region))),
+  );
+
   const groups: ArmGroup[] = lobes
-    .map((l) => ({ arms: buildArms(l.region), kind: l.kind }))
+    .map((l) => ({ arms: buildArms(l.region, l.kind === "main" ? keepOut : undefined), kind: l.kind }))
     .filter((g) => g.arms.length > 0);
   if (groups.length === 0) return null;
 

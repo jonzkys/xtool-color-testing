@@ -2,7 +2,7 @@
 // Continuous-spiral VECTOR_CUTTING path generator. A spiral is a single open
 // polyline that sweeps a venting-width channel along the part boundary by
 // walking concentric offsets and bridging them — the vectorised open trench.
-import { offsetRegion, splitLobesAtNecks } from "./offset";
+import { offsetRegion, splitLobesAtNecks, unionRegions, subtractRegion } from "./offset";
 import { STAGE_GROUPS } from "./config";
 import type { ForgeConfig, GeneratedPath, Pt } from "./types";
 
@@ -48,13 +48,22 @@ function rotateOpen(loop: Pt[], start: number): Pt[] {
  * exact edge, so every part feature gets a through-cut. The outer offsets add
  * the venting channel where the scrap is wide enough to hold one.
  */
-function offsetLevels(part: Pt[][], opts: SpiralOptions, sign: 1 | -1): Pt[][][] {
-  const levels: Pt[][][] = [part];
+function offsetLevels(part: Pt[][], opts: SpiralOptions, sign: 1 | -1, exclude?: Pt[][]): Pt[][][] {
+  // `exclude` is a keep-out region (the detail lobes' venting zone): every level
+  // is clipped against it so this lobe's spiral never re-cuts ground a sibling
+  // lobe already owns. Without it the +offsets would bloom into carved detail
+  // holes and double-draw on top of the detail spiral.
+  const clip = (rings: Pt[][]) => (exclude && exclude.length ? subtractRegion(rings, exclude) : rings);
+  const levels: Pt[][][] = [clip(part)];
   const n = Math.max(1, Math.ceil(opts.channelWidthMm / opts.pitchMm));
   for (let k = 1; k <= n; k++) {
-    const rings = offsetRegion(part, sign * k * opts.pitchMm);
-    if (rings.length === 0) break;
-    levels.push(rings);
+    // Break on the RAW offset collapsing (geometry exhausted), not the clipped
+    // result — a clipped level can be empty while a larger one still reaches
+    // past the keep-out, so keep walking until the unclipped offset vanishes.
+    const raw = offsetRegion(part, sign * k * opts.pitchMm);
+    if (raw.length === 0) break;
+    const lvl = clip(raw);
+    if (lvl.length > 0) levels.push(lvl); // an all-clipped level adds nothing; skip it
   }
   return levels;
 }
@@ -286,7 +295,7 @@ export function buildStrands(levels: Pt[][][], pitchMm: number): Pt[][] {
   return strands.filter((s) => s.out.length > 0).map((s) => s.out);
 }
 
-export function spiralFromRegion(part: Pt[][], opts: SpiralOptions): SpiralResult {
+export function spiralFromRegion(part: Pt[][], opts: SpiralOptions, exclude?: Pt[][]): SpiralResult {
   const warnings: string[] = [];
   if (part.length === 0 || !(opts.pitchMm > 0) || !(opts.channelWidthMm > 0)) {
     return { arms: [], warnings };
@@ -295,7 +304,8 @@ export function spiralFromRegion(part: Pt[][], opts: SpiralOptions): SpiralResul
   // levels[0] is ALWAYS the part contour (see offsetLevels), so the boundary is
   // always cut — even where no venting offset fits. The first offset is always
   // ±pitchMm regardless of channelWidthMm, so there is no channel-halving retry.
-  const levels = offsetLevels(part, opts, sign);
+  // `exclude` keeps this lobe's spiral out of a sibling lobe's territory.
+  const levels = offsetLevels(part, opts, sign, exclude);
   // Only the contour fit (no offset ring on top): the scrap is too thin for a
   // venting channel. We still cut the contour so the feature severs, but warn —
   // thick brass may not fully vent in a contour-only kerf.
@@ -318,11 +328,18 @@ export function generateSpiralPaths(part: Pt[][], cfg: ForgeConfig, sourceObject
     ? splitLobesAtNecks(part, (cfg.spiral.neckThresholdPct / 100) * channelWidthMm, cfg.spiral.neckOverlapMm ?? channelWidthMm)
     : [{ region: part, kind: "main" as const }];
 
+  // Detail lobes own their region AND the venting channel they sweep outward
+  // (~channelWidth). Keep the main spiral out of that zone so it doesn't bloom
+  // back over the detail — each region is cut once, not twice.
+  const detailUnion = unionRegions(lobes.filter((l) => l.kind === "detail").map((l) => l.region));
+  const detailKeepOut = detailUnion.length > 0 ? offsetRegion(detailUnion, channelWidthMm) : [];
+
   const out: GeneratedPath[] = [];
   let order = 0;
   for (const lobe of lobes) {
     const group = lobe.kind === "detail" ? STAGE_GROUPS.spiralDetail : STAGE_GROUPS.spiral;
-    for (const arm of spiralFromRegion(lobe.region, opts).arms) {
+    const exclude = lobe.kind === "main" ? detailKeepOut : undefined;
+    for (const arm of spiralFromRegion(lobe.region, opts, exclude).arms) {
       out.push({
         sourceObjectId,
         generatedClass: "spiral",

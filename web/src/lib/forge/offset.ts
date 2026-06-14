@@ -55,6 +55,19 @@ function clipExecute(clipType: number, subj: Pt[][], clip: Pt[][], evenOdd = fal
   return fromClipperPaths(solution);
 }
 
+/** Union a set of regions into one ring set (NonZero). */
+export function unionRegions(regions: Pt[][][]): Pt[][] {
+  const all = regions.flat();
+  if (all.length === 0) return [];
+  return clipExecute(ClipperLib.ClipType.ctUnion, all, []);
+}
+
+/** `subj` minus `clip` (NonZero). Returns `subj` unchanged when `clip` is empty. */
+export function subtractRegion(subj: Pt[][], clip: Pt[][]): Pt[][] {
+  if (clip.length === 0) return subj;
+  return clipExecute(ClipperLib.ClipType.ctDifference, subj, clip);
+}
+
 /**
  * Offset a region (polygon with holes) by `deltaMm` (signed). Positive grows the
  * outer boundary outward and shrinks holes inward; negative does the reverse.
