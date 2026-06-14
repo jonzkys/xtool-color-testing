@@ -7,14 +7,19 @@
 // revealed outer→inner so the eye reads the spiral winding onto the part. It is
 // labelled "schematic" and captioned with the true arm count + pitch.
 //
+// When neck-splitting is on it mirrors the generator's split (splitLobesAtNecks)
+// and tints the split-off DETAIL lobes amber against the pink main lobe, so the
+// user can see what will be cut as its own heat-retaining loop before cutting.
+//
 // Purely presentational: arms are computed here from the cut contour via the
 // synchronous clipper offsetter (lib/forge/offset.ts) — no worker/pipeline
 // involvement. The literal cut still drives the estimate/debug elsewhere.
 import { useEffect, useRef, useState } from "react";
 import type { Contour, Pt } from "../../lib/forge/types";
-import { offsetRegion, simplifyLoop, buildFillRegion } from "../../lib/forge/offset";
+import { offsetRegion, simplifyLoop, buildFillRegion, splitLobesAtNecks } from "../../lib/forge/offset";
 
-const SPIRAL = "#ec4899"; // brand pink — matches CLASS_COLOR.spiral / the legend
+const SPIRAL = "#ec4899"; // brand pink — main lobe / matches CLASS_COLOR.spiral
+const DETAIL = "#f59e0b"; // amber — split-off detail lobes (CUT_09_SPIRAL_DETAIL)
 // Cap on rendered arms — the schematic shows the *true* arm count
 // (ceil(channel/pitch)) so it reflects the real cut, but a pathological tiny
 // pitch could ask for hundreds of lines (a blob again), so cap the draw.
@@ -26,19 +31,29 @@ export interface SpiralCanvasProps {
   channelWidthMm: number;
   pitchMm: number;
   side: "outside" | "inside";
+  /** Mirror the generator's neck split in the preview (and tint detail lobes). */
+  splitNecks: boolean;
+  neckThresholdPct: number;
+  neckOverlapMm: number;
   width: number;
   height: number;
 }
 
-interface Schematic {
-  /** Concentric arms, outermost first, innermost (the contour) last. Each arm
-   *  is a set of closed loops in mm space. */
+/** One lobe's concentric arms (outermost first, contour last) + its kind. */
+interface ArmGroup {
   arms: Pt[][][];
+  kind: "main" | "detail";
+}
+
+interface Schematic {
+  groups: ArmGroup[];
   bbox: { minX: number; minY: number; maxX: number; maxY: number };
   /** True arm count of the real cut (ceil(channel/pitch)) — for the caption. */
   trueArms: number;
-  /** Arms actually drawn (≤ trueArms; fewer if capped or an offset collapsed). */
+  /** Max arms actually drawn in any lobe (≤ trueArms; fewer if capped/collapsed). */
   shownArms: number;
+  /** Number of detail lobes split off (0 when splitting is off / finds no neck). */
+  detailLobes: number;
 }
 
 function bboxOf(loops: Pt[][]): Schematic["bbox"] {
@@ -51,13 +66,18 @@ function bboxOf(loops: Pt[][]): Schematic["bbox"] {
   return { minX, minY, maxX, maxY };
 }
 
-/** Build the schematic: the contour plus a few offset arms spread across an
- *  exaggerated band (so the concentric structure is visible at any zoom). */
+/** Build the schematic: per lobe, the contour plus a few offset arms spread
+ *  across an exaggerated band (so the concentric structure is visible at any
+ *  zoom). When `splitNecks` is on, the region is split into main/detail lobes
+ *  first so the preview matches what the generator emits. */
 function buildSchematic(
   source: Contour[],
   channelWidthMm: number,
   pitchMm: number,
   side: "outside" | "inside",
+  splitNecks: boolean,
+  neckThresholdPct: number,
+  neckOverlapMm: number,
 ): Schematic | null {
   // Build arms from the SAME canonical even-odd region the real cut uses
   // (buildFillRegion), not the raw SVG subpaths. Raw imported subpaths can have
@@ -65,10 +85,10 @@ function buildSchematic(
   // some sides — leaving the venting band missing along, e.g., the bottom of the
   // rightmost strokes. Normalising first keeps the schematic symmetric AND
   // faithful to what gets exported.
-  const raw = buildFillRegion(source).filter((pts) => pts.length >= 3);
-  if (raw.length === 0) return null;
+  const region0 = buildFillRegion(source).filter((pts) => pts.length >= 3);
+  if (region0.length === 0) return null;
 
-  const cb = bboxOf(raw);
+  const cb = bboxOf(region0);
   const partMin = Math.min(cb.maxX - cb.minX, cb.maxY - cb.minY) || 1;
   const sign = side === "inside" ? -1 : 1;
 
@@ -80,7 +100,7 @@ function buildSchematic(
     const s = simplifyLoop(loop, eps);
     return s.length >= 3 ? s : loop;
   };
-  const part = raw.map(simp);
+  const part = region0.map(simp);
 
   // The schematic shows the REAL arm count (ceil(channel/pitch)) so it reflects
   // the actual cut — N concentric passes hugging the part. Spacing is NOT to
@@ -92,20 +112,40 @@ function buildSchematic(
   const maxFrac = side === "inside" ? 0.1 : 0.14;
   const band = partMin * Math.min(maxFrac, Math.max(0.04, drawArms * 0.0055));
 
-  // index 0 = contour; the rest fan out (or in) evenly across the band. Each
-  // offset ring is re-simplified — large round-join offsets emit many arc points.
-  const inner: Pt[][][] = [part];
-  for (let k = 1; k < drawArms; k++) {
-    const dist = sign * (k / (drawArms - 1)) * band;
-    const rings = offsetRegion(part, dist).map(simp);
-    if (rings.length === 0) break; // collapsed — stop, draw what fits
-    inner.push(rings);
-  }
-  const arms = inner.slice().reverse(); // outermost first for the draw-on
-  return { arms, bbox: bboxOf(arms.flat()), trueArms, shownArms: inner.length };
+  // Concentric arms for one lobe region: index 0 = contour; the rest fan out (or
+  // in) evenly across the band. Each offset ring is re-simplified — large
+  // round-join offsets emit many arc points. Returned outermost-first for draw-on.
+  const buildArms = (region: Pt[][]): Pt[][][] => {
+    const r = region.map(simp).filter((p) => p.length >= 3);
+    if (r.length === 0) return [];
+    const inner: Pt[][][] = [r];
+    for (let k = 1; k < drawArms; k++) {
+      const dist = sign * (k / Math.max(1, drawArms - 1)) * band;
+      const rings = offsetRegion(r, dist).map(simp);
+      if (rings.length === 0) break; // collapsed — stop, draw what fits
+      inner.push(rings);
+    }
+    return inner.slice().reverse();
+  };
+
+  // Split into lobes (mirroring the generator) when enabled; otherwise one main
+  // lobe over the whole region (identical to the un-split preview).
+  const lobes = splitNecks
+    ? splitLobesAtNecks(part, (neckThresholdPct / 100) * channelWidthMm, neckOverlapMm ?? channelWidthMm)
+    : [{ region: part, kind: "main" as const }];
+
+  const groups: ArmGroup[] = lobes
+    .map((l) => ({ arms: buildArms(l.region), kind: l.kind }))
+    .filter((g) => g.arms.length > 0);
+  if (groups.length === 0) return null;
+
+  const allLoops = groups.flatMap((g) => g.arms.flat());
+  const shownArms = Math.max(...groups.map((g) => g.arms.length));
+  const detailLobes = groups.filter((g) => g.kind === "detail").length;
+  return { groups, bbox: bboxOf(allLoops), trueArms, shownArms, detailLobes };
 }
 
-export function SpiralCanvas({ source, channelWidthMm, pitchMm, side, width, height }: SpiralCanvasProps) {
+export function SpiralCanvas({ source, channelWidthMm, pitchMm, side, splitNecks, neckThresholdPct, neckOverlapMm, width, height }: SpiralCanvasProps) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const [schematic, setSchematic] = useState<Schematic | null>(null);
 
@@ -118,11 +158,11 @@ export function SpiralCanvas({ source, channelWidthMm, pitchMm, side, width, hei
       return;
     }
     const t = setTimeout(
-      () => setSchematic(buildSchematic(source, channelWidthMm, pitchMm, side)),
+      () => setSchematic(buildSchematic(source, channelWidthMm, pitchMm, side, splitNecks, neckThresholdPct, neckOverlapMm)),
       110,
     );
     return () => clearTimeout(t);
-  }, [source, channelWidthMm, pitchMm, side]);
+  }, [source, channelWidthMm, pitchMm, side, splitNecks, neckThresholdPct, neckOverlapMm]);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -148,41 +188,47 @@ export function SpiralCanvas({ source, channelWidthMm, pitchMm, side, width, hei
 
     ctx.lineJoin = "round";
     // Fine, uniform hairlines — match the machine's toolpath preview: every arm
-    // the same light weight, no depth emphasis, no fill. The innermost loop is
-    // the part contour (the actual edge), given only a touch more presence.
+    // the same light weight, no depth emphasis, no fill. The innermost loop of
+    // each lobe is its contour (the actual edge), given a touch more presence.
+    // Detail lobes (split off at necks) are tinted amber against the pink main.
     const hair = Math.max(0.5, 1 / dpr);
-    const arms = schematic.arms; // outermost..contour
-    for (let k = 0; k < arms.length; k++) {
-      const isContour = k === arms.length - 1;
-      ctx.globalAlpha = isContour ? 0.8 : 0.55;
-      ctx.strokeStyle = SPIRAL;
-      ctx.lineWidth = hair;
-      for (const r of arms[k]) {
-        if (r.length < 2) continue;
+    for (const group of schematic.groups) {
+      const color = group.kind === "detail" ? DETAIL : SPIRAL;
+      const arms = group.arms; // outermost..contour
+      for (let k = 0; k < arms.length; k++) {
+        const isContour = k === arms.length - 1;
+        ctx.globalAlpha = isContour ? 0.85 : 0.55;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = hair;
+        for (const r of arms[k]) {
+          if (r.length < 2) continue;
+          ctx.beginPath();
+          ctx.moveTo(X(r[0].x), Y(r[0].y));
+          for (let i = 1; i < r.length; i++) ctx.lineTo(X(r[i].x), Y(r[i].y));
+          ctx.closePath();
+          ctx.stroke();
+        }
+      }
+      // A small entry dot on each lobe's outermost arm — where its spiral begins.
+      const o = arms[0]?.[0];
+      if (o && o.length > 0) {
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.moveTo(X(r[0].x), Y(r[0].y));
-        for (let i = 1; i < r.length; i++) ctx.lineTo(X(r[i].x), Y(r[i].y));
-        ctx.closePath();
-        ctx.stroke();
+        ctx.arc(X(o[0].x), Y(o[0].y), 2.5, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
     ctx.globalAlpha = 1;
-
-    // A small entry dot on the outermost arm — where the spiral begins.
-    const o = arms[0]?.[0];
-    if (o && o.length > 0) {
-      ctx.fillStyle = SPIRAL;
-      ctx.beginPath();
-      ctx.arc(X(o[0].x), Y(o[0].y), 2.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
   }, [schematic, width, height]);
 
   const trueArms = schematic?.trueArms ?? 0;
   const shownArms = schematic?.shownArms ?? 0;
+  const detailLobes = schematic?.detailLobes ?? 0;
   const pitchTxt = pitchMm >= 0.01 ? pitchMm.toFixed(2) : pitchMm.toPrecision(1);
   const capped = schematic ? shownArms < trueArms : false;
   const armsTxt = capped ? `~${trueArms} arms (showing ${shownArms})` : `${trueArms} arm${trueArms === 1 ? "" : "s"}`;
+  const splitTxt = detailLobes > 0 ? ` · ${detailLobes} split off` : "";
 
   return (
     <div className="relative h-full w-full">
@@ -190,15 +236,18 @@ export function SpiralCanvas({ source, channelWidthMm, pitchMm, side, width, hei
       {/* schematic caption — mono, lower-left, blueprint register */}
       <div className="pointer-events-none absolute left-3 bottom-2.5 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-ink-subtle)]">
         <span className="inline-block h-2 w-2 rounded-[2px]" style={{ backgroundColor: SPIRAL }} aria-hidden />
+        {detailLobes > 0 && (
+          <span className="inline-block h-2 w-2 rounded-[2px]" style={{ backgroundColor: DETAIL }} aria-hidden />
+        )}
         <span>schematic · not to scale</span>
         {schematic && (
           <span className="tracking-[0.06em] normal-case text-[var(--color-ink-muted)]">
-            · {armsTxt} · {pitchTxt} mm pitch · {side}
+            · {armsTxt} · {pitchTxt} mm pitch · {side}{splitTxt}
           </span>
         )}
       </div>
       <span className="sr-only">
-        Schematic spiral-cut preview: {armsTxt} at {pitchTxt} mm pitch on the {side} of the part, spacing exaggerated for legibility.
+        Schematic spiral-cut preview: {armsTxt} at {pitchTxt} mm pitch on the {side} of the part, spacing exaggerated for legibility.{detailLobes > 0 ? ` ${detailLobes} detail ${detailLobes === 1 ? "lobe" : "lobes"} split off at necks, shown in amber.` : ""}
       </span>
     </div>
   );
