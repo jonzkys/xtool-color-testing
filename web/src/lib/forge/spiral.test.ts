@@ -398,3 +398,34 @@ describe("classifyLevel0", () => {
     expect(classifyLevel0([])).toEqual([]);
   });
 });
+
+describe("generateSpiralPaths — internal/external grouping", () => {
+  function rect(x0: number, y0: number, x1: number, y1: number): Pt[] {
+    return [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+  }
+  it("big body outer → CUT_08; hole and separate island → CUT_09", () => {
+    const body = rect(0, 0, 40, 40);
+    const hole = rect(15, 15, 25, 25);
+    const island = rect(60, 0, 66, 6);
+    const cfg = structuredClone(SPIRAL_CUT);
+    cfg.spiral.enabled = true; cfg.spiral.splitNecks = false; cfg.spiral.cutShortestFirst = false;
+    const paths = generateSpiralPaths([body, hole, island], cfg, "o");
+    const external = paths.filter((p) => p.groupName === STAGE_GROUPS.spiral);
+    const internal = paths.filter((p) => p.groupName === STAGE_GROUPS.spiralDetail);
+    expect(external.length).toBeGreaterThan(0);
+    expect(internal.length).toBeGreaterThan(0);
+    const longest = paths.slice().sort((a, b) => spiralPathLength(b.rings[0]) - spiralPathLength(a.rings[0]))[0];
+    expect(longest.groupName).toBe(STAGE_GROUPS.spiral);
+  });
+
+  it("cutShortestFirst orders all internal arms before all external", () => {
+    const body = rect(0, 0, 40, 40);
+    const island = rect(60, 0, 66, 6);
+    const cfg = structuredClone(SPIRAL_CUT);
+    cfg.spiral.enabled = true; cfg.spiral.splitNecks = false; cfg.spiral.cutShortestFirst = true;
+    const paths = generateSpiralPaths([body, island], cfg, "o");
+    const lastInternal = Math.max(...paths.filter((p) => p.groupName === STAGE_GROUPS.spiralDetail).map((p) => p.operationOrder));
+    const firstExternal = Math.min(...paths.filter((p) => p.groupName === STAGE_GROUPS.spiral).map((p) => p.operationOrder));
+    expect(lastInternal).toBeLessThan(firstExternal);
+  });
+});

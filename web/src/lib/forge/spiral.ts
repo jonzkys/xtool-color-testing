@@ -164,6 +164,11 @@ function ptSegDist2(px: number, py: number, ax: number, ay: number, bx: number, 
  * false forks.
  */
 const CHILD_SAMPLES = 16;
+
+/** Pull the main lobe this many pitches CLEAR of a neck-split detail's venting
+ *  zone, so no main arm coincides with the detail's outermost arm (no double-
+ *  trace). The thin scrap gap drops out. */
+const NECK_GAP_PITCHES = 2;
 function loopToStrandDist2(childSamples: Pt[], strandFrontier: Pt[]): number {
   const n = strandFrontier.length;
   let best = Infinity;
@@ -405,41 +410,42 @@ export function generateSpiralPaths(part: Pt[][], cfg: ForgeConfig, sourceObject
     ? splitLobesAtNecks(part, (cfg.spiral.neckThresholdPct / 100) * channelWidthMm, cfg.spiral.neckOverlapMm ?? channelWidthMm)
     : [{ region: part, kind: "main" as const }];
 
-  // Detail lobes own their region AND the venting channel they sweep outward
-  // (~channelWidth). Keep the main spiral out of that zone so it doesn't bloom
-  // back over the detail — each region is cut once, not twice.
+  // Neck-split detail owns its region + the channel it sweeps; keep the main
+  // clear of it PLUS a small gap so no main arm lands on the detail's outer arm.
   const detailUnion = unionRegions(lobes.filter((l) => l.kind === "detail").map((l) => l.region));
-  const detailKeepOut = detailUnion.length > 0 ? offsetRegion(detailUnion, channelWidthMm) : [];
+  const detailKeepOut = detailUnion.length > 0
+    ? offsetRegion(detailUnion, channelWidthMm + NECK_GAP_PITCHES * pitchMm)
+    : [];
 
-  // Collect every arm with its lobe kind first, so we can order the whole set
-  // before stamping operationOrder (which the emitter turns into display/cut
-  // sequence). Default order = main lobe then detail lobes, each in strand order.
-  const collected: { kind: "main" | "detail"; arm: Pt[] }[] = [];
+  // Collect every arm with its FINAL class. Main lobe → per-arm seed class
+  // (external outer vs internal holes/islands). Neck-split detail lobes → all
+  // internal.
+  const collected: { cls: ArmClass; arm: Pt[] }[] = [];
   for (const lobe of lobes) {
     const exclude = lobe.kind === "main" ? detailKeepOut : undefined;
-    for (const arm of spiralFromRegion(lobe.region, opts, exclude).arms) {
-      collected.push({ kind: lobe.kind, arm });
-    }
+    const { arms, armClass } = spiralFromRegion(lobe.region, opts, exclude);
+    arms.forEach((arm, i) => {
+      collected.push({ cls: lobe.kind === "detail" ? "internal" : armClass[i], arm });
+    });
   }
 
-  // Cut-shortest-first: small detail features punch through first (venting +
-  // relief for the long passes), then the main perimeter — each block ascending
-  // by arm length. The export sets user-defined path planning so the machine
-  // honours this order instead of auto-optimising it.
+  // Cut-shortest-first: internal pieces first (vent + relief), then external —
+  // each block ascending by length. Ordering keys off the final class, NOT the
+  // lobe kind (internal arms now also come from the main lobe).
   const sequence = cfg.spiral.cutShortestFirst
     ? (() => {
         const byLen = (a: { arm: Pt[] }, b: { arm: Pt[] }) => spiralPathLength(a.arm) - spiralPathLength(b.arm);
         return [
-          ...collected.filter((c) => c.kind === "detail").sort(byLen),
-          ...collected.filter((c) => c.kind === "main").sort(byLen),
+          ...collected.filter((c) => c.cls === "internal").sort(byLen),
+          ...collected.filter((c) => c.cls === "external").sort(byLen),
         ];
       })()
     : collected;
 
   const out: GeneratedPath[] = [];
   let order = 0;
-  for (const { kind, arm } of sequence) {
-    const group = kind === "detail" ? STAGE_GROUPS.spiralDetail : STAGE_GROUPS.spiral;
+  for (const { cls, arm } of sequence) {
+    const group = cls === "internal" ? STAGE_GROUPS.spiralDetail : STAGE_GROUPS.spiral;
     out.push({
       sourceObjectId,
       generatedClass: "spiral",
