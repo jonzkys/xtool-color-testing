@@ -32,8 +32,8 @@ export interface ForgeStageParamsProps {
   /** Render without the Card/title frame — for embedding in the page's
    *  stage-parameters tray, which provides its own chrome. */
   frameless?: boolean;
-  /** Lock to a single stage group and hide the tab strip — for the Spiral
-   *  page, which has exactly one operation. */
+  /** Lock to a single stage group and hide the tab strip. (The Spiral page now
+   *  uses `cutGroups` instead to show Main/Detail tabs.) */
   lockToGroup?: string;
   /** Cut mode (vector): drop engrave-only controls — Density (lines/cm) and the
    *  generic Z-axis-descent group — and show a single Passes field. A cut steps
@@ -119,13 +119,13 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
   const overrideKey = linkedDeepen ? firstDeepenName : current?.group;
   const override: StageParams = (overrideKey ? config.stageParams[overrideKey] : undefined) ?? {};
 
+  if (!current) return null;
+
   // Detail (CUT_09) inherits Main (CUT_08) for un-overridden fields, mirroring
   // resolveStageParams (out[CUT_09] = { ...out[CUT_08], ...overrides }). So the
   // Detail tab must fall back to Main's overrides before the source incise.
-  const isDetailSpiral = current?.group === STAGE_GROUPS.spiralDetail;
+  const isDetailSpiral = current.group === STAGE_GROUPS.spiralDetail;
   const mainOverride: StageParams = config.stageParams[STAGE_GROUPS.spiral] ?? {};
-
-  if (!current) return null;
 
   // ── per-field displayed value resolution ──────────────────────────────────
   function numericValue(
@@ -345,7 +345,7 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
             ).filter((f) => !(cutMode && f.param === "passes")).map(({ param, label, step }) => (
               <Field key={param} label={label}>
                 <NumberField
-                  value={override[param] ?? sourceParams?.[param] ?? 0}
+                  value={numericValue(param, undefined)}
                   min={0}
                   step={step}
                   disabled={linkedDeepen}
