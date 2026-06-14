@@ -374,12 +374,21 @@ export function spiralFromRegion(part: Pt[][], opts: SpiralOptions, exclude?: Pt
     return { arms: [], armClass: [], warnings };
   }
   const sign: 1 | -1 = opts.side === "inside" ? -1 : 1;
+  // levels[0] is ALWAYS the part contour (see offsetLevels), so the boundary is
+  // always cut — even where no venting offset fits. The first offset is always
+  // ±pitchMm regardless of channelWidthMm, so there is no channel-halving retry.
+  // `exclude` keeps this lobe's spiral out of a sibling lobe's territory.
   const levels = offsetLevels(part, opts, sign, exclude);
+  // Only the contour fit (no offset ring on top): the scrap is too thin for a
+  // venting channel. We still cut the contour so the feature severs, but warn —
+  // thick brass may not fully vent in a contour-only kerf.
   if (levels.length <= 1) {
     warnings.push(
       "spiral: scrap too thin for a venting channel — cutting the contour only here (may not fully sever thick brass; consider incise for this region)",
     );
   }
+  // Per-arm class from the seed loop: the largest body's outer is external, its
+  // holes and every other component are internal.
   const seedClass = classifyLevel0(levels[0] ?? []);
   const strands = buildStrands(levels, opts.pitchMm, seedClass);
   return { arms: strands.map((s) => s.arm), armClass: strands.map((s) => s.cls), warnings };
