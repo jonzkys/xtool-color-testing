@@ -104,6 +104,15 @@ export function SpiralControls({ config, onChange }: SpiralControlsProps) {
               </Field>
             </>
           )}
+          <Field label="Cut shortest first" hint="Small paths first — vent + relieve the long passes (sets user-defined path order on export)">
+            <Select
+              value={config.spiral.cutShortestFirst ? "on" : "off"}
+              onChange={(e) => patchSpiral({ cutShortestFirst: e.target.value === "on" })}
+            >
+              <option value="on">on</option>
+              <option value="off">off</option>
+            </Select>
+          </Field>
         </div>
       </Card>
 

@@ -119,6 +119,11 @@ export interface SpiralConfig {
   neckThresholdPct: number;
   /** Overlap (mm) each split arm shares with its neighbour at the neck. */
   neckOverlapMm: number;
+  /** Cut the smallest paths first (detail features, then main — each ascending
+   *  by length) so small punch-throughs vent and relieve the longer passes.
+   *  Exports the job with user-defined path planning so the machine honours the
+   *  order instead of auto-optimising it. */
+  cutShortestFirst: boolean;
 }
 
 export interface ForgeConfig {

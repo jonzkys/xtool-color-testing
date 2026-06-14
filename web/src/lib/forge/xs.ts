@@ -371,6 +371,7 @@ function rebuildDeviceAndProfiles(
   canvasId: string,
   activeMode: string,
   legacyData: LegacyDeviceData,
+  userOrder = false,
 ): { device: V2Device; profiles: Record<string, V2Profile> } {
   const profiles: Record<string, V2Profile> = {};
   const patches: Record<string, V2Patch> = {};
@@ -398,8 +399,15 @@ function rebuildDeviceAndProfiles(
       })
       .filter((s): s is string => !!s);
     const allRed = sources.length > 0 && sources.every((s) => s === "red");
-    return synthModeData(activeMode, allRed ? "red" : "blue");
+    return synthModeData(activeMode, allRed ? "red" : "blue", userOrder);
   })();
+
+  // Forge owns the planning flags: when cutting shortest-first we need the
+  // machine to honour the authored display order (By Layer + user-defined
+  // "custom" planning); otherwise leave it on the optimiser. Set explicitly so a
+  // re-export flips the flags deterministically regardless of the source's value.
+  modeData.isProcessByLayer = userOrder;
+  modeData.pathPlanning = userOrder ? "custom" : "auto";
 
   const planType = (modeData.lightSourceMode as string) === "red" ? "red" : "blue";
 
@@ -546,14 +554,16 @@ function synthResources(pngs: Map<string, Uint8Array>): Bundle {
 /** Build the `data` block for a device mode, mirroring devices.py `_mode_data`.
  *  `lightSourceMode` defaults to "blue" for LASER_PLANE; pass "red" when the
  *  job uses the MOPA IR laser (e.g. a spiral VECTOR_CUTTING-only job). */
-function synthModeData(mode: string, lightSourceMode = "blue"): Record<string, unknown> {
+function synthModeData(mode: string, lightSourceMode = "blue", userOrder = false): Record<string, unknown> {
   const isRelief = mode === "RELIEF_PROCESS";
   return {
     material: 0,
     lightSourceMode: isRelief ? "red" : lightSourceMode,
     thickness: isRelief ? null : null,
-    isProcessByLayer: false,
-    pathPlanning: "auto",
+    // userOrder = "cut in my authored order": By Layer + user-defined ("custom")
+    // path planning, so the machine cuts in display order instead of optimising it.
+    isProcessByLayer: userOrder,
+    pathPlanning: userOrder ? "custom" : "auto",
     fillPlanning: "separate",
     dreedyTsp: false,
     avoidSmokeModal: false,
@@ -572,7 +582,7 @@ const _RELIEF_TYPES = new Set(["INTAGLIO", "RELIEF"]);
  *  `resources/<sha>.png` (so emboss heightmaps survive). Mirrors the python
  *  emitter (writer.py / devices.py / resources.py) closely enough for xTool
  *  Studio + the python round-trip to accept it. */
-function synthesizeXsFromLegacy(r: LegacyRaw): ArrayBuffer {
+function synthesizeXsFromLegacy(r: LegacyRaw, userOrder = false): ArrayBuffer {
   const legacyDisplays = r.canvas?.[0]?.displays ?? [];
   const legacyData = r.device?.data ?? {};
   const group = legacyData.value?.[0];
@@ -628,7 +638,7 @@ function synthesizeXsFromLegacy(r: LegacyRaw): ArrayBuffer {
       [canvasId]: {
         id: canvasId,
         activeMode,
-        modes: { [activeMode]: { data: synthModeData(activeMode, flatLightSource) } },
+        modes: { [activeMode]: { data: synthModeData(activeMode, flatLightSource, userOrder) } },
       },
     },
     customProjectData: {},
@@ -639,6 +649,7 @@ function synthesizeXsFromLegacy(r: LegacyRaw): ArrayBuffer {
     canvasId,
     activeMode,
     legacyData,
+    userOrder,
   );
   const layerData = rebuildLayerData(v2Displays, r.canvas?.[0]?.layerData);
 
@@ -707,9 +718,9 @@ function synthesizeXsFromLegacy(r: LegacyRaw): ArrayBuffer {
  *  canvases/<cid>.json. When `bundle` is null (the input was legacy `.xcs`),
  *  synthesize a fresh bundle from scratch (extracting inline base64 rasters into
  *  the resource store). */
-export function legacyRawToXs(raw: unknown, bundle: Bundle | null): ArrayBuffer {
+export function legacyRawToXs(raw: unknown, bundle: Bundle | null, userOrder = false): ArrayBuffer {
   const r = raw as LegacyRaw;
-  if (!bundle) return synthesizeXsFromLegacy(r);
+  if (!bundle) return synthesizeXsFromLegacy(r, userOrder);
 
   const meta = r.__xsMeta;
   const canvasId =
@@ -753,6 +764,7 @@ export function legacyRawToXs(raw: unknown, bundle: Bundle | null): ArrayBuffer 
     canvasId,
     activeMode,
     r.device?.data ?? {},
+    userOrder,
   );
 
   const layerData = rebuildLayerData(v2Displays, r.canvas?.[0]?.layerData);

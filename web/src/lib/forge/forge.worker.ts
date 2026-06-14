@@ -73,6 +73,10 @@ self.onmessage = (e: MessageEvent<ForgeRequest>) => {
     }
     if (msg.type === "export") {
       const { paths, stats } = runPipeline(parsed, msg.inciseId, msg.config);
+      // Cut-shortest-first orders the arms (in the pipeline) AND asks the machine
+      // to honour that order via user-defined path planning + By Layer. Only when
+      // spiral is the active cut — incise jobs keep the optimiser.
+      const userOrder = msg.config.spiral.enabled && msg.config.spiral.cutShortestFirst;
       const doc = buildGeneratedXcs(
         parsed,
         msg.inciseId,
@@ -80,6 +84,7 @@ self.onmessage = (e: MessageEvent<ForgeRequest>) => {
         stats.mmPerUnit,
         resolveStageParams(msg.config),
         effectiveScanAngle(msg.config, stats.scanAngleDeg),
+        userOrder,
       );
       // Output format is the user's choice, independent of the input format.
       // `.xs` repacks the modified legacy raw into a v2 bundle — reusing the
@@ -88,7 +93,7 @@ self.onmessage = (e: MessageEvent<ForgeRequest>) => {
       // input was legacy `.xcs`. `.xcs` emits the flat legacy JSON.
       const buf =
         msg.format === "xs"
-          ? legacyRawToXs(doc, xsBundle)
+          ? legacyRawToXs(doc, xsBundle, userOrder)
           : exportXcs(doc);
       post({ type: "exported", buf, format: msg.format }, [buf]);
       return;
