@@ -16,7 +16,7 @@
 // involvement. The literal cut still drives the estimate/debug elsewhere.
 import { useEffect, useRef, useState } from "react";
 import type { Contour, Pt } from "../../lib/forge/types";
-import { offsetRegion, simplifyLoop, buildFillRegion, buildPartRegion, splitLobesAtNecks, unionRegions, subtractRegion } from "../../lib/forge/offset";
+import { offsetRegion, simplifyLoop, buildFillRegion, buildPartRegion, splitLobesAtNecks, unionRegions, subtractRegion, regionComponents } from "../../lib/forge/offset";
 
 const SPIRAL = "#ec4899"; // brand pink — main lobe / matches CLASS_COLOR.spiral
 const DETAIL = "#f59e0b"; // amber — split-off detail lobes (CUT_09_SPIRAL_DETAIL)
@@ -126,17 +126,23 @@ function buildSchematic(
   // Concentric arms for one lobe region: index 0 = contour; the rest fan out (or
   // in) evenly across the lobe's band. Each offset ring is re-simplified — large
   // round-join offsets emit many arc points. Returned outermost-first for draw-on.
-  // `exclude` keeps the main lobe's arms out of the detail lobes' zone so the
+  // `exclude` keeps external pieces' arms out of internal pieces' zone so the
   // preview tiles (no pink halo over the amber) — mirrors the generator's keep-out.
-  const buildArms = (region: Pt[][], exclude?: Pt[][]): Pt[][][] => {
+  // `inward` reverses the fan direction for holes (which grow inward regardless of
+  // the global side). Internal pieces are guaranteed at least MIN_INTERNAL_RINGS so
+  // they always read as a spiral (not a single-ring blob).
+  const MIN_INTERNAL_RINGS = 3;
+  const buildArms = (region: Pt[][], inward: boolean, exclude?: Pt[][]): Pt[][][] => {
     const clip = (rings: Pt[][]) => (exclude && exclude.length ? subtractRegion(rings, exclude) : rings);
     const r = region.map(simp).filter((p) => p.length >= 3);
     if (r.length === 0) return [];
     const lb = lobeBand(r);
+    const dir = inward ? -1 : sign; // holes fan inward regardless of global side
+    const want = Math.max(drawArms, MIN_INTERNAL_RINGS);
     const c0 = clip(r).map(simp).filter((p) => p.length >= 3);
     const inner: Pt[][][] = [c0.length > 0 ? c0 : r];
-    for (let k = 1; k < drawArms; k++) {
-      const dist = sign * (k / Math.max(1, drawArms - 1)) * lb;
+    for (let k = 1; k < want; k++) {
+      const dist = dir * (k / Math.max(1, want - 1)) * lb;
       const raw = offsetRegion(r, dist);
       if (raw.length === 0) break; // collapsed — stop, draw what fits
       const rings = clip(raw).map(simp).filter((p) => p.length >= 3);
@@ -151,15 +157,43 @@ function buildSchematic(
     ? splitLobesAtNecks(part, (neckThresholdPct / 100) * channelWidthMm, neckOverlapMm ?? channelWidthMm)
     : [{ region: part, kind: "main" as const }];
 
-  // Keep-out for the main lobe = each detail dilated by its OWN fan width, so the
-  // main pulls back exactly as far as the detail's amber reaches — they tile with
-  // no overlap (no pink over amber) and no part-sized gap around small details.
-  const keepOut = unionRegions(
-    lobes.filter((l) => l.kind === "detail").map((l) => offsetRegion(l.region, lobeBand(l.region))),
-  );
+  // Decompose into drawable pieces with an explicit class. The MAIN lobe splits
+  // into the largest body's outer (external) + each hole / other component
+  // (internal). Neck-split DETAIL lobes are wholly internal.
+  type Piece = { region: Pt[][]; cls: "external" | "internal"; inward: boolean };
+  const ringAbsArea = (loop: Pt[]): number => {
+    let a = 0;
+    for (let i = 0, n = loop.length; i < n; i++) { const j = (i + 1) % n; a += loop[i].x * loop[j].y - loop[j].x * loop[i].y; }
+    return Math.abs(a) / 2;
+  };
+  const pieces: Piece[] = [];
+  for (const lobe of lobes) {
+    if (lobe.kind === "detail") { pieces.push({ region: lobe.region, cls: "internal", inward: false }); continue; }
+    const comps = regionComponents(lobe.region); // [outer, ...holes][]
+    if (comps.length === 0) { pieces.push({ region: lobe.region, cls: "external", inward: false }); continue; }
+    let bi = 0;
+    for (let i = 1; i < comps.length; i++) if (ringAbsArea(comps[i][0]) > ringAbsArea(comps[bi][0])) bi = i;
+    comps.forEach((comp, i) => {
+      if (i === bi) {
+        pieces.push({ region: [comp[0]], cls: "external", inward: false }); // largest body's outer solid (holes filled)
+        for (let h = 1; h < comp.length; h++) pieces.push({ region: [comp[h]], cls: "internal", inward: true }); // its holes vent inward
+      } else {
+        pieces.push({ region: [comp[0]], cls: "internal", inward: false }); // separate island
+        for (let h = 1; h < comp.length; h++) pieces.push({ region: [comp[h]], cls: "internal", inward: true });
+      }
+    });
+  }
 
-  const groups: ArmGroup[] = lobes
-    .map((l) => ({ arms: buildArms(l.region, l.kind === "main" ? keepOut : undefined), kind: l.kind }))
+  // Internal pieces' keep-out: external pieces pull back past each internal
+  // piece's drawn fan + a gap, so no pink hugs the amber.
+  const internalKeepOut = unionRegions(
+    pieces.filter((p) => p.cls === "internal").map((p) => offsetRegion(p.region, 2 * lobeBand(p.region))),
+  );
+  const groups: ArmGroup[] = pieces
+    .map((p) => ({
+      arms: buildArms(p.region, p.inward, p.cls === "external" ? internalKeepOut : undefined),
+      kind: p.cls === "internal" ? ("detail" as const) : ("main" as const),
+    }))
     .filter((g) => g.arms.length > 0);
   if (groups.length === 0) return null;
 
