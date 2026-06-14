@@ -85,6 +85,10 @@ export function resolveStageParams(config: ForgeConfig): Record<string, StagePar
     // J.ONE="one", J.STEP="step".
     cuttingDrop: true,
     sinkingMethod: "step",
+    // Initial focus drop before the stepwise descent begins (mm). ?? for configs
+    // persisted before focusInitialMm existed.
+    firstCuttingDropValue: config.spiral.focusInitialMm ?? 0.01,
+    cuttingDropValue: config.spiral.focusInitialMm ?? 0.01,
     descentIntervalDescent: config.spiral.focusIntervalPasses,
     descentPerStep: config.spiral.focusStepMm,
   };
