@@ -164,11 +164,6 @@ function ptSegDist2(px: number, py: number, ax: number, ay: number, bx: number, 
  * false forks.
  */
 const CHILD_SAMPLES = 16;
-
-/** Pull the main lobe this many pitches CLEAR of a neck-split detail's venting
- *  zone, so no main arm coincides with the detail's outermost arm (no double-
- *  trace). The thin scrap gap drops out. */
-const NECK_GAP_PITCHES = 2;
 function loopToStrandDist2(childSamples: Pt[], strandFrontier: Pt[]): number {
   const n = strandFrontier.length;
   let best = Infinity;
@@ -399,6 +394,10 @@ export function spiralFromRegion(part: Pt[][], opts: SpiralOptions, exclude?: Pt
   return { arms: strands.map((s) => s.arm), armClass: strands.map((s) => s.cls), warnings };
 }
 
+/** Pull the main lobe this many pitches CLEAR of a neck-split detail's venting
+ *  zone, so no main arm coincides with the detail's outermost arm (no double-
+ *  trace). The thin scrap gap drops out. */
+const NECK_GAP_PITCHES = 2;
 export function generateSpiralPaths(part: Pt[][], cfg: ForgeConfig, sourceObjectId: string): GeneratedPath[] {
   if (!cfg.spiral.enabled) return [];
   const { channelWidthMm, pitchMm, side, minChannelMm } = cfg.spiral;

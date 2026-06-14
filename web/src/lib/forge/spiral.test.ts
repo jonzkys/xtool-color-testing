@@ -221,6 +221,32 @@ describe("detail keep-out — main spiral does not re-cut a split-off island", (
     for (const a of mainArms) for (const p of a) if (insideRegion(detailRegion, p)) mainInsideDetail++;
     expect(mainInsideDetail).toBe(0);
   });
+
+  it("generateSpiralPaths: main-group arms stay a gap clear of the neck-split detail", () => {
+    const part = islandPart();
+    const cfg = structuredClone(SPIRAL_CUT);
+    cfg.spiral.enabled = true;
+    cfg.spiral.channelWidthMm = channelW;
+    cfg.spiral.pitchMm = pitch;
+    cfg.spiral.side = "outside";
+    cfg.spiral.splitNecks = true;
+    cfg.spiral.neckThresholdPct = 100; // pinch the 0.3mm neck
+    cfg.spiral.neckOverlapMm = channelW;
+    cfg.spiral.cutShortestFirst = false;
+    const paths = generateSpiralPaths(part, cfg, "o");
+    const detailLobes = splitLobesAtNecks(part, (cfg.spiral.neckThresholdPct / 100) * channelW, cfg.spiral.neckOverlapMm)
+      .filter((l) => l.kind === "detail").map((l) => l.region);
+    expect(detailLobes.length).toBeGreaterThan(0);
+    // The GAP zone = detail dilated by channelWidth + 1 pitch (BETWEEN the old
+    // keepout of channelWidth and the new channelWidth + 2*pitch). No CUT_08
+    // (main/external) arm point may fall inside it — proving the 2-pitch gap.
+    const gapZone = offsetRegion(unionRegions(detailLobes), channelW + pitch);
+    const mainArms = paths.filter((p) => p.groupName === STAGE_GROUPS.spiral).flatMap((p) => p.rings);
+    let inside = 0;
+    for (const a of mainArms) for (const pt of a) if (insideRegion(gapZone, pt)) inside++;
+    expect(mainArms.length).toBeGreaterThan(0);
+    expect(inside).toBe(0);
+  });
 });
 
 describe("buildStrands (coverage invariant)", () => {
