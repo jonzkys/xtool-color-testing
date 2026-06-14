@@ -364,6 +364,21 @@ describe("buildStrands — seed class", () => {
   });
 });
 
+describe("spiralFromRegion — armClass", () => {
+  it("a holed body yields an external outer arm and internal hole arm(s)", () => {
+    const outer: Pt[] = [{ x: -10, y: -10 }, { x: 10, y: -10 }, { x: 10, y: 10 }, { x: -10, y: 10 }];
+    const hole: Pt[] = [{ x: -3, y: -3 }, { x: 3, y: -3 }, { x: 3, y: 3 }, { x: -3, y: 3 }];
+    const r = spiralFromRegion([outer, hole], { channelWidthMm: 0.8, pitchMm: 0.04, side: "outside", minChannelMm: 0.4 });
+    expect(r.arms.length).toBe(r.armClass.length);
+    expect(r.armClass).toContain("external");
+    expect(r.armClass).toContain("internal");
+    // the longest arm (the big outer silhouette) is external
+    let maxI = 0;
+    for (let i = 1; i < r.arms.length; i++) if (spiralPathLength(r.arms[i]) > spiralPathLength(r.arms[maxI])) maxI = i;
+    expect(r.armClass[maxI]).toBe("external");
+  });
+});
+
 describe("classifyLevel0", () => {
   // big 40x40 outer with a 10x10 hole, plus a separate 6x6 island.
   const bigOuter: Pt[] = [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 40 }, { x: 0, y: 40 }];

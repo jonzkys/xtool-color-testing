@@ -46,7 +46,7 @@ export interface SpiralOptions {
   side: "outside" | "inside";
   minChannelMm: number;
 }
-export interface SpiralResult { arms: Pt[][]; warnings: string[]; }
+export interface SpiralResult { arms: Pt[][]; armClass: ArmClass[]; warnings: string[]; }
 
 /** Total polyline length (mm). */
 export function spiralPathLength(arm: Pt[]): number {
@@ -371,23 +371,18 @@ export function buildStrands(levels: Pt[][][], pitchMm: number, seedClass?: ArmC
 export function spiralFromRegion(part: Pt[][], opts: SpiralOptions, exclude?: Pt[][]): SpiralResult {
   const warnings: string[] = [];
   if (part.length === 0 || !(opts.pitchMm > 0) || !(opts.channelWidthMm > 0)) {
-    return { arms: [], warnings };
+    return { arms: [], armClass: [], warnings };
   }
   const sign: 1 | -1 = opts.side === "inside" ? -1 : 1;
-  // levels[0] is ALWAYS the part contour (see offsetLevels), so the boundary is
-  // always cut — even where no venting offset fits. The first offset is always
-  // ±pitchMm regardless of channelWidthMm, so there is no channel-halving retry.
-  // `exclude` keeps this lobe's spiral out of a sibling lobe's territory.
   const levels = offsetLevels(part, opts, sign, exclude);
-  // Only the contour fit (no offset ring on top): the scrap is too thin for a
-  // venting channel. We still cut the contour so the feature severs, but warn —
-  // thick brass may not fully vent in a contour-only kerf.
   if (levels.length <= 1) {
     warnings.push(
       "spiral: scrap too thin for a venting channel — cutting the contour only here (may not fully sever thick brass; consider incise for this region)",
     );
   }
-  return { arms: buildStrands(levels, opts.pitchMm).map((s) => s.arm), warnings };
+  const seedClass = classifyLevel0(levels[0] ?? []);
+  const strands = buildStrands(levels, opts.pitchMm, seedClass);
+  return { arms: strands.map((s) => s.arm), armClass: strands.map((s) => s.cls), warnings };
 }
 
 export function generateSpiralPaths(part: Pt[][], cfg: ForgeConfig, sourceObjectId: string): GeneratedPath[] {
