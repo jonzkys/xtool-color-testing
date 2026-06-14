@@ -258,6 +258,12 @@ export function SpiralPage() {
     return state.objects.find((o) => o.id === selectedIncise)?.processingType !== "VECTOR_CUTTING";
   }, [state, selectedIncise]);
 
+  // Does the pipeline result include internal-arm paths (CUT_09_SPIRAL_DETAIL)?
+  const hasInternal = useMemo(
+    () => (result?.paths ?? []).some((p) => p.groupName === STAGE_GROUPS.spiralDetail),
+    [result],
+  );
+
   // ---- validation ----
   const validation = useMemo(() => {
     const errors: string[] = [];
@@ -427,7 +433,9 @@ export function SpiralPage() {
                   <ForgeStageParams
                     frameless
                     cutMode
-                    lockToGroup={STAGE_GROUPS.spiral}
+                    cutGroups={hasInternal
+                      ? [{ group: STAGE_GROUPS.spiral, label: "Main" }, { group: STAGE_GROUPS.spiralDetail, label: "Detail" }]
+                      : [{ group: STAGE_GROUPS.spiral, label: "Main" }]}
                     config={config}
                     onChange={setConfig}
                     sourceParams={
