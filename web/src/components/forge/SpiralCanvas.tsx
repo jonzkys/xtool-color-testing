@@ -248,7 +248,7 @@ export function SpiralCanvas({ source, channelWidthMm, pitchMm, side, intaglio, 
     // Fine, uniform hairlines — match the machine's toolpath preview: every arm
     // the same light weight, no depth emphasis, no fill. The innermost loop of
     // each lobe is its contour (the actual edge), given a touch more presence.
-    // Detail lobes (split off at necks) are tinted amber against the pink main.
+    // Detail lobes — neck-split pieces, holes, and separate islands — are tinted amber (internal).
     const hair = Math.max(0.5, 1 / dpr);
     for (const group of schematic.groups) {
       const color = group.kind === "detail" ? DETAIL : SPIRAL;
@@ -286,7 +286,7 @@ export function SpiralCanvas({ source, channelWidthMm, pitchMm, side, intaglio, 
   const pitchTxt = pitchMm >= 0.01 ? pitchMm.toFixed(2) : pitchMm.toPrecision(1);
   const capped = schematic ? shownArms < trueArms : false;
   const armsTxt = capped ? `~${trueArms} arms (showing ${shownArms})` : `${trueArms} arm${trueArms === 1 ? "" : "s"}`;
-  const splitTxt = detailLobes > 0 ? ` · ${detailLobes} split off` : "";
+  const splitTxt = detailLobes > 0 ? ` · ${detailLobes} internal` : "";
 
   return (
     <div className="relative h-full w-full">
@@ -305,7 +305,7 @@ export function SpiralCanvas({ source, channelWidthMm, pitchMm, side, intaglio, 
         )}
       </div>
       <span className="sr-only">
-        Schematic spiral-cut preview: {armsTxt} at {pitchTxt} mm pitch on the {side} of the part, spacing exaggerated for legibility.{detailLobes > 0 ? ` ${detailLobes} detail ${detailLobes === 1 ? "lobe" : "lobes"} split off at necks, shown in amber.` : ""}
+        Schematic spiral-cut preview: {armsTxt} at {pitchTxt} mm pitch on the {side} of the part, spacing exaggerated for legibility.{detailLobes > 0 ? ` ${detailLobes} internal piece${detailLobes === 1 ? "" : "s"}, shown in amber.` : ""}
       </span>
     </div>
   );

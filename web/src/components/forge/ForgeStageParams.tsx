@@ -193,7 +193,9 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
     : current.group === STAGE_GROUPS.clean ? config.clean.layerCount
     : isMainSpiral ? config.spiral.passes
     : current.group === STAGE_GROUPS.spiralDetail
-      ? (config.stageParams[STAGE_GROUPS.spiralDetail]?.passes ?? config.spiral.passes)
+      ? (config.stageParams[STAGE_GROUPS.spiralDetail]?.passes
+          ?? config.stageParams[STAGE_GROUPS.spiral]?.passes
+          ?? config.spiral.passes)
     : Z_DEFAULTS.sliceNumber; // unreachable given current stage model; sentinel for future non-deepen stages
   const depthLayers = isDeepen
     ? Math.max(1, config.deepen.groups[deepenIdx].toLayer)
