@@ -101,11 +101,11 @@ defaults (`?? false` / `?? 50` / `?? channelWidthMm`).
 
 - The estimate strip already sums per-arm time, so it updates automatically as
   arms split (real-time feedback on the cut cost of splitting).
-- Deferred (the schematic re-derives its own arms in `SpiralCanvas` and has no
-  neck logic, so it cannot reflect real split points without mirroring the
-  generator): a detail-arm count in the caption, and tinting split-off arms a
-  distinct colour. Not built in v1 — revisit if the preview needs to show *where*
-  it splits before cutting.
+- The schematic mirrors the generator's split: `SpiralCanvas` runs the same
+  `splitLobesAtNecks` on its preview region and tints the split-off **detail
+  lobes amber** against the pink main, with a per-lobe entry dot, a second legend
+  chip, and an "N split off" caption — so the user can see *where* it splits
+  before cutting.
 
 ## Out of scope
 
