@@ -16,6 +16,10 @@ export interface Contour {
 /** Which side of the contour widening is biased toward. */
 export type SideMode = "outside" | "inside" | "symmetric" | "flip";
 
+/** Brass thicknesses (mm) the Spiral Cut page offers as presets. */
+export type MaterialThicknessMm = 1 | 1.5 | 2 | 3 | 4;
+export const MATERIAL_THICKNESSES_MM: MaterialThicknessMm[] = [1, 1.5, 2, 3, 4];
+
 /** The four functional path classes the tool emits. */
 export type GeneratedClass = "seed" | "perforate" | "deepen" | "clean" | "spiral";
 
@@ -124,6 +128,9 @@ export interface SpiralConfig {
    *  Exports the job with user-defined path planning so the machine honours the
    *  order instead of auto-optimising it. */
   cutShortestFirst: boolean;
+  /** Reference incise rate for the "% of incise" baseline comparison. Per brass
+   *  thickness; overrides the imported source's params when computing the baseline. */
+  baselineIncise: { speed: number; passes: number };
 }
 
 export interface ForgeConfig {
