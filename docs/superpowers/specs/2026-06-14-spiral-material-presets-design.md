@@ -39,7 +39,7 @@ Let the user pick a **brass thickness** (1, 1.5, 2, 3, 4 mm) on the Spiral Cut p
 
 ### 2. Defaults (`presets.ts`)
 
-- `SPIRAL_CUT.spiral.baselineIncise = { speed: 1500, passes: 500 }` — a sensible shared default (matches the spiral preset's own rate so % ≈ 100 until tuned). Same value goes on the `COMMON.spiral` literal so the field exists on every config.
+- `SPIRAL_CUT.spiral.baselineIncise = { speed: 1500, passes: 1 }` — a sensible shared default: a **single-pass** incise band (the baseline is a 1×-beam kerf reference, so `passes: 1` ≈ the prior source-derived baseline, ~96 min / ~40% for Amelia). NB: `passes` here is the *incise* pass count for the comparison reference, NOT the spiral's pass count — a high value (e.g. 500) would multiply the raster baseline into hundreds of hours. Same value goes on the `COMMON.spiral` literal so the field exists on every config. The user raises `passes`/lowers `speed` per thickness as deep brass warrants.
 
 ### 3. Baseline override (`pipeline.ts` + `estimate.ts`)
 

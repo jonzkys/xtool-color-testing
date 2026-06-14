@@ -48,6 +48,6 @@ describe("material thickness + baseline defaults", () => {
     expect(MATERIAL_THICKNESSES_MM).toEqual([1, 1.5, 2, 3, 4]);
   });
   it("SPIRAL_CUT has a default baselineIncise", () => {
-    expect(SPIRAL_CUT.spiral.baselineIncise).toEqual({ speed: 1500, passes: 500 });
+    expect(SPIRAL_CUT.spiral.baselineIncise).toEqual({ speed: 1500, passes: 1 });
   });
 });
