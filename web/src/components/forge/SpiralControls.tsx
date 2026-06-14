@@ -113,6 +113,22 @@ export function SpiralControls({ config, onChange }: SpiralControlsProps) {
               <option value="off">off</option>
             </Select>
           </Field>
+          <Field label="Baseline incise — speed (mm/s)" hint="Reference incise rate for the % comparison (per thickness)">
+            <NumberField
+              value={config.spiral.baselineIncise.speed}
+              step={50}
+              min={1}
+              onChange={(v) => patchSpiral({ baselineIncise: { ...config.spiral.baselineIncise, speed: Math.max(1, v) } })}
+            />
+          </Field>
+          <Field label="Baseline incise — passes">
+            <NumberField
+              value={config.spiral.baselineIncise.passes}
+              step={1}
+              min={1}
+              onChange={(v) => patchSpiral({ baselineIncise: { ...config.spiral.baselineIncise, passes: Math.max(1, v) } })}
+            />
+          </Field>
         </div>
       </Card>
 
