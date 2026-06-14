@@ -75,7 +75,13 @@ function baselineSeconds(
 ): number {
   const rings = bandFromRegion(part, config.beamWidthMm, config.sideMode);
   if (rings.length < 2) return 0;
-  const rate = effectiveRate(undefined, source);
+  // The baseline incise rate is per brass thickness (config.spiral.baselineIncise);
+  // it overrides the imported source's params, falling back to source per-field.
+  const bi = config.spiral.baselineIncise;
+  const baselineParams: StageParams | undefined = bi
+    ? ({ speed: bi.speed, passes: bi.passes } as StageParams)
+    : undefined;
+  const rate = effectiveRate(baselineParams, source);
   return stageSeconds(geomOf(rings), rate, calib);
 }
 

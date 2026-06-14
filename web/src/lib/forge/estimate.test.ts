@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { estimateForge } from "./estimate";
 import { DEFAULT_CONFIG } from "./defaults";
 import { SPIRAL_CUT } from "./presets";
+import { generateSpiralPaths } from "./spiral";
 import type { GeneratedPath, Pt } from "./types";
 
 const rect = (x: number, y: number, w: number, h: number): Pt[] => [
@@ -84,5 +85,20 @@ describe("estimateForge", () => {
     expect(Number.isFinite(est.stages[0].seconds)).toBe(true);
     expect(est.totalSeconds).toBeGreaterThan(0);
     expect(Number.isFinite(est.totalSeconds)).toBe(true);
+  });
+});
+
+describe("baseline is thickness-aware (baselineIncise)", () => {
+  it("a slower baseline incise yields a larger baselineSeconds + smaller overheadPct", () => {
+    const part = [[{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }]];
+    const spiralPaths = generateSpiralPaths(part, SPIRAL_CUT, "o");
+    const fast = structuredClone(SPIRAL_CUT);
+    fast.spiral.baselineIncise = { speed: 2000, passes: 100 };
+    const slow = structuredClone(SPIRAL_CUT);
+    slow.spiral.baselineIncise = { speed: 200, passes: 100 };
+    const eFast = estimateForge(spiralPaths, part, fast, undefined);
+    const eSlow = estimateForge(spiralPaths, part, slow, undefined);
+    expect(eSlow.baselineSeconds).toBeGreaterThan(eFast.baselineSeconds);
+    expect(eSlow.overheadPct).toBeLessThan(eFast.overheadPct);
   });
 });
