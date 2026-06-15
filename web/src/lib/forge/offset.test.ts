@@ -212,6 +212,38 @@ describe("splitLobesAtNecks", () => {
     expect(lobes.length).toBe(1);
     expect(lobes[0].kind).toBe("main");
   });
+
+  it("a detail's dilation does NOT grab a disconnected neighbouring stroke into one lobe", () => {
+    // Big body + a 3×4 feature on a thin neck (a splittable detail), plus a
+    // SEPARATE satellite square a hair (0.25 mm) to the right of the feature —
+    // disconnected in the part, but within the detail's dilation reach (r+ov).
+    // The feature's detail region must stay a single connected component (just the
+    // feature) rather than ballooning across the gap to swallow the satellite,
+    // which is what produced the cursive-tail tangle.
+    const body = rect(0, 0, 12, 12, true).points;
+    const neck = rect(12, 5.85, 16, 6.15, true).points;       // thin 0.3 mm bridge
+    const feature = rect(16, 4, 19, 8, true).points;          // the detail feature
+    const satellite = rect(19.25, 4, 21.25, 8, true).points;  // disconnected, 0.25 mm gap
+    // Union the touching body+neck+feature into one connected silhouette; the
+    // satellite stays its own component.
+    const part = buildFillRegion([
+      { points: body, closed: true },
+      { points: neck, closed: true },
+      { points: feature, closed: true },
+      { points: satellite, closed: true },
+    ]);
+
+    const lobes = splitLobesAtNecks(part, 1.0, 0.4); // r=0.5, ov=0.4 → dilation 0.9 mm reaches the satellite
+    const details = lobes.filter((l) => l.kind === "detail");
+    expect(details.length).toBeGreaterThan(0);
+    // Every detail lobe is exactly ONE connected component — no cross-gap grab.
+    for (const d of details) expect(regionComponents(d.region).length).toBe(1);
+    // The feature's detail spans only the feature (out to ~19), not across the
+    // 0.25 mm gap into the satellite (which would push maxX past ~20).
+    const featureDetail = details.find((d) => bbox(d.region).minX < 19 && bbox(d.region).minX >= 15);
+    expect(featureDetail).toBeTruthy();
+    expect(bbox(featureDetail!.region).maxX).toBeLessThan(20);
+  });
 });
 
 describe("regionComponents", () => {
