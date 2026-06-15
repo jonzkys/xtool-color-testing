@@ -117,7 +117,7 @@ describe("contourToDPath", () => {
   });
 });
 
-import { buildGeneratedXcs, exportXcs, extractContourSubpaths, ringsToDPath, MAX_PATH_POINTS } from "./xcs";
+import { buildGeneratedXcs, exportXcs, extractContourSubpaths, ringsToDPath, MAX_PATH_POINTS, chunkCount } from "./xcs";
 import { runPipeline } from "./pipeline";
 import { DEFAULT_CONFIG } from "./defaults";
 import { AGGRESSIVE, SPIRAL_CUT } from "./presets";
@@ -842,5 +842,15 @@ describe("spiral path-length cap (Studio drops paths over ~1570 coord pairs)", (
     const gen = out.canvas[0].displays.filter((d) => d.id.startsWith("forge-"));
     expect(gen.length).toBeGreaterThanOrEqual(4); // 3500 / 1000
     for (const d of gen) expect(ptCount(d.dPath ?? "")).toBeLessThanOrEqual(1000);
+  });
+
+  it("chunkCount predicts the real chunkPolyline split count (UI uses it pre-export)", () => {
+    const parsed = buildSquareParsed();
+    const incise = parsed.targets[0];
+    for (const [n, cap] of [[3500, 1500], [1501, 1500], [3500, 1000], [800, 1500]] as const) {
+      const out = buildGeneratedXcs(parsed, incise.id, [armPath(longArm(n))], 1, resolveStageParams(SPIRAL_CUT), undefined, false, cap) as { canvas: ChunkCanvas };
+      const gen = out.canvas[0].displays.filter((d) => d.id.startsWith("forge-"));
+      expect(chunkCount(n, cap)).toBe(gen.length);
+    }
   });
 });

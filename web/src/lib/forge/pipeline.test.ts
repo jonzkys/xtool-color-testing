@@ -165,6 +165,17 @@ describe("pipeline spiral", () => {
     expect(r.stats.pathCounts.deepen).toBe(0);
   });
 
+  it("stats.spiralExportObjects reflects the maxPathPoints cap (pre-export split count)", () => {
+    const p = parsed();
+    const at = (cap: number) =>
+      runPipeline(p, p.targets[0].id, { ...SPIRAL_CUT, spiral: { ...SPIRAL_CUT.spiral, maxPathPoints: cap } }).stats;
+    const high = at(100000); // no splitting — one object per strand
+    const low = at(200); // tiny cap — many splits
+    expect(high.spiralPoints).toBeGreaterThan(0);
+    expect(high.spiralExportObjects).toBe(high.pathCounts.spiral);
+    expect(low.spiralExportObjects).toBeGreaterThan(high.spiralExportObjects);
+  });
+
   it("source simplification (simplifyEpsMm) reduces the spiral node count", () => {
     const p = parsed();
     const spiralPts = (cfg: typeof SPIRAL_CUT) =>

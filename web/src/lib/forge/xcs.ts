@@ -314,6 +314,15 @@ function chunkPolyline(pts: { x: number; y: number }[], max: number): { x: numbe
   return chunks;
 }
 
+/** How many chunks a polyline of `n` points splits into at cap `max` — kept in
+ *  lockstep with `chunkPolyline` (verified by test) so the UI can predict the
+ *  export object count without building the chunks. */
+export function chunkCount(n: number, max: number): number {
+  const cap = max > 0 ? max : MAX_PATH_POINTS;
+  if (n <= cap) return 1;
+  return Math.ceil((n - 1) / (cap - 1));
+}
+
 /** Bounding box (in path units) of all rings, after the mm→units conversion. */
 function ringsBoundsUnits(
   rings: { x: number; y: number }[][],

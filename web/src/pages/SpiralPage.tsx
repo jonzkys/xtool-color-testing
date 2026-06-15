@@ -26,7 +26,7 @@ import { simplifyLoop } from "../lib/forge/offset";
 import { useForgeEngine } from "../hooks/useForgeEngine";
 import { SpiralCanvas } from "../components/forge/SpiralCanvas";
 import { ForgeSourcePanel } from "../components/forge/ForgeSourcePanel";
-import { ForgeDebugPanel } from "../components/forge/ForgeDebugPanel";
+import { SpiralGeometryPanel } from "../components/forge/SpiralGeometryPanel";
 import { ForgeEstimateStrip } from "../components/forge/ForgeEstimateStrip";
 import { ForgeStageParams } from "../components/forge/ForgeStageParams";
 import { SpiralControls } from "../components/forge/SpiralControls";
@@ -375,7 +375,7 @@ export function SpiralPage() {
                   preservedIds={state.preservedIds}
                   objects={state.objects}
                 />
-                <ForgeDebugPanel stats={result?.stats ?? null} spiral />
+                <SpiralGeometryPanel stats={result?.stats ?? null} spiral={config.spiral} />
               </div>
 
               {/* CENTER: schematic spiral preview — the hero, full height */}

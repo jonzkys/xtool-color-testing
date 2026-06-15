@@ -243,6 +243,11 @@ export interface DebugStats {
   scanAngleReductionPct?: number;
   /** Cut-time estimate for the generated strategy. */
   estimate: ForgeEstimate;
+  /** Total coordinate count across all generated spiral polylines (post-simplify). */
+  spiralPoints: number;
+  /** Number of separate cut objects the spiral exports as — i.e. how many chunks
+   *  the spiral splits into at the current `maxPathPoints`. 1 = one continuous cut. */
+  spiralExportObjects: number;
 }
 
 export interface PipelineResult {
