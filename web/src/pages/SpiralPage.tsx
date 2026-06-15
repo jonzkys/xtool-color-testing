@@ -365,8 +365,7 @@ export function SpiralPage() {
                 content, so the right control rail overflows the height-capped
                 parent (overflow-hidden) and its own overflow-y-auto never scrolls. */}
             <div className="flex-1 min-h-0 pt-3 grid grid-cols-[248px_minmax(0,1fr)_332px] grid-rows-[minmax(0,1fr)] gap-3 items-stretch">
-              {/* LEFT: source + validation only (path-geometry readout sits on the
-                  right next to the controls that drive it) */}
+              {/* LEFT: source + path geometry (its controls + live readout together) */}
               <div className="min-h-0 overflow-y-auto pr-1 flex flex-col gap-3 [&>*]:shrink-0">
                 <ForgeSourcePanel
                   validation={validation}
@@ -376,6 +375,7 @@ export function SpiralPage() {
                   preservedIds={state.preservedIds}
                   objects={state.objects}
                 />
+                <SpiralGeometryPanel stats={result?.stats ?? null} config={config} onChange={setConfig} />
               </div>
 
               {/* CENTER: schematic spiral preview — the hero, full height */}
@@ -416,7 +416,6 @@ export function SpiralPage() {
                 )}
                 <MaterialSelector value={material.activeThicknessMm} onChange={setActiveThickness} />
                 <SpiralControls config={config} onChange={setConfig} />
-                <SpiralGeometryPanel stats={result?.stats ?? null} spiral={config.spiral} />
                 {/* Laser & focus — single spiral stage, cut-mode (no density / no Z-descent) */}
                 <div className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
                   <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-2">

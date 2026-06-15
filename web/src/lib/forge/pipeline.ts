@@ -9,7 +9,7 @@ import type {
   PipelineResult,
   Pt,
 } from "./types";
-import { extractContourSubpaths, calibrateMmPerUnit, chunkCount } from "./xcs";
+import { extractContourSubpaths, calibrateMmPerUnit, spiralExportObjectCount } from "./xcs";
 import { optimalScanAngle, perpendicularExtentAt } from "./scanangle";
 import { inferWindingAndOutside } from "./contour";
 import { buildPartRegion, buildFillRegion, simplifyLoop } from "./offset";
@@ -199,9 +199,10 @@ export function runPipeline(
   };
 
   const spiralPoints = spiralPaths.reduce((s, p) => s + (p.rings[0]?.length ?? 0), 0);
-  const spiralExportObjects = spiralPaths.reduce(
-    (s, p) => s + chunkCount(p.rings[0]?.length ?? 0, cfg.spiral.maxPathPoints),
-    0,
+  const spiralExportObjects = spiralExportObjectCount(
+    spiralPaths.map((p) => p.rings[0]?.length ?? 0),
+    cfg.spiral.maxPathPoints,
+    cfg.spiral.joinStrands,
   );
 
   const stats: DebugStats = {

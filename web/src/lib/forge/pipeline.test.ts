@@ -176,6 +176,16 @@ describe("pipeline spiral", () => {
     expect(low.spiralExportObjects).toBeGreaterThan(high.spiralExportObjects);
   });
 
+  it("joinStrands → stats.spiralExportObjects collapses to 1 when it fits the cap", () => {
+    const p = parsed();
+    const joined = runPipeline(p, p.targets[0].id, {
+      ...SPIRAL_CUT,
+      spiral: { ...SPIRAL_CUT.spiral, joinStrands: true, maxPathPoints: 100000 },
+    }).stats;
+    expect(joined.spiralPoints).toBeGreaterThan(0);
+    expect(joined.spiralExportObjects).toBe(1);
+  });
+
   it("source simplification (simplifyEpsMm) reduces the spiral node count", () => {
     const p = parsed();
     const spiralPts = (cfg: typeof SPIRAL_CUT) =>

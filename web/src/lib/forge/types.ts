@@ -144,6 +144,11 @@ export interface SpiralConfig {
    *  exporter caps ~1570; raise this to keep the cut as one continuous path if
    *  Studio imports it (verify per machine). */
   maxPathPoints: number;
+  /** Merge all spiral strands into ONE cut object (the laser lifts between
+   *  disconnected pieces, focus descends across them together) when they fit in
+   *  `maxPathPoints`. Mutually exclusive with `cutShortestFirst` (one object can't
+   *  be length-ordered). */
+  joinStrands: boolean;
 }
 
 export interface ForgeConfig {

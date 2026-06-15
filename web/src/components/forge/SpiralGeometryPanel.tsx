@@ -1,9 +1,9 @@
 // web/src/components/forge/SpiralGeometryPanel.tsx
-// Live path-geometry readout for the Spiral Cut page: how the current outline +
-// Simplify / Max-points settings turn into exported cut objects, BEFORE export.
-// Replaces the raw debug dump — the only residual debug (mm/unit) lives here too.
-import { Card, CardHeader, CardTitle } from "../../ui";
-import type { DebugStats, SpiralConfig } from "../../lib/forge/types";
+// Path-geometry panel (left rail): the controls that shape how the outline turns
+// into cut objects (Simplify, per-path cap, Join strands) PLUS a live readout of
+// the result BEFORE export — cut objects, paths, points, mm/unit.
+import { Card, CardHeader, CardTitle, Field, NumberField, Select } from "../../ui";
+import type { DebugStats, ForgeConfig, SpiralConfig } from "../../lib/forge/types";
 
 function Row({ label, value, tone }: { label: string; value: string | number; tone?: "ok" | "warn" }) {
   return (
@@ -25,31 +25,56 @@ function Row({ label, value, tone }: { label: string; value: string | number; to
   );
 }
 
-export function SpiralGeometryPanel({ stats, spiral }: { stats: DebugStats | null; spiral: SpiralConfig }) {
-  if (!stats) return null;
-  const objs = stats.spiralExportObjects;
-  const strands = stats.pathCounts.spiral;
-  // Distinguish WHY there's more than one object: the cap chunked a path
-  // ("cap-split", Max-points fixes it) vs the geometry has several disconnected
-  // strands ("multi-path", raising Max-points won't help).
+export function SpiralGeometryPanel({
+  config,
+  onChange,
+  stats,
+}: {
+  config: ForgeConfig;
+  onChange: (next: ForgeConfig) => void;
+  stats: DebugStats | null;
+}) {
+  const sp = config.spiral;
+  const patchSpiral = (p: Partial<SpiralConfig>) =>
+    onChange({ ...config, spiral: { ...config.spiral, ...p }, activePreset: "custom" });
+
+  const objs = stats?.spiralExportObjects ?? 0;
+  const strands = stats?.pathCounts.spiral ?? 0;
   const status = objs <= 1 ? "continuous" : objs > strands ? "cap-split" : "multi-path";
+  const joinOverflow = sp.joinStrands && objs > 1; // wanted to join but didn't fit the cap
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Path geometry</CardTitle>
       </CardHeader>
-      <div className="flex flex-col gap-1.5 p-2">
-        <Row label="Cut objects" value={`${objs} · ${status}`} tone={objs <= 1 ? "ok" : "warn"} />
-        <Row label="Spiral paths" value={strands} />
-        <Row label="Points" value={stats.spiralPoints.toLocaleString()} />
-        <div className="my-0.5 border-t border-[var(--color-border)]" />
-        <Row label="Simplify" value={`${spiral.simplifyEpsMm} mm`} />
-        <Row label="Max / path" value={spiral.maxPathPoints.toLocaleString()} />
-        <Row
-          label="mm / unit"
-          value={`${stats.mmPerUnit.toFixed(4)}${stats.mmPerUnitConfident ? " ✓" : " ⚠"}`}
-        />
+      <div className="grid grid-cols-2 gap-2 p-2">
+        <Field label="Simplify (mm)" hint="Round the outline first; 0 = off.">
+          <NumberField value={sp.simplifyEpsMm} step={0.01} min={0} onChange={(v) => patchSpiral({ simplifyEpsMm: Math.max(0, v) })} />
+        </Field>
+        <Field label="Max points / path" hint="Split above this; raise for one cut.">
+          <NumberField value={sp.maxPathPoints} step={500} min={100} onChange={(v) => patchSpiral({ maxPathPoints: Math.max(100, Math.round(v)) })} />
+        </Field>
+        <Field label="Join strands" hint="Merge strands into one cut.">
+          <Select value={sp.joinStrands ? "on" : "off"} onChange={(e) => patchSpiral({ joinStrands: e.target.value === "on" })}>
+            <option value="on">on</option>
+            <option value="off">off</option>
+          </Select>
+        </Field>
       </div>
+      {stats && (
+        <div className="flex flex-col gap-1.5 border-t border-[var(--color-border)] p-2">
+          <Row label="Cut objects" value={`${objs} · ${status}`} tone={objs <= 1 ? "ok" : "warn"} />
+          <Row label="Spiral paths" value={strands} />
+          <Row label="Points" value={stats.spiralPoints.toLocaleString()} />
+          <Row label="mm / unit" value={`${stats.mmPerUnit.toFixed(4)}${stats.mmPerUnitConfident ? " ✓" : " ⚠"}`} />
+          {joinOverflow && (
+            <span className="font-mono text-[10px] text-[color:var(--color-destructive)]">
+              {stats.spiralPoints.toLocaleString()} pts &gt; cap — raise Max points to merge into one cut.
+            </span>
+          )}
+        </div>
+      )}
     </Card>
   );
 }

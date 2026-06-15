@@ -323,6 +323,22 @@ export function chunkCount(n: number, max: number): number {
   return Math.ceil((n - 1) / (cap - 1));
 }
 
+/** Whether all spiral strands (their point counts) fit in one joined cut object
+ *  at cap `max` — i.e. the total is within the per-path cap so joining is possible. */
+export function spiralStrandsJoinable(pointCounts: number[], max: number): boolean {
+  const cap = max > 0 ? max : MAX_PATH_POINTS;
+  const total = pointCounts.reduce((a, b) => a + b, 0);
+  return total > 0 && total <= cap;
+}
+
+/** Predicted number of exported spiral cut objects for the readout, matching
+ *  buildGeneratedXcs: one object when joining and the strands fit the cap;
+ *  otherwise the sum of per-strand chunks. */
+export function spiralExportObjectCount(pointCounts: number[], max: number, joinStrands: boolean): number {
+  if (joinStrands && spiralStrandsJoinable(pointCounts, max)) return 1;
+  return pointCounts.reduce((s, n) => s + chunkCount(n, max), 0);
+}
+
 /** Bounding box (in path units) of all rings, after the mm→units conversion. */
 function ringsBoundsUnits(
   rings: { x: number; y: number }[][],
@@ -390,6 +406,7 @@ export function buildGeneratedXcs(
   scanAngleDeg?: number,
   userOrder = false,
   maxPathPoints: number = MAX_PATH_POINTS,
+  joinStrands = false,
 ): unknown {
   const raw = JSON.parse(JSON.stringify(parsed.raw)) as {
     canvas: Array<{ displays: RawDisplay[]; layerData?: Record<string, LayerDataEntry> }>;
@@ -454,14 +471,27 @@ export function buildGeneratedXcs(
   // contiguous chunks. Chunk 0 keeps the plain `forge-N` id so output for
   // arms that fit is byte-identical; overflow chunks get `forge-N-k`.
   const cap = maxPathPoints > 0 ? maxPathPoints : MAX_PATH_POINTS;
+  const spiralGen = gen.filter((p) => p.generatedClass === "spiral");
+  const joinable =
+    joinStrands && spiralStrandsJoinable(spiralGen.map((p) => p.rings[0]?.length ?? 0), cap);
   const genExpanded: Array<{ path: GeneratedPath; chunkIndex: number }> = [];
-  for (const path of gen) {
-    if (path.generatedClass === "spiral" && (path.rings[0]?.length ?? 0) > cap) {
-      chunkPolyline(path.rings[0], cap).forEach((chunk, i) =>
-        genExpanded.push({ path: { ...path, rings: [chunk] }, chunkIndex: i }),
-      );
-    } else {
-      genExpanded.push({ path, chunkIndex: 0 });
+  if (joinable) {
+    // Merge every spiral strand into ONE display: a multi-subpath polyline (the
+    // laser lifts between disconnected strands). One cut object → continuous
+    // focus descent across all pieces. rings = all strand polylines.
+    genExpanded.push({
+      path: { ...spiralGen[0], rings: spiralGen.map((p) => p.rings[0] ?? []) },
+      chunkIndex: 0,
+    });
+  } else {
+    for (const path of gen) {
+      if (path.generatedClass === "spiral" && (path.rings[0]?.length ?? 0) > cap) {
+        chunkPolyline(path.rings[0], cap).forEach((chunk, i) =>
+          genExpanded.push({ path: { ...path, rings: [chunk] }, chunkIndex: i }),
+        );
+      } else {
+        genExpanded.push({ path, chunkIndex: 0 });
+      }
     }
   }
 
@@ -476,8 +506,10 @@ export function buildGeneratedXcs(
     let baseEntry: Record<string, unknown>;
 
     if (isSpiral) {
-      // A2: Spiral path — open polyline, no fill, no fillRule.
-      dPath = contourToDPath(path.rings[0] ?? [], false, mmPerUnit);
+      // A2: Spiral path — open polyline, no fill, no fillRule. One ring normally;
+      // a joined strand-set emits each ring as its own subpath (M…), so the laser
+      // lifts between disconnected strands within the single cut object.
+      dPath = path.rings.map((r) => contourToDPath(r ?? [], false, mmPerUnit)).join(" ");
       const b = ringsBoundsUnits(path.rings, mmPerUnit);
       display = {
         ...(sourceTemplateDisplay ?? ({} as RawDisplay)),

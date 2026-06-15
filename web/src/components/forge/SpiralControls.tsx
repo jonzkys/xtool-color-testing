@@ -104,30 +104,22 @@ export function SpiralControls({ config, onChange }: SpiralControlsProps) {
               </Field>
             </>
           )}
-          <Field label="Cut shortest first" hint="Small paths first — vent + relieve the long passes (sets user-defined path order on export)">
+          <Field
+            label="Cut shortest first"
+            hint={
+              config.spiral.joinStrands
+                ? "Disabled while Join strands is on (one object can't be re-ordered)."
+                : "Small paths first — vent + relieve the long passes (sets user-defined path order on export)"
+            }
+          >
             <Select
-              value={config.spiral.cutShortestFirst ? "on" : "off"}
+              value={config.spiral.joinStrands ? "off" : config.spiral.cutShortestFirst ? "on" : "off"}
+              disabled={config.spiral.joinStrands}
               onChange={(e) => patchSpiral({ cutShortestFirst: e.target.value === "on" })}
             >
               <option value="on">on</option>
               <option value="off">off</option>
             </Select>
-          </Field>
-          <Field label="Simplify (mm)" hint="Round the source outline before spiraling — fewer nodes per arm, fewer export chunks. 0 = off.">
-            <NumberField
-              value={config.spiral.simplifyEpsMm}
-              step={0.01}
-              min={0}
-              onChange={(v) => patchSpiral({ simplifyEpsMm: Math.max(0, v) })}
-            />
-          </Field>
-          <Field label="Max points / path" hint="Split the spiral above this many points into separate cut objects. Raise to keep it one continuous cut (verify Studio imports it).">
-            <NumberField
-              value={config.spiral.maxPathPoints}
-              step={500}
-              min={100}
-              onChange={(v) => patchSpiral({ maxPathPoints: Math.max(100, Math.round(v)) })}
-            />
           </Field>
         </div>
       </Card>
