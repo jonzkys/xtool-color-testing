@@ -175,7 +175,7 @@ describe("detail keep-out — main spiral does not re-cut a split-off island", (
   const channelW = 0.45, pitch = 0.04;
   const opts = { channelWidthMm: channelW, pitchMm: pitch, side: "outside" as const, minChannelMm: 0.4 };
 
-  it("the island splits off and the main keeps clear of it (with keep-out)", () => {
+  it("the island splits off and the main's venting channel keeps clear of it (with keep-out)", () => {
     const lobes = splitLobesAtNecks(islandPart(), 0.45, channelW);
     const main = lobes.find((l) => l.kind === "main")!;
     const details = lobes.filter((l) => l.kind === "detail");
@@ -183,16 +183,23 @@ describe("detail keep-out — main spiral does not re-cut a split-off island", (
     const detailRegion = details.flatMap((d) => d.region);
     const keepOut = offsetRegion(unionRegions(details.map((d) => d.region)), channelW);
 
+    // The boundary CONTOUR (level 0) is ALWAYS traced in full, so it legitimately
+    // runs along the shared neck edge — a couple of points land exactly on the
+    // detail boundary, and that shared cut is what severs the neck. The invariant
+    // that matters is that the VENTING CHANNEL (the outer offsets) never blooms
+    // INTO the detail. Test against the detail INTERIOR (shrunk 1 pitch) so
+    // boundary-touching is allowed but true penetration is not.
+    const detailCore = offsetRegion(detailRegion, -pitch);
     const armsClipped = spiralFromRegion(main.region, opts, keepOut).arms;
     let pts = 0, inside = 0;
-    for (const a of armsClipped) for (const p of a) { pts++; if (insideRegion(detailRegion, p)) inside++; }
+    for (const a of armsClipped) for (const p of a) { pts++; if (insideRegion(detailCore, p)) inside++; }
     expect(pts).toBeGreaterThan(0);
-    expect(inside).toBe(0); // the fix: the main never enters the detail's region
+    expect(inside).toBe(0); // the fix: the venting channel never enters the detail interior
 
-    // Sanity: WITHOUT the keep-out the old behaviour double-draws into the island.
+    // Sanity: WITHOUT the keep-out the old behaviour double-draws DEEP into the island.
     const armsRaw = spiralFromRegion(main.region, opts).arms;
     let insideRaw = 0;
-    for (const a of armsRaw) for (const p of a) if (insideRegion(detailRegion, p)) insideRaw++;
+    for (const a of armsRaw) for (const p of a) if (insideRegion(detailCore, p)) insideRaw++;
     expect(insideRaw).toBeGreaterThan(0);
   });
 
@@ -411,9 +418,10 @@ describe("classifyLevel0", () => {
   const hole: Pt[] = [{ x: 15, y: 15 }, { x: 25, y: 15 }, { x: 25, y: 25 }, { x: 15, y: 25 }];
   const island: Pt[] = [{ x: 60, y: 0 }, { x: 66, y: 0 }, { x: 66, y: 6 }, { x: 60, y: 6 }];
 
-  it("largest body's outer is external; its hole and other islands are internal", () => {
+  it("every body's outer is external; only holes/counters are internal", () => {
     const cls = classifyLevel0([bigOuter, hole, island]);
-    expect(cls).toEqual(["external", "internal", "internal"]);
+    // bigOuter + island are both solid bodies → external; hole is a counter → internal.
+    expect(cls).toEqual(["external", "internal", "external"]);
   });
 
   it("a single solid loop is external", () => {

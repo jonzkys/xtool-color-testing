@@ -6,38 +6,24 @@ import { offsetRegion, splitLobesAtNecks, unionRegions, subtractRegion, regionCo
 import { STAGE_GROUPS } from "./config";
 import type { ForgeConfig, GeneratedPath, Pt } from "./types";
 
-/** An arm is External when it grows from the single largest body's outer
- *  silhouette; Internal for that body's holes/counters, every other
- *  disconnected component, and neck-split pieces. */
+/** An arm is External when it grows from a connected body's outer silhouette
+ *  (the main shape OR a separate island like a free-standing letter); Internal
+ *  for those bodies' holes/counters and neck-split detail pieces. */
 export type ArmClass = "external" | "internal";
 
-/** Absolute shoelace area of one closed ring (orientation-agnostic). */
-function ringArea(loop: Pt[]): number {
-  let a = 0;
-  for (let i = 0, n = loop.length; i < n; i++) {
-    const j = (i + 1) % n;
-    a += loop[i].x * loop[j].y - loop[j].x * loop[i].y;
-  }
-  return Math.abs(a) / 2;
-}
-
 /**
- * Classify each loop in a flat ring set (one offset level): the largest
- * connected component's OUTER loop is "external"; every other loop — that
- * body's holes and all loops of every smaller component — is "internal".
- * Identity-based: regionComponents returns the same loop refs, so the largest
- * component's outer is matched by reference.
+ * Classify each loop in a flat ring set (one offset level): the OUTER loop of
+ * EVERY connected component is "external" (each is a solid body — the silhouette,
+ * each letter, a flower, etc.); only the holes/counters inside those bodies are
+ * "internal". (Neck-split detail lobes are forced internal separately by the
+ * caller.) Identity-based: regionComponents returns the same loop refs, matched
+ * by reference.
  */
 export function classifyLevel0(loops: Pt[][]): ArmClass[] {
   if (loops.length === 0) return [];
   const comps = regionComponents(loops); // [outer, ...holes][]
-  let bestOuter: Pt[] | null = null;
-  let bestArea = -Infinity;
-  for (const comp of comps) {
-    const a = ringArea(comp[0]);
-    if (a > bestArea) { bestArea = a; bestOuter = comp[0]; }
-  }
-  return loops.map((loop) => (loop === bestOuter ? "external" : "internal"));
+  const outers = new Set<Pt[]>(comps.map((comp) => comp[0]));
+  return loops.map((loop) => (outers.has(loop) ? "external" : "internal"));
 }
 
 export interface SpiralOptions {
@@ -83,12 +69,15 @@ function rotateOpen(loop: Pt[], start: number): Pt[] {
  * the venting channel where the scrap is wide enough to hold one.
  */
 function offsetLevels(part: Pt[][], opts: SpiralOptions, sign: 1 | -1, exclude?: Pt[][]): Pt[][][] {
-  // `exclude` is a keep-out region (the detail lobes' venting zone): every level
-  // is clipped against it so this lobe's spiral never re-cuts ground a sibling
-  // lobe already owns. Without it the +offsets would bloom into carved detail
-  // holes and double-draw on top of the detail spiral.
+  // `exclude` is a keep-out region (the detail lobes' venting zone): the OUTER
+  // offset levels (k≥1) are clipped against it so this lobe's venting channel never
+  // re-cuts ground a sibling lobe already owns. Without it the +offsets would bloom
+  // into carved detail holes and double-draw on top of the detail spiral.
   const clip = (rings: Pt[][]) => (exclude && exclude.length ? subtractRegion(rings, exclude) : rings);
-  const levels: Pt[][][] = [clip(part)];
+  // Level 0 is the part CONTOUR — traced in FULL, NEVER keep-out-clipped, so the
+  // boundary always severs. Clipping it would gouge the silhouette wherever a
+  // sibling lobe's keep-out overlaps the edge (the "split breaks the outline" bug).
+  const levels: Pt[][][] = [part];
   const n = Math.max(1, Math.ceil(opts.channelWidthMm / opts.pitchMm));
   for (let k = 1; k <= n; k++) {
     // Break on the RAW offset collapsing (geometry exhausted), not the clipped
@@ -387,8 +376,8 @@ export function spiralFromRegion(part: Pt[][], opts: SpiralOptions, exclude?: Pt
       "spiral: scrap too thin for a venting channel — cutting the contour only here (may not fully sever thick brass; consider incise for this region)",
     );
   }
-  // Per-arm class from the seed loop: the largest body's outer is external, its
-  // holes and every other component are internal.
+  // Per-arm class from the seed loop: every body's outer is external; only the
+  // holes/counters inside those bodies are internal.
   const seedClass = classifyLevel0(levels[0] ?? []);
   const strands = buildStrands(levels, opts.pitchMm, seedClass);
   return { arms: strands.map((s) => s.arm), armClass: strands.map((s) => s.cls), warnings };
