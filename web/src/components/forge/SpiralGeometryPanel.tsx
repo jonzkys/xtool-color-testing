@@ -28,18 +28,19 @@ function Row({ label, value, tone }: { label: string; value: string | number; to
 export function SpiralGeometryPanel({ stats, spiral }: { stats: DebugStats | null; spiral: SpiralConfig }) {
   if (!stats) return null;
   const objs = stats.spiralExportObjects;
+  const strands = stats.pathCounts.spiral;
+  // Distinguish WHY there's more than one object: the cap chunked a path
+  // ("cap-split", Max-points fixes it) vs the geometry has several disconnected
+  // strands ("multi-path", raising Max-points won't help).
+  const status = objs <= 1 ? "continuous" : objs > strands ? "cap-split" : "multi-path";
   return (
     <Card>
       <CardHeader>
         <CardTitle>Path geometry</CardTitle>
       </CardHeader>
       <div className="flex flex-col gap-1.5 p-2">
-        <Row
-          label="Cut objects"
-          value={objs <= 1 ? "1 · continuous" : `${objs} · split`}
-          tone={objs <= 1 ? "ok" : "warn"}
-        />
-        <Row label="Spiral paths" value={stats.pathCounts.spiral} />
+        <Row label="Cut objects" value={`${objs} · ${status}`} tone={objs <= 1 ? "ok" : "warn"} />
+        <Row label="Spiral paths" value={strands} />
         <Row label="Points" value={stats.spiralPoints.toLocaleString()} />
         <div className="my-0.5 border-t border-[var(--color-border)]" />
         <Row label="Simplify" value={`${spiral.simplifyEpsMm} mm`} />
