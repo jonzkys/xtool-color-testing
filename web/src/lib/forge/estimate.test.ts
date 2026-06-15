@@ -103,6 +103,17 @@ describe("baseline is thickness-aware (baselineIncise)", () => {
     expect(eSlow.overheadPct).toBeLessThan(eFast.overheadPct);
   });
 
+  it("baseline IGNORES the source object's density (uses the incise reference, not e.g. an SVG import's 5000 lpc)", () => {
+    const spiralPaths = generateSpiralPaths(sq, SPIRAL_CUT, "o");
+    const cfg = structuredClone(SPIRAL_CUT);
+    cfg.spiral.baselineIncise = { speed: 1500, layers: 100 };
+    const eHigh = estimateForge(spiralPaths, sq, cfg, { density: 5000 });
+    const eLow = estimateForge(spiralPaths, sq, cfg, { density: 300 });
+    // A meaningless source density (VECTOR_CUTTING placeholder) must NOT inflate
+    // the raster baseline — it models the Studio incise at the fixed reference lpc.
+    expect(eHigh.baselineSeconds).toBeCloseTo(eLow.baselineSeconds, 3);
+  });
+
   it("baselineSeconds scales LINEARLY with layers (no spurious ×sliceNumber blow-up)", () => {
     const spiralPaths = generateSpiralPaths(sq, SPIRAL_CUT, "o");
     const c100 = structuredClone(SPIRAL_CUT);
