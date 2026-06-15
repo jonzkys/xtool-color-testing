@@ -350,9 +350,22 @@ export function splitLobesAtNecks(part: Pt[][], neckWidthMm: number, overlapMm: 
   if (detailCores.length === 0) return whole;
 
   // Each detail = its small core dilated back + overlap, clipped to the part
-  // (feature + its neck + a margin into the body).
+  // (feature + its neck + a margin into the body). The dilation (r + ov) can reach
+  // ACROSS a thin gap and pull disconnected fragments of NEIGHBOURING strokes into
+  // one sprawling, multi-component "detail" that spirals as a tangle (cursive tails
+  // are the worst case). So keep only the connected component(s) that actually
+  // overlap this core — the genuine feature — and let the grabbed fragments stay in
+  // the main region (cut by the main spiral). `core ⊆ part` and `core ⊆ dilate(core)`,
+  // so the core always lands wholly inside exactly one component.
   const details = detailCores
-    .map((c) => clipExecute(ClipperLib.ClipType.ctIntersection, offsetRegion(c.core, r + ov), part))
+    .map((c) => {
+      const reg = clipExecute(ClipperLib.ClipType.ctIntersection, offsetRegion(c.core, r + ov), part);
+      if (reg.length === 0) return reg;
+      const kept = regionComponents(reg).filter(
+        (comp) => clipExecute(ClipperLib.ClipType.ctIntersection, comp, c.core).length > 0,
+      );
+      return kept.flat();
+    })
     .filter((reg) => reg.length > 0);
   if (details.length === 0) return whole;
   // The main keeps everything except the detail regions: part minus their union,

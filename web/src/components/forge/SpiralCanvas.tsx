@@ -139,8 +139,10 @@ function buildSchematic(
     const lb = lobeBand(r);
     const dir = inward ? -1 : sign; // holes fan inward regardless of global side
     const want = Math.max(drawArms, MIN_INTERNAL_RINGS);
-    const c0 = clip(r).map(simp).filter((p) => p.length >= 3);
-    const inner: Pt[][][] = [c0.length > 0 ? c0 : r];
+    // Level 0 is the lobe CONTOUR — drawn in FULL, never keep-out-clipped, so the
+    // silhouette outline stays unbroken (mirrors the generator). Only the outer fan
+    // rings (k≥1) are clipped against a sibling's keep-out zone.
+    const inner: Pt[][][] = [r];
     for (let k = 1; k < want; k++) {
       const dist = dir * (k / Math.max(1, want - 1)) * lb;
       const raw = offsetRegion(r, dist);
@@ -157,31 +159,20 @@ function buildSchematic(
     ? splitLobesAtNecks(part, (neckThresholdPct / 100) * channelWidthMm, neckOverlapMm ?? channelWidthMm)
     : [{ region: part, kind: "main" as const }];
 
-  // Decompose into drawable pieces with an explicit class. The MAIN lobe splits
-  // into the largest body's outer (external) + each hole / other component
-  // (internal). Neck-split DETAIL lobes are wholly internal.
+  // Decompose into drawable pieces with an explicit class. Each connected body's
+  // outer loop is external (main); its holes/counters are internal (they vent
+  // inward). Separate islands (e.g. a name's free-standing letters) are each their
+  // own body, so every one is external. Neck-split DETAIL lobes are wholly internal.
   type Piece = { region: Pt[][]; cls: "external" | "internal"; inward: boolean };
-  const ringAbsArea = (loop: Pt[]): number => {
-    let a = 0;
-    for (let i = 0, n = loop.length; i < n; i++) { const j = (i + 1) % n; a += loop[i].x * loop[j].y - loop[j].x * loop[i].y; }
-    return Math.abs(a) / 2;
-  };
   const pieces: Piece[] = [];
   for (const lobe of lobes) {
     if (lobe.kind === "detail") { pieces.push({ region: lobe.region, cls: "internal", inward: false }); continue; }
     const comps = regionComponents(lobe.region); // [outer, ...holes][]
     if (comps.length === 0) { pieces.push({ region: lobe.region, cls: "external", inward: false }); continue; }
-    let bi = 0;
-    for (let i = 1; i < comps.length; i++) if (ringAbsArea(comps[i][0]) > ringAbsArea(comps[bi][0])) bi = i;
-    comps.forEach((comp, i) => {
-      if (i === bi) {
-        pieces.push({ region: [comp[0]], cls: "external", inward: false }); // largest body's outer solid (holes filled)
-        for (let h = 1; h < comp.length; h++) pieces.push({ region: [comp[h]], cls: "internal", inward: true }); // its holes vent inward
-      } else {
-        pieces.push({ region: [comp[0]], cls: "internal", inward: false }); // separate island
-        for (let h = 1; h < comp.length; h++) pieces.push({ region: [comp[h]], cls: "internal", inward: true });
-      }
-    });
+    for (const comp of comps) {
+      pieces.push({ region: [comp[0]], cls: "external", inward: false }); // body outer solid (holes filled)
+      for (let h = 1; h < comp.length; h++) pieces.push({ region: [comp[h]], cls: "internal", inward: true }); // holes vent inward
+    }
   }
 
   // Internal pieces' keep-out: external pieces pull back past each internal
