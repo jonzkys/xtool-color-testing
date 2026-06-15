@@ -12,7 +12,7 @@ import type {
 import { extractContourSubpaths, calibrateMmPerUnit } from "./xcs";
 import { optimalScanAngle, perpendicularExtentAt } from "./scanangle";
 import { inferWindingAndOutside } from "./contour";
-import { buildPartRegion, buildFillRegion } from "./offset";
+import { buildPartRegion, buildFillRegion, simplifyLoop } from "./offset";
 import { estimateForge } from "./estimate";
 import { fmtDuration } from "../cuttime/model";
 import {
@@ -73,7 +73,13 @@ export function runPipeline(
   if (rawSubpaths.length === 0) {
     throw new Error(`incise object ${inciseId} is not a usable vector/path contour`);
   }
-  const subpaths = rawSubpaths.map((c) => toMm(c, mmPerUnit));
+  let subpaths = rawSubpaths.map((c) => toMm(c, mmPerUnit));
+  // Simplify the SOURCE outline before spiraling (Studio-style). A lighter outline
+  // makes every concentric arm lighter, so the export needs far fewer chunks.
+  // Spiral-only: incise stages keep the full-resolution source.
+  if (cfg.spiral.enabled && cfg.spiral.simplifyEpsMm > 0) {
+    subpaths = subpaths.map((c) => ({ ...c, points: simplifyLoop(c.points, cfg.spiral.simplifyEpsMm) }));
+  }
 
   // Speed-optimal raster scan angle from the mm-space geometry. Computed
   // always (shown in the debug panel); applied to export only behind the toggle.

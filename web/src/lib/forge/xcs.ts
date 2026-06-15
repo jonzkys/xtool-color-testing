@@ -380,6 +380,7 @@ export function buildGeneratedXcs(
   stageParams: Record<string, import("./types").StageParams> = {},
   scanAngleDeg?: number,
   userOrder = false,
+  maxPathPoints: number = MAX_PATH_POINTS,
 ): unknown {
   const raw = JSON.parse(JSON.stringify(parsed.raw)) as {
     canvas: Array<{ displays: RawDisplay[]; layerData?: Record<string, LayerDataEntry> }>;
@@ -443,10 +444,11 @@ export function buildGeneratedXcs(
   // Split any spiral arm that would exceed the Studio per-path cap into
   // contiguous chunks. Chunk 0 keeps the plain `forge-N` id so output for
   // arms that fit is byte-identical; overflow chunks get `forge-N-k`.
+  const cap = maxPathPoints > 0 ? maxPathPoints : MAX_PATH_POINTS;
   const genExpanded: Array<{ path: GeneratedPath; chunkIndex: number }> = [];
   for (const path of gen) {
-    if (path.generatedClass === "spiral" && (path.rings[0]?.length ?? 0) > MAX_PATH_POINTS) {
-      chunkPolyline(path.rings[0], MAX_PATH_POINTS).forEach((chunk, i) =>
+    if (path.generatedClass === "spiral" && (path.rings[0]?.length ?? 0) > cap) {
+      chunkPolyline(path.rings[0], cap).forEach((chunk, i) =>
         genExpanded.push({ path: { ...path, rings: [chunk] }, chunkIndex: i }),
       );
     } else {

@@ -823,4 +823,24 @@ describe("spiral path-length cap (Studio drops paths over ~1570 coord pairs)", (
       expect(firstPt(gen[i].dPath ?? "")).toBe(lastPt(gen[i - 1].dPath ?? ""));
     }
   });
+
+  it("honours a raised maxPathPoints cap — one continuous display, no chunks", () => {
+    const parsed = buildSquareParsed();
+    const incise = parsed.targets[0];
+    // 3500-pt arm with a 5000 cap → stays a single display.
+    const out = buildGeneratedXcs(parsed, incise.id, [armPath(longArm(3500))], 1, resolveStageParams(SPIRAL_CUT), undefined, false, 5000) as { canvas: ChunkCanvas };
+    const gen = out.canvas[0].displays.filter((d) => d.id.startsWith("forge-"));
+    expect(gen.length).toBe(1);
+    expect(gen[0].id).toBe("forge-0");
+    expect(ptCount(gen[0].dPath ?? "")).toBe(3500);
+  });
+
+  it("honours a lowered maxPathPoints cap — more chunks", () => {
+    const parsed = buildSquareParsed();
+    const incise = parsed.targets[0];
+    const out = buildGeneratedXcs(parsed, incise.id, [armPath(longArm(3500))], 1, resolveStageParams(SPIRAL_CUT), undefined, false, 1000) as { canvas: ChunkCanvas };
+    const gen = out.canvas[0].displays.filter((d) => d.id.startsWith("forge-"));
+    expect(gen.length).toBeGreaterThanOrEqual(4); // 3500 / 1000
+    for (const d of gen) expect(ptCount(d.dPath ?? "")).toBeLessThanOrEqual(1000);
+  });
 });

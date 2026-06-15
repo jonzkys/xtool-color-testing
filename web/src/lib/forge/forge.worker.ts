@@ -85,6 +85,7 @@ self.onmessage = (e: MessageEvent<ForgeRequest>) => {
         resolveStageParams(msg.config),
         effectiveScanAngle(msg.config, stats.scanAngleDeg),
         userOrder,
+        msg.config.spiral.maxPathPoints,
       );
       // Output format is the user's choice, independent of the input format.
       // `.xs` repacks the modified legacy raw into a v2 bundle — reusing the

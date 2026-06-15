@@ -134,6 +134,16 @@ export interface SpiralConfig {
    *  baseline runs at a single repeat (passes = 1), so the time scales linearly
    *  with `layers` instead of multiplying on top of the default slice count. */
   baselineIncise: { speed: number; layers: number };
+  /** Douglas-Peucker tolerance (mm) applied to the SOURCE outline before the
+   *  spiral is generated — like Studio's "simplify". Higher = fewer nodes (so
+   *  every concentric arm is lighter and the export needs fewer/no chunks), at
+   *  the cost of rounding fine outline detail. 0 = no simplification. */
+  simplifyEpsMm: number;
+  /** Per-path coordinate cap for the exported spiral. A polyline above this is
+   *  split into contiguous chunks (separate cut objects). xTool Studio's own
+   *  exporter caps ~1570; raise this to keep the cut as one continuous path if
+   *  Studio imports it (verify per machine). */
+  maxPathPoints: number;
 }
 
 export interface ForgeConfig {

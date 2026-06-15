@@ -113,6 +113,22 @@ export function SpiralControls({ config, onChange }: SpiralControlsProps) {
               <option value="off">off</option>
             </Select>
           </Field>
+          <Field label="Simplify (mm)" hint="Round the source outline before spiraling — fewer nodes per arm, fewer export chunks. 0 = off.">
+            <NumberField
+              value={config.spiral.simplifyEpsMm}
+              step={0.01}
+              min={0}
+              onChange={(v) => patchSpiral({ simplifyEpsMm: Math.max(0, v) })}
+            />
+          </Field>
+          <Field label="Max points / path" hint="Split the spiral above this many points into separate cut objects. Raise to keep it one continuous cut (verify Studio imports it).">
+            <NumberField
+              value={config.spiral.maxPathPoints}
+              step={500}
+              min={100}
+              onChange={(v) => patchSpiral({ maxPathPoints: Math.max(100, Math.round(v)) })}
+            />
+          </Field>
         </div>
       </Card>
 
