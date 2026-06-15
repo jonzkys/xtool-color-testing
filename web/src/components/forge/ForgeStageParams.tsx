@@ -364,8 +364,9 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
         )}
 
         {/* Spiral focus descent — the cut's Z mechanism (replaces engrave Z-descent).
-            Only on the Main spiral tab; Detail inherits Main's focus settings. */}
-        {isMainSpiral && (
+            Global to the whole spiral cut (one schedule for Main + Detail arms), so
+            it shows on both tabs and edits the same values. */}
+        {isSpiral && (
           <div className={cn("border border-[var(--color-border)] rounded", frameless ? "mt-2 p-2" : "mt-3 p-2")}>
             <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-ink-subtle)] mb-2">
               Focus descent
@@ -482,21 +483,19 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
         </div>
         )}
 
-        {/* footer + reset */}
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <p className="text-[11px] text-[var(--color-ink-muted)] font-mono">
-            {current.group} · overrides apply on export; cleared fields {isDetailSpiral ? "inherit Main" : "use the source incise value"}.
-          </p>
-          {!linkedDeepen && (
+        {/* reset to defaults */}
+        {!linkedDeepen && (
+          <div className="mt-2 flex justify-end">
             <button
               type="button"
               onClick={resetToSource}
+              title={isDetailSpiral ? "Clear overrides — fields inherit Main" : "Clear overrides — fields use the source incise value"}
               className="shrink-0 px-2 py-1 text-[10px] font-mono uppercase rounded border border-[var(--color-border)] text-[var(--color-ink-muted)] hover:text-[var(--color-fg)] transition-colors"
             >
-              Reset to source
+              Default
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
   );
 
