@@ -28,6 +28,13 @@ function toMm(c: Contour, mmPerUnit: number): Contour {
   return { points: c.points.map((p) => ({ x: p.x * mmPerUnit, y: p.y * mmPerUnit })), closed: c.closed };
 }
 
+/** Width of the combined bounding box of a set of contours (0 if empty). */
+function contoursBBoxWidth(cs: Contour[]): number {
+  let min = Infinity, max = -Infinity;
+  for (const c of cs) for (const p of c.points) { if (p.x < min) min = p.x; if (p.x > max) max = p.x; }
+  return Number.isFinite(min) ? max - min : 0;
+}
+
 /**
  * The region the spiral cut runs on, chosen by how the target's geometry is drawn:
  *  - VECTOR_CUTTING / SVG imports are SINGLE-walled silhouettes (outer outline +
@@ -74,6 +81,17 @@ export function runPipeline(
     throw new Error(`incise object ${inciseId} is not a usable vector/path contour`);
   }
   let subpaths = rawSubpaths.map((c) => toMm(c, mmPerUnit));
+  // Native (un-resized) mm width of the source — drives the per-file Width control.
+  const nativeWidthMm = contoursBBoxWidth(subpaths);
+  // Optional per-file uniform resize to a target width (proportional, height
+  // follows). Scales about the origin; the export display + dPath both scale, and
+  // the absolute channel/pitch stay physical so the spiral re-adapts.
+  if (cfg.sourceWidthMm != null && cfg.sourceWidthMm > 0 && nativeWidthMm > 0) {
+    const s = cfg.sourceWidthMm / nativeWidthMm;
+    if (Math.abs(s - 1) > 1e-6) {
+      subpaths = subpaths.map((c) => ({ ...c, points: c.points.map((p) => ({ x: p.x * s, y: p.y * s })) }));
+    }
+  }
   // Simplify the SOURCE outline before spiraling (Studio-style). A lighter outline
   // makes every concentric arm lighter, so the export needs far fewer chunks.
   // Spiral-only: incise stages keep the full-resolution source.
@@ -129,6 +147,7 @@ export function runPipeline(
         },
         spiralPoints: 0,
         spiralExportObjects: 0,
+        nativeWidthMm,
       },
     };
   }
@@ -217,6 +236,7 @@ export function runPipeline(
     estimate,
     spiralPoints,
     spiralExportObjects,
+    nativeWidthMm,
   };
   return { paths: ordered, stats };
 }

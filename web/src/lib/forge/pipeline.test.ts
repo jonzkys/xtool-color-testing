@@ -165,6 +165,21 @@ describe("pipeline spiral", () => {
     expect(r.stats.pathCounts.deepen).toBe(0);
   });
 
+  it("sourceWidthMm uniformly resizes the geometry; nativeWidthMm stays the un-resized width", () => {
+    const p = parsed();
+    const spiralBBoxW = (r: ReturnType<typeof runPipeline>) => {
+      let mn = Infinity, mx = -Infinity;
+      for (const pa of r.paths) for (const arm of pa.rings) for (const pt of arm) { if (pt.x < mn) mn = pt.x; if (pt.x > mx) mx = pt.x; }
+      return mx - mn;
+    };
+    const native = runPipeline(p, p.targets[0].id, SPIRAL_CUT);
+    const W0 = native.stats.nativeWidthMm;
+    expect(W0).toBeGreaterThan(0);
+    const resized = runPipeline(p, p.targets[0].id, { ...SPIRAL_CUT, sourceWidthMm: W0 * 2 });
+    expect(resized.stats.nativeWidthMm).toBeCloseTo(W0, 1); // native reported, un-resized
+    expect(spiralBBoxW(resized) / spiralBBoxW(native)).toBeCloseTo(2, 1); // geometry doubled
+  });
+
   it("stats.spiralExportObjects reflects the maxPathPoints cap (pre-export split count)", () => {
     const p = parsed();
     const at = (cap: number) =>

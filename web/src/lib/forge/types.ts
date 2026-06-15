@@ -156,6 +156,10 @@ export interface ForgeConfig {
   sideMode: SideMode;
   /** Manual unit override; null = use the display-scale calibration. */
   mmPerUnitOverride: number | null;
+  /** Target physical width (mm) to uniformly resize the loaded source to before
+   *  spiraling; null = native size. Per loaded file (page-level), proportional
+   *  (height follows). Mirrors the SVG import's width control for .xs/.xcs. */
+  sourceWidthMm?: number | null;
   seed: SeedConfig;
   perforate: PerforateConfig;
   deepen: DeepenConfig;
@@ -253,6 +257,9 @@ export interface DebugStats {
   /** Number of separate cut objects the spiral exports as — i.e. how many chunks
    *  the spiral splits into at the current `maxPathPoints`. 1 = one continuous cut. */
   spiralExportObjects: number;
+  /** Native (un-resized) mm width of the source region's bbox — drives the
+   *  per-file Width control (which sets config.sourceWidthMm relative to this). */
+  nativeWidthMm: number;
 }
 
 export interface PipelineResult {
