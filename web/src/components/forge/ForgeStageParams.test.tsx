@@ -57,16 +57,19 @@ describe("ForgeStageParams active tab", () => {
     const firstDeepen = DEFAULT_CONFIG.deepen.groups[0];
     const tabLabel = firstDeepen.name.replace(/^CUT_\d+_DEEPEN_/, "Deepen ");
 
-    await user.click(screen.getByRole("button", { name: tabLabel }));
-    // footer reflects the active stage's group name
-    expect(screen.getByText(new RegExp(`${firstDeepen.name} ·`))).toBeInTheDocument();
+    const active = (name: string | RegExp) =>
+      screen.getByRole("button", { name }).className.includes("--color-primary");
+
+    const deepTab = screen.getByRole("button", { name: tabLabel });
+    await user.click(deepTab);
+    expect(deepTab.className).toContain("--color-primary"); // the deepen tab is active
 
     // rename that group from the "parent"
     await user.click(screen.getByRole("button", { name: "do-rename" }));
 
     // the active tab should now be the renamed group, not a fallback to Seed
-    expect(screen.getByText(/CUT_03_RENAMED ·/)).toBeInTheDocument();
-    expect(screen.queryByText(/CUT_01_SEED ·/)).not.toBeInTheDocument();
+    expect(active("CUT_03_RENAMED")).toBe(true);
+    expect(active("Seed")).toBe(false);
   });
 });
 
@@ -111,7 +114,7 @@ describe("ForgeStageParams Z-descent toggle", () => {
 });
 
 describe("ForgeStageParams reset to source", () => {
-  it("clears stage overrides when 'Reset to source' is clicked", async () => {
+  it("clears stage overrides when 'Default' is clicked", async () => {
     const user = userEvent.setup();
 
     // Seed an override for CUT_01_SEED so there is something to reset.
@@ -125,16 +128,15 @@ describe("ForgeStageParams reset to source", () => {
 
     render(<Harness initialConfig={configWithOverride} sourceParams={{ power: 80 }} />);
 
-    // The Seed tab is active by default. Find the Reset button and click it.
-    const resetBtn = screen.getByRole("button", { name: /Reset to source/i });
+    // The Seed tab is active by default. Find the Default button and click it.
+    const resetBtn = screen.getByRole("button", { name: /Default/i });
     await user.click(resetBtn);
 
-    // After reset the footer is still on Seed (tab didn't change) and the
-    // override no longer drives the display — source value (80) is used.
-    // The most reliable assertion: the reset button is still visible
-    // (we're still on the non-linked Seed tab) and the component didn't crash.
-    expect(screen.getByRole("button", { name: /Reset to source/i })).toBeInTheDocument();
-    expect(screen.getByText(/CUT_01_SEED ·/)).toBeInTheDocument();
+    // After reset the override no longer drives the display — source value (80)
+    // is used. The button is still visible (still on the non-linked Seed tab)
+    // and the component didn't crash.
+    expect(screen.getByRole("button", { name: /Default/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Seed" }).className).toContain("--color-primary");
   });
 });
 
@@ -200,7 +202,7 @@ describe("ForgeStageParams copy-from-first deepen", () => {
     await user.click(copyCheckbox);
     expect(copyCheckbox).not.toBeChecked();
 
-    // After unlocking, the "Reset to source" button should appear (non-linked stage).
-    expect(screen.getByRole("button", { name: /Reset to source/i })).toBeInTheDocument();
+    // After unlocking, the "Default" button should appear (non-linked stage).
+    expect(screen.getByRole("button", { name: /Default/i })).toBeInTheDocument();
   });
 });
