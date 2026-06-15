@@ -6,7 +6,7 @@ const BEZIER_STEPS = 16; // subdivisions per bezier segment
 /** Tokenise an SVG path into [command, ...numbers] groups. */
 function tokenize(d: string): Array<{ cmd: string; nums: number[] }> {
   const out: Array<{ cmd: string; nums: number[] }> = [];
-  const re = /([MmLlHhVvQqCcZz])([^MmLlHhVvQqCcZz]*)/g;
+  const re = /([MmLlHhVvQqCcAaZz])([^MmLlHhVvQqCcAaZz]*)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(d)) !== null) {
     const nums = (m[2].match(/-?\d*\.?\d+(?:e-?\d+)?/gi) || []).map(Number);
@@ -41,10 +41,74 @@ function cubic(p0: Pt, c1: Pt, c2: Pt, p1: Pt, steps: number): Pt[] {
   return pts;
 }
 
+const ARC_STEPS_PER_QUARTER = 16; // chords per 90° of sweep
+
 /**
- * Flatten an SVG-style dPath (M/L/H/V/Q/C/Z, absolute or relative) into a
- * mm-space polyline. Beziers are subdivided into BEZIER_STEPS chords. Only the
- * commands seen in xTool .xcs incise paths are handled (no arcs / S / T).
+ * Flatten one SVG elliptical-arc segment (`A`) from p0 to p1 into chords, per the
+ * SVG implementation notes' endpoint→centre conversion. Returns the points AFTER
+ * p0 (p0 is already in the polyline). xTool/xCS emits circles & rounded shapes as
+ * arcs, so this is required for those imports. A zero/degenerate radius or a
+ * coincident endpoint collapses to a straight line to p1.
+ */
+function arc(
+  p0: Pt, rxIn: number, ryIn: number, xRotDeg: number,
+  largeArc: boolean, sweep: boolean, p1: Pt,
+): Pt[] {
+  if (rxIn === 0 || ryIn === 0 || (p0.x === p1.x && p0.y === p1.y)) return [p1];
+  let rx = Math.abs(rxIn), ry = Math.abs(ryIn);
+  const phi = (xRotDeg * Math.PI) / 180;
+  const cosPhi = Math.cos(phi), sinPhi = Math.sin(phi);
+  const dx = (p0.x - p1.x) / 2, dy = (p0.y - p1.y) / 2;
+  const x1p = cosPhi * dx + sinPhi * dy;
+  const y1p = -sinPhi * dx + cosPhi * dy;
+  let rxs = rx * rx, rys = ry * ry;
+  const x1ps = x1p * x1p, y1ps = y1p * y1p;
+  // Enlarge radii if they're too small to span the chord (SVG step F.6.6).
+  const lambda = x1ps / rxs + y1ps / rys;
+  if (lambda > 1) {
+    const s = Math.sqrt(lambda);
+    rx *= s; ry *= s; rxs = rx * rx; rys = ry * ry;
+  }
+  const num = Math.max(0, rxs * rys - rxs * y1ps - rys * x1ps);
+  const den = rxs * y1ps + rys * x1ps;
+  let co = den === 0 ? 0 : Math.sqrt(num / den);
+  if (largeArc === sweep) co = -co;
+  const cxp = (co * (rx * y1p)) / ry;
+  const cyp = (-co * (ry * x1p)) / rx;
+  const cx = cosPhi * cxp - sinPhi * cyp + (p0.x + p1.x) / 2;
+  const cy = sinPhi * cxp + cosPhi * cyp + (p0.y + p1.y) / 2;
+  const ang = (ux: number, uy: number, vx: number, vy: number): number => {
+    const dot = ux * vx + uy * vy;
+    const len = Math.sqrt((ux * ux + uy * uy) * (vx * vx + vy * vy)) || 1;
+    let a = Math.acos(Math.max(-1, Math.min(1, dot / len)));
+    if (ux * vy - uy * vx < 0) a = -a;
+    return a;
+  };
+  const ux = (x1p - cxp) / rx, uy = (y1p - cyp) / ry;
+  const vx = (-x1p - cxp) / rx, vy = (-y1p - cyp) / ry;
+  const theta1 = ang(1, 0, ux, uy);
+  let dTheta = ang(ux, uy, vx, vy);
+  if (!sweep && dTheta > 0) dTheta -= 2 * Math.PI;
+  else if (sweep && dTheta < 0) dTheta += 2 * Math.PI;
+  const steps = Math.max(2, Math.ceil((Math.abs(dTheta) / (Math.PI / 2)) * ARC_STEPS_PER_QUARTER));
+  const out: Pt[] = [];
+  for (let i = 1; i <= steps; i++) {
+    const t = theta1 + dTheta * (i / steps);
+    const ct = Math.cos(t), st = Math.sin(t);
+    out.push({
+      x: cosPhi * rx * ct - sinPhi * ry * st + cx,
+      y: sinPhi * rx * ct + cosPhi * ry * st + cy,
+    });
+  }
+  return out;
+}
+
+/**
+ * Flatten an SVG-style dPath (M/L/H/V/Q/C/A/Z, absolute or relative) into a
+ * mm-space polyline. Beziers subdivide into BEZIER_STEPS chords; elliptical arcs
+ * (A) into ARC_STEPS_PER_QUARTER chords per 90°. Covers the commands xTool .xcs /
+ * SVG-import paths emit (circles & rounded shapes come through as arcs); S / T are
+ * not used by that writer and are not handled.
  */
 export function flattenDPath(d: string): Contour {
   const tokens = tokenize(d);
@@ -106,6 +170,18 @@ export function flattenDPath(d: string): Contour {
           const c2 = { x: b.x + nums[i + 2], y: b.y + nums[i + 3] };
           const p1 = { x: b.x + nums[i + 4], y: b.y + nums[i + 5] };
           points.push(...cubic(cur, c1, c2, p1, BEZIER_STEPS));
+          cur = p1;
+        }
+        break;
+      }
+      case "A": {
+        // rx ry x-axis-rotation large-arc-flag sweep-flag x y — only the endpoint
+        // is relative for lowercase `a`. (Compact flag-packing like `0110` is not
+        // emitted by the xCS/SVG-import writer, so each segment is 7 numbers.)
+        for (let i = 0; i + 6 < nums.length; i += 7) {
+          const b = base();
+          const p1 = { x: b.x + nums[i + 5], y: b.y + nums[i + 6] };
+          points.push(...arc(cur, nums[i], nums[i + 1], nums[i + 2], nums[i + 3] !== 0, nums[i + 4] !== 0, p1));
           cur = p1;
         }
         break;

@@ -35,6 +35,36 @@ describe("flattenDPath", () => {
     const b = flattenDPath("M0,0L10,0");
     expect(a.points).toEqual(b.points);
   });
+
+  it("flattens an elliptical-arc (A) circle into a round polyline, not a few stray points", () => {
+    // The exact dPath xCS emits for a 20 mm circle: four quarter arcs, centre (10,10).
+    const d =
+      "M 20,10 A 10,10 0 0,1 10,20 A 10,10 0 0,1 0,10 A 10,10 0 0,1 10,0 A 10,10 0 0,1 20,10 Z";
+    const c = flattenDPath(d);
+    expect(c.closed).toBe(true);
+    // Many chords (≈64 for a full circle), not the 4-point garbage the old parser
+    // produced when it mis-read the arc numbers as moveto coordinates.
+    expect(c.points.length).toBeGreaterThan(40);
+    // Every point lies ~on the circle of radius 10 about (10,10).
+    for (const p of c.points) {
+      const r = Math.hypot(p.x - 10, p.y - 10);
+      expect(r).toBeCloseTo(10, 1);
+    }
+    // The bbox spans the full 20 mm diameter (a stray-point triangle would not).
+    const xs = c.points.map((p) => p.x), ys = c.points.map((p) => p.y);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(20, 1);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(20, 1);
+  });
+
+  it("handles a relative arc (a) endpoint", () => {
+    // Semicircle: absolute then the same via a relative endpoint.
+    const abs = flattenDPath("M0,0 A5,5 0 0,1 10,0");
+    const rel = flattenDPath("M0,0 a5,5 0 0,1 10,0");
+    expect(rel.points.length).toBe(abs.points.length);
+    const last = rel.points[rel.points.length - 1];
+    expect(last.x).toBeCloseTo(10, 3);
+    expect(last.y).toBeCloseTo(0, 3);
+  });
 });
 
 describe("detectClosedContour", () => {
