@@ -129,8 +129,10 @@ export interface SpiralConfig {
    *  order instead of auto-optimising it. */
   cutShortestFirst: boolean;
   /** Reference incise rate for the "% of incise" baseline comparison. Per brass
-   *  thickness; overrides the imported source's params when computing the baseline. */
-  baselineIncise: { speed: number; passes: number };
+   *  thickness; overrides the imported source's params when computing the baseline.
+   *  `passes` = Studio "Number of layers"; `density` = "Lines per cm" (omitted →
+   *  the model default of 300). */
+  baselineIncise: { speed: number; passes: number; density?: number };
 }
 
 export interface ForgeConfig {

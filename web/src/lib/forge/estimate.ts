@@ -79,7 +79,7 @@ function baselineSeconds(
   // it overrides the imported source's params, falling back to source per-field.
   const bi = config.spiral.baselineIncise;
   const baselineParams: StageParams | undefined = bi
-    ? ({ speed: bi.speed, passes: bi.passes } as StageParams)
+    ? ({ speed: bi.speed, passes: bi.passes, density: bi.density } as StageParams)
     : undefined;
   const rate = effectiveRate(baselineParams, source);
   return stageSeconds(geomOf(rings), rate, calib);

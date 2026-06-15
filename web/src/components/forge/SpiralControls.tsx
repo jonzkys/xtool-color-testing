@@ -129,6 +129,14 @@ export function SpiralControls({ config, onChange }: SpiralControlsProps) {
               onChange={(v) => patchSpiral({ baselineIncise: { ...config.spiral.baselineIncise, passes: Math.max(1, v) } })}
             />
           </Field>
+          <Field label="Baseline incise — lines/cm">
+            <NumberField
+              value={config.spiral.baselineIncise.density ?? 300}
+              step={10}
+              min={1}
+              onChange={(v) => patchSpiral({ baselineIncise: { ...config.spiral.baselineIncise, density: Math.max(1, v) } })}
+            />
+          </Field>
         </div>
       </Card>
 
