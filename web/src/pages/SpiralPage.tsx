@@ -99,12 +99,22 @@ export function SpiralPage() {
   // svg-stack time, so a re-import is the only way to rescale.
   const [svgImport, setSvgImport] = useState<{ text: string; name: string } | null>(null);
   const [svgWidth, setSvgWidth] = useState(100);
+  // Per-loaded-file target width (mm) for .xs/.xcs; null = native size. Resets on
+  // each new file load. Merged into the config fed to the worker (page-level, so
+  // it's shared across brass thicknesses).
+  const [sourceWidthMm, setSourceWidthMm] = useState<number | null>(null);
 
+  const liveConfig = useMemo(() => ({ ...config, sourceWidthMm }), [config, sourceWidthMm]);
   const { state, result, selectedIncise, setSelectedIncise, handleFile, loadBuffer, exportAs } =
-    useForgeEngine(config);
+    useForgeEngine(liveConfig);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const canvasWrapRef = useRef<HTMLDivElement | null>(null);
+
+  // Reset the per-file target width whenever a different file loads (so the Width
+  // field shows the new file's native size, not the previous override).
+  const loadedFile = state.kind === "ready" ? state.fileName : null;
+  useEffect(() => { setSourceWidthMm(null); }, [loadedFile]);
 
   // Active material for the svg-stack import request (Loom's pattern: first
   // material). Fetched once; SVG import is blocked with a message if none.
@@ -231,19 +241,27 @@ export function SpiralPage() {
     const subpaths = splitSubpaths(obj.dPath);
     if (subpaths.length === 0) return null;
     const mmPerUnit = result?.stats.mmPerUnit ?? 1;
-    const scaled = mmPerUnit === 1
+    let scaled = mmPerUnit === 1
       ? subpaths
       : subpaths.map((c) => ({
           points: c.points.map((p) => ({ x: p.x * mmPerUnit, y: p.y * mmPerUnit })),
           closed: c.closed,
         }));
+    // Mirror the pipeline's per-file resize so the schematic reflects the Width control.
+    const nativeW = result?.stats.nativeWidthMm ?? 0;
+    if (sourceWidthMm != null && sourceWidthMm > 0 && nativeW > 0) {
+      const s = sourceWidthMm / nativeW;
+      if (Math.abs(s - 1) > 1e-6) {
+        scaled = scaled.map((c) => ({ ...c, points: c.points.map((p) => ({ x: p.x * s, y: p.y * s })) }));
+      }
+    }
     // Mirror the pipeline's source simplification so the schematic reflects the
     // Simplify control (the spiral arms follow the simplified outline on export).
     const eps = config.spiral.simplifyEpsMm;
     return config.spiral.enabled && eps > 0
       ? scaled.map((c) => ({ ...c, points: simplifyLoop(c.points, eps) }))
       : scaled;
-  }, [state, selectedIncise, result?.stats.mmPerUnit, config.spiral.enabled, config.spiral.simplifyEpsMm]);
+  }, [state, selectedIncise, result?.stats.mmPerUnit, result?.stats.nativeWidthMm, sourceWidthMm, config.spiral.enabled, config.spiral.simplifyEpsMm]);
 
   // Doubled-wall incise target (INTAGLIO) → the schematic rebuilds the solid
   // object (buildPartRegion), matching the generator; a VECTOR/SVG silhouette
@@ -409,6 +427,22 @@ export function SpiralPage() {
                           min={1}
                           max={500}
                           onChange={(v) => setSvgWidth(Math.min(500, Math.max(1, v)))}
+                        />
+                      </Field>
+                    </div>
+                  </Card>
+                )}
+                {!svgImport && result && (
+                  <Card>
+                    <CardHeader><CardTitle>Source size</CardTitle></CardHeader>
+                    <div className="grid grid-cols-2 gap-2 p-2 text-xs">
+                      <Field label="Width (mm)" help="Resize the imported design to this width — height follows. Clear to use the file's native size.">
+                        <NumberField
+                          value={sourceWidthMm ?? +result.stats.nativeWidthMm.toFixed(1)}
+                          step={1}
+                          min={1}
+                          max={1000}
+                          onChange={(v) => setSourceWidthMm(v > 0 ? v : null)}
                         />
                       </Field>
                     </div>
