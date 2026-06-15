@@ -16,7 +16,7 @@ const COMMON = {
     focusInitialMm: 0.01,
     splitNecks: false, neckThresholdPct: 50, neckOverlapMm: 0.8,
     cutShortestFirst: true,
-    baselineIncise: { speed: 1500, passes: 1 },
+    baselineIncise: { speed: 1500, layers: 100 },
   },
 };
 
@@ -72,7 +72,7 @@ export const SPIRAL_CUT: ForgeConfig = {
     focusInitialMm: 0.01,
     splitNecks: false, neckThresholdPct: 50, neckOverlapMm: 0.8,
     cutShortestFirst: true,
-    baselineIncise: { speed: 1500, passes: 1 },
+    baselineIncise: { speed: 1500, layers: 100 },
   },
   stageParams: {
     CUT_08_SPIRAL: { power: 100, speed: 1500, frequency: 65, pulseWidth: 80, laser: "red" },
@@ -84,13 +84,12 @@ export type PresetId = keyof typeof PRESETS;
 
 /**
  * Per-brass-thickness preset overrides applied over SPIRAL_CUT (keyed by the
- * thickness in mm as a string). Baselines come from the xTool Studio "Incise"
- * reference for that brass — only the time-driving params are stored (`passes` =
- * Number of layers, `speed`, `density` = Lines per cm; density omitted ⇒ the
- * model default of 300). Filled in as cut-test references arrive; thicknesses
- * absent here fall back to the shared SPIRAL_CUT default.
+ * thickness in mm as a string). The baseline is the xTool Studio "Incise"
+ * reference for that brass: `layers` = Number of layers (→ sliceNumber, the depth
+ * axis) and `speed`. Filled in as cut-test references arrive; thicknesses absent
+ * here fall back to the shared SPIRAL_CUT default (100 layers).
  */
 export const THICKNESS_DEFAULTS: Record<string, { baselineIncise?: SpiralConfig["baselineIncise"] }> = {
-  "1.5": { baselineIncise: { speed: 1500, passes: 250 } },
-  "2": { baselineIncise: { speed: 1500, passes: 500 } },
+  "1.5": { baselineIncise: { speed: 1500, layers: 250 } },
+  "2": { baselineIncise: { speed: 1500, layers: 500 } },
 };

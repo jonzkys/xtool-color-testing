@@ -16,19 +16,19 @@ describe("loadMaterialState", () => {
 
   it("bakes per-thickness baseline defaults (1.5mm=250 layers, 2mm=500, others share SPIRAL_CUT)", () => {
     const s = loadMaterialState(store({}));
-    expect(s.configs["1.5"].spiral.baselineIncise).toEqual({ speed: 1500, passes: 250 });
-    expect(s.configs["2"].spiral.baselineIncise).toEqual({ speed: 1500, passes: 500 });
-    // a thickness with no override keeps the shared SPIRAL_CUT default
+    expect(s.configs["1.5"].spiral.baselineIncise).toEqual({ speed: 1500, layers: 250 });
+    expect(s.configs["2"].spiral.baselineIncise).toEqual({ speed: 1500, layers: 500 });
+    // a thickness with no override keeps the shared SPIRAL_CUT default (100 layers)
     expect(s.configs["1"].spiral.baselineIncise).toEqual(SPIRAL_CUT.spiral.baselineIncise);
     expect(s.configs["3"].spiral.baselineIncise).toEqual(SPIRAL_CUT.spiral.baselineIncise);
   });
 
   it("a persisted per-thickness baseline edit overrides the baked default", () => {
-    const state = { activeThicknessMm: 2, configs: { "2": { spiral: { ...SPIRAL_CUT.spiral, baselineIncise: { speed: 800, passes: 600 } } } } };
+    const state = { activeThicknessMm: 2, configs: { "2": { spiral: { ...SPIRAL_CUT.spiral, baselineIncise: { speed: 800, layers: 600 } } } } };
     const s = loadMaterialState(store({ [MATERIAL_LS_KEY]: JSON.stringify(state) }));
-    expect(s.configs["2"].spiral.baselineIncise).toEqual({ speed: 800, passes: 600 });
+    expect(s.configs["2"].spiral.baselineIncise).toEqual({ speed: 800, layers: 600 });
     // an unedited thickness still gets its baked default
-    expect(s.configs["1.5"].spiral.baselineIncise).toEqual({ speed: 1500, passes: 250 });
+    expect(s.configs["1.5"].spiral.baselineIncise).toEqual({ speed: 1500, layers: 250 });
   });
 
   it("migrates from the old single config → every thickness seeded from it", () => {

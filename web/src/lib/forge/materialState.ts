@@ -5,12 +5,12 @@ import type { ForgeConfig, MaterialThicknessMm } from "./types";
 import { MATERIAL_THICKNESSES_MM } from "./types";
 import { SPIRAL_CUT, THICKNESS_DEFAULTS } from "./presets";
 
-export const MATERIAL_LS_KEY = "spiral.material.v2";
+export const MATERIAL_LS_KEY = "spiral.material.v3";
 export const OLD_CONFIG_LS_KEY = "spiral.config.v1";
-/** Pre-v2 material key, discarded on load: its per-thickness configs predate the
- *  baked-in per-thickness baseline defaults, so a persisted placeholder baseline
- *  would otherwise mask the new THICKNESS_DEFAULTS. The caller removes it. */
-export const LEGACY_MATERIAL_LS_KEY = "spiral.material.v1";
+/** Superseded material keys, discarded on load: their persisted `baselineIncise`
+ *  shapes (v1 placeholder; v2 `{speed, passes, density}`) would mask the current
+ *  `{speed, layers}` defaults. The caller removes them. */
+export const LEGACY_MATERIAL_LS_KEYS = ["spiral.material.v1", "spiral.material.v2"];
 
 export interface MaterialState {
   activeThicknessMm: MaterialThicknessMm;

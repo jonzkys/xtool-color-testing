@@ -17,7 +17,7 @@ import { defaultBaseParams } from "../defaults";
 import { listMaterials } from "../api/library";
 import type { SvgStackRequest } from "../types";
 import type { Contour, ForgeConfig, XcsObject } from "../lib/forge/types";
-import { loadMaterialState, serializeMaterialState, MATERIAL_LS_KEY, OLD_CONFIG_LS_KEY, LEGACY_MATERIAL_LS_KEY, type MaterialState } from "../lib/forge/materialState";
+import { loadMaterialState, serializeMaterialState, MATERIAL_LS_KEY, OLD_CONFIG_LS_KEY, LEGACY_MATERIAL_LS_KEYS, type MaterialState } from "../lib/forge/materialState";
 import { MaterialSelector } from "../components/forge/MaterialSelector";
 import type { MaterialThicknessMm } from "../lib/forge/types";
 import { STAGE_GROUPS } from "../lib/forge/config";
@@ -196,13 +196,13 @@ export function SpiralPage() {
   }
 
   // Persist the per-thickness material map; drop the pre-material single-config
-  // key and the pre-v2 material key (its placeholder baselines predate the baked
-  // per-thickness defaults).
+  // key and superseded material keys (their baseline shapes predate the current
+  // {speed, layers} defaults).
   useEffect(() => {
     try {
       localStorage.setItem(MATERIAL_LS_KEY, serializeMaterialState(material));
       localStorage.removeItem(OLD_CONFIG_LS_KEY);
-      localStorage.removeItem(LEGACY_MATERIAL_LS_KEY);
+      for (const k of LEGACY_MATERIAL_LS_KEYS) localStorage.removeItem(k);
     } catch {
       /* ignore quota / private-mode errors */
     }

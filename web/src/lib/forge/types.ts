@@ -128,11 +128,12 @@ export interface SpiralConfig {
    *  Exports the job with user-defined path planning so the machine honours the
    *  order instead of auto-optimising it. */
   cutShortestFirst: boolean;
-  /** Reference incise rate for the "% of incise" baseline comparison. Per brass
-   *  thickness; overrides the imported source's params when computing the baseline.
-   *  `passes` = Studio "Number of layers"; `density` = "Lines per cm" (omitted →
-   *  the model default of 300). */
-  baselineIncise: { speed: number; passes: number; density?: number };
+  /** Internal reference for the "% of incise" baseline comparison (NOT user-
+   *  editable — set per brass thickness in code). `layers` = Studio "Number of
+   *  layers" and maps to the cut-time model's `sliceNumber` (the depth axis); the
+   *  baseline runs at a single repeat (passes = 1), so the time scales linearly
+   *  with `layers` instead of multiplying on top of the default slice count. */
+  baselineIncise: { speed: number; layers: number };
 }
 
 export interface ForgeConfig {
