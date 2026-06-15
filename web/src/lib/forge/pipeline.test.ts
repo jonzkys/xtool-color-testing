@@ -165,6 +165,39 @@ describe("pipeline spiral", () => {
     expect(r.stats.pathCounts.deepen).toBe(0);
   });
 
+  it("stats.spiralExportObjects reflects the maxPathPoints cap (pre-export split count)", () => {
+    const p = parsed();
+    const at = (cap: number) =>
+      runPipeline(p, p.targets[0].id, { ...SPIRAL_CUT, spiral: { ...SPIRAL_CUT.spiral, maxPathPoints: cap } }).stats;
+    const high = at(100000); // no splitting — one object per strand
+    const low = at(200); // tiny cap — many splits
+    expect(high.spiralPoints).toBeGreaterThan(0);
+    expect(high.spiralExportObjects).toBe(high.pathCounts.spiral);
+    expect(low.spiralExportObjects).toBeGreaterThan(high.spiralExportObjects);
+  });
+
+  it("joinStrands → stats.spiralExportObjects collapses to 1 when it fits the cap", () => {
+    const p = parsed();
+    const joined = runPipeline(p, p.targets[0].id, {
+      ...SPIRAL_CUT,
+      spiral: { ...SPIRAL_CUT.spiral, joinStrands: true, maxPathPoints: 100000 },
+    }).stats;
+    expect(joined.spiralPoints).toBeGreaterThan(0);
+    expect(joined.spiralExportObjects).toBe(1);
+  });
+
+  it("source simplification (simplifyEpsMm) reduces the spiral node count", () => {
+    const p = parsed();
+    const spiralPts = (cfg: typeof SPIRAL_CUT) =>
+      runPipeline(p, p.targets[0].id, cfg).paths
+        .filter((x) => x.generatedClass === "spiral")
+        .reduce((s, x) => s + (x.rings[0]?.length ?? 0), 0);
+    const off = spiralPts({ ...SPIRAL_CUT, spiral: { ...SPIRAL_CUT.spiral, simplifyEpsMm: 0 } });
+    const on = spiralPts({ ...SPIRAL_CUT, spiral: { ...SPIRAL_CUT.spiral, simplifyEpsMm: 0.3 } });
+    expect(off).toBeGreaterThan(0);
+    expect(on).toBeLessThan(off); // a lighter source outline → lighter arms
+  });
+
   it("LEAN with spiral.enabled:true produces the standalone warning", () => {
     // LEAN has incise stages enabled; enabling spiral on top triggers the guard.
     const cfg = { ...LEAN, spiral: { ...LEAN.spiral, enabled: true } };

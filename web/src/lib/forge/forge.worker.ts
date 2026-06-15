@@ -75,8 +75,12 @@ self.onmessage = (e: MessageEvent<ForgeRequest>) => {
       const { paths, stats } = runPipeline(parsed, msg.inciseId, msg.config);
       // Cut-shortest-first orders the arms (in the pipeline) AND asks the machine
       // to honour that order via user-defined path planning + By Layer. Only when
-      // spiral is the active cut — incise jobs keep the optimiser.
-      const userOrder = msg.config.spiral.enabled && msg.config.spiral.cutShortestFirst;
+      // spiral is the active cut — incise jobs keep the optimiser. Joining strands
+      // into one object makes ordering moot, so it disables user-order.
+      const userOrder =
+        msg.config.spiral.enabled &&
+        msg.config.spiral.cutShortestFirst &&
+        !msg.config.spiral.joinStrands;
       const doc = buildGeneratedXcs(
         parsed,
         msg.inciseId,
@@ -85,6 +89,8 @@ self.onmessage = (e: MessageEvent<ForgeRequest>) => {
         resolveStageParams(msg.config),
         effectiveScanAngle(msg.config, stats.scanAngleDeg),
         userOrder,
+        msg.config.spiral.maxPathPoints,
+        msg.config.spiral.joinStrands,
       );
       // Output format is the user's choice, independent of the input format.
       // `.xs` repacks the modified legacy raw into a v2 bundle — reusing the

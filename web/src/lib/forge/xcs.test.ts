@@ -117,7 +117,7 @@ describe("contourToDPath", () => {
   });
 });
 
-import { buildGeneratedXcs, exportXcs, extractContourSubpaths, ringsToDPath, MAX_PATH_POINTS } from "./xcs";
+import { buildGeneratedXcs, exportXcs, extractContourSubpaths, ringsToDPath, MAX_PATH_POINTS, chunkCount, spiralExportObjectCount } from "./xcs";
 import { runPipeline } from "./pipeline";
 import { DEFAULT_CONFIG } from "./defaults";
 import { AGGRESSIVE, SPIRAL_CUT } from "./presets";
@@ -822,5 +822,60 @@ describe("spiral path-length cap (Studio drops paths over ~1570 coord pairs)", (
     for (let i = 1; i < gen.length; i++) {
       expect(firstPt(gen[i].dPath ?? "")).toBe(lastPt(gen[i - 1].dPath ?? ""));
     }
+  });
+
+  it("honours a raised maxPathPoints cap — one continuous display, no chunks", () => {
+    const parsed = buildSquareParsed();
+    const incise = parsed.targets[0];
+    // 3500-pt arm with a 5000 cap → stays a single display.
+    const out = buildGeneratedXcs(parsed, incise.id, [armPath(longArm(3500))], 1, resolveStageParams(SPIRAL_CUT), undefined, false, 5000) as { canvas: ChunkCanvas };
+    const gen = out.canvas[0].displays.filter((d) => d.id.startsWith("forge-"));
+    expect(gen.length).toBe(1);
+    expect(gen[0].id).toBe("forge-0");
+    expect(ptCount(gen[0].dPath ?? "")).toBe(3500);
+  });
+
+  it("honours a lowered maxPathPoints cap — more chunks", () => {
+    const parsed = buildSquareParsed();
+    const incise = parsed.targets[0];
+    const out = buildGeneratedXcs(parsed, incise.id, [armPath(longArm(3500))], 1, resolveStageParams(SPIRAL_CUT), undefined, false, 1000) as { canvas: ChunkCanvas };
+    const gen = out.canvas[0].displays.filter((d) => d.id.startsWith("forge-"));
+    expect(gen.length).toBeGreaterThanOrEqual(4); // 3500 / 1000
+    for (const d of gen) expect(ptCount(d.dPath ?? "")).toBeLessThanOrEqual(1000);
+  });
+
+  it("chunkCount predicts the real chunkPolyline split count (UI uses it pre-export)", () => {
+    const parsed = buildSquareParsed();
+    const incise = parsed.targets[0];
+    for (const [n, cap] of [[3500, 1500], [1501, 1500], [3500, 1000], [800, 1500]] as const) {
+      const out = buildGeneratedXcs(parsed, incise.id, [armPath(longArm(n))], 1, resolveStageParams(SPIRAL_CUT), undefined, false, cap) as { canvas: ChunkCanvas };
+      const gen = out.canvas[0].displays.filter((d) => d.id.startsWith("forge-"));
+      expect(chunkCount(n, cap)).toBe(gen.length);
+    }
+  });
+
+  it("joinStrands merges multiple strands into ONE display (multi-subpath dPath)", () => {
+    const parsed = buildSquareParsed();
+    const incise = parsed.targets[0];
+    const strands = [armPath(longArm(100)), armPath(longArm(120)), armPath(longArm(90))];
+    const out = buildGeneratedXcs(parsed, incise.id, strands, 1, resolveStageParams(SPIRAL_CUT), undefined, false, 5000, true) as { canvas: ChunkCanvas };
+    const gen = out.canvas[0].displays.filter((d) => d.id.startsWith("forge-"));
+    expect(gen.length).toBe(1); // one cut object
+    expect((gen[0].dPath?.match(/M/gi) ?? []).length).toBe(3); // 3 lifted subpaths
+  });
+
+  it("joinStrands falls back to per-strand when the total exceeds the cap", () => {
+    const parsed = buildSquareParsed();
+    const incise = parsed.targets[0];
+    const strands = [armPath(longArm(1000)), armPath(longArm(1000))]; // 2000 > cap 1500
+    const out = buildGeneratedXcs(parsed, incise.id, strands, 1, resolveStageParams(SPIRAL_CUT), undefined, false, 1500, true) as { canvas: ChunkCanvas };
+    const gen = out.canvas[0].displays.filter((d) => d.id.startsWith("forge-"));
+    expect(gen.length).toBeGreaterThan(1); // didn't fit → not joined
+  });
+
+  it("spiralExportObjectCount: joins when fits, else sums per-strand chunks", () => {
+    expect(spiralExportObjectCount([100, 120, 90], 5000, true)).toBe(1);
+    expect(spiralExportObjectCount([100, 120, 90], 5000, false)).toBe(3);
+    expect(spiralExportObjectCount([1000, 1000], 1500, true)).toBe(2); // overflow → fallback
   });
 });

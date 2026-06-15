@@ -50,4 +50,8 @@ describe("material thickness + baseline defaults", () => {
   it("SPIRAL_CUT has a default baselineIncise", () => {
     expect(SPIRAL_CUT.spiral.baselineIncise).toEqual({ speed: 1500, layers: 100 });
   });
+  it("SPIRAL_CUT has simplify + per-path cap defaults", () => {
+    expect(SPIRAL_CUT.spiral.simplifyEpsMm).toBe(0.1);
+    expect(SPIRAL_CUT.spiral.maxPathPoints).toBe(1500);
+  });
 });

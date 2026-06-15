@@ -104,9 +104,17 @@ export function SpiralControls({ config, onChange }: SpiralControlsProps) {
               </Field>
             </>
           )}
-          <Field label="Cut shortest first" hint="Small paths first — vent + relieve the long passes (sets user-defined path order on export)">
+          <Field
+            label="Cut shortest first"
+            hint={
+              config.spiral.joinStrands
+                ? "Disabled while Join strands is on (one object can't be re-ordered)."
+                : "Small paths first — vent + relieve the long passes (sets user-defined path order on export)"
+            }
+          >
             <Select
-              value={config.spiral.cutShortestFirst ? "on" : "off"}
+              value={config.spiral.joinStrands ? "off" : config.spiral.cutShortestFirst ? "on" : "off"}
+              disabled={config.spiral.joinStrands}
               onChange={(e) => patchSpiral({ cutShortestFirst: e.target.value === "on" })}
             >
               <option value="on">on</option>

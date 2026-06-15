@@ -22,10 +22,11 @@ import { MaterialSelector } from "../components/forge/MaterialSelector";
 import type { MaterialThicknessMm } from "../lib/forge/types";
 import { STAGE_GROUPS } from "../lib/forge/config";
 import { splitSubpaths } from "../lib/forge/contour";
+import { simplifyLoop } from "../lib/forge/offset";
 import { useForgeEngine } from "../hooks/useForgeEngine";
 import { SpiralCanvas } from "../components/forge/SpiralCanvas";
 import { ForgeSourcePanel } from "../components/forge/ForgeSourcePanel";
-import { ForgeDebugPanel } from "../components/forge/ForgeDebugPanel";
+import { SpiralGeometryPanel } from "../components/forge/SpiralGeometryPanel";
 import { ForgeEstimateStrip } from "../components/forge/ForgeEstimateStrip";
 import { ForgeStageParams } from "../components/forge/ForgeStageParams";
 import { SpiralControls } from "../components/forge/SpiralControls";
@@ -230,12 +231,19 @@ export function SpiralPage() {
     const subpaths = splitSubpaths(obj.dPath);
     if (subpaths.length === 0) return null;
     const mmPerUnit = result?.stats.mmPerUnit ?? 1;
-    if (mmPerUnit === 1) return subpaths;
-    return subpaths.map((c) => ({
-      points: c.points.map((p) => ({ x: p.x * mmPerUnit, y: p.y * mmPerUnit })),
-      closed: c.closed,
-    }));
-  }, [state, selectedIncise, result?.stats.mmPerUnit]);
+    const scaled = mmPerUnit === 1
+      ? subpaths
+      : subpaths.map((c) => ({
+          points: c.points.map((p) => ({ x: p.x * mmPerUnit, y: p.y * mmPerUnit })),
+          closed: c.closed,
+        }));
+    // Mirror the pipeline's source simplification so the schematic reflects the
+    // Simplify control (the spiral arms follow the simplified outline on export).
+    const eps = config.spiral.simplifyEpsMm;
+    return config.spiral.enabled && eps > 0
+      ? scaled.map((c) => ({ ...c, points: simplifyLoop(c.points, eps) }))
+      : scaled;
+  }, [state, selectedIncise, result?.stats.mmPerUnit, config.spiral.enabled, config.spiral.simplifyEpsMm]);
 
   // Doubled-wall incise target (INTAGLIO) → the schematic rebuilds the solid
   // object (buildPartRegion), matching the generator; a VECTOR/SVG silhouette
@@ -357,7 +365,7 @@ export function SpiralPage() {
                 content, so the right control rail overflows the height-capped
                 parent (overflow-hidden) and its own overflow-y-auto never scrolls. */}
             <div className="flex-1 min-h-0 pt-3 grid grid-cols-[248px_minmax(0,1fr)_332px] grid-rows-[minmax(0,1fr)] gap-3 items-stretch">
-              {/* LEFT: source + debug (debug lives here, not on the right) */}
+              {/* LEFT: source + path geometry (its controls + live readout together) */}
               <div className="min-h-0 overflow-y-auto pr-1 flex flex-col gap-3 [&>*]:shrink-0">
                 <ForgeSourcePanel
                   validation={validation}
@@ -367,7 +375,7 @@ export function SpiralPage() {
                   preservedIds={state.preservedIds}
                   objects={state.objects}
                 />
-                <ForgeDebugPanel stats={result?.stats ?? null} spiral />
+                <SpiralGeometryPanel stats={result?.stats ?? null} config={config} onChange={setConfig} />
               </div>
 
               {/* CENTER: schematic spiral preview — the hero, full height */}

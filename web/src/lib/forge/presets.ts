@@ -17,6 +17,7 @@ const COMMON = {
     splitNecks: false, neckThresholdPct: 50, neckOverlapMm: 0.8,
     cutShortestFirst: true,
     baselineIncise: { speed: 1500, layers: 100 },
+    simplifyEpsMm: 0.1, maxPathPoints: 1500, joinStrands: false,
   },
 };
 
@@ -73,6 +74,7 @@ export const SPIRAL_CUT: ForgeConfig = {
     splitNecks: false, neckThresholdPct: 50, neckOverlapMm: 0.8,
     cutShortestFirst: true,
     baselineIncise: { speed: 1500, layers: 100 },
+    simplifyEpsMm: 0.1, maxPathPoints: 1500, joinStrands: false,
   },
   stageParams: {
     CUT_08_SPIRAL: { power: 100, speed: 1500, frequency: 65, pulseWidth: 80, laser: "red" },
