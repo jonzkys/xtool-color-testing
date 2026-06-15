@@ -1,9 +1,9 @@
 // web/src/components/forge/SpiralControls.tsx
 //
 // The Spiral page's right rail — "Cut geometry" (the shape of the spiral
-// channel) plus a collapsed Setup disclosure. Laser params, passes, and focus
-// descent live in the page's docked stage-params tray, NOT here, so each value
-// has exactly one widget.
+// channel). Laser params, passes, and focus descent live in the page's docked
+// stage-params tray; beam width / mm-unit override don't affect the spiral cut so
+// they're omitted here (they live on the Forge/incise page).
 import { Card, CardHeader, CardTitle, Field, NumberField, Select } from "../../ui";
 import type { ForgeConfig, SpiralConfig } from "../../lib/forge/types";
 import { SPIRAL_CUT } from "../../lib/forge/presets";
@@ -13,9 +13,6 @@ export interface SpiralControlsProps {
   config: ForgeConfig;
   onChange: (next: ForgeConfig) => void;
 }
-
-const SUMMARY_CLS =
-  "cursor-pointer select-none list-none font-mono text-[10.5px] font-semibold uppercase tracking-[0.18em] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-colors px-1 py-0.5";
 
 // The geometry fields the reset button restores to their Spiral-preset defaults.
 const GEO_DEFAULTS: Pick<SpiralConfig, "channelWidthMm" | "pitchMm" | "minChannelMm" | "side"> = {
@@ -106,10 +103,10 @@ export function SpiralControls({ config, onChange }: SpiralControlsProps) {
           )}
           <Field
             label="Cut shortest first"
-            hint={
+            help={
               config.spiral.joinStrands
                 ? "Disabled while Join strands is on (one object can't be re-ordered)."
-                : "Small paths first — vent + relieve the long passes (sets user-defined path order on export)"
+                : "Small paths first — vent + relieve the long passes (sets user-defined path order on export)."
             }
           >
             <Select
@@ -122,22 +119,6 @@ export function SpiralControls({ config, onChange }: SpiralControlsProps) {
             </Select>
           </Field>
         </div>
-      </Card>
-
-      <Card padded={false} className="p-2">
-        <details>
-          <summary className={SUMMARY_CLS}>Setup &amp; calibration</summary>
-          <div className="grid grid-cols-2 gap-2 p-1 pt-2">
-            <Field label="Beam width (mm)">
-              <NumberField value={config.beamWidthMm} step={0.01} min={0.005}
-                onChange={(v) => patch({ beamWidthMm: v })} />
-            </Field>
-            <Field label="mm / unit override (blank = auto)">
-              <NumberField value={config.mmPerUnitOverride ?? 0} step={0.0001} min={0}
-                onChange={(v) => patch({ mmPerUnitOverride: v > 0 ? v : null })} />
-            </Field>
-          </div>
-        </details>
       </Card>
     </div>
   );

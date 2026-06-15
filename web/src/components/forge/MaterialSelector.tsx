@@ -28,7 +28,7 @@ export function MaterialSelector({ value, onChange }: MaterialSelectorProps) {
                 aria-selected={active}
                 onClick={() => onChange(mm)}
                 className={
-                  "flex-1 rounded-[5px] px-2 py-1 font-mono text-[11px] tabular-nums transition-colors " +
+                  "flex-1 whitespace-nowrap rounded-[5px] px-1.5 py-1 font-mono text-[11px] tabular-nums transition-colors " +
                   (active
                     ? "border border-transparent bg-[var(--color-primary)] text-[var(--color-on-primary,#fff)]"
                     : "border border-[var(--color-border)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]")

@@ -49,13 +49,13 @@ export function SpiralGeometryPanel({
         <CardTitle>Path geometry</CardTitle>
       </CardHeader>
       <div className="grid grid-cols-2 gap-2 p-2">
-        <Field label="Simplify (mm)" hint="Round the outline first; 0 = off.">
+        <Field label="Simplify (mm)" help="Round the source outline before spiraling — fewer nodes per arm, fewer export chunks. 0 = off.">
           <NumberField value={sp.simplifyEpsMm} step={0.01} min={0} onChange={(v) => patchSpiral({ simplifyEpsMm: Math.max(0, v) })} />
         </Field>
-        <Field label="Max points / path" hint="Split above this; raise for one cut.">
+        <Field label="Max points / path" help="Split the spiral above this many points into separate cut objects. Raise to keep it one continuous cut (verify Studio imports it).">
           <NumberField value={sp.maxPathPoints} step={500} min={100} onChange={(v) => patchSpiral({ maxPathPoints: Math.max(100, Math.round(v)) })} />
         </Field>
-        <Field label="Join strands" hint="Merge strands into one cut.">
+        <Field label="Join strands" help="Merge disconnected strands into one continuous cut object (focus descends across all together). Disables Cut shortest first.">
           <Select value={sp.joinStrands ? "on" : "off"} onChange={(e) => patchSpiral({ joinStrands: e.target.value === "on" })}>
             <option value="on">on</option>
             <option value="off">off</option>
