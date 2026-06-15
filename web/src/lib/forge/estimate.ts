@@ -75,7 +75,16 @@ function baselineSeconds(
 ): number {
   const rings = bandFromRegion(part, config.beamWidthMm, config.sideMode);
   if (rings.length < 2) return 0;
-  const rate = effectiveRate(undefined, source);
+  // The baseline incise is per brass thickness (config.spiral.baselineIncise).
+  // `layers` is the incise depth → sliceNumber; the baseline is a single repeat
+  // (passes = 1) so the time scales LINEARLY with layers. Mapping layers to
+  // `passes`/repeat instead would multiply on top of the default sliceNumber (100)
+  // and blow the baseline up ~100×. Density/speed fall back to source per-field.
+  const bi = config.spiral.baselineIncise;
+  const baselineParams: StageParams | undefined = bi
+    ? ({ speed: bi.speed, sliceNumber: bi.layers, passes: 1 } as StageParams)
+    : undefined;
+  const rate = effectiveRate(baselineParams, source);
   return stageSeconds(geomOf(rings), rate, calib);
 }
 

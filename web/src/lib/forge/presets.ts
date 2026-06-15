@@ -1,6 +1,6 @@
 // Named staged-strategy presets. LEAN ships as the default (lib/forge/defaults.ts);
 // AGGRESSIVE preserves the original deep 1/2/4/8 schedule verbatim.
-import type { ForgeConfig } from "./types";
+import type { ForgeConfig, SpiralConfig } from "./types";
 
 const COMMON = {
   beamWidthMm: 0.03,
@@ -16,6 +16,7 @@ const COMMON = {
     focusInitialMm: 0.01,
     splitNecks: false, neckThresholdPct: 50, neckOverlapMm: 0.8,
     cutShortestFirst: true,
+    baselineIncise: { speed: 1500, layers: 100 },
   },
 };
 
@@ -71,6 +72,7 @@ export const SPIRAL_CUT: ForgeConfig = {
     focusInitialMm: 0.01,
     splitNecks: false, neckThresholdPct: 50, neckOverlapMm: 0.8,
     cutShortestFirst: true,
+    baselineIncise: { speed: 1500, layers: 100 },
   },
   stageParams: {
     CUT_08_SPIRAL: { power: 100, speed: 1500, frequency: 65, pulseWidth: 80, laser: "red" },
@@ -79,3 +81,15 @@ export const SPIRAL_CUT: ForgeConfig = {
 
 export const PRESETS = { lean: LEAN, aggressive: AGGRESSIVE, spiral: SPIRAL_CUT } as const;
 export type PresetId = keyof typeof PRESETS;
+
+/**
+ * Per-brass-thickness preset overrides applied over SPIRAL_CUT (keyed by the
+ * thickness in mm as a string). The baseline is the xTool Studio "Incise"
+ * reference for that brass: `layers` = Number of layers (→ sliceNumber, the depth
+ * axis) and `speed`. Filled in as cut-test references arrive; thicknesses absent
+ * here fall back to the shared SPIRAL_CUT default (100 layers).
+ */
+export const THICKNESS_DEFAULTS: Record<string, { baselineIncise?: SpiralConfig["baselineIncise"] }> = {
+  "1.5": { baselineIncise: { speed: 1500, layers: 250 } },
+  "2": { baselineIncise: { speed: 1500, layers: 500 } },
+};

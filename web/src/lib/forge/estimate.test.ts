@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { estimateForge } from "./estimate";
 import { DEFAULT_CONFIG } from "./defaults";
 import { SPIRAL_CUT } from "./presets";
+import { generateSpiralPaths } from "./spiral";
 import type { GeneratedPath, Pt } from "./types";
 
 const rect = (x: number, y: number, w: number, h: number): Pt[] => [
@@ -84,5 +85,34 @@ describe("estimateForge", () => {
     expect(Number.isFinite(est.stages[0].seconds)).toBe(true);
     expect(est.totalSeconds).toBeGreaterThan(0);
     expect(Number.isFinite(est.totalSeconds)).toBe(true);
+  });
+});
+
+describe("baseline is thickness-aware (baselineIncise)", () => {
+  const sq = [[{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }]];
+
+  it("a slower baseline incise yields a larger baselineSeconds + smaller overheadPct", () => {
+    const spiralPaths = generateSpiralPaths(sq, SPIRAL_CUT, "o");
+    const fast = structuredClone(SPIRAL_CUT);
+    fast.spiral.baselineIncise = { speed: 2000, layers: 100 };
+    const slow = structuredClone(SPIRAL_CUT);
+    slow.spiral.baselineIncise = { speed: 200, layers: 100 };
+    const eFast = estimateForge(spiralPaths, sq, fast, undefined);
+    const eSlow = estimateForge(spiralPaths, sq, slow, undefined);
+    expect(eSlow.baselineSeconds).toBeGreaterThan(eFast.baselineSeconds);
+    expect(eSlow.overheadPct).toBeLessThan(eFast.overheadPct);
+  });
+
+  it("baselineSeconds scales LINEARLY with layers (no spurious ×sliceNumber blow-up)", () => {
+    const spiralPaths = generateSpiralPaths(sq, SPIRAL_CUT, "o");
+    const c100 = structuredClone(SPIRAL_CUT);
+    c100.spiral.baselineIncise = { speed: 1500, layers: 100 };
+    const c200 = structuredClone(SPIRAL_CUT);
+    c200.spiral.baselineIncise = { speed: 1500, layers: 200 };
+    const e100 = estimateForge(spiralPaths, sq, c100, undefined);
+    const e200 = estimateForge(spiralPaths, sq, c200, undefined);
+    // doubling layers ~doubles the baseline; the regression bug multiplied each
+    // layer by the default sliceNumber (100), so 200 layers blew up ~100×, not 2×.
+    expect(e200.baselineSeconds / e100.baselineSeconds).toBeCloseTo(2, 1);
   });
 });

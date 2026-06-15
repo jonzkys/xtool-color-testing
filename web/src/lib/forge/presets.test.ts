@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { LEAN, AGGRESSIVE, PRESETS } from "./presets";
+import { LEAN, AGGRESSIVE, PRESETS, SPIRAL_CUT } from "./presets";
+import { MATERIAL_THICKNESSES_MM } from "./types";
 
 describe("forge presets", () => {
   it("AGGRESSIVE keeps the 1/2/4/8 × 50/100/200/256 deepen schedule", () => {
@@ -39,5 +40,14 @@ describe("relief perforate fields", () => {
   it("AGGRESSIVE keeps pocket relief (back-compat)", () => {
     expect(AGGRESSIVE.perforate.shape).toBe("pocket");
     expect(AGGRESSIVE.perforate.nearGap).toBe(false);
+  });
+});
+
+describe("material thickness + baseline defaults", () => {
+  it("exposes the five brass thicknesses", () => {
+    expect(MATERIAL_THICKNESSES_MM).toEqual([1, 1.5, 2, 3, 4]);
+  });
+  it("SPIRAL_CUT has a default baselineIncise", () => {
+    expect(SPIRAL_CUT.spiral.baselineIncise).toEqual({ speed: 1500, layers: 100 });
   });
 });
