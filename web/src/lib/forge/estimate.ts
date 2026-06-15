@@ -76,14 +76,20 @@ function baselineSeconds(
   const rings = bandFromRegion(part, config.beamWidthMm, config.sideMode);
   if (rings.length < 2) return 0;
   // The baseline incise is per brass thickness (config.spiral.baselineIncise).
-  // `layers` is the incise depth → sliceNumber; the baseline is a single repeat
-  // (passes = 1) so the time scales LINEARLY with layers. Mapping layers to
-  // `passes`/repeat instead would multiply on top of the default sliceNumber (100)
-  // and blow the baseline up ~100×. Density/speed fall back to source per-field.
+  // FULLY specify the rate so it does NOT inherit the spiral-source object's
+  // params: that source is a VECTOR_CUTTING contour whose `density` is a
+  // meaningless placeholder (e.g. 5000 lines/cm from an SVG import) that would
+  // inflate this raster model ~16×. The baseline models the Studio INCISE at the
+  // calibrated reference density (300 lines/cm), `layers` deep, at a single repeat
+  // (passes = 1) — so the time scales LINEARLY with layers. (Mapping layers to
+  // `passes`/repeat instead would multiply on top of the default sliceNumber.)
   const bi = config.spiral.baselineIncise;
-  const baselineParams: StageParams | undefined = bi
-    ? ({ speed: bi.speed, sliceNumber: bi.layers, passes: 1 } as StageParams)
-    : undefined;
+  const baselineParams: StageParams = {
+    speed: bi.speed,
+    sliceNumber: bi.layers,
+    passes: 1,
+    density: RATE_FALLBACK.densityLpc,
+  };
   const rate = effectiveRate(baselineParams, source);
   return stageSeconds(geomOf(rings), rate, calib);
 }
