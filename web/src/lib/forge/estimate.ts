@@ -165,4 +165,31 @@ export function estimateForge(
   };
 }
 
+/**
+ * Per spiral path: its cut duration in seconds, resolved the SAME way the
+ * estimator's spiral branch does (group params over source, falling back to the
+ * working regime). Non-spiral paths are dropped. Σ(seconds) equals the spiral
+ * stages' seconds in `estimateForge` by construction — both call
+ * `spiralSeconds(p, passes, speed)` with passes/speed from the same
+ * `effectiveRate(sp, source)` chain — so the heatmap and the headline cut-time
+ * agree. This is also the hook a future size-aware tuning pass modulates
+ * (per-path speed/passes).
+ */
+export function spiralPathDurations(
+  paths: GeneratedPath[],
+  config: ForgeConfig,
+  source: StageParams | undefined,
+): { path: GeneratedPath; seconds: number }[] {
+  const resolved = resolveStageParams(config);
+  return paths
+    .filter((p) => p.generatedClass === "spiral")
+    .map((p) => {
+      const sp = resolved[p.groupName] ?? {};
+      const rate = effectiveRate(sp, source);
+      const passes = (sp.passes as number | undefined) ?? rate.repeat;
+      const speed = (sp.speed as number | undefined) ?? rate.speedMmS;
+      return { path: p, seconds: spiralSeconds(p, passes, speed) };
+    });
+}
+
 export { fmtDuration };

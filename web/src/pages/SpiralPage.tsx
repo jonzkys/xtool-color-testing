@@ -16,7 +16,7 @@ import { DEFAULT_OUTPUT_FORMAT, svgStackToBytes } from "../generate";
 import { defaultBaseParams } from "../defaults";
 import { listMaterials } from "../api/library";
 import type { SvgStackRequest } from "../types";
-import type { Contour, ForgeConfig, XcsObject } from "../lib/forge/types";
+import type { Contour, ForgeConfig, StageParams, XcsObject } from "../lib/forge/types";
 import { loadMaterialState, serializeMaterialState, MATERIAL_LS_KEY, OLD_CONFIG_LS_KEY, LEGACY_MATERIAL_LS_KEYS, type MaterialState } from "../lib/forge/materialState";
 import { MaterialSelector } from "../components/forge/MaterialSelector";
 import type { MaterialThicknessMm } from "../lib/forge/types";
@@ -30,6 +30,7 @@ import { SpiralGeometryPanel } from "../components/forge/SpiralGeometryPanel";
 import { ForgeEstimateStrip } from "../components/forge/ForgeEstimateStrip";
 import { ForgeStageParams } from "../components/forge/ForgeStageParams";
 import { SpiralControls } from "../components/forge/SpiralControls";
+import { SpiralDurationCanvas } from "../components/forge/SpiralDurationCanvas";
 import { buildSpiralSvg } from "../lib/forge/svgExport";
 
 /** Output formats the spiral page offers — the worker's .xs/.xcs plus an
@@ -88,6 +89,7 @@ export function SpiralPage() {
     setMaterial((m) => ({ ...m, activeThicknessMm: mm }));
   }, []);
   const [canvasSize, setCanvasSize] = useState({ w: 600, h: 480 });
+  const [colourMode, setColourMode] = useState<"class" | "duration">("class");
   const [exportFormat, setExportFormat] = useState<SpiralExportFormat>(DEFAULT_OUTPUT_FORMAT);
   // SVG import: a material id (seeds the svg-stack request; spiral export
   // overrides params), a "converting" flag while svg-stack runs, and any error.
@@ -263,6 +265,13 @@ export function SpiralPage() {
       : scaled;
   }, [state, selectedIncise, result?.stats.mmPerUnit, result?.stats.nativeWidthMm, sourceWidthMm, config.spiral.enabled, config.spiral.simplifyEpsMm]);
 
+  // Source incise params for the selected target — fed to the duration heatmap so
+  // its per-path times resolve the same way the estimate does.
+  const sourceParams = useMemo<StageParams | undefined>(() => {
+    if (state.kind !== "ready" || !selectedIncise) return undefined;
+    return state.objects.find((o) => o.id === selectedIncise)?.params;
+  }, [state, selectedIncise]);
+
   // Doubled-wall incise target (INTAGLIO) → the schematic rebuilds the solid
   // object (buildPartRegion), matching the generator; a VECTOR/SVG silhouette
   // uses the even-odd fill. Mirrors the dispatch in pipeline.ts.
@@ -398,19 +407,48 @@ export function SpiralPage() {
 
               {/* CENTER: schematic spiral preview — the hero, full height */}
               <Card variant="inset" padded={false} className="min-w-0 min-h-0 p-2">
-                <div ref={canvasWrapRef} className="h-full w-full min-h-0 min-w-0 overflow-hidden">
-                  <SpiralCanvas
-                    source={sourceContour}
-                    channelWidthMm={config.spiral.channelWidthMm}
-                    pitchMm={config.spiral.pitchMm}
-                    side={config.spiral.side}
-                    intaglio={intaglioTarget}
-                    splitNecks={config.spiral.splitNecks}
-                    neckThresholdPct={config.spiral.neckThresholdPct}
-                    neckOverlapMm={config.spiral.neckOverlapMm}
-                    width={canvasSize.w}
-                    height={canvasSize.h}
-                  />
+                <div ref={canvasWrapRef} className="relative h-full w-full min-h-0 min-w-0 overflow-hidden">
+                  {/* Colour mode: class (schematic) vs duration (heatmap) */}
+                  <div role="radiogroup" aria-label="Preview colour mode" className="absolute right-3 top-3 z-10 flex overflow-hidden rounded-[6px] border border-[var(--color-border)] bg-[var(--color-surface)] font-mono text-[10px] uppercase tracking-[0.12em]">
+                    {(["class", "duration"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        role="radio"
+                        onClick={() => setColourMode(m)}
+                        aria-checked={colourMode === m}
+                        className={`px-2 py-1 transition-colors ${
+                          colourMode === m
+                            ? "bg-[var(--color-primary)] text-[var(--color-surface)]"
+                            : "text-[var(--color-ink-muted)] hover:text-[var(--color-primary)]"
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                  {colourMode === "duration" ? (
+                    <SpiralDurationCanvas
+                      paths={result?.paths ?? []}
+                      config={config}
+                      source={sourceParams}
+                      width={canvasSize.w}
+                      height={canvasSize.h}
+                    />
+                  ) : (
+                    <SpiralCanvas
+                      source={sourceContour}
+                      channelWidthMm={config.spiral.channelWidthMm}
+                      pitchMm={config.spiral.pitchMm}
+                      side={config.spiral.side}
+                      intaglio={intaglioTarget}
+                      splitNecks={config.spiral.splitNecks}
+                      neckThresholdPct={config.spiral.neckThresholdPct}
+                      neckOverlapMm={config.spiral.neckOverlapMm}
+                      width={canvasSize.w}
+                      height={canvasSize.h}
+                    />
+                  )}
                 </div>
               </Card>
 
