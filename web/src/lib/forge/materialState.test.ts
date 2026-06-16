@@ -23,6 +23,23 @@ describe("loadMaterialState", () => {
     expect(s.configs["3"].spiral.baselineIncise).toEqual(SPIRAL_CUT.spiral.baselineIncise);
   });
 
+  it("bakes the full 1.5mm cut defaults (geometry + split + passes + focus + laser)", () => {
+    const s = loadMaterialState(store({}));
+    const c = s.configs["1.5"];
+    expect(c.spiral.channelWidthMm).toBe(0.6);
+    expect(c.spiral.pitchMm).toBe(0.035);
+    expect(c.spiral.splitNecks).toBe(true);
+    expect(c.spiral.passes).toBe(750);
+    expect(c.spiral.focusIntervalPasses).toBe(20);
+    expect(c.stageParams.CUT_08_SPIRAL).toMatchObject({
+      power: 100, speed: 2000, frequency: 65, pulseWidth: 250, laser: "red",
+    });
+    // a thickness without geometry overrides keeps the shared SPIRAL_CUT defaults
+    expect(s.configs["1"].spiral.channelWidthMm).toBe(SPIRAL_CUT.spiral.channelWidthMm);
+    expect(s.configs["1"].spiral.splitNecks).toBe(SPIRAL_CUT.spiral.splitNecks);
+    expect(s.configs["1"].spiral.passes).toBe(SPIRAL_CUT.spiral.passes);
+  });
+
   it("a persisted per-thickness baseline edit overrides the baked default", () => {
     const state = { activeThicknessMm: 2, configs: { "2": { spiral: { ...SPIRAL_CUT.spiral, baselineIncise: { speed: 800, layers: 600 } } } } };
     const s = loadMaterialState(store({ [MATERIAL_LS_KEY]: JSON.stringify(state) }));

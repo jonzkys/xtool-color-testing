@@ -22,10 +22,15 @@ export interface MaterialState {
  *  page's previous loadConfig merge. */
 function thicknessConfig(persisted: Partial<ForgeConfig> | undefined, mm: MaterialThicknessMm): ForgeConfig {
   const base = structuredClone(SPIRAL_CUT);
-  // Per-thickness preset baseline (the Studio incise reference for that brass)
-  // sits between the SPIRAL_CUT default and any persisted user edits.
-  const def = THICKNESS_DEFAULTS[String(mm)]?.baselineIncise;
-  if (def) base.spiral.baselineIncise = { ...base.spiral.baselineIncise, ...def };
+  // Per-thickness preset (geometry, focus, passes, laser, baseline) sits between
+  // the SPIRAL_CUT default and any persisted user edits.
+  const def = THICKNESS_DEFAULTS[String(mm)];
+  if (def?.spiral) base.spiral = { ...base.spiral, ...def.spiral };
+  if (def?.stageParams) {
+    for (const [stage, params] of Object.entries(def.stageParams)) {
+      base.stageParams[stage] = { ...(base.stageParams[stage] ?? {}), ...params };
+    }
+  }
   if (!persisted) return base;
   return {
     ...base,
