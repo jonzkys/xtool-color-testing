@@ -85,13 +85,36 @@ export const PRESETS = { lean: LEAN, aggressive: AGGRESSIVE, spiral: SPIRAL_CUT 
 export type PresetId = keyof typeof PRESETS;
 
 /**
- * Per-brass-thickness preset overrides applied over SPIRAL_CUT (keyed by the
- * thickness in mm as a string). The baseline is the xTool Studio "Incise"
- * reference for that brass: `layers` = Number of layers (→ sliceNumber, the depth
- * axis) and `speed`. Filled in as cut-test references arrive; thicknesses absent
- * here fall back to the shared SPIRAL_CUT default (100 layers).
+ * Per-brass-thickness preset overrides layered over SPIRAL_CUT (keyed by the
+ * thickness in mm as a string). `spiral` overrides the cut geometry + focus +
+ * passes + baseline; `stageParams` overrides the CUT_08_SPIRAL laser params.
+ * Anything omitted falls back to the shared SPIRAL_CUT default. Filled in from
+ * cut-test references as they arrive.
  */
-export const THICKNESS_DEFAULTS: Record<string, { baselineIncise?: SpiralConfig["baselineIncise"] }> = {
-  "1.5": { baselineIncise: { speed: 1500, layers: 250 } },
-  "2": { baselineIncise: { speed: 1500, layers: 500 } },
+export const THICKNESS_DEFAULTS: Record<string, {
+  spiral?: Partial<SpiralConfig>;
+  stageParams?: ForgeConfig["stageParams"];
+}> = {
+  "1.5": {
+    spiral: {
+      channelWidthMm: 0.6, pitchMm: 0.035, minChannelMm: 0.4, side: "outside",
+      splitNecks: true, neckThresholdPct: 50, neckOverlapMm: 0.8, cutShortestFirst: true,
+      passes: 750, focusInitialMm: 0.01, focusStepMm: 0.06, focusIntervalPasses: 20,
+      baselineIncise: { speed: 1500, layers: 250 },
+    },
+    stageParams: {
+      CUT_08_SPIRAL: { power: 100, speed: 2000, frequency: 65, pulseWidth: 250, laser: "red" },
+    },
+  },
+  "2": {
+    spiral: { baselineIncise: { speed: 1500, layers: 500 } },
+  },
 };
+
+/** The default spiral geometry for a thickness — SPIRAL_CUT.spiral with that
+ *  thickness's THICKNESS_DEFAULTS.spiral layered on. Used to build fresh configs
+ *  and to drive the geometry "reset to defaults" button per thickness. */
+export function defaultSpiralFor(mm: number | string): SpiralConfig {
+  const def = THICKNESS_DEFAULTS[String(mm)]?.spiral;
+  return def ? { ...SPIRAL_CUT.spiral, ...def } : { ...SPIRAL_CUT.spiral };
+}

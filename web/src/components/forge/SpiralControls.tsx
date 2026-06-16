@@ -5,26 +5,30 @@
 // stage-params tray; beam width / mm-unit override don't affect the spiral cut so
 // they're omitted here (they live on the Forge/incise page).
 import { Card, CardHeader, CardTitle, Field, NumberField, Select } from "../../ui";
-import type { ForgeConfig, SpiralConfig } from "../../lib/forge/types";
-import { SPIRAL_CUT } from "../../lib/forge/presets";
+import type { ForgeConfig, MaterialThicknessMm, SpiralConfig } from "../../lib/forge/types";
+import { defaultSpiralFor } from "../../lib/forge/presets";
 import { SpiralGeometryHelp } from "./SpiralGeometryHelp";
 
 export interface SpiralControlsProps {
   config: ForgeConfig;
   onChange: (next: ForgeConfig) => void;
+  /** Active brass thickness — the reset button restores THIS thickness's
+   *  geometry defaults (they differ per brass). */
+  thicknessMm: MaterialThicknessMm;
 }
 
-// The geometry fields the reset button restores to their Spiral-preset defaults.
-const GEO_DEFAULTS: Pick<SpiralConfig, "channelWidthMm" | "pitchMm" | "minChannelMm" | "side"> = {
-  channelWidthMm: SPIRAL_CUT.spiral.channelWidthMm,
-  pitchMm: SPIRAL_CUT.spiral.pitchMm,
-  minChannelMm: SPIRAL_CUT.spiral.minChannelMm,
-  side: SPIRAL_CUT.spiral.side,
-};
-
-export function SpiralControls({ config, onChange }: SpiralControlsProps) {
+export function SpiralControls({ config, onChange, thicknessMm }: SpiralControlsProps) {
   const patch = (p: Partial<ForgeConfig>) => onChange({ ...config, ...p, activePreset: "custom" });
   const patchSpiral = (p: Partial<SpiralConfig>) => patch({ spiral: { ...config.spiral, ...p } });
+
+  // The geometry fields the reset button restores — to THIS thickness's defaults.
+  const d = defaultSpiralFor(thicknessMm);
+  const GEO_DEFAULTS: Pick<SpiralConfig, "channelWidthMm" | "pitchMm" | "minChannelMm" | "side"> = {
+    channelWidthMm: d.channelWidthMm,
+    pitchMm: d.pitchMm,
+    minChannelMm: d.minChannelMm,
+    side: d.side,
+  };
 
   const geoChanged =
     config.spiral.channelWidthMm !== GEO_DEFAULTS.channelWidthMm ||

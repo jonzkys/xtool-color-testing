@@ -449,7 +449,7 @@ export function SpiralPage() {
                   </Card>
                 )}
                 <MaterialSelector value={material.activeThicknessMm} onChange={setActiveThickness} />
-                <SpiralControls config={config} onChange={setConfig} />
+                <SpiralControls config={config} onChange={setConfig} thicknessMm={material.activeThicknessMm} />
                 {/* Laser & focus — single spiral stage, cut-mode (no density / no Z-descent) */}
                 <div className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
                   <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-2">
