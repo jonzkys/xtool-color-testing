@@ -1,6 +1,7 @@
 """Tests for the /api/relief/smooth route."""
 from __future__ import annotations
 
+import json
 from io import BytesIO
 
 from fastapi.testclient import TestClient
@@ -88,7 +89,8 @@ def test_relief_smooth_remove_bg_returns_alpha():
     resp = client.post(
         "/api/relief/smooth",
         files={"file": ("depth.png", buf.getvalue(), "image/png")},
-        data={"smooth": "false", "remove_bg": "true", "bg_threshold": "8"},
+        data={"smooth": "false", "remove_bg": "true",
+              "subtractions": json.dumps([{"method": "dark", "threshold": 8}])},
     )
     assert resp.status_code == 200
     out = Image.open(BytesIO(resp.content))
@@ -98,12 +100,13 @@ def test_relief_smooth_remove_bg_returns_alpha():
     assert px.getpixel((16, 16))[1] == 255  # interior → opaque
 
 
-def test_relief_smooth_clamps_bg_threshold():
+def test_relief_smooth_clamps_subtraction_threshold():
     client = TestClient(create_app())
     resp = client.post(
         "/api/relief/smooth",
         files={"file": ("depth.png", _png_bytes(32, 32, 120), "image/png")},
-        data={"remove_bg": "true", "bg_threshold": "9999"},
+        data={"remove_bg": "true",
+              "subtractions": json.dumps([{"method": "dark", "threshold": 9999}])},
     )
     assert resp.status_code == 200
 
@@ -127,9 +130,8 @@ def test_relief_smooth_colour_trim_falloff_returns_la_png():
         data={
             "smooth": "false",
             "remove_bg": "true",
-            "bg_mode": "colour",
-            "bg_color": "0,0,0",      # key out the black background
-            "bg_tolerance": "20",
+            "subtractions": json.dumps([{"method": "colour", "color": [0, 0, 0],
+                                         "tolerance": 20}]),
             "trim_pct": "5",
             "falloff_pct": "10",
             "falloff_target": "0",
@@ -151,9 +153,8 @@ def test_relief_smooth_perimeter_returns_la_png():
         data={
             "smooth": "false",
             "remove_bg": "true",
-            "bg_mode": "dark",
-            "bg_threshold": "8",
-            "perimeter_pct": "5",     # round the silhouette boundary
+            "subtractions": json.dumps([{"method": "dark", "threshold": 8}]),
+            "perimeter_pct": "5",
         },
     )
     assert resp.status_code == 200
@@ -175,8 +176,7 @@ def test_relief_smooth_clahe_with_bg_removal_returns_la_png():
             "clahe_clip": "3",
             "clahe_tiles": "8",
             "remove_bg": "true",
-            "bg_mode": "dark",
-            "bg_threshold": "8",
+            "subtractions": json.dumps([{"method": "dark", "threshold": 8}]),
         },
     )
     assert resp.status_code == 200
@@ -185,13 +185,125 @@ def test_relief_smooth_clahe_with_bg_removal_returns_la_png():
     assert out.getpixel((2, 2))[1] == 0  # background still transparent
 
 
-def test_relief_smooth_colour_mode_without_colour_is_opaque():
+def test_relief_smooth_no_usable_subtraction_is_opaque():
     client = TestClient(create_app())
     resp = client.post(
         "/api/relief/smooth",
         files={"file": ("depth.png", _png_rgb(), "image/png")},
-        data={"smooth": "false", "remove_bg": "true", "bg_mode": "colour", "bg_color": ""},
+        data={"smooth": "false", "remove_bg": "true",
+              "subtractions": json.dumps([{"method": "colour"}])},  # no colour → skipped
     )
     assert resp.status_code == 200
     out = Image.open(BytesIO(resp.content))
-    assert out.mode == "L"             # nothing picked → no alpha, plain L PNG
+    assert out.mode == "L"             # nothing usable → no alpha, plain L PNG
+
+
+def _png_two_red_blobs():
+    """40×20 RGB: black background, two disconnected red blobs (left & right)."""
+    from PIL import Image as _I
+    buf = BytesIO()
+    img = _I.new("RGB", (40, 20), (0, 0, 0))
+    for y in range(5, 15):
+        for x in range(3, 11):
+            img.putpixel((x, y), (200, 0, 0))    # blob A (left)
+        for x in range(29, 37):
+            img.putpixel((x, y), (200, 0, 0))    # blob B (right)
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_relief_smooth_stacks_dark_plus_area():
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/relief/smooth",
+        files={"file": ("depth.png", _png_two_red_blobs(), "image/png")},
+        data={
+            "smooth": "false",
+            "remove_bg": "true",
+            "subtractions": json.dumps([
+                {"method": "dark", "threshold": 8},                     # outer black bg
+                {"method": "area", "color": [200, 0, 0], "tolerance": 40,
+                 "seedX": 7 / 40, "seedY": 0.5},                        # blob A only
+            ]),
+        },
+    )
+    assert resp.status_code == 200
+    out = Image.open(BytesIO(resp.content)).convert("LA")
+    assert out.getpixel((0, 0))[1] == 0       # black background removed (dark)
+    assert out.getpixel((7, 10))[1] == 0      # blob A removed (area, seeded)
+    assert out.getpixel((33, 10))[1] == 255   # blob B kept (same colour, disconnected)
+
+
+def test_relief_smooth_empty_subtractions_is_plain_png():
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/relief/smooth",
+        files={"file": ("depth.png", _png_rgb(), "image/png")},
+        data={"smooth": "false", "remove_bg": "true", "subtractions": "[]"},
+    )
+    assert resp.status_code == 200
+    assert Image.open(BytesIO(resp.content)).mode == "L"
+
+
+def _png_donut():
+    """48×48 RGB: grey square on black with an enclosed black hole at the centre."""
+    from PIL import Image as _I
+    buf = BytesIO()
+    img = _I.new("RGB", (48, 48), (0, 0, 0))
+    for y in range(12, 36):
+        for x in range(12, 36):
+            img.putpixel((x, y), (150, 150, 150))
+    for y in range(22, 26):
+        for x in range(22, 26):
+            img.putpixel((x, y), (0, 0, 0))       # internal hole (dark)
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_relief_smooth_shape_internal_default_keeps_hole_hard():
+    # Default shape_internal=false: the internal hole is re-punched hard-edged
+    # even with edge falloff on.
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/relief/smooth",
+        files={"file": ("depth.png", _png_donut(), "image/png")},
+        data={
+            "smooth": "false",
+            "remove_bg": "true",
+            "subtractions": json.dumps([{"method": "dark", "threshold": 8}]),
+            "falloff_pct": "10",
+            "falloff_target": "0",
+        },
+    )
+    assert resp.status_code == 200
+    out = Image.open(BytesIO(resp.content)).convert("LA")
+    assert out.getpixel((23, 23))[1] == 0     # internal hole stays transparent
+
+
+def test_relief_smooth_shape_internal_changes_the_result():
+    # shape_internal=true must actually shape the internal-hole boundary, so the
+    # output differs from the default (outer-only) path for the same donut +
+    # falloff. (The difference shows in the height field near the hole edge —
+    # the hole's alpha stays 0 either way, so compare the full encoded result.)
+    client = TestClient(create_app())
+
+    def smooth(shape_internal: str) -> bytes:
+        resp = client.post(
+            "/api/relief/smooth",
+            files={"file": ("depth.png", _png_donut(), "image/png")},
+            data={
+                "smooth": "false",
+                "remove_bg": "true",
+                "subtractions": json.dumps([{"method": "dark", "threshold": 8}]),
+                "falloff_pct": "10",
+                "falloff_target": "0",
+                "shape_internal": shape_internal,
+            },
+        )
+        assert resp.status_code == 200
+        return resp.content
+
+    default = smooth("false")
+    shaped = smooth("true")
+    assert Image.open(BytesIO(shaped)).mode == "LA"
+    assert shaped != default  # the flag demonstrably alters the output

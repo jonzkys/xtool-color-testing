@@ -85,14 +85,17 @@ from .pixel_art_converter import pixel_art_to_svg, pixel_art_to_xcs_bytes
 from .relief import (
     ReliefSmoothParams,
     apply_clahe,
-    background_alpha,
-    colour_background_alpha,
+    area_background_mask,
+    colour_background_mask,
+    combine_backgrounds,
     edge_falloff,
     encode_png,
     encode_png_la,
-    parse_rgb,
+    parse_subtractions,
     smooth_heightfield,
     smooth_perimeter,
+    split_internal_holes,
+    threshold_background_mask,
     to_grayscale_u8,
     trim_alpha,
 )
@@ -910,10 +913,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         clahe_clip: float = Form(2.0),
         clahe_tiles: int = Form(8),
         remove_bg: bool = Form(False),
-        bg_threshold: int = Form(8),
-        bg_mode: str = Form("dark"),
-        bg_color: str = Form(""),
-        bg_tolerance: float = Form(40.0),
+        subtractions: str = Form("[]"),
+        shape_internal: bool = Form(False),
         perimeter_pct: float = Form(0.0),
         trim_pct: float = Form(0.0),
         falloff_pct: float = Form(0.0),
@@ -924,14 +925,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Smooth a grayscale depth map and return the cleaned PNG. Stateless.
 
         ``smooth=false`` skips the smoothing pass (raw heightfield). Background
-        removal (``bg_mode``) runs next so the rest operates on the cut-out:
-        ``dark`` masks dark pixels (default), ``bright`` masks bright pixels,
-        ``colour`` keys the picked ``bg_color`` within ``bg_tolerance`` — all
-        returning an ``LA`` PNG. Optional CLAHE then equalizes the foreground
-        only; ``perimeter_pct`` rounds the jagged silhouette boundary,
-        ``trim_pct`` erodes the object outline, and ``falloff_pct`` ramps a soft
-        edge. The monotonic tone modes are applied client-side as a LUT (their
-        histogram likewise skips the masked background)."""
+        removal (``remove_bg``) applies a stack of ``subtractions`` (a JSON array
+        of ops — dark/bright luminance cut, ``colour`` key, or connected ``area``
+        pick) whose masks union into one alpha (LA PNG). CLAHE then equalizes the
+        foreground only; ``perimeter_pct`` rounds the silhouette, ``trim_pct``
+        erodes it, and ``falloff_pct`` ramps a soft edge — applied to the outer
+        silhouette unless ``shape_internal`` is set (then internal holes too).
+        The monotonic tone modes are applied client-side as a LUT."""
         raw = file.file.read()
         try:
             bgr = decode_image_bytes(raw)
@@ -950,23 +950,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 median_ksize=median_ksize,
             )
             out = smooth_heightfield(gray, params)
-        # Background removal FIRST, so every follow-up step (CLAHE here, the
-        # client monotonic stretches downstream, and the edge shaping below)
-        # operates on the cut-out rather than the whole frame.
+        # Background removal FIRST, so every follow-up step (CLAHE, the client
+        # monotonic stretches downstream, and edge shaping) operates on the
+        # cut-out. Each subtraction op contributes a boolean background mask;
+        # the union becomes the alpha. colour/area key the colour image; dark/
+        # bright key the (smoothed) gray.
         alpha = None
         if remove_bg:
-            if bg_mode == "colour":
-                color = parse_rgb(bg_color)
-                if color is not None:
-                    alpha = colour_background_alpha(
-                        bgr, color, max(0.0, min(441.0, bg_tolerance))
-                    )
-                # color is None → nothing picked yet: leave alpha None (no removal)
-            else:
-                alpha = background_alpha(
-                    out, threshold=max(0, min(255, bg_threshold)),
-                    high=(bg_mode == "bright"),
-                )
+            masks = []
+            for sub in parse_subtractions(subtractions):
+                if sub.method in ("dark", "bright"):
+                    masks.append(threshold_background_mask(
+                        out, sub.threshold, high=(sub.method == "bright")))
+                elif sub.method == "colour" and sub.color is not None:
+                    masks.append(colour_background_mask(bgr, sub.color, sub.tolerance))
+                elif sub.method == "area" and sub.color is not None and sub.seed is not None:
+                    masks.append(area_background_mask(bgr, sub.color, sub.tolerance, sub.seed))
+            if masks:
+                alpha = combine_backgrounds(masks)
         if clahe:
             # ``mask=alpha`` keeps a large background from skewing CLAHE's
             # adaptive tiles near the object edge (no-op when nothing's masked).
@@ -980,19 +981,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             perimeter = max(0.0, min(25.0, perimeter_pct))
             trim = max(0.0, min(50.0, trim_pct))
             falloff = max(0.0, min(50.0, falloff_pct))
-            if perimeter > 0:
-                # Clean the silhouette boundary first so the wall + any taper
-                # follow a smooth curve instead of the source mask's staircase.
-                out, alpha = smooth_perimeter(out, alpha, perimeter)
-            if trim > 0:
-                alpha = trim_alpha(alpha, trim)
-            if falloff > 0:
-                # falloff_target is a 0..100% level (0 = floor, 100 = peak) → grey.
-                target_gray = 255.0 * max(0.0, min(100.0, falloff_target)) / 100.0
-                out, alpha = edge_falloff(
-                    out, alpha, falloff, falloff_mode, target_gray,
-                    max(0.0, min(100.0, falloff_intensity)),
-                )
+            if perimeter > 0 or trim > 0 or falloff > 0:
+                # Default: shape the outer silhouette only — fill internal holes,
+                # shape, then re-punch the holes hard-edged. ``shape_internal``
+                # opts in to shaping every boundary (holes included).
+                if shape_internal:
+                    work, holes = alpha, None
+                else:
+                    work, holes = split_internal_holes(alpha)
+                if perimeter > 0:
+                    out, work = smooth_perimeter(out, work, perimeter)
+                if trim > 0:
+                    work = trim_alpha(work, trim)
+                if falloff > 0:
+                    target_gray = 255.0 * max(0.0, min(100.0, falloff_target)) / 100.0
+                    out, work = edge_falloff(
+                        out, work, falloff, falloff_mode, target_gray,
+                        max(0.0, min(100.0, falloff_intensity)),
+                    )
+                if holes is not None:
+                    work = work.copy()
+                    work[holes] = 0
+                alpha = work
             png = encode_png_la(out, alpha)
         else:
             png = encode_png(out)
