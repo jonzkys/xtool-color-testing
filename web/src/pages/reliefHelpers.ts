@@ -100,19 +100,48 @@ export function sampleRgb(
   return [data.data[i], data.data[i + 1], data.data[i + 2]];
 }
 
-/** Downscale an ImageBitmap to <=maxEdge longest edge, return { blob, ratio }.
+/** A drawable image source with intrinsic pixel dimensions — either the
+ *  decoded upload (ImageBitmap) or an expanded/padded copy (canvas). */
+export type ReliefSource = ImageBitmap | HTMLCanvasElement;
+
+/** Pad ``src`` by ``padPct``% of each dimension on every side, filling the new
+ *  border with ``color``. Returns a canvas (no ImageBitmap lifecycle to manage).
+ *  Used by the "Expand canvas" control so an object near the border has room
+ *  for an outward berm / offset; the border fills with the background colour so
+ *  background removal clears it. ``padPct <= 0`` (or sub-pixel) returns ``src``. */
+export function padToCanvas(
+  src: ReliefSource,
+  padPct: number,
+  color: [number, number, number],
+): ReliefSource {
+  const f = Math.max(0, Math.min(50, padPct)) / 100;
+  if (f <= 0) return src;
+  const padX = Math.round(src.width * f);
+  const padY = Math.round(src.height * f);
+  if (padX <= 0 && padY <= 0) return src;
+  const c = document.createElement("canvas");
+  c.width = src.width + 2 * padX;
+  c.height = src.height + 2 * padY;
+  const ctx = c.getContext("2d")!;
+  ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(src, padX, padY);
+  return c;
+}
+
+/** Downscale a source to <=maxEdge longest edge, return { blob, ratio }.
  *  ratio is what scaleParamsForPreview() expects. Browser-only (canvas). */
 export async function downscaleForPreview(
-  bitmap: ImageBitmap,
+  src: ReliefSource,
   maxEdge: number,
 ): Promise<{ blob: Blob; ratio: number }> {
-  const ratio = previewRatio(bitmap.width, bitmap.height, maxEdge);
-  const w = Math.max(1, Math.round(bitmap.width * ratio));
-  const h = Math.max(1, Math.round(bitmap.height * ratio));
+  const ratio = previewRatio(src.width, src.height, maxEdge);
+  const w = Math.max(1, Math.round(src.width * ratio));
+  const h = Math.max(1, Math.round(src.height * ratio));
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, w, h);
+  canvas.getContext("2d")!.drawImage(src, 0, 0, w, h);
   const blob = await new Promise<Blob>((resolve) =>
     canvas.toBlob((b) => resolve(b!), "image/png"),
   );

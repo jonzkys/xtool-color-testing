@@ -24,6 +24,16 @@ export function CutoutControls({ params, onChange, onPickColor }: CutoutControls
 
   return (
     <>
+      <Slider
+        label="Expand canvas %"
+        value={params.expandPct}
+        min={0}
+        max={50}
+        step={1}
+        onChange={(v) => set("expandPct", v)}
+        hint="Pad the image with the background colour so an object near the border has room for an outward berm / offset. With background removal on, the padding is cleared; 0 = no padding."
+      />
+
       <Toggle
         label="Remove background"
         checked={params.removeBackground}

@@ -22,7 +22,7 @@
  *     histogram, gradient thumbnail, % pixels changed).
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card, EmptyState, PageContainer, Section, Toolbar } from "../ui";
 import { ReliefCompare2D } from "../components/relief/ReliefCompare2D";
 import { ReliefSplit2D } from "../components/relief/ReliefSplit2D";
@@ -34,10 +34,12 @@ import { SurfaceControls } from "../components/relief/SurfaceControls";
 import {
   DEFAULT_RELIEF_PARAMS,
   downscaleForPreview,
+  padToCanvas,
   reliefSmooth,
   sampleRgb,
   scaleParamsForPreview,
   type ReliefParams,
+  type ReliefSource,
 } from "./reliefHelpers";
 import {
   DEFAULT_STRETCH_PARAMS,
@@ -111,10 +113,32 @@ export function ReliefPage() {
     ],
   );
 
+  // "Expand canvas": pad the source with the background colour so an object
+  // near the border has room for an outward berm / offset. Derived as a canvas
+  // (no ImageBitmap lifecycle) and used as the single source for the preview,
+  // 3D, inspect, and export alike — so they stay pixel-aligned. When the pad is
+  // 0 this is the raw bitmap unchanged.
+  const workingSource: ReliefSource | null = useMemo(() => {
+    if (!bitmap) return null;
+    if (stretchParams.expandPct <= 0) return bitmap;
+    return padToCanvas(bitmap, stretchParams.expandPct, padColorFor(stretchParams));
+  }, [
+    bitmap,
+    stretchParams.expandPct,
+    stretchParams.bgMode,
+    stretchParams.bgColor,
+    stretchParams.removeBackground,
+  ]);
+
   // Active LUT (monotonic modes) — passed to the inspect curve overlay; null
   // for none/clahe so the overlay draws nothing.
   const [lut, setLut] = useState<Uint8Array | null>(null);
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
+  // The original AS DISPLAYED in the compare views + source thumbnail — the raw
+  // upload, OR (when "Expand canvas" pads) the padded version, so it lines up
+  // with the padded cleaned result. Always === workingSource's pixels.
+  const [displayOriginalUrl, setDisplayOriginalUrl] = useState<string | null>(null);
+  const paddedOriginalUrlRef = useRef<string | null>(null);
   const [smoothedUrl, setSmoothedUrl] = useState<string | null>(null);
   const [cleanedUrl, setCleanedUrl] = useState<string | null>(null); // final (post-stretch)
   const [status, setStatus] = useState<Status>("idle");
@@ -143,6 +167,34 @@ export function ReliefPage() {
   useEffect(() => {
     cleanedUrlRef.current = cleanedUrl;
   }, [cleanedUrl]);
+
+  // Keep the DISPLAYED original in step with workingSource so the compare views
+  // line up with the (padded) cleaned result. No padding → the raw upload URL;
+  // padded → a PNG blob of the padded canvas (revoked on change/unmount).
+  useEffect(() => {
+    const revokePadded = () => {
+      if (paddedOriginalUrlRef.current) {
+        URL.revokeObjectURL(paddedOriginalUrlRef.current);
+        paddedOriginalUrlRef.current = null;
+      }
+    };
+    if (!(workingSource instanceof HTMLCanvasElement)) {
+      revokePadded();
+      setDisplayOriginalUrl(originalUrl);
+      return;
+    }
+    let cancelled = false;
+    workingSource.toBlob((b) => {
+      if (cancelled || !b) return;
+      const url = URL.createObjectURL(b);
+      revokePadded();
+      paddedOriginalUrlRef.current = url;
+      setDisplayOriginalUrl(url);
+    }, "image/png");
+    return () => {
+      cancelled = true;
+    };
+  }, [workingSource, originalUrl]);
 
   // Mirror the current bitmap into a ref so the unmount cleanup can close
   // it (freeing the decoded buffer) without re-running on every change.
@@ -232,7 +284,7 @@ export function ReliefPage() {
 
   // ── Debounced preview smooth ──────────────────────────────────────
   useEffect(() => {
-    if (!bitmap) return;
+    if (!workingSource) return;
     let cancelled = false;
     const handle = window.setTimeout(() => {
       const myReq = ++reqIdRef.current;
@@ -241,7 +293,7 @@ export function ReliefPage() {
       void (async () => {
         try {
           const { blob, ratio } = await downscaleForPreview(
-            bitmap,
+            workingSource,
             PREVIEW_MAX_EDGE,
           );
           const opts = {
@@ -279,9 +331,10 @@ export function ReliefPage() {
       window.clearTimeout(handle);
     };
     // Only the SMOOTHING + backend-stretch fields re-trigger a preview.
+    // workingSource folds in the bitmap + the "Expand canvas" padding.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    bitmap,
+    workingSource,
     params.strength,
     params.edgePreserve,
     params.edgeThreshold,
@@ -302,6 +355,7 @@ export function ReliefPage() {
   useEffect(() => {
     return () => {
       if (originalUrl) URL.revokeObjectURL(originalUrl);
+      if (paddedOriginalUrlRef.current) URL.revokeObjectURL(paddedOriginalUrlRef.current);
       if (smoothedUrlRef.current) URL.revokeObjectURL(smoothedUrlRef.current);
       if (cleanedUrlRef.current) URL.revokeObjectURL(cleanedUrlRef.current);
       bitmapRef.current?.close();
@@ -315,7 +369,7 @@ export function ReliefPage() {
   // gradient, and "% changed" all line up. The client stretch effect below
   // turns ``smoothedData`` into the final ``cleanedData``.
   useEffect(() => {
-    if (!bitmap || !smoothedUrl) {
+    if (!workingSource || !smoothedUrl) {
       setOriginalData(null);
       setSmoothedData(null);
       return;
@@ -337,14 +391,15 @@ export function ReliefPage() {
         cctx.drawImage(img, 0, 0);
         const smoothed = cctx.getImageData(0, 0, w, h);
 
-        // Source bitmap drawn to the SAME box → ImageData (so the diff is
-        // apples-to-apples even though the preview is downscaled).
+        // Working source (incl. any expand padding) drawn to the SAME box →
+        // ImageData, so the diff is apples-to-apples even though the preview is
+        // downscaled (and so it lines up with the padded cleaned result).
         const oc = document.createElement("canvas");
         oc.width = w;
         oc.height = h;
         const octx = oc.getContext("2d", { willReadFrequently: true });
         if (!octx) return;
-        octx.drawImage(bitmap, 0, 0, w, h);
+        octx.drawImage(workingSource, 0, 0, w, h);
         const original = octx.getImageData(0, 0, w, h);
 
         if (cancelled) return;
@@ -368,7 +423,7 @@ export function ReliefPage() {
     return () => {
       cancelled = true;
     };
-  }, [bitmap, smoothedUrl]);
+  }, [workingSource, smoothedUrl]);
 
   // ── Client tone-stretch: smoothedData → final cleanedData (+ URL) ─────
   // Monotonic modes (linear/gamma/asinh/equalize) are a 256-LUT applied here
@@ -424,17 +479,17 @@ export function ReliefPage() {
 
   // ── Export: full-res, unscaled params ─────────────────────────────
   const onExport = useCallback(async () => {
-    if (!bitmap) return;
+    if (!workingSource) return;
     setExporting(true);
     setErrorMsg(null);
     try {
-      // Re-encode the FULL-RES bitmap to a PNG blob via a hidden canvas.
+      // Re-encode the FULL-RES source (incl. any expand padding) to a PNG blob.
       const canvas = document.createElement("canvas");
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
+      canvas.width = workingSource.width;
+      canvas.height = workingSource.height;
       const ctx = canvas.getContext("2d");
       if (!ctx) throw new Error("Failed to get 2D context");
-      ctx.drawImage(bitmap, 0, 0);
+      ctx.drawImage(workingSource, 0, 0);
       const fullBlob = await new Promise<Blob>((resolve, reject) =>
         canvas.toBlob(
           (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
@@ -489,7 +544,7 @@ export function ReliefPage() {
     } finally {
       setExporting(false);
     }
-  }, [bitmap, params, stretchParams, bgOpts]);
+  }, [workingSource, params, stretchParams, bgOpts]);
 
   // ── Centre host: measure CSS box for the compare canvas ───────────
   // The host is mounted only once a depth map exists, so attach the
@@ -694,14 +749,14 @@ export function ReliefPage() {
                     {view === "2d" ? (
                       compare === "split" ? (
                         <ReliefSplit2D
-                          originalUrl={originalUrl}
+                          originalUrl={displayOriginalUrl}
                           cleanedUrl={cleanedUrl}
                           picking={pickingColor}
                           onPick={onPickFraction}
                         />
                       ) : (
                         <ReliefCompare2D
-                          originalUrl={originalUrl}
+                          originalUrl={displayOriginalUrl}
                           cleanedUrl={cleanedUrl}
                           width={hostW}
                           height={hostH}
@@ -782,7 +837,7 @@ export function ReliefPage() {
                       }
                     >
                       <img
-                        src={originalUrl}
+                        src={displayOriginalUrl ?? originalUrl ?? undefined}
                         alt="Source depth map"
                         className="block w-full"
                         draggable={false}
@@ -791,7 +846,7 @@ export function ReliefPage() {
                     <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 font-mono text-[11px] tabular-nums">
                       <RowStat
                         label="Dimensions"
-                        value={`${bitmap.width} × ${bitmap.height}`}
+                        value={`${(workingSource ?? bitmap).width} × ${(workingSource ?? bitmap).height}`}
                       />
                       <RowStat
                         label="Preview cap"
@@ -833,6 +888,16 @@ export function ReliefPage() {
       </PageContainer>
     </div>
   );
+}
+
+/** Colour the "Expand canvas" padding fills with, so the active background
+ *  method clears it: bright→white, pick-colour→the picked colour, otherwise
+ *  (dark threshold, or removal off) black — a depth-0 floor that engraves as
+ *  nothing. */
+function padColorFor(p: StretchParams): [number, number, number] {
+  if (p.removeBackground && p.bgMode === "bright") return [255, 255, 255];
+  if (p.removeBackground && p.bgMode === "colour" && p.bgColor) return p.bgColor;
+  return [0, 0, 0];
 }
 
 /**
