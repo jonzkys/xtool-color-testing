@@ -255,6 +255,23 @@ export function StretchControls({ params, onChange, onPickColor }: StretchContro
             )}
 
             <Toggle
+              label="Smooth edge"
+              checked={params.perimeterEnabled}
+              onChange={(v) => set("perimeterEnabled", v)}
+            />
+            {params.perimeterEnabled && (
+              <Slider
+                label="Smooth %"
+                value={params.perimeterPct}
+                min={0}
+                max={15}
+                step={0.5}
+                onChange={(v) => set("perimeterPct", v)}
+                hint="Round the jagged silhouette outline — smooths the engraved wall and any tapered rim."
+              />
+            )}
+
+            <Toggle
               label="Trim outline"
               checked={params.trimEnabled}
               onChange={(v) => set("trimEnabled", v)}

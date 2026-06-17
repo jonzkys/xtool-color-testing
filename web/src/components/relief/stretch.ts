@@ -45,6 +45,9 @@ export interface StretchParams {
   bgColor: [number, number, number] | null;
   /** Euclidean RGB distance for `colour` mode (0..441). */
   bgTolerance: number;
+  /** Round the jagged silhouette boundary by perimeterPct% of its shorter side. */
+  perimeterEnabled: boolean;
+  perimeterPct: number;
   /** Trim (erode) the object outline by trimPct% of its shorter side. */
   trimEnabled: boolean;
   trimPct: number;
@@ -74,6 +77,8 @@ export const DEFAULT_STRETCH_PARAMS: StretchParams = {
   bgMode: "dark",
   bgColor: null,
   bgTolerance: 40,
+  perimeterEnabled: false,
+  perimeterPct: 2,
   trimEnabled: false,
   trimPct: 2,
   falloffEnabled: false,

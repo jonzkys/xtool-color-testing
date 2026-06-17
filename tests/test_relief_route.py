@@ -143,6 +143,25 @@ def test_relief_smooth_colour_trim_falloff_returns_la_png():
     assert out.getpixel((2, 2))[1] == 0
 
 
+def test_relief_smooth_perimeter_returns_la_png():
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/relief/smooth",
+        files={"file": ("depth.png", _png_rgb(), "image/png")},
+        data={
+            "smooth": "false",
+            "remove_bg": "true",
+            "bg_mode": "dark",
+            "bg_threshold": "8",
+            "perimeter_pct": "5",     # round the silhouette boundary
+        },
+    )
+    assert resp.status_code == 200
+    out = Image.open(BytesIO(resp.content))
+    assert out.mode == "LA"            # grayscale + alpha
+    assert out.size == (48, 48)
+
+
 def test_relief_smooth_colour_mode_without_colour_is_opaque():
     client = TestClient(create_app())
     resp = client.post(

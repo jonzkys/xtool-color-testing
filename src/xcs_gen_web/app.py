@@ -92,6 +92,7 @@ from .relief import (
     encode_png_la,
     parse_rgb,
     smooth_heightfield,
+    smooth_perimeter,
     to_grayscale_u8,
     trim_alpha,
 )
@@ -913,6 +914,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         bg_mode: str = Form("dark"),
         bg_color: str = Form(""),
         bg_tolerance: float = Form(40.0),
+        perimeter_pct: float = Form(0.0),
         trim_pct: float = Form(0.0),
         falloff_pct: float = Form(0.0),
         falloff_mode: str = Form("inward"),
@@ -925,7 +927,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         CLAHE runs after the smooth. Optional background removal (``bg_mode``):
         ``dark`` masks dark pixels (default), ``bright`` masks bright pixels,
         ``colour`` keys the picked ``bg_color`` within ``bg_tolerance`` — all
-        returning an ``LA`` PNG; ``trim_pct`` then erodes the object outline and
+        returning an ``LA`` PNG. ``perimeter_pct`` then rounds the jagged
+        silhouette boundary, ``trim_pct`` erodes the object outline, and
         ``falloff_pct`` ramps a soft edge. The monotonic tone modes are applied
         client-side as a LUT."""
         raw = file.file.read()
@@ -967,8 +970,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     high=(bg_mode == "bright"),
                 )
         if alpha is not None:
+            perimeter = max(0.0, min(25.0, perimeter_pct))
             trim = max(0.0, min(50.0, trim_pct))
             falloff = max(0.0, min(50.0, falloff_pct))
+            if perimeter > 0:
+                # Clean the silhouette boundary first so the wall + any taper
+                # follow a smooth curve instead of the source mask's staircase.
+                out, alpha = smooth_perimeter(out, alpha, perimeter)
             if trim > 0:
                 alpha = trim_alpha(alpha, trim)
             if falloff > 0:

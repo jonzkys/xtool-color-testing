@@ -178,6 +178,37 @@ def test_trim_alpha_guards_negative_and_shape():
         trim_alpha(np.zeros((4, 4, 3), np.uint8), 10)  # non-2D → ValueError
 
 
+def test_smooth_perimeter_fills_notches_and_keeps_solid_walls():
+    from xcs_gen_web.relief import smooth_perimeter
+    gray = np.full((80, 80), 200, np.uint8)
+    alpha = np.zeros((80, 80), np.uint8)
+    alpha[20:60, 20:60] = 255                         # 40×40 object (short side 40)
+    for x in (30, 40, 50):                            # 1px-wide, 5px-deep notches
+        alpha[20:25, x] = 0
+    out_gray, out_alpha = smooth_perimeter(gray, alpha, 8)  # radius ≈ 3px → wash out
+    # The notches are filled: the top edge is now a solid run, opaque + with height.
+    assert out_alpha[22, 30] == 255 and out_alpha[22, 40] == 255
+    assert out_gray[22, 30] == 200                    # filled pixel took the edge height
+    # The object core is untouched.
+    assert out_alpha[40, 40] == 255 and out_gray[40, 40] == 200
+
+
+def test_smooth_perimeter_noop_clamp_and_guards():
+    import pytest
+    from xcs_gen_web.relief import smooth_perimeter
+    gray = np.full((40, 40), 120, np.uint8)
+    alpha = np.zeros((40, 40), np.uint8)
+    alpha[10:30, 10:30] = 255
+    g0, a0 = smooth_perimeter(gray, alpha, 0)         # pct 0 → identity
+    assert (g0 == gray).all() and (a0 == alpha).all()
+    tiny = np.zeros((40, 40), np.uint8)
+    tiny[19:21, 19:21] = 255                          # 2×2 — large pct would erase it
+    g1, a1 = smooth_perimeter(gray, tiny, 90)
+    assert (a1 == tiny).all()                         # clamp: never erase the object
+    with pytest.raises(ValueError):
+        smooth_perimeter(gray, np.zeros((40, 20), np.uint8), 5)  # shape mismatch
+
+
 def test_edge_falloff_inward_down_bevels_to_floor():
     from xcs_gen_web.relief import edge_falloff
     gray = np.full((40, 40), 200, np.uint8)

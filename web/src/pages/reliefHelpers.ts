@@ -50,6 +50,7 @@ export async function reliefSmooth(
       threshold: number;
       color: [number, number, number] | null;
       tolerance: number;
+      perimeterPct: number; // 0 = off
       trimPct: number;    // 0 = off
       falloffPct: number; // 0 = off
       falloffMode: "inward" | "outward";
@@ -78,6 +79,7 @@ export async function reliefSmooth(
     fd.append("bg_threshold", String(b.threshold));
     if (b.color) fd.append("bg_color", b.color.join(","));
     fd.append("bg_tolerance", String(b.tolerance));
+    fd.append("perimeter_pct", String(b.perimeterPct));
     fd.append("trim_pct", String(b.trimPct));
     fd.append("falloff_pct", String(b.falloffPct));
     fd.append("falloff_mode", b.falloffMode);

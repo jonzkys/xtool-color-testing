@@ -76,6 +76,9 @@ export function ReliefPage() {
             threshold: stretchParams.bgThreshold,
             color: stretchParams.bgColor,
             tolerance: stretchParams.bgTolerance,
+            perimeterPct: stretchParams.perimeterEnabled
+              ? stretchParams.perimeterPct
+              : 0,
             trimPct: stretchParams.trimEnabled ? stretchParams.trimPct : 0,
             falloffPct: stretchParams.falloffEnabled
               ? stretchParams.falloffPct
@@ -91,6 +94,8 @@ export function ReliefPage() {
       stretchParams.bgThreshold,
       stretchParams.bgColor,
       stretchParams.bgTolerance,
+      stretchParams.perimeterEnabled,
+      stretchParams.perimeterPct,
       stretchParams.trimEnabled,
       stretchParams.trimPct,
       stretchParams.falloffEnabled,

@@ -25,6 +25,7 @@ __all__ = [
     "parse_rgb",
     "colour_background_alpha",
     "trim_alpha",
+    "smooth_perimeter",
     "edge_falloff",
     "falloff_curve",
 ]
@@ -176,6 +177,66 @@ def trim_alpha(alpha: np.ndarray, pct: float) -> np.ndarray:
     if not eroded.any():
         return alpha  # clamp: never erase the whole object
     return np.ascontiguousarray(np.where(eroded > 0, 255, 0).astype(np.uint8))
+
+
+def smooth_perimeter(
+    gray: np.ndarray, alpha: np.ndarray, pct: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Round off the silhouette boundary itself so the engraved wall (and any edge
+    taper) follows a clean curve instead of the source mask's pixel staircase.
+
+    A threshold/chroma-keyed outline is jagged at the pixel level — that staircase
+    becomes the residual teeth on a tapered rim. Two passes: (1) blur the binary
+    mask and re-threshold to round the boundary SHAPE symmetrically (better than
+    morphology for organic outlines) — notches and matching protrusions within
+    ``pct``% of the object's shorter bbox side wash out; pixels the smoothing ADDS
+    take the nearest edge height so no holes appear. (2) Even out the rim HEIGHT in
+    a band around the new boundary with a normalised blur (background never bleeds
+    the rim down), leaving the interior sharp. Returns ``(gray, alpha)``; no-op for
+    ``pct <= 0``, an empty mask, or a sub-pixel radius. Clamps (returns inputs) if
+    it would empty the object."""
+    if gray.ndim != 2 or alpha.ndim != 2:
+        raise ValueError("smooth_perimeter expects single-channel gray + alpha")
+    if gray.shape != alpha.shape:
+        raise ValueError("smooth_perimeter: gray and alpha must have the same shape")
+    if pct <= 0:
+        return gray, alpha
+    fg = (alpha > 0).astype(np.uint8)
+    ys, xs = np.where(fg > 0)
+    if ys.size == 0:
+        return gray, alpha
+    short = min(int(ys.max() - ys.min() + 1), int(xs.max() - xs.min() + 1))
+    radius = int(round(pct / 100.0 * short))
+    if radius < 1:
+        return gray, alpha
+    # Blur the mask and re-threshold at 50% → a boundary that ignores features
+    # smaller than ~radius. sigma ≈ radius gives that cut-off.
+    blurred = cv2.GaussianBlur(fg.astype(np.float32) * 255.0, (0, 0), float(radius))
+    clean = (blurred >= 127.5).astype(np.uint8)
+    if not clean.any():
+        return gray, alpha  # clamp: never erase the whole object
+    new_alpha = np.where(clean > 0, 255, 0).astype(np.uint8)
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1, 2 * radius + 1))
+    out = gray.astype(np.float32)
+    # Give pixels the smoothing ADDED (former background, now opaque) a height
+    # pulled from the nearest original foreground — a dilation of the masked gray
+    # reaches them since they sit within ~radius of the old boundary.
+    added = (clean > 0) & (fg == 0)
+    if added.any():
+        edge_fill = cv2.dilate(np.where(fg > 0, gray, 0), k, iterations=1).astype(np.float32)
+        out = np.where(added, edge_fill, out)
+    # Even out the rim height in a band just inside the new boundary. A normalised
+    # (mask-weighted) blur means the floor/background never drags the rim down; the
+    # interior — outside the band — is left untouched so detail stays crisp.
+    new_fg = clean.astype(np.float32)
+    band_mask = (clean > 0) & (cv2.erode(clean, k, iterations=1) == 0)
+    if band_mask.any():
+        ksm = max(3, radius | 1)
+        num = cv2.GaussianBlur(out * new_fg, (ksm, ksm), 0)
+        den = cv2.GaussianBlur(new_fg, (ksm, ksm), 0)
+        out = np.where(band_mask, num / np.maximum(den, 1e-6), out)
+    out = np.clip(np.rint(out), 0, 255).astype(np.uint8)
+    return np.ascontiguousarray(out), np.ascontiguousarray(new_alpha)
 
 
 def falloff_curve(t: np.ndarray, intensity: float) -> np.ndarray:

@@ -90,8 +90,8 @@ describe("reliefSmooth form fields", () => {
     await reliefSmooth(new Blob(["x"]), { ...DEFAULT_RELIEF_PARAMS }, {
       background: {
         mode: "dark", threshold: 8, color: null, tolerance: 40,
-        trimPct: 0, falloffPct: 0, falloffMode: "inward", falloffTarget: 0,
-        falloffIntensity: 50,
+        perimeterPct: 0, trimPct: 0, falloffPct: 0, falloffMode: "inward",
+        falloffTarget: 0, falloffIntensity: 50,
       },
     });
     expect(sent[0].get("remove_bg")).toBe("true");
@@ -126,8 +126,8 @@ describe("reliefSmooth background fields", () => {
       await reliefSmooth(new Blob(), { ...DEFAULT_RELIEF_PARAMS, smoothEnabled: true }, {
         background: {
           mode: "colour", threshold: 8, color: [10, 20, 30], tolerance: 25,
-          trimPct: 3, falloffPct: 7, falloffMode: "outward", falloffTarget: 100,
-          falloffIntensity: 70,
+          perimeterPct: 4, trimPct: 3, falloffPct: 7, falloffMode: "outward",
+          falloffTarget: 100, falloffIntensity: 70,
         },
       });
     } finally {
@@ -137,6 +137,7 @@ describe("reliefSmooth background fields", () => {
     expect(sent!.get("bg_mode")).toBe("colour");
     expect(sent!.get("bg_color")).toBe("10,20,30");
     expect(sent!.get("bg_tolerance")).toBe("25");
+    expect(sent!.get("perimeter_pct")).toBe("4");
     expect(sent!.get("trim_pct")).toBe("3");
     expect(sent!.get("falloff_pct")).toBe("7");
     expect(sent!.get("falloff_mode")).toBe("outward");
