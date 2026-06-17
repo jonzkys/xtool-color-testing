@@ -70,7 +70,44 @@ interface Engine {
  * built in the XY plane with ``segX+1 × segY+1`` vertices laid out
  * row-major from top-left, which lines the vertex grid up directly with
  * image rows/columns. Recomputes normals so lighting follows the surface.
+ *
+ * Each mesh vertex AREA-AVERAGES the source pixels its cell spans rather
+ * than nearest-sampling one pixel. Nearest-sampling a coarse mesh over a
+ * hard height cliff (e.g. a tall edge skirt dropping to the floor) aliases
+ * the cliff into a forest of spikes — adjacent vertices snap to either the
+ * rim or the floor. Box-averaging turns that cliff into a clean one-cell
+ * ramp, so the preview is faithful to the (smooth) exported height-field.
  */
+/** Area-resample ``data`` down to ``cols × rows`` using the browser's
+ *  high-quality (bilinear/area) scaler, returning the small RGBA buffer.
+ *  A proper area filter is what de-aliases a hard height cliff: every mesh
+ *  cell becomes the true average of the pixels it covers, so a tall edge
+ *  skirt reads as one clean ramp instead of a forest of nearest-sampled
+ *  spikes. Falls back to the source buffer if a 2D context isn't available. */
+function areaResample(
+  data: ImageData,
+  cols: number,
+  rows: number,
+): { px: Uint8ClampedArray; w: number; h: number } {
+  const { width: iw, height: ih } = data;
+  if (cols >= iw && rows >= ih) return { px: data.data, w: iw, h: ih };
+  const src = document.createElement("canvas");
+  src.width = iw;
+  src.height = ih;
+  const sctx = src.getContext("2d");
+  if (!sctx) return { px: data.data, w: iw, h: ih };
+  sctx.putImageData(data, 0, 0);
+  const dst = document.createElement("canvas");
+  dst.width = cols;
+  dst.height = rows;
+  const dctx = dst.getContext("2d");
+  if (!dctx) return { px: data.data, w: iw, h: ih };
+  dctx.imageSmoothingEnabled = true;
+  dctx.imageSmoothingQuality = "high";
+  dctx.drawImage(src, 0, 0, iw, ih, 0, 0, cols, rows);
+  return { px: dctx.getImageData(0, 0, cols, rows).data, w: cols, h: rows };
+}
+
 function displace(
   geometry: PlaneGeometry,
   data: ImageData,
@@ -78,16 +115,16 @@ function displace(
   segY: number,
 ) {
   const pos = geometry.attributes.position;
-  const { width: iw, height: ih, data: px } = data;
   const cols = segX + 1;
   const rows = segY + 1;
+  // Pre-shrink to the mesh grid with a real area filter, then sample 1:1.
+  const { px, w, h } = areaResample(data, cols, rows);
   let i = 0;
   for (let gy = 0; gy < rows; gy++) {
-    // Map this mesh row onto a source image row (nearest-sample downscale).
-    const sy = rows > 1 ? Math.round((gy / (rows - 1)) * (ih - 1)) : 0;
+    const sy = rows > 1 ? Math.round((gy / (rows - 1)) * (h - 1)) : 0;
     for (let gx = 0; gx < cols; gx++) {
-      const sx = cols > 1 ? Math.round((gx / (cols - 1)) * (iw - 1)) : 0;
-      const o = (sy * iw + sx) * 4;
+      const sx = cols > 1 ? Math.round((gx / (cols - 1)) * (w - 1)) : 0;
+      const o = (sy * w + sx) * 4;
       // Rec. 601 luma, normalised 0..1. Depth maps are grayscale so any
       // channel would do, but a weighted luma is robust to faint tints.
       const lum =
