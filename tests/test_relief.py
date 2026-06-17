@@ -203,6 +203,25 @@ def test_edge_falloff_inward_target_level():
     assert (out0 == gray).all() and (a0 == alpha).all()  # pct 0 → identity
 
 
+def test_edge_falloff_inward_no_comb_on_notched_boundary():
+    from xcs_gen_web.relief import edge_falloff
+    # A square with small background notches cut into the top edge. Ramping the
+    # edge UP to the peak would spike along those notch "fingers" (the sawtooth
+    # comb) unless the boundary is cleaned first.
+    gray = np.full((80, 80), 80, np.uint8)
+    alpha = np.zeros((80, 80), np.uint8)
+    alpha[20:60, 20:60] = 255                         # 40×40 object (short side 40)
+    for x in (30, 40, 50):                            # 1px-wide, 4px-deep notches
+        alpha[20:24, x] = 0
+    out, _ = edge_falloff(gray, alpha, 25, mode="inward", target=255)  # band 10px → peak
+    # Along a row 7px inside the (notched) top edge — sampled mid-span to avoid the
+    # square's own corner geometry — the ramp must be smooth: no notch should poke
+    # up far above its neighbours. (Without cleaning this row combs to ~60 p2p.)
+    line = out[27, 30:50].astype(int)
+    assert int(np.max(np.abs(np.diff(line)))) < 12     # neighbours stay close → no comb
+    assert int(line.max() - line.min()) < 35           # gentle scallop, not a sawtooth
+
+
 def test_edge_falloff_outward_grows_and_ramps():
     from xcs_gen_web.relief import edge_falloff
     gray = np.full((60, 60), 200, np.uint8)

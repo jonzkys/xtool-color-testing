@@ -194,6 +194,22 @@ def falloff_curve(t: np.ndarray, intensity: float) -> np.ndarray:
     return smooth * (1.0 - f) + smoother * f
 
 
+def _smooth_mask(mask: np.ndarray, radius: int) -> np.ndarray:
+    """Round off segmentation jaggies before a distance-based ramp.
+
+    A threshold/chroma-key boundary is pixel-noisy: tiny background notches poke
+    into the object. A distance transform keeps those notch pixels "near the
+    edge", so a ramp toward a high target spikes along them — the sawtooth comb.
+    Closing fills the notches (kills inward fingers); opening shaves matching
+    protrusions. Returns a uint8 0/1 mask; the kernel scales with the band so a
+    wide falloff cleans proportionally more."""
+    r = max(1, radius // 2)
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
+    m = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, k)
+    m = cv2.morphologyEx(m, cv2.MORPH_OPEN, k)
+    return (m > 0).astype(np.uint8)
+
+
 def edge_falloff(
     gray: np.ndarray,
     alpha: np.ndarray,
@@ -262,8 +278,13 @@ def edge_falloff(
             np.ascontiguousarray(out_alpha),
         )
 
-    # inward
-    dist = cv2.distanceTransform(fg, cv2.DIST_L2, 3)
+    # inward — ramp a band INSIDE the boundary from the target (at the edge) back
+    # to the original surface. The comb on a noisy silhouette is a TANGENTIAL
+    # variation (along the boundary): cleaning the mask removes it at the source,
+    # so the ramp stays smooth without blurring the radial profile (which would
+    # pull the edge off its target). A precise distance field avoids stair-steps.
+    clean = _smooth_mask(fg, radius)
+    dist = cv2.distanceTransform(clean, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
     c = falloff_curve(dist / band, intensity)  # 0 at boundary → 1 at inner edge
     blended = tgt + (g - tgt) * c
     out = np.where(fg > 0, np.rint(blended), g)
