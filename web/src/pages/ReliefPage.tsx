@@ -278,9 +278,7 @@ export function ReliefPage() {
       cancelled = true;
       window.clearTimeout(handle);
     };
-    // Only the SMOOTHING fields re-trigger a preview. targetLayers /
-    // zDescentPerLayers are Phase-2 pass-through and must NOT cost a
-    // backend round-trip, so they're deliberately excluded here.
+    // Only the SMOOTHING + backend-stretch fields re-trigger a preview.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     bitmap,

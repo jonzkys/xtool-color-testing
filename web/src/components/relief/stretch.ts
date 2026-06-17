@@ -86,7 +86,7 @@ export const DEFAULT_STRETCH_PARAMS: StretchParams = {
   falloffEnabled: false,
   falloffPct: 5,
   falloffTarget: 0,
-  falloffMode: "inward",
+  falloffMode: "outward",
   falloffIntensity: 50,
 };
 
