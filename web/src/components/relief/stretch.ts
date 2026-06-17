@@ -51,7 +51,12 @@ export interface StretchParams {
   /** Non-linear edge falloff over falloffPct% of the shorter side. */
   falloffEnabled: boolean;
   falloffPct: number;
-  falloffDir: "down" | "up";
+  /** Level the edge tapers to, 0 (floor) .. 100 (peak) % of the tone range. */
+  falloffTarget: number;
+  /** Inward = bevel a band inside the object; outward = grow a tapered skirt. */
+  falloffMode: "inward" | "outward";
+  /** Falloff curve steepness, 0 (gentle/linear) .. 100 (sharp). */
+  falloffIntensity: number;
 }
 
 export const DEFAULT_STRETCH_PARAMS: StretchParams = {
@@ -73,7 +78,9 @@ export const DEFAULT_STRETCH_PARAMS: StretchParams = {
   trimPct: 2,
   falloffEnabled: false,
   falloffPct: 5,
-  falloffDir: "down",
+  falloffTarget: 0,
+  falloffMode: "inward",
+  falloffIntensity: 50,
 };
 
 /** Rec. 601 luma — for a grayscale depth map R=G=B so this is just the value. */

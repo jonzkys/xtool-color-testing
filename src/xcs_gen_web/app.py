@@ -915,7 +915,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         bg_tolerance: float = Form(40.0),
         trim_pct: float = Form(0.0),
         falloff_pct: float = Form(0.0),
-        falloff_dir: str = Form("down"),
+        falloff_mode: str = Form("inward"),
+        falloff_target: float = Form(0.0),
+        falloff_intensity: float = Form(50.0),
     ) -> Response:
         """Smooth a grayscale depth map and return the cleaned PNG. Stateless.
 
@@ -970,7 +972,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if trim > 0:
                 alpha = trim_alpha(alpha, trim)
             if falloff > 0:
-                out = edge_falloff(out, alpha, falloff, falloff_dir)
+                # falloff_target is a 0..100% level (0 = floor, 100 = peak) → grey.
+                target_gray = 255.0 * max(0.0, min(100.0, falloff_target)) / 100.0
+                out, alpha = edge_falloff(
+                    out, alpha, falloff, falloff_mode, target_gray,
+                    max(0.0, min(100.0, falloff_intensity)),
+                )
             png = encode_png_la(out, alpha)
         else:
             png = encode_png(out)

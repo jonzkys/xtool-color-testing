@@ -22,6 +22,10 @@ export interface ReliefCompare2DProps {
   /** Host box in CSS px, fed from the page's ResizeObserver. */
   width: number;
   height: number;
+  /** Eyedropper armed: a click samples a pixel instead of dragging the wipe. */
+  picking?: boolean;
+  /** Called with the clicked image position as fractions (0..1) when picking. */
+  onPick?: (fracX: number, fracY: number) => void;
 }
 
 /** Load an image URL into a decoded ``HTMLImageElement`` (or null). */
@@ -79,10 +83,15 @@ export function ReliefCompare2D({
   cleanedUrl,
   width,
   height,
+  picking = false,
+  onPick,
 }: ReliefCompare2DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const original = useLoadedImage(originalUrl);
   const cleaned = useLoadedImage(cleanedUrl);
+  // Last contain-fit rect (CSS px) of the displayed image — used to map an
+  // eyedropper click back to an image fraction, accounting for the letterbox.
+  const fitRef = useRef<FitRect | null>(null);
 
   // Split position as a fraction (0..1) of the host width. The handle
   // is dragged in CSS-px space and clamped a little off each edge so a
@@ -118,6 +127,7 @@ export function ReliefCompare2D({
     if (!ref) return;
     const fit = containFit(ref.naturalWidth, ref.naturalHeight, width, height, PAD);
     if (!fit) return;
+    fitRef.current = fit;
 
     const splitX = width * split;
 
@@ -189,6 +199,19 @@ export function ReliefCompare2D({
     ctx.textAlign = "left";
   }, [original, cleaned, width, height, split, empty]);
 
+  // Map an eyedropper click to an image fraction (0..1), honouring the
+  // contain-fit letterbox. Returns null if the click landed in the padding.
+  const pickFromClient = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    const fit = fitRef.current;
+    if (!canvas || !fit || !onPick) return;
+    const rect = canvas.getBoundingClientRect();
+    const fx = (clientX - rect.left - fit.x) / fit.w;
+    const fy = (clientY - rect.top - fit.y) / fit.h;
+    if (fx < 0 || fx > 1 || fy < 0 || fy > 1) return;
+    onPick(fx, fy);
+  };
+
   // ── Drag handling ─────────────────────────────────────────────────
   const updateSplitFromClientX = (clientX: number) => {
     const canvas = canvasRef.current;
@@ -239,8 +262,12 @@ export function ReliefCompare2D({
     <canvas
       ref={canvasRef}
       aria-label="Relief before/after comparison"
-      className="block rounded-[8px] touch-none select-none cursor-ew-resize"
+      className={`block rounded-[8px] touch-none select-none ${picking ? "cursor-crosshair" : "cursor-ew-resize"}`}
       onPointerDown={(e) => {
+        if (picking) {
+          pickFromClient(e.clientX, e.clientY);
+          return;
+        }
         draggingRef.current = true;
         (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
         updateSplitFromClientX(e.clientX);

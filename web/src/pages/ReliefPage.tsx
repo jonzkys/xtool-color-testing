@@ -80,7 +80,9 @@ export function ReliefPage() {
             falloffPct: stretchParams.falloffEnabled
               ? stretchParams.falloffPct
               : 0,
-            falloffDir: stretchParams.falloffDir,
+            falloffMode: stretchParams.falloffMode,
+            falloffTarget: stretchParams.falloffTarget,
+            falloffIntensity: stretchParams.falloffIntensity,
           }
         : undefined,
     [
@@ -93,7 +95,9 @@ export function ReliefPage() {
       stretchParams.trimPct,
       stretchParams.falloffEnabled,
       stretchParams.falloffPct,
-      stretchParams.falloffDir,
+      stretchParams.falloffMode,
+      stretchParams.falloffTarget,
+      stretchParams.falloffIntensity,
     ],
   );
 
@@ -177,6 +181,18 @@ export function ReliefPage() {
       setPickingColor(false);
     },
     [pickingColor, originalData],
+  );
+
+  // Eyedropper pick from the main 2D preview: ReliefCompare2D hands back the
+  // clicked position as image fractions (letterbox already accounted for).
+  const onPickFraction = useCallback(
+    (fx: number, fy: number) => {
+      if (!originalData) return;
+      const rgb = sampleRgb(originalData, fx, fy);
+      setStretchParams((p) => ({ ...p, bgColor: rgb, bgMode: "colour", removeBackground: true }));
+      setPickingColor(false);
+    },
+    [originalData],
   );
 
   // ── File decode ───────────────────────────────────────────────────
@@ -646,6 +662,8 @@ export function ReliefPage() {
                         cleanedUrl={cleanedUrl}
                         width={hostW}
                         height={hostH}
+                        picking={pickingColor}
+                        onPick={onPickFraction}
                       />
                     ) : (
                       <ReliefSurface3D

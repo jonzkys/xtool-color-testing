@@ -52,7 +52,9 @@ export async function reliefSmooth(
       tolerance: number;
       trimPct: number;    // 0 = off
       falloffPct: number; // 0 = off
-      falloffDir: "down" | "up";
+      falloffMode: "inward" | "outward";
+      falloffTarget: number;    // 0 (floor) .. 100 (peak) % of tone range
+      falloffIntensity: number; // 0..100
     };
   },
 ): Promise<Blob> {
@@ -78,7 +80,9 @@ export async function reliefSmooth(
     fd.append("bg_tolerance", String(b.tolerance));
     fd.append("trim_pct", String(b.trimPct));
     fd.append("falloff_pct", String(b.falloffPct));
-    fd.append("falloff_dir", b.falloffDir);
+    fd.append("falloff_mode", b.falloffMode);
+    fd.append("falloff_target", String(b.falloffTarget));
+    fd.append("falloff_intensity", String(b.falloffIntensity));
   }
   const res = await fetch("/api/relief/smooth", { method: "POST", body: fd });
   if (!res.ok) throw new Error(`relief smooth failed: ${res.status}`);

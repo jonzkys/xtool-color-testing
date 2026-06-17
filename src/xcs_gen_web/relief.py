@@ -26,6 +26,7 @@ __all__ = [
     "colour_background_alpha",
     "trim_alpha",
     "edge_falloff",
+    "falloff_curve",
 ]
 
 
@@ -177,35 +178,96 @@ def trim_alpha(alpha: np.ndarray, pct: float) -> np.ndarray:
     return np.ascontiguousarray(np.where(eroded > 0, 255, 0).astype(np.uint8))
 
 
+def falloff_curve(t: np.ndarray, intensity: float) -> np.ndarray:
+    """Ease ``t``∈[0,1] → [0,1] with a steepness set by ``intensity`` (0..100):
+    0 = gentle (linear), 50 = smoothstep, 100 = sharp (smootherstep). Continuous,
+    monotonic, and pinned at the ends (c(0)=0, c(1)=1) for every intensity."""
+    tc = np.clip(t, 0.0, 1.0)
+    lin = tc
+    smooth = tc * tc * (3.0 - 2.0 * tc)
+    smoother = tc * tc * tc * (tc * (6.0 * tc - 15.0) + 10.0)
+    k = max(0.0, min(100.0, float(intensity)))
+    if k <= 50.0:
+        f = k / 50.0
+        return lin * (1.0 - f) + smooth * f
+    f = (k - 50.0) / 50.0
+    return smooth * (1.0 - f) + smoother * f
+
+
 def edge_falloff(
-    gray: np.ndarray, alpha: np.ndarray, pct: float, direction: str = "down"
-) -> np.ndarray:
-    """Ramp the height within a band of ``pct``% of the object's shorter bbox side
-    just inside the foreground boundary, via smoothstep, toward a target:
-    ``"down"`` → 0 (bevel to floor), ``"up"`` → 255 (rim to peak). Background
-    (``alpha == 0``) is untouched. No-op for ``pct <= 0`` or a sub-pixel band."""
+    gray: np.ndarray,
+    alpha: np.ndarray,
+    pct: float,
+    mode: str = "inward",
+    target: float = 0.0,
+    intensity: float = 50.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Soften the object edge over a band of ``pct``% of the object's shorter bbox
+    side, eased by ``intensity`` (see ``falloff_curve``). Returns ``(gray, alpha)``.
+
+    - ``mode="inward"``: ramp the existing pixels in a band INSIDE the boundary
+      toward the target; the object footprint (alpha) is unchanged.
+    - ``mode="outward"``: GROW the object by the band (dilate the OUTER silhouette)
+      and ramp the ADDED ring from the edge height toward the target; the object's
+      own surface is untouched and the alpha grows to include the skirt.
+
+    ``target`` is the grey LEVEL the edge eases toward, 0..255 (0 = floor, 255 =
+    peak — any level in between). No-op (returns inputs) for ``pct <= 0``, an empty
+    mask, or a sub-pixel band."""
     if gray.ndim != 2 or alpha.ndim != 2:
         raise ValueError("edge_falloff expects single-channel gray + alpha")
     if gray.shape != alpha.shape:
         raise ValueError("edge_falloff: gray and alpha must have the same shape")
     if pct <= 0:
-        return gray
+        return gray, alpha
     fg = (alpha > 0).astype(np.uint8)
     ys, xs = np.where(fg > 0)
     if ys.size == 0:
-        return gray
+        return gray, alpha
     short = min(int(ys.max() - ys.min() + 1), int(xs.max() - xs.min() + 1))
     band = pct / 100.0 * short
     if band < 1:
-        return gray
-    dist = cv2.distanceTransform(fg, cv2.DIST_L2, 3)
-    t = np.clip(dist / band, 0.0, 1.0)
-    c = t * t * (3.0 - 2.0 * t)  # smoothstep — zero-slope at both ends
-    target = 255.0 if str(direction) == "up" else 0.0
+        return gray, alpha
+    tgt = max(0.0, min(255.0, float(target)))
     g = gray.astype(np.float32)
-    blended = target + (g - target) * c
+    radius = int(round(band))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1, 2 * radius + 1))
+
+    if str(mode) == "outward":
+        # Grow the OUTER silhouette only: fill internal holes first so the skirt
+        # doesn't raise a wall in every internal gap of complex art (the source of
+        # the spiky "forest" on detailed depth maps).
+        contours, _ = cv2.findContours(fg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        filled = np.zeros_like(fg)
+        cv2.drawContours(filled, contours, -1, 1, thickness=cv2.FILLED)
+        dilated = cv2.dilate(filled, kernel, iterations=1)
+        ring = (dilated > 0) & (filled == 0)
+        # Ramp each ring pixel from its nearest edge height to the target.
+        eroded = cv2.erode(filled, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)), iterations=1)
+        boundary_gray = np.where((filled > 0) & (eroded == 0), gray, 0).astype(np.uint8)
+        base = cv2.dilate(boundary_gray, kernel, iterations=1).astype(np.float32)
+        dist_out = cv2.distanceTransform((filled == 0).astype(np.uint8), cv2.DIST_L2, 3)
+        c = falloff_curve(dist_out / band, intensity)  # 0 at boundary → 1 at outer
+        ring_h = base * (1.0 - c) + tgt * c
+        out = np.where(ring, ring_h, g)
+        # Soften residual jaggedness in the skirt (blur only the ring band).
+        ksm = max(3, radius | 1)
+        smoothed = cv2.GaussianBlur(out.astype(np.float32), (ksm, ksm), 0)
+        out = np.where(ring, smoothed, out)
+        # Add only the outer skirt; preserve the original foreground's internal
+        # holes (the fill above was just to locate the outer silhouette).
+        out_alpha = np.where(ring | (fg > 0), 255, 0).astype(np.uint8)
+        return (
+            np.ascontiguousarray(np.clip(np.rint(out), 0, 255).astype(np.uint8)),
+            np.ascontiguousarray(out_alpha),
+        )
+
+    # inward
+    dist = cv2.distanceTransform(fg, cv2.DIST_L2, 3)
+    c = falloff_curve(dist / band, intensity)  # 0 at boundary → 1 at inner edge
+    blended = tgt + (g - tgt) * c
     out = np.where(fg > 0, np.rint(blended), g)
-    return np.ascontiguousarray(np.clip(out, 0, 255).astype(np.uint8))
+    return np.ascontiguousarray(np.clip(out, 0, 255).astype(np.uint8)), alpha
 
 
 def encode_png_la(gray: np.ndarray, alpha: np.ndarray) -> bytes:

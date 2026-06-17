@@ -132,7 +132,7 @@ def test_relief_smooth_colour_trim_falloff_returns_la_png():
             "bg_tolerance": "20",
             "trim_pct": "5",
             "falloff_pct": "10",
-            "falloff_dir": "down",
+            "falloff_target": "0",
         },
     )
     assert resp.status_code == 200

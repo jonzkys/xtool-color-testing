@@ -277,23 +277,40 @@ export function StretchControls({ params, onChange, onPickColor }: StretchContro
             />
             {params.falloffEnabled && (
               <>
-                <Field label="Direction">
+                <Field label="Falloff mode">
                   <Select
-                    aria-label="Edge falloff direction"
-                    value={params.falloffDir}
-                    onChange={(e) => set("falloffDir", e.target.value as "down" | "up")}
+                    aria-label="Edge falloff mode"
+                    value={params.falloffMode}
+                    onChange={(e) => set("falloffMode", e.target.value as "inward" | "outward")}
                   >
-                    <option value="down">Down — bevel to floor</option>
-                    <option value="up">Up — rim to peak</option>
+                    <option value="inward">Inward — bevel the object edge</option>
+                    <option value="outward">Outward — add a tapered skirt</option>
                   </Select>
                 </Field>
                 <Slider
-                  label="Falloff %"
+                  label="Taper to %"
+                  value={params.falloffTarget}
+                  min={0}
+                  max={100}
+                  step={1}
+                  onChange={(v) => set("falloffTarget", v)}
+                  hint="Level the edge ramps to — 0 = floor, 100 = peak."
+                />
+                <Slider
+                  label="Offset %"
                   value={params.falloffPct}
                   min={0}
                   max={50}
                   step={0.5}
                   onChange={(v) => set("falloffPct", v)}
+                />
+                <Slider
+                  label="Intensity"
+                  value={params.falloffIntensity}
+                  min={0}
+                  max={100}
+                  step={1}
+                  onChange={(v) => set("falloffIntensity", v)}
                 />
               </>
             )}

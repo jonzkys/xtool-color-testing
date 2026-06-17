@@ -178,27 +178,54 @@ def test_trim_alpha_guards_negative_and_shape():
         trim_alpha(np.zeros((4, 4, 3), np.uint8), 10)  # non-2D → ValueError
 
 
-def test_edge_falloff_down_bevels_to_floor():
+def test_edge_falloff_inward_down_bevels_to_floor():
     from xcs_gen_web.relief import edge_falloff
     gray = np.full((40, 40), 200, np.uint8)
     alpha = np.zeros((40, 40), np.uint8)
     alpha[5:35, 5:35] = 255                       # 30×30 object (short side 30)
-    out = edge_falloff(gray, alpha, 20, "down")   # band = 6 px
+    out, a2 = edge_falloff(gray, alpha, 20, mode="inward", target=0)  # band 6px → floor
     assert out[5, 20] < 80                          # edge ramped toward the floor
     assert out[20, 20] == 200                       # centre (beyond band) unchanged
+    assert (a2 == alpha).all()                      # inward leaves the footprint alone
     row = out[20, 5:21].astype(int)                 # edge → centre along a row
     assert (np.diff(row) >= 0).all()                # monotonic non-decreasing
 
 
-def test_edge_falloff_up_and_noop():
+def test_edge_falloff_inward_target_level():
     from xcs_gen_web.relief import edge_falloff
     gray = np.full((40, 40), 100, np.uint8)
     alpha = np.zeros((40, 40), np.uint8)
     alpha[5:35, 5:35] = 255
-    up = edge_falloff(gray, alpha, 20, "up")
-    assert up[5, 20] > 180                           # edge ramped toward the peak
+    up, _ = edge_falloff(gray, alpha, 20, mode="inward", target=255)
+    assert up[5, 20] > 180                           # edge ramped toward the peak (255)
     assert up[20, 20] == 100                         # centre (beyond band) unchanged
-    assert (edge_falloff(gray, alpha, 0, "down") == gray).all()  # pct 0 → identity
+    out0, a0 = edge_falloff(gray, alpha, 0)
+    assert (out0 == gray).all() and (a0 == alpha).all()  # pct 0 → identity
+
+
+def test_edge_falloff_outward_grows_and_ramps():
+    from xcs_gen_web.relief import edge_falloff
+    gray = np.full((60, 60), 200, np.uint8)
+    alpha = np.zeros((60, 60), np.uint8)
+    alpha[20:40, 20:40] = 255                        # 20×20 object (short side 20)
+    out, a2 = edge_falloff(gray, alpha, 25, mode="outward", target=0)  # band 5px → floor
+    assert int((a2 > 0).sum()) > int((alpha > 0).sum())  # footprint GREW (skirt added)
+    assert out[30, 30] == 200                        # object interior untouched
+    assert a2[30, 18] == 255                         # a former-background pixel is now opaque skirt
+    assert out[30, 18] < 200                         # ...and ramped below the edge height
+
+
+def test_edge_falloff_outward_does_not_wall_internal_holes():
+    from xcs_gen_web.relief import edge_falloff
+    # An annulus: 30×30 object with a 10×10 hole punched in the middle.
+    gray = np.full((60, 60), 200, np.uint8)
+    alpha = np.zeros((60, 60), np.uint8)
+    alpha[15:45, 15:45] = 255
+    alpha[25:35, 25:35] = 0                          # internal hole
+    out, a2 = edge_falloff(gray, alpha, 25, mode="outward", target=255)  # would-be wall up
+    # The hole centre must NOT be raised into a wall (outer-silhouette skirt only).
+    assert out[30, 30] == gray[30, 30]
+    assert a2[30, 30] == 0                           # hole stays transparent, no skirt inside it
 
 
 def test_edge_falloff_guards_shape():
@@ -209,3 +236,15 @@ def test_edge_falloff_guards_shape():
         edge_falloff(np.zeros((10, 10, 3), np.uint8), gray, 20)  # non-2D
     with pytest.raises(ValueError):
         edge_falloff(gray, np.zeros((10, 20), np.uint8), 20)     # shape mismatch
+
+
+def test_falloff_curve_endpoints_and_intensity():
+    from xcs_gen_web.relief import falloff_curve
+    for k in (0, 50, 100):
+        c = falloff_curve(np.array([0.0, 0.5, 1.0]), k)
+        assert abs(float(c[0]) - 0.0) < 1e-9 and abs(float(c[2]) - 1.0) < 1e-9
+        assert float(c[0]) <= float(c[1]) <= float(c[2])  # monotonic
+    # gentler (low intensity) sits at/above a sharper curve at the midpoint
+    mid_gentle = float(falloff_curve(np.array([0.25]), 0)[0])   # linear → 0.25
+    mid_sharp = float(falloff_curve(np.array([0.25]), 100)[0])  # smootherstep → lower
+    assert mid_gentle > mid_sharp
