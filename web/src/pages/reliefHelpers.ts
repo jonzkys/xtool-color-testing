@@ -6,10 +6,6 @@ export interface ReliefParams {
   medianKsize: number;    // 3 | 5
   /** Master switch for the smoothing pass — off = use the raw heightfield. */
   smoothEnabled: boolean;
-  /** Informational / preview-only in Phase 1 — does NOT affect the smooth. */
-  targetLayers: number;   // 2..256
-  /** Pass-through for a future export — does NOT affect the smooth. */
-  zDescentPerLayers: number; // >=0
 }
 
 export const DEFAULT_RELIEF_PARAMS: ReliefParams = {
@@ -19,8 +15,6 @@ export const DEFAULT_RELIEF_PARAMS: ReliefParams = {
   spikeRemoval: true,
   medianKsize: 3,
   smoothEnabled: true,
-  targetLayers: 256,
-  zDescentPerLayers: 0,
 };
 
 /** Longest-edge downscale ratio for a max edge (<=1; 1 if already small). */

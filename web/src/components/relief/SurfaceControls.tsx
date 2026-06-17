@@ -7,7 +7,7 @@
  * long-form hints so the panel stays compact.
  */
 
-import { NumberField, Section } from "../../ui";
+import { Section } from "../../ui";
 import type { ReliefParams } from "../../pages/reliefHelpers";
 import type { StretchMode, StretchParams } from "./stretch";
 import { SegmentedChoice, SelectField, Slider, Toggle } from "./fields";
@@ -239,26 +239,6 @@ export function SurfaceControls({
           checked={stretchParams.removeEmptyLayers}
           onChange={(v) => setS("removeEmptyLayers", v)}
           hint="Offset the lowest value to 0 — drops layers the machine would otherwise cut as air. Most visible with Mode = None."
-        />
-      </Section>
-
-      {/* ── Layers (preview / pass-through) ────────────────────────── */}
-      <Section title="Layers" dense>
-        <Slider
-          label="Target layers"
-          value={reliefParams.targetLayers}
-          min={2}
-          max={256}
-          onChange={(v) => setR("targetLayers", v)}
-          hint="Preview only — Z is not quantised here yet."
-        />
-        <NumberField
-          label="Z descent / layers (mm)"
-          value={reliefParams.zDescentPerLayers}
-          min={0}
-          step={0.01}
-          onChange={(v) => setR("zDescentPerLayers", Math.max(0, v))}
-          hint="Pass-through for a future export — no effect on the smooth."
         />
       </Section>
     </>
