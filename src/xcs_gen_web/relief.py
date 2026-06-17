@@ -7,6 +7,7 @@ sharp drops. Pure numpy/cv2 — no HTTP.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from io import BytesIO
 
@@ -33,6 +34,8 @@ __all__ = [
     "area_background_mask",
     "combine_backgrounds",
     "split_internal_holes",
+    "Subtraction",
+    "parse_subtractions",
 ]
 
 
@@ -502,3 +505,73 @@ def split_internal_holes(alpha: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     solid = alpha.copy()
     solid[holes] = 255
     return np.ascontiguousarray(solid), np.ascontiguousarray(holes)
+
+
+@dataclass(frozen=True)
+class Subtraction:
+    """One background-subtraction op. ``method`` ∈ dark|bright|colour|area.
+    ``threshold`` is the dark/bright luminance cut; ``color``/``tolerance`` the
+    colour key (colour/area); ``seed`` the fractional (x, y) click (area only)."""
+    method: str
+    threshold: int = 8
+    color: tuple[int, int, int] | None = None
+    tolerance: float = 40.0
+    seed: tuple[float, float] | None = None
+
+
+_SUB_METHODS = {"dark", "bright", "colour", "area"}
+
+
+def _parse_sub_color(v: object) -> tuple[int, int, int] | None:
+    if not isinstance(v, (list, tuple)) or len(v) != 3:
+        return None
+    try:
+        r, g, b = (max(0, min(255, int(round(float(c))))) for c in v)
+    except (ValueError, TypeError):
+        return None
+    return (r, g, b)
+
+
+def _parse_sub_seed(sx: object, sy: object) -> tuple[float, float] | None:
+    """Fractional (x, y) seed, each snapped to [0, 1]; either missing → None."""
+    if sx is None or sy is None:
+        return None
+    try:
+        return (max(0.0, min(1.0, float(sx))), max(0.0, min(1.0, float(sy))))
+    except (ValueError, TypeError):
+        return None
+
+
+def parse_subtractions(json_str: str) -> list[Subtraction]:
+    """Parse a JSON array of subtraction ops, tolerantly: clamp out-of-range
+    threshold (0..255) / tolerance (0..441), snap bad numbers to defaults, drop
+    entries without a usable method. Malformed / non-list JSON → ``[]``."""
+    try:
+        raw = json.loads(json_str) if json_str else []
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(raw, list):
+        return []
+    out: list[Subtraction] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        method = item.get("method")
+        if method not in _SUB_METHODS:
+            continue
+        try:
+            threshold = max(0, min(255, int(round(float(item.get("threshold", 8))))))
+        except (ValueError, TypeError):
+            threshold = 8
+        try:
+            tolerance = max(0.0, min(441.0, float(item.get("tolerance", 40.0))))
+        except (ValueError, TypeError):
+            tolerance = 40.0
+        out.append(Subtraction(
+            method=method,
+            threshold=threshold,
+            color=_parse_sub_color(item.get("color")),
+            tolerance=tolerance,
+            seed=_parse_sub_seed(item.get("seedX"), item.get("seedY")),
+        ))
+    return out
