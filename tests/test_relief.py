@@ -428,3 +428,25 @@ def test_combine_backgrounds_empty_is_all_foreground():
     from xcs_gen_web.relief import combine_backgrounds
     alpha = combine_backgrounds([], shape=(3, 3))
     assert alpha.shape == (3, 3) and (alpha == 255).all()
+
+
+def test_split_internal_holes_marks_enclosed_background():
+    from xcs_gen_web.relief import split_internal_holes
+    alpha = np.full((20, 20), 255, np.uint8)     # solid object
+    alpha[8:12, 8:12] = 0                          # an enclosed internal hole
+    alpha[0, :] = 0                                # border-connected background strip
+    solid, holes = split_internal_holes(alpha)
+    assert holes.dtype == bool
+    assert holes[9, 9]               # enclosed hole detected
+    assert not holes[0, 5]           # border background is NOT a hole
+    assert solid[9, 9] == 255        # hole filled solid
+    assert solid[0, 5] == 0          # border background unchanged in solid
+
+
+def test_split_internal_holes_no_holes_is_identity():
+    from xcs_gen_web.relief import split_internal_holes
+    alpha = np.full((10, 10), 255, np.uint8)
+    alpha[0, :] = 0                                # only border background
+    solid, holes = split_internal_holes(alpha)
+    assert not holes.any()
+    assert np.array_equal(solid, alpha)

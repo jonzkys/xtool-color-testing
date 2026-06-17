@@ -32,6 +32,7 @@ __all__ = [
     "colour_background_mask",
     "area_background_mask",
     "combine_backgrounds",
+    "split_internal_holes",
 ]
 
 
@@ -479,3 +480,25 @@ def encode_png(gray: np.ndarray) -> bytes:
     buf = BytesIO()
     Image.fromarray(gray, mode="L").save(buf, format="PNG")
     return buf.getvalue()
+
+
+def split_internal_holes(alpha: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Split a 0/255 alpha into ``(solid_alpha, holes)``.
+
+    A "hole" is a background pixel (alpha == 0) not connected to the image
+    border — an enclosed pocket. ``holes`` is a boolean mask of those pixels;
+    ``solid_alpha`` is ``alpha`` with the holes filled to 255 (opaque), i.e. the
+    outer silhouette only. Border-connected background is left as background."""
+    if alpha.ndim != 2:
+        raise ValueError("split_internal_holes expects a single-channel alpha")
+    bg = (alpha == 0).astype(np.uint8)             # 1 = background
+    # Flood the OUTER background inward from a 1px background border so a corner
+    # that happens to be foreground can't trap the fill. Foreground (0) walls it.
+    bordered = cv2.copyMakeBorder(bg, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=1)
+    ffmask = np.zeros((bordered.shape[0] + 2, bordered.shape[1] + 2), np.uint8)
+    cv2.floodFill(bordered, ffmask, (0, 0), 2)     # outer background → 2
+    outer = bordered[1:-1, 1:-1] == 2
+    holes = (alpha == 0) & (~outer)
+    solid = alpha.copy()
+    solid[holes] = 255
+    return np.ascontiguousarray(solid), np.ascontiguousarray(holes)
