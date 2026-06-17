@@ -291,6 +291,12 @@ def _smooth_mask(mask: np.ndarray, radius: int) -> np.ndarray:
     return (m > 0).astype(np.uint8)
 
 
+# Grey level by which an outward berm becomes fully opaque; below it the berm's
+# alpha fades to 0 so its near-floor outer fringe blends into the (transparent)
+# background instead of showing as an opaque near-black ring.
+FLOOR_FADE = 24.0
+
+
 def edge_falloff(
     gray: np.ndarray,
     alpha: np.ndarray,
@@ -369,12 +375,18 @@ def edge_falloff(
         # and (when enabled) smooth_perimeter has already cleaned the boundary
         # tangentially. Blurring would bleed the crest outward and lift the outer
         # edge off the floor — reintroducing the very cliff the berm avoids.
-        # Add only the outer berm; preserve the original foreground's internal
-        # holes (the fill above was just to locate the outer silhouette).
-        out_alpha = np.where(ring | (fg > 0), 255, 0).astype(np.uint8)
+        #
+        # Alpha: the object stays fully opaque, but the berm RING fades to
+        # transparent as its height nears the floor. Otherwise the outer slope's
+        # gray-0 fringe is an opaque near-black ring against the transparent
+        # background. Fading the alpha (rather than holding it opaque) blends the
+        # fringe into the backdrop while the surface still reaches the floor
+        # before going transparent — so there's no 3D cliff and no black band.
+        ring_alpha = np.clip(ring_h / FLOOR_FADE, 0.0, 1.0) * 255.0
+        out_alpha = np.where(fg > 0, 255.0, np.where(ring, ring_alpha, 0.0))
         return (
             np.ascontiguousarray(np.clip(np.rint(out), 0, 255).astype(np.uint8)),
-            np.ascontiguousarray(out_alpha),
+            np.ascontiguousarray(np.clip(np.rint(out_alpha), 0, 255).astype(np.uint8)),
         )
 
     # inward — ramp a band INSIDE the boundary from the target (at the edge) back

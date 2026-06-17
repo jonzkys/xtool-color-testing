@@ -310,6 +310,28 @@ def test_edge_falloff_outward_berm_crest_and_no_outer_cliff():
     assert max(crests) - min(crests) < 30
 
 
+def test_edge_falloff_outward_berm_fringe_fades_not_opaque_black():
+    from xcs_gen_web.relief import edge_falloff
+    # Outward berm to the peak on a bright object: the outer slope dips to the
+    # floor (gray ~0). The fix makes those near-floor berm pixels TRANSPARENT,
+    # so there is no opaque near-black ring against the (transparent) backdrop.
+    gray = np.full((140, 140), 220, np.uint8)
+    alpha = np.zeros((140, 140), np.uint8)
+    alpha[50:90, 50:90] = 255
+    out, a2 = edge_falloff(gray, alpha, 25, mode="outward", target=255)
+    # No berm pixel may be both opaque AND near-black — that was the ring.
+    # (Restrict to grown pixels via the original background mask so the bright
+    #  object itself isn't considered.)
+    was_bg = alpha == 0
+    opaque_black = was_bg & (a2 > 200) & (out < 12)
+    assert int(opaque_black.sum()) == 0
+    assert int(a2[70, 70]) == 255                          # object interior stays opaque
+    # The raised part of the border (well above the floor) is still fully opaque.
+    high = (a2 > 0) & was_bg & (out > 180)
+    assert int(high.sum()) > 0 and float(a2[high].mean()) > 250
+    assert int((a2 > 0).sum()) > int((alpha > 0).sum())    # footprint still grew
+
+
 def test_edge_falloff_outward_does_not_wall_internal_holes():
     from xcs_gen_web.relief import edge_falloff
     # An annulus: 30×30 object with a 10×10 hole punched in the middle.
