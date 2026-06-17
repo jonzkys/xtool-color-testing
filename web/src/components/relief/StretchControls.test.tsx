@@ -6,7 +6,7 @@ import { DEFAULT_STRETCH_PARAMS } from "./stretch";
 describe("StretchControls", () => {
   it("renders the Stretch section and a mode control", () => {
     render(
-      <StretchControls params={DEFAULT_STRETCH_PARAMS} onChange={() => {}} />,
+      <StretchControls params={DEFAULT_STRETCH_PARAMS} onChange={() => {}} onPickColor={() => {}} />,
     );
     expect(screen.getByText("Stretch")).toBeInTheDocument();
   });
@@ -14,7 +14,7 @@ describe("StretchControls", () => {
   it("emits a mode change", () => {
     const onChange = vi.fn();
     render(
-      <StretchControls params={DEFAULT_STRETCH_PARAMS} onChange={onChange} />,
+      <StretchControls params={DEFAULT_STRETCH_PARAMS} onChange={onChange} onPickColor={() => {}} />,
     );
     const select = screen.getByLabelText(/mode/i);
     fireEvent.change(select, { target: { value: "linear" } });
@@ -28,6 +28,7 @@ describe("StretchControls", () => {
       <StretchControls
         params={{ ...DEFAULT_STRETCH_PARAMS, mode: "gamma" }}
         onChange={() => {}}
+        onPickColor={() => {}}
       />,
     );
     expect(screen.getByLabelText(/gamma/i)).toBeInTheDocument();
@@ -35,7 +36,7 @@ describe("StretchControls", () => {
 
   it("renders the Trim section toggles", () => {
     render(
-      <StretchControls params={DEFAULT_STRETCH_PARAMS} onChange={() => {}} />,
+      <StretchControls params={DEFAULT_STRETCH_PARAMS} onChange={() => {}} onPickColor={() => {}} />,
     );
     expect(screen.getByText("Trim")).toBeInTheDocument();
     expect(screen.getByText(/remove empty layers/i)).toBeInTheDocument();
@@ -44,13 +45,14 @@ describe("StretchControls", () => {
 
   it("shows the threshold slider only when remove background is on", () => {
     const { rerender } = render(
-      <StretchControls params={DEFAULT_STRETCH_PARAMS} onChange={() => {}} />,
+      <StretchControls params={DEFAULT_STRETCH_PARAMS} onChange={() => {}} onPickColor={() => {}} />,
     );
     expect(screen.queryByLabelText(/threshold/i)).not.toBeInTheDocument();
     rerender(
       <StretchControls
         params={{ ...DEFAULT_STRETCH_PARAMS, removeBackground: true }}
         onChange={() => {}}
+        onPickColor={() => {}}
       />,
     );
     expect(screen.getByLabelText(/threshold/i)).toBeInTheDocument();

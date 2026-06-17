@@ -86,10 +86,15 @@ from .relief import (
     ReliefSmoothParams,
     apply_clahe,
     background_alpha,
+    colour_background_alpha,
+    edge_falloff,
     encode_png,
     encode_png_la,
+    parse_rgb,
     smooth_heightfield,
+    smooth_perimeter,
     to_grayscale_u8,
+    trim_alpha,
 )
 from .svg_converter import svg_stack_to_xcs_bytes
 from .svg_layers_converter import (
@@ -906,14 +911,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         clahe_tiles: int = Form(8),
         remove_bg: bool = Form(False),
         bg_threshold: int = Form(8),
-        bg_high: bool = Form(False),
+        bg_mode: str = Form("dark"),
+        bg_color: str = Form(""),
+        bg_tolerance: float = Form(40.0),
+        perimeter_pct: float = Form(0.0),
+        trim_pct: float = Form(0.0),
+        falloff_pct: float = Form(0.0),
+        falloff_mode: str = Form("inward"),
+        falloff_target: float = Form(0.0),
+        falloff_intensity: float = Form(50.0),
     ) -> Response:
         """Smooth a grayscale depth map and return the cleaned PNG. Stateless.
 
         ``smooth=false`` skips the smoothing pass (raw heightfield). Optional
-        CLAHE runs after the smooth; optional background removal masks near-black
-        (or near-white) pixels to transparency and returns an ``LA`` PNG. The
-        monotonic tone modes are applied client-side as a LUT."""
+        CLAHE runs after the smooth. Optional background removal (``bg_mode``):
+        ``dark`` masks dark pixels (default), ``bright`` masks bright pixels,
+        ``colour`` keys the picked ``bg_color`` within ``bg_tolerance`` — all
+        returning an ``LA`` PNG. ``perimeter_pct`` then rounds the jagged
+        silhouette boundary, ``trim_pct`` erodes the object outline, and
+        ``falloff_pct`` ramps a soft edge. The monotonic tone modes are applied
+        client-side as a LUT."""
         raw = file.file.read()
         try:
             bgr = decode_image_bytes(raw)
@@ -938,10 +955,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 clip_limit=max(0.1, min(40.0, clahe_clip)),
                 tiles=max(1, min(32, clahe_tiles)),
             )
+        alpha = None
         if remove_bg:
-            alpha = background_alpha(
-                out, threshold=max(0, min(255, bg_threshold)), high=bg_high
-            )
+            if bg_mode == "colour":
+                color = parse_rgb(bg_color)
+                if color is not None:
+                    alpha = colour_background_alpha(
+                        bgr, color, max(0.0, min(441.0, bg_tolerance))
+                    )
+                # color is None → nothing picked yet: leave alpha None (no removal)
+            else:
+                alpha = background_alpha(
+                    out, threshold=max(0, min(255, bg_threshold)),
+                    high=(bg_mode == "bright"),
+                )
+        if alpha is not None:
+            perimeter = max(0.0, min(25.0, perimeter_pct))
+            trim = max(0.0, min(50.0, trim_pct))
+            falloff = max(0.0, min(50.0, falloff_pct))
+            if perimeter > 0:
+                # Clean the silhouette boundary first so the wall + any taper
+                # follow a smooth curve instead of the source mask's staircase.
+                out, alpha = smooth_perimeter(out, alpha, perimeter)
+            if trim > 0:
+                alpha = trim_alpha(alpha, trim)
+            if falloff > 0:
+                # falloff_target is a 0..100% level (0 = floor, 100 = peak) → grey.
+                target_gray = 255.0 * max(0.0, min(100.0, falloff_target)) / 100.0
+                out, alpha = edge_falloff(
+                    out, alpha, falloff, falloff_mode, target_gray,
+                    max(0.0, min(100.0, falloff_intensity)),
+                )
             png = encode_png_la(out, alpha)
         else:
             png = encode_png(out)

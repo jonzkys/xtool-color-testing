@@ -70,6 +70,13 @@ interface Engine {
  * built in the XY plane with ``segX+1 × segY+1`` vertices laid out
  * row-major from top-left, which lines the vertex grid up directly with
  * image rows/columns. Recomputes normals so lighting follows the surface.
+ *
+ * Each mesh vertex AREA-AVERAGES the source pixels its cell spans rather
+ * than nearest-sampling one pixel. Nearest-sampling a coarse mesh over a
+ * hard height cliff (e.g. a tall edge skirt dropping to the floor) aliases
+ * the cliff into a forest of spikes — adjacent vertices snap to either the
+ * rim or the floor. Box-averaging turns that cliff into a clean one-cell
+ * ramp, so the preview is faithful to the (smooth) exported height-field.
  */
 function displace(
   geometry: PlaneGeometry,
@@ -81,17 +88,40 @@ function displace(
   const { width: iw, height: ih, data: px } = data;
   const cols = segX + 1;
   const rows = segY + 1;
+  // Box-average each mesh cell over the source pixels it covers, treating the
+  // (transparent) background as floor — luminance 0. Nearest-sampling a coarse
+  // mesh over a hard height step (a raised edge border meeting the floor) aliases
+  // it into a forest of spikes; averaging the WHOLE cell, background included,
+  // turns every step into a clean one-cell ramp. The window is sized a little
+  // wider than one cell so adjacent cells overlap and leave no gaps. (A canvas
+  // downscale can't do this — it composites premultiplied alpha, so it ignores
+  // the transparent background and keeps the aliasing step.)
+  const stepX = cols > 1 ? iw / cols : iw;
+  const stepY = rows > 1 ? ih / rows : ih;
+  const halfX = Math.max(1, Math.round(stepX));
+  const halfY = Math.max(1, Math.round(stepY));
   let i = 0;
   for (let gy = 0; gy < rows; gy++) {
-    // Map this mesh row onto a source image row (nearest-sample downscale).
-    const sy = rows > 1 ? Math.round((gy / (rows - 1)) * (ih - 1)) : 0;
+    const cy = rows > 1 ? Math.round((gy / (rows - 1)) * (ih - 1)) : 0;
+    const y0 = Math.max(0, cy - halfY);
+    const y1 = Math.min(ih - 1, cy + halfY);
     for (let gx = 0; gx < cols; gx++) {
-      const sx = cols > 1 ? Math.round((gx / (cols - 1)) * (iw - 1)) : 0;
-      const o = (sy * iw + sx) * 4;
-      // Rec. 601 luma, normalised 0..1. Depth maps are grayscale so any
+      const cx = cols > 1 ? Math.round((gx / (cols - 1)) * (iw - 1)) : 0;
+      const x0 = Math.max(0, cx - halfX);
+      const x1 = Math.min(iw - 1, cx + halfX);
+      // Rec. 601 luma, averaged over the cell. Depth maps are grayscale so any
       // channel would do, but a weighted luma is robust to faint tints.
-      const lum =
-        (0.299 * px[o] + 0.587 * px[o + 1] + 0.114 * px[o + 2]) / 255;
+      let sum = 0;
+      let n = 0;
+      for (let sy = y0; sy <= y1; sy++) {
+        let o = (sy * iw + x0) * 4;
+        for (let sx = x0; sx <= x1; sx++) {
+          sum += 0.299 * px[o] + 0.587 * px[o + 1] + 0.114 * px[o + 2];
+          o += 4;
+          n++;
+        }
+      }
+      const lum = (n > 0 ? sum / n : 0) / 255;
       pos.setZ(i, lum * RELIEF_SCALE);
       i++;
     }

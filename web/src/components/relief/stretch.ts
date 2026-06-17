@@ -39,7 +39,29 @@ export interface StretchParams {
   /** Mask near-black (or near-white) pixels to transparency — backend. */
   removeBackground: boolean;
   bgThreshold: number;
-  bgHigh: boolean;
+  /** Background removal method. */
+  bgMode: "dark" | "bright" | "colour";
+  /** Picked background colour (RGB) for `colour` mode; null until sampled. */
+  bgColor: [number, number, number] | null;
+  /** Euclidean RGB distance for `colour` mode (0..441). */
+  bgTolerance: number;
+  /** Round the jagged silhouette boundary by perimeterPct% of its shorter side. */
+  perimeterEnabled: boolean;
+  perimeterPct: number;
+  /** Trim (erode) the object outline by trimPct% of its shorter side. */
+  trimEnabled: boolean;
+  trimPct: number;
+  /** Non-linear edge falloff over falloffPct% of the shorter side. */
+  falloffEnabled: boolean;
+  falloffPct: number;
+  /** Level the edge tapers to (inward bevel) or the berm crest (outward),
+   *  0 (floor) .. 100 (peak) % of the tone range. */
+  falloffTarget: number;
+  /** Inward = bevel a band inside the object; outward = a raised border berm
+   *  (rises to the crest then back to the floor — no vertical cliff). */
+  falloffMode: "inward" | "outward";
+  /** Falloff curve steepness, 0 (gentle/linear) .. 100 (sharp). */
+  falloffIntensity: number;
 }
 
 export const DEFAULT_STRETCH_PARAMS: StretchParams = {
@@ -54,7 +76,18 @@ export const DEFAULT_STRETCH_PARAMS: StretchParams = {
   removeEmptyLayers: false,
   removeBackground: false,
   bgThreshold: 8,
-  bgHigh: false,
+  bgMode: "dark",
+  bgColor: null,
+  bgTolerance: 40,
+  perimeterEnabled: false,
+  perimeterPct: 2,
+  trimEnabled: false,
+  trimPct: 2,
+  falloffEnabled: false,
+  falloffPct: 5,
+  falloffTarget: 0,
+  falloffMode: "inward",
+  falloffIntensity: 50,
 };
 
 /** Rec. 601 luma — for a grayscale depth map R=G=B so this is just the value. */
