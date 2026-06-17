@@ -16,7 +16,8 @@
  *     a few hundred ms instead of grinding on a 4k map.
  *   - export re-runs the smooth on the FULL-RES bitmap with the
  *     UNSCALED params, then downloads the PNG.
- *   - left:  ``ReliefControls`` — strength / edge / speckle / layers.
+ *   - left:  two collapsible groups — ``CutoutControls`` (background +
+ *     edge shaping) and ``SurfaceControls`` (denoise / stretch / layers).
  *   - right: source + export, plus ``ReliefInspect`` (luminance
  *     histogram, gradient thumbnail, % pixels changed).
  */
@@ -24,9 +25,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, EmptyState, PageContainer, Section, Toolbar } from "../ui";
 import { ReliefCompare2D } from "../components/relief/ReliefCompare2D";
-import { ReliefControls } from "../components/relief/ReliefControls";
+import { ReliefSplit2D } from "../components/relief/ReliefSplit2D";
 import { ReliefInspect } from "../components/relief/ReliefInspect";
 import { ReliefSurface3D } from "../components/relief/ReliefSurface3D";
+import { CollapsibleGroup } from "../components/relief/CollapsibleGroup";
+import { CutoutControls } from "../components/relief/CutoutControls";
+import { SurfaceControls } from "../components/relief/SurfaceControls";
 import {
   DEFAULT_RELIEF_PARAMS,
   downscaleForPreview,
@@ -35,7 +39,6 @@ import {
   scaleParamsForPreview,
   type ReliefParams,
 } from "./reliefHelpers";
-import { StretchControls } from "../components/relief/StretchControls";
 import {
   DEFAULT_STRETCH_PARAMS,
   buildLut,
@@ -54,6 +57,8 @@ const PREVIEW_MAX_EDGE = 800;
 type Status = "idle" | "smoothing" | "ready" | "error";
 /** Centre-preview view mode. */
 type PreviewView = "2d" | "3d";
+/** Overlay (2D wipe / single 3D surface) vs. side-by-side compare. */
+type CompareMode = "overlay" | "split";
 /** Which height-field the 3D surface displays. */
 type SurfaceShow = "original" | "cleaned";
 
@@ -123,6 +128,7 @@ export function ReliefPage() {
   // surface flips between the source and cleaned height-fields via `show`
   // (default cleaned — the result is what the user is dialling in).
   const [view, setView] = useState<PreviewView>("2d");
+  const [compare, setCompare] = useState<CompareMode>("overlay");
   const [show, setShow] = useState<SurfaceShow>("cleaned");
 
   // Object-URL bookkeeping so we can revoke on replace / unmount and
@@ -610,14 +616,31 @@ export function ReliefPage() {
         )}
 
         <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_300px] items-stretch gap-4">
-          {/* ── Settings (left) — smoothing controls ─────────────────── */}
+          {/* ── Settings (left) — Cutout + Surface groups ────────────── */}
           <div className="flex min-h-0 flex-col gap-4 overflow-y-auto pr-1">
-            <ReliefControls params={params} onChange={setParams} />
-            <StretchControls
-              params={stretchParams}
-              onChange={setStretchParams}
-              onPickColor={() => setPickingColor(true)}
-            />
+            <CollapsibleGroup
+              title="Cutout"
+              storageKey="relief.group.cutout"
+              hint="Lift the object off its background, then shape the cut edge. The edge controls depend on background removal."
+            >
+              <CutoutControls
+                params={stretchParams}
+                onChange={setStretchParams}
+                onPickColor={() => setPickingColor(true)}
+              />
+            </CollapsibleGroup>
+            <CollapsibleGroup
+              title="Surface"
+              storageKey="relief.group.surface"
+              hint="Shape the height-field itself: denoise, tone stretch, and layer hints."
+            >
+              <SurfaceControls
+                reliefParams={params}
+                onReliefChange={setParams}
+                stretchParams={stretchParams}
+                onStretchChange={setStretchParams}
+              />
+            </CollapsibleGroup>
           </div>
 
           {/* ── Compare (centre) ────────────────────────────────────── */}
@@ -625,19 +648,28 @@ export function ReliefPage() {
             <Card padded={false} className="flex min-h-0 flex-1 flex-col p-3">
               {bitmap ? (
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-                  {/* View chrome: 2D split ↔ 3D surface, plus the 3D
-                      orig/clean flip. */}
+                  {/* View chrome: 2D ↔ 3D, overlay ↔ side-by-side, plus the
+                      3D orig/clean flip (overlay only). */}
                   <div className="flex shrink-0 flex-wrap items-center gap-3">
                     <SegmentedControl<PreviewView>
                       label="preview view"
                       value={view}
                       onChange={setView}
                       options={[
-                        { id: "2d", label: "2D split" },
-                        { id: "3d", label: "3D surface" },
+                        { id: "2d", label: "2D" },
+                        { id: "3d", label: "3D" },
                       ]}
                     />
-                    {view === "3d" && (
+                    <SegmentedControl<CompareMode>
+                      label="compare mode"
+                      value={compare}
+                      onChange={setCompare}
+                      options={[
+                        { id: "overlay", label: "Overlay" },
+                        { id: "split", label: "Side-by-side" },
+                      ]}
+                    />
+                    {view === "3d" && compare === "overlay" && (
                       <SegmentedControl<SurfaceShow>
                         label="surface source"
                         value={show}
@@ -662,13 +694,31 @@ export function ReliefPage() {
                     }}
                   >
                     {view === "2d" ? (
-                      <ReliefCompare2D
-                        originalUrl={originalUrl}
-                        cleanedUrl={cleanedUrl}
+                      compare === "split" ? (
+                        <ReliefSplit2D
+                          originalUrl={originalUrl}
+                          cleanedUrl={cleanedUrl}
+                          picking={pickingColor}
+                          onPick={onPickFraction}
+                        />
+                      ) : (
+                        <ReliefCompare2D
+                          originalUrl={originalUrl}
+                          cleanedUrl={cleanedUrl}
+                          width={hostW}
+                          height={hostH}
+                          picking={pickingColor}
+                          onPick={onPickFraction}
+                        />
+                      )
+                    ) : compare === "split" ? (
+                      <ReliefSurface3D
+                        heightData={originalData}
+                        compareData={cleanedData}
+                        labels={["original", "cleaned"]}
+                        show="original"
                         width={hostW}
                         height={hostH}
-                        picking={pickingColor}
-                        onPick={onPickFraction}
                       />
                     ) : (
                       <ReliefSurface3D
