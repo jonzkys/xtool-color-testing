@@ -148,3 +148,31 @@ def test_colour_background_alpha_respects_tolerance():
     assert tight[0, 0] == 0 and tight[0, 1] == 255
     loose = colour_background_alpha(img, (0, 0, 0), 30)   # 20 <= 30 → bg
     assert loose[0, 0] == 0 and loose[0, 1] == 0
+
+
+def test_trim_alpha_erodes_object_inward():
+    from xcs_gen_web.relief import trim_alpha
+    alpha = np.zeros((40, 40), np.uint8)
+    alpha[10:30, 10:30] = 255            # 20×20 square (short side 20)
+    out = trim_alpha(alpha, 10)          # 10% of 20 → radius 2 → shave a 2px ring
+    assert out[10, 10] == 0              # corner shaved off
+    assert out[20, 20] == 255            # centre kept
+    assert int((out > 0).sum()) < int((alpha > 0).sum())
+
+
+def test_trim_alpha_noop_and_clamp():
+    from xcs_gen_web.relief import trim_alpha
+    alpha = np.zeros((40, 40), np.uint8)
+    alpha[18:22, 18:22] = 255            # 4×4 square
+    assert (trim_alpha(alpha, 0) == alpha).all()    # pct 0 → identity
+    assert (trim_alpha(alpha, 90) == alpha).all()   # would empty → clamp to input
+
+
+def test_trim_alpha_guards_negative_and_shape():
+    import pytest
+    from xcs_gen_web.relief import trim_alpha
+    alpha = np.zeros((20, 20), np.uint8)
+    alpha[5:15, 5:15] = 255
+    assert (trim_alpha(alpha, -5) == alpha).all()   # negative pct → identity
+    with pytest.raises(ValueError):
+        trim_alpha(np.zeros((4, 4, 3), np.uint8), 10)  # non-2D → ValueError

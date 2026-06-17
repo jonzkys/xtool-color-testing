@@ -24,6 +24,7 @@ __all__ = [
     "encode_png",
     "parse_rgb",
     "colour_background_alpha",
+    "trim_alpha",
 ]
 
 
@@ -147,6 +148,32 @@ def colour_background_alpha(
     mask = dist <= float(tolerance)  # background
     alpha = np.where(mask, 0, 255).astype(np.uint8)
     return np.ascontiguousarray(alpha)
+
+
+def trim_alpha(alpha: np.ndarray, pct: float) -> np.ndarray:
+    """Erode the foreground (``alpha > 0``) inward by ``pct``% of the object's
+    shorter bbox side, shaving a fuzzy border. ``pct`` is relative to the WHOLE
+    foreground bounding box (the union of all opaque regions). No-op for
+    ``pct <= 0`` or a sub-pixel radius; clamps (returns the input) if the erosion
+    would empty the object — never erase it."""
+    if alpha.ndim != 2:
+        raise ValueError("trim_alpha expects a single-channel alpha")
+    if pct <= 0:
+        return alpha
+    fg = (alpha > 0).astype(np.uint8)
+    ys, xs = np.where(fg > 0)
+    if ys.size == 0:
+        return alpha
+    short = min(int(ys.max() - ys.min() + 1), int(xs.max() - xs.min() + 1))
+    radius = int(round(pct / 100.0 * short))
+    if radius < 1:
+        return alpha
+    k = 2 * radius + 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+    eroded = cv2.erode(fg, kernel, iterations=1)
+    if not eroded.any():
+        return alpha  # clamp: never erase the whole object
+    return np.ascontiguousarray(np.where(eroded > 0, 255, 0).astype(np.uint8))
 
 
 def encode_png_la(gray: np.ndarray, alpha: np.ndarray) -> bytes:
