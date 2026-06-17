@@ -83,6 +83,28 @@ def test_apply_clahe_handles_flat_field_without_error():
     assert out.dtype == np.uint8
 
 
+def test_apply_clahe_mask_equalizes_only_the_foreground():
+    from xcs_gen_web.relief import apply_clahe
+
+    # A small mid-tone, faintly-textured object on a large flat-dark background.
+    rng = np.random.default_rng(0)
+    gray = np.zeros((80, 80), np.uint8)
+    fg = (slice(25, 55), slice(25, 55))  # misaligned with the 10px tile grid
+    gray[fg] = np.clip(120 + rng.integers(-8, 8, (30, 30)), 0, 255)
+    mask = np.zeros((80, 80), np.uint8)
+    mask[fg] = 255
+
+    plain = apply_clahe(gray, clip_limit=4.0, tiles=8)
+    masked = apply_clahe(gray, clip_limit=4.0, tiles=8, mask=mask)
+    assert masked.shape == gray.shape and masked.dtype == np.uint8
+    # Excluding the dark background from the adaptive tiles changes the
+    # foreground equalization — the stretch is of the cut-out, not the frame.
+    assert not np.array_equal(plain[fg], masked[fg])
+    # An all-foreground mask has nothing to neutralise → identical to no mask.
+    allfg = np.full((80, 80), 255, np.uint8)
+    assert np.array_equal(apply_clahe(gray, 4.0, 8, mask=allfg), plain)
+
+
 def test_background_alpha_masks_dark():
     from xcs_gen_web.relief import background_alpha
 

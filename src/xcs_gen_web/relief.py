@@ -90,12 +90,24 @@ def smooth_heightfield(gray: np.ndarray, p: ReliefSmoothParams) -> np.ndarray:
     return np.ascontiguousarray(smoothed, dtype=np.uint8)
 
 
-def apply_clahe(gray: np.ndarray, clip_limit: float, tiles: int) -> np.ndarray:
+def apply_clahe(
+    gray: np.ndarray,
+    clip_limit: float,
+    tiles: int,
+    mask: np.ndarray | None = None,
+) -> np.ndarray:
     """Contrast-limited adaptive histogram equalization of a uint8 heightfield.
 
     Tile-adaptive local-contrast equalization — not expressible as a single
     256-LUT, hence done here on the backend rather than client-side. Runs on
-    the already-smoothed field (denoise-then-stretch)."""
+    the already-smoothed field (denoise-then-stretch).
+
+    When ``mask`` is given (foreground = ``mask > 0``), the background is
+    neutralised to the foreground mean BEFORE equalizing, so a large uniform
+    background can't skew the adaptive tile histograms near the object edge —
+    the stretch is then computed from the cut-out, not the whole frame
+    (matching the client monotonic stretches, which histogram only the
+    foreground). Background pixels are masked out downstream anyway."""
     if gray.ndim != 2:
         raise ValueError("apply_clahe expects a single-channel image")
     n = max(1, int(tiles))
@@ -103,7 +115,15 @@ def apply_clahe(gray: np.ndarray, clip_limit: float, tiles: int) -> np.ndarray:
         clipLimit=max(0.1, float(clip_limit)),
         tileGridSize=(n, n),
     )
-    return np.ascontiguousarray(clahe.apply(gray), dtype=np.uint8)
+    src = gray
+    if mask is not None:
+        if mask.shape != gray.shape:
+            raise ValueError("apply_clahe: mask and gray must have the same shape")
+        fg = mask > 0
+        if fg.any() and not fg.all():
+            src = gray.copy()
+            src[~fg] = int(round(float(gray[fg].mean())))
+    return np.ascontiguousarray(clahe.apply(src), dtype=np.uint8)
 
 
 def background_alpha(gray: np.ndarray, threshold: int, high: bool = False) -> np.ndarray:
