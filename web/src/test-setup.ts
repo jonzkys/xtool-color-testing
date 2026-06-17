@@ -15,6 +15,26 @@ if (typeof URL.revokeObjectURL === "undefined") {
   });
 }
 
+// jsdom doesn't implement window.matchMedia — ThemeToggle reads the
+// prefers-color-scheme media query. Provide a never-matches stub so any
+// component that probes a media query renders in tests.
+if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: (query: string): MediaQueryList =>
+      ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      }) as unknown as MediaQueryList,
+  });
+}
+
 // jsdom doesn't implement ResizeObserver — Radix UI primitives
 // (Slider, Popover, Dropdown, …) depend on it via @radix-ui/react-use-size.
 // Provide a noop polyfill so the components render in tests.

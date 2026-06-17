@@ -48,6 +48,18 @@ describe("formatRoute", () => {
   });
 });
 
+describe("depthmaps standalone route", () => {
+  it("parses #/depthmaps", () => {
+    expect(parseRoute("#/depthmaps")).toEqual({ name: "depthmaps" });
+  });
+  it("round-trips", () => {
+    expect(parseRoute(formatRoute({ name: "depthmaps" }))).toEqual({
+      name: "depthmaps",
+    });
+    expect(formatRoute({ name: "depthmaps" })).toBe("#/depthmaps");
+  });
+});
+
 describe("mobile-upload route", () => {
   it("parses #/m/<mid>", () => {
     expect(parseRoute("#/m/abc_def_123")).toEqual({
