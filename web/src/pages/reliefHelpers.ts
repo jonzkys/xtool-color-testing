@@ -45,7 +45,15 @@ export async function reliefSmooth(
   p: ReliefParams,
   opts?: {
     clahe?: { clipLimit: number; tiles: number };
-    background?: { threshold: number; high: boolean };
+    background?: {
+      mode: "dark" | "bright" | "colour";
+      threshold: number;
+      color: [number, number, number] | null;
+      tolerance: number;
+      trimPct: number;    // 0 = off
+      falloffPct: number; // 0 = off
+      falloffDir: "down" | "up";
+    };
   },
 ): Promise<Blob> {
   const fd = new FormData();
@@ -62,13 +70,34 @@ export async function reliefSmooth(
     fd.append("clahe_tiles", String(opts.clahe.tiles));
   }
   if (opts?.background) {
+    const b = opts.background;
     fd.append("remove_bg", "true");
-    fd.append("bg_threshold", String(opts.background.threshold));
-    fd.append("bg_high", String(opts.background.high));
+    fd.append("bg_mode", b.mode);
+    fd.append("bg_threshold", String(b.threshold));
+    if (b.color) fd.append("bg_color", b.color.join(","));
+    fd.append("bg_tolerance", String(b.tolerance));
+    fd.append("trim_pct", String(b.trimPct));
+    fd.append("falloff_pct", String(b.falloffPct));
+    fd.append("falloff_dir", b.falloffDir);
   }
   const res = await fetch("/api/relief/smooth", { method: "POST", body: fd });
   if (!res.ok) throw new Error(`relief smooth failed: ${res.status}`);
   return res.blob();
+}
+
+/** RGB at a fractional (0..1) position in an ImageData. Fractions are clamped to
+ *  [0,1); used by the eyedropper to map a click on the source image to a pixel. */
+export function sampleRgb(
+  data: ImageData,
+  fracX: number,
+  fracY: number,
+): [number, number, number] {
+  const cx = Math.min(0.999999, Math.max(0, fracX));
+  const cy = Math.min(0.999999, Math.max(0, fracY));
+  const x = Math.min(data.width - 1, Math.floor(cx * data.width));
+  const y = Math.min(data.height - 1, Math.floor(cy * data.height));
+  const i = (y * data.width + x) * 4;
+  return [data.data[i], data.data[i + 1], data.data[i + 2]];
 }
 
 /** Downscale an ImageBitmap to <=maxEdge longest edge, return { blob, ratio }.

@@ -39,7 +39,19 @@ export interface StretchParams {
   /** Mask near-black (or near-white) pixels to transparency — backend. */
   removeBackground: boolean;
   bgThreshold: number;
-  bgHigh: boolean;
+  /** Background removal method. */
+  bgMode: "dark" | "bright" | "colour";
+  /** Picked background colour (RGB) for `colour` mode; null until sampled. */
+  bgColor: [number, number, number] | null;
+  /** Euclidean RGB distance for `colour` mode (0..441). */
+  bgTolerance: number;
+  /** Trim (erode) the object outline by trimPct% of its shorter side. */
+  trimEnabled: boolean;
+  trimPct: number;
+  /** Non-linear edge falloff over falloffPct% of the shorter side. */
+  falloffEnabled: boolean;
+  falloffPct: number;
+  falloffDir: "down" | "up";
 }
 
 export const DEFAULT_STRETCH_PARAMS: StretchParams = {
@@ -54,7 +66,14 @@ export const DEFAULT_STRETCH_PARAMS: StretchParams = {
   removeEmptyLayers: false,
   removeBackground: false,
   bgThreshold: 8,
-  bgHigh: false,
+  bgMode: "dark",
+  bgColor: null,
+  bgTolerance: 40,
+  trimEnabled: false,
+  trimPct: 2,
+  falloffEnabled: false,
+  falloffPct: 5,
+  falloffDir: "down",
 };
 
 /** Rec. 601 luma — for a grayscale depth map R=G=B so this is just the value. */
