@@ -301,7 +301,7 @@ export function StretchControls({ params, onChange, onPickColor }: StretchContro
                     onChange={(e) => set("falloffMode", e.target.value as "inward" | "outward")}
                   >
                     <option value="inward">Inward — bevel the object edge</option>
-                    <option value="outward">Outward — add a tapered skirt</option>
+                    <option value="outward">Outward — raised border (berm)</option>
                   </Select>
                 </Field>
                 <Slider

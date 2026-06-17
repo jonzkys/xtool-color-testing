@@ -265,19 +265,27 @@ def test_edge_falloff_outward_grows_and_ramps():
     assert out[30, 18] < 200                         # ...and ramped below the edge height
 
 
-def test_edge_falloff_outward_rim_reaches_target_uniformly():
+def test_edge_falloff_outward_berm_crest_and_no_outer_cliff():
     from xcs_gen_web.relief import edge_falloff
-    # Outward skirt to the peak: the OUTER rim must land at (near) the target all
-    # the way round — not a varying amount short of it (the sawtooth teeth).
-    gray = np.full((120, 120), 120, np.uint8)
-    alpha = np.zeros((120, 120), np.uint8)
-    alpha[40:80, 40:80] = 255                         # 40×40 object (short side 40)
-    out, a2 = edge_falloff(gray, alpha, 25, mode="outward", target=255)  # band 10 → peak
-    ys = np.where((a2 > 0).any(axis=1))[0]
-    top = int(ys.min())                               # outermost grown row
-    rim = out[top:top + 2, 45:75][a2[top:top + 2, 45:75] > 0].astype(int)
-    assert rim.min() > 220                            # the whole rim gets near the peak
-    assert int(rim.max() - rim.min()) < 25            # uniform — no teeth
+    # Outward berm to the peak: the OUTER edge meets the floor (no vertical cliff →
+    # no spikes), and the crest (band midline) rises near the target, uniformly.
+    gray = np.full((140, 140), 120, np.uint8)
+    alpha = np.zeros((140, 140), np.uint8)
+    alpha[50:90, 50:90] = 255                          # 40×40 object, band 10px (25%)
+    out, a2 = edge_falloff(gray, alpha, 25, mode="outward", target=255)
+    assert int((a2 > 0).sum()) > int((alpha > 0).sum())   # footprint grew (berm added)
+    # Column above the object's top edge: floor outside → rises to a crest → object.
+    col = out[:, 70]
+    opaque = a2[:, 70] > 0
+    top = int(np.where(opaque)[0].min())               # outermost opaque row of the berm
+    assert int(col[top]) < 40                          # outer edge sits at the floor (no cliff)
+    crest = int(col[top:top + 11].max())               # crest within the band
+    assert crest > 210                                 # berm rises near the peak target
+    # The crest height is uniform around the berm (no teeth): sample the top + sides.
+    crests = []
+    for line in (out[top:top + 11, 70], out[70, top:top + 11]):
+        crests.append(int(line.max()))
+    assert max(crests) - min(crests) < 30
 
 
 def test_edge_falloff_outward_does_not_wall_internal_holes():

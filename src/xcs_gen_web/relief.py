@@ -285,8 +285,11 @@ def edge_falloff(
     - ``mode="inward"``: ramp the existing pixels in a band INSIDE the boundary
       toward the target; the object footprint (alpha) is unchanged.
     - ``mode="outward"``: GROW the object by the band (dilate the OUTER silhouette)
-      and ramp the ADDED ring from the edge height toward the target; the object's
-      own surface is untouched and the alpha grows to include the skirt.
+      and lay a BERM in the added ring — rising from the floor at the outer edge up
+      to the crest (``target``) at the band midline, then down to the object rim
+      height. No vertical outer cliff, so the border stays smooth around intricate
+      silhouettes. The object's own surface is untouched; the alpha grows to include
+      the berm.
 
     ``target`` is the grey LEVEL the edge eases toward, 0..255 (0 = floor, 255 =
     peak — any level in between). No-op (returns inputs) for ``pct <= 0``, an empty
@@ -311,9 +314,9 @@ def edge_falloff(
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1, 2 * radius + 1))
 
     if str(mode) == "outward":
-        # Grow the OUTER silhouette only: fill internal holes first so the skirt
-        # doesn't raise a wall in every internal gap of complex art (the source of
-        # the spiky "forest" on detailed depth maps).
+        # Grow the OUTER silhouette only: fill internal holes first so the berm
+        # doesn't rise in every internal gap of complex art (the source of the
+        # spiky "forest" on detailed depth maps).
         contours, _ = cv2.findContours(fg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         filled = np.zeros_like(fg)
         cv2.drawContours(filled, contours, -1, 1, thickness=cv2.FILLED)
@@ -323,26 +326,30 @@ def edge_falloff(
         eroded = cv2.erode(filled, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)), iterations=1)
         boundary_gray = np.where((filled > 0) & (eroded == 0), gray, 0).astype(np.uint8)
         base = cv2.dilate(boundary_gray, kernel, iterations=1).astype(np.float32)
-        # Anchor the TARGET at the outer edge and interpolate inward to the rim
-        # height: measure distance inward from the skirt's outer boundary. This
-        # guarantees the outermost rim is exactly the target — a clean, uniform
-        # top. (Normalising distance OUTWARD from the object instead left the rim
-        # a varying amount short of the target → the sawtooth teeth.)
-        dist_from_outer = cv2.distanceTransform(dilated, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
-        c = falloff_curve(np.clip(dist_from_outer / band, 0.0, 1.0), intensity)  # 0 outer → 1 inner
-        ring_h = tgt * (1.0 - c) + base * c
+        # BERM profile: rise from the FLOOR at the outer edge up to the crest
+        # (target) at the band midline, then down to the object rim height at the
+        # inner edge — a rounded ridge with NO vertical outer cliff. A raised wall
+        # (target held to the very outer edge) becomes a thin vertical face that
+        # goes spiky around intricate silhouettes; sloping both sides keeps the
+        # border smooth on any shape. distance is measured inward from the outer
+        # edge so the crest sits at a consistent depth all the way round.
+        t_out = np.clip(
+            cv2.distanceTransform(dilated, cv2.DIST_L2, cv2.DIST_MASK_PRECISE) / band,
+            0.0, 1.0,
+        )  # 0 at the outer edge → 1 at the object boundary
+        u_out = falloff_curve(np.clip(t_out / 0.5, 0.0, 1.0), intensity)        # floor → crest
+        u_in = falloff_curve(np.clip((t_out - 0.5) / 0.5, 0.0, 1.0), intensity)  # crest → object
+        ring_h = np.where(
+            t_out <= 0.5,
+            tgt * u_out,                       # outer slope: 0 (floor) → target
+            tgt * (1.0 - u_in) + base * u_in,  # inner slope: target → object rim
+        )
         out = np.where(ring, ring_h, g)
-        # Soften single-pixel jitter in the skirt with a LIGHT normalised
-        # (mask-weighted) blur over the grown region — small kernel so the outer
-        # rim stays at the target, and mask-weighted so the background can't bleed
-        # it back toward the floor.
-        ksm = max(3, min(5, radius | 1))
-        m = dilated.astype(np.float32)
-        num = cv2.GaussianBlur(out.astype(np.float32) * m, (ksm, ksm), 0)
-        den = cv2.GaussianBlur(m, (ksm, ksm), 0)
-        smoothed = num / np.maximum(den, 1e-6)
-        out = np.where(ring, smoothed, out)
-        # Add only the outer skirt; preserve the original foreground's internal
+        # No blur here: the precise distance field gives a smooth radial profile
+        # and (when enabled) smooth_perimeter has already cleaned the boundary
+        # tangentially. Blurring would bleed the crest outward and lift the outer
+        # edge off the floor — reintroducing the very cliff the berm avoids.
+        # Add only the outer berm; preserve the original foreground's internal
         # holes (the fill above was just to locate the outer silhouette).
         out_alpha = np.where(ring | (fg > 0), 255, 0).astype(np.uint8)
         return (

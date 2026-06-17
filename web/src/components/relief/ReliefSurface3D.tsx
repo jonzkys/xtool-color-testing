@@ -78,36 +78,6 @@ interface Engine {
  * rim or the floor. Box-averaging turns that cliff into a clean one-cell
  * ramp, so the preview is faithful to the (smooth) exported height-field.
  */
-/** Area-resample ``data`` down to ``cols × rows`` using the browser's
- *  high-quality (bilinear/area) scaler, returning the small RGBA buffer.
- *  A proper area filter is what de-aliases a hard height cliff: every mesh
- *  cell becomes the true average of the pixels it covers, so a tall edge
- *  skirt reads as one clean ramp instead of a forest of nearest-sampled
- *  spikes. Falls back to the source buffer if a 2D context isn't available. */
-function areaResample(
-  data: ImageData,
-  cols: number,
-  rows: number,
-): { px: Uint8ClampedArray; w: number; h: number } {
-  const { width: iw, height: ih } = data;
-  if (cols >= iw && rows >= ih) return { px: data.data, w: iw, h: ih };
-  const src = document.createElement("canvas");
-  src.width = iw;
-  src.height = ih;
-  const sctx = src.getContext("2d");
-  if (!sctx) return { px: data.data, w: iw, h: ih };
-  sctx.putImageData(data, 0, 0);
-  const dst = document.createElement("canvas");
-  dst.width = cols;
-  dst.height = rows;
-  const dctx = dst.getContext("2d");
-  if (!dctx) return { px: data.data, w: iw, h: ih };
-  dctx.imageSmoothingEnabled = true;
-  dctx.imageSmoothingQuality = "high";
-  dctx.drawImage(src, 0, 0, iw, ih, 0, 0, cols, rows);
-  return { px: dctx.getImageData(0, 0, cols, rows).data, w: cols, h: rows };
-}
-
 function displace(
   geometry: PlaneGeometry,
   data: ImageData,
@@ -115,20 +85,43 @@ function displace(
   segY: number,
 ) {
   const pos = geometry.attributes.position;
+  const { width: iw, height: ih, data: px } = data;
   const cols = segX + 1;
   const rows = segY + 1;
-  // Pre-shrink to the mesh grid with a real area filter, then sample 1:1.
-  const { px, w, h } = areaResample(data, cols, rows);
+  // Box-average each mesh cell over the source pixels it covers, treating the
+  // (transparent) background as floor — luminance 0. Nearest-sampling a coarse
+  // mesh over a hard height step (a raised edge border meeting the floor) aliases
+  // it into a forest of spikes; averaging the WHOLE cell, background included,
+  // turns every step into a clean one-cell ramp. The window is sized a little
+  // wider than one cell so adjacent cells overlap and leave no gaps. (A canvas
+  // downscale can't do this — it composites premultiplied alpha, so it ignores
+  // the transparent background and keeps the aliasing step.)
+  const stepX = cols > 1 ? iw / cols : iw;
+  const stepY = rows > 1 ? ih / rows : ih;
+  const halfX = Math.max(1, Math.round(stepX));
+  const halfY = Math.max(1, Math.round(stepY));
   let i = 0;
   for (let gy = 0; gy < rows; gy++) {
-    const sy = rows > 1 ? Math.round((gy / (rows - 1)) * (h - 1)) : 0;
+    const cy = rows > 1 ? Math.round((gy / (rows - 1)) * (ih - 1)) : 0;
+    const y0 = Math.max(0, cy - halfY);
+    const y1 = Math.min(ih - 1, cy + halfY);
     for (let gx = 0; gx < cols; gx++) {
-      const sx = cols > 1 ? Math.round((gx / (cols - 1)) * (w - 1)) : 0;
-      const o = (sy * w + sx) * 4;
-      // Rec. 601 luma, normalised 0..1. Depth maps are grayscale so any
+      const cx = cols > 1 ? Math.round((gx / (cols - 1)) * (iw - 1)) : 0;
+      const x0 = Math.max(0, cx - halfX);
+      const x1 = Math.min(iw - 1, cx + halfX);
+      // Rec. 601 luma, averaged over the cell. Depth maps are grayscale so any
       // channel would do, but a weighted luma is robust to faint tints.
-      const lum =
-        (0.299 * px[o] + 0.587 * px[o + 1] + 0.114 * px[o + 2]) / 255;
+      let sum = 0;
+      let n = 0;
+      for (let sy = y0; sy <= y1; sy++) {
+        let o = (sy * iw + x0) * 4;
+        for (let sx = x0; sx <= x1; sx++) {
+          sum += 0.299 * px[o] + 0.587 * px[o + 1] + 0.114 * px[o + 2];
+          o += 4;
+          n++;
+        }
+      }
+      const lum = (n > 0 ? sum / n : 0) / 255;
       pos.setZ(i, lum * RELIEF_SCALE);
       i++;
     }

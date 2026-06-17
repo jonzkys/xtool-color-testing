@@ -54,9 +54,11 @@ export interface StretchParams {
   /** Non-linear edge falloff over falloffPct% of the shorter side. */
   falloffEnabled: boolean;
   falloffPct: number;
-  /** Level the edge tapers to, 0 (floor) .. 100 (peak) % of the tone range. */
+  /** Level the edge tapers to (inward bevel) or the berm crest (outward),
+   *  0 (floor) .. 100 (peak) % of the tone range. */
   falloffTarget: number;
-  /** Inward = bevel a band inside the object; outward = grow a tapered skirt. */
+  /** Inward = bevel a band inside the object; outward = a raised border berm
+   *  (rises to the crest then back to the floor — no vertical cliff). */
   falloffMode: "inward" | "outward";
   /** Falloff curve steepness, 0 (gentle/linear) .. 100 (sharp). */
   falloffIntensity: number;
