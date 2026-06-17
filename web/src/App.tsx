@@ -77,6 +77,11 @@ const ExposurePage = lazy(() =>
 const MobileUploadPage = lazy(() =>
   import("./pages/MobileUploadPage").then((m) => ({ default: m.MobileUploadPage })),
 );
+const DepthMapsStandalone = lazy(() =>
+  import("./pages/DepthMapsStandalone").then((m) => ({
+    default: m.DepthMapsStandalone,
+  })),
+);
 
 /* Suspense fallback — deliberately minimal. The page-load delay is
  * dominated by network for the chunk fetch (a few hundred KB on a
@@ -157,6 +162,17 @@ export default function App() {
     return (
       <Suspense fallback={<PageFallback />}>
         <MobileUploadPage mid={route.mid} />
+      </Suspense>
+    );
+  }
+
+  if (route.name === "depthmaps") {
+    // Standalone, shareable depth-map smoother — renders alone (no TopBar,
+    // no WelcomeDialog, no multi-user gate). Safe because its only backend
+    // call (/api/relief/smooth) is unauthenticated and touches no user data.
+    return (
+      <Suspense fallback={<PageFallback />}>
+        <DepthMapsStandalone onNavigate={navigate} />
       </Suspense>
     );
   }

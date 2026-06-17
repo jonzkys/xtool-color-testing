@@ -20,6 +20,7 @@ export type Route =
   | { name: "changelog" }
   | { name: "gcode" }
   | { name: "relief" }
+  | { name: "depthmaps" }
   | { name: "demo"; next?: string }
   | { name: "saved-spectrums" }
   | { name: "mobile-upload"; mid: string };
@@ -67,6 +68,9 @@ export function parseRoute(hash: string): Route {
   if (h === "changelog") return { name: "changelog" };
   if (h === "gcode") return { name: "gcode" };
   if (h === "relief") return { name: "relief" };
+  // Standalone, shareable depth-map smoother — rendered alone (no menu/gate)
+  // by App.tsx, never added to the TopBar menu.
+  if (h === "depthmaps") return { name: "depthmaps" };
   // ``#/demo`` accepts an optional ``?next=<hash>`` so a deep link
   // (e.g. someone shared #/changelog) survives the welcome → demo
   // detour. Anything else stays at the default landing page.
@@ -105,6 +109,7 @@ export function formatRoute(r: Route): string {
     case "changelog":   return "#/changelog";
     case "gcode":       return "#/gcode";
     case "relief":      return "#/relief";
+    case "depthmaps":   return "#/depthmaps";
     case "demo":        return r.next ? `#/demo?next=${encodeURIComponent(r.next)}` : "#/demo";
     case "mobile-upload": return `#/m/${r.mid}`;
   }
