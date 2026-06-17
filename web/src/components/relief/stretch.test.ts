@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   DEFAULT_STRETCH_PARAMS,
+  defaultSubtraction,
   histogram,
   buildLut,
   applyLut,
@@ -126,6 +127,20 @@ describe("histogram", () => {
     const h = histogram(img);
     expect(h[100]).toBe(2);
     expect(h[0]).toBe(0); // transparent pixels not counted
+  });
+});
+
+describe("subtraction defaults", () => {
+  it("DEFAULT_STRETCH_PARAMS starts with one dark subtraction and shapeInternal off", () => {
+    expect(DEFAULT_STRETCH_PARAMS.subtractions).toHaveLength(1);
+    expect(DEFAULT_STRETCH_PARAMS.subtractions[0].method).toBe("dark");
+    expect(DEFAULT_STRETCH_PARAMS.shapeInternal).toBe(false);
+  });
+  it("defaultSubtraction builds a row with the given method and null colour/seed", () => {
+    const s = defaultSubtraction("area");
+    expect(s).toEqual({
+      method: "area", threshold: 8, color: null, tolerance: 40, seedX: null, seedY: null,
+    });
   });
 });
 

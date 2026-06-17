@@ -1,3 +1,5 @@
+import type { Subtraction } from "../components/relief/stretch";
+
 export interface ReliefParams {
   strength: number;       // bilateral spatial radius (px, full-res)
   edgePreserve: boolean;
@@ -40,16 +42,14 @@ export async function reliefSmooth(
   opts?: {
     clahe?: { clipLimit: number; tiles: number };
     background?: {
-      mode: "dark" | "bright" | "colour";
-      threshold: number;
-      color: [number, number, number] | null;
-      tolerance: number;
+      subtractions: Subtraction[];
       perimeterPct: number; // 0 = off
       trimPct: number;    // 0 = off
       falloffPct: number; // 0 = off
       falloffMode: "inward" | "outward";
       falloffTarget: number;    // 0 (floor) .. 100 (peak) % of tone range
       falloffIntensity: number; // 0..100
+      shapeInternal: boolean;
     };
   },
 ): Promise<Blob> {
@@ -69,10 +69,20 @@ export async function reliefSmooth(
   if (opts?.background) {
     const b = opts.background;
     fd.append("remove_bg", "true");
-    fd.append("bg_mode", b.mode);
-    fd.append("bg_threshold", String(b.threshold));
-    if (b.color) fd.append("bg_color", b.color.join(","));
-    fd.append("bg_tolerance", String(b.tolerance));
+    fd.append(
+      "subtractions",
+      JSON.stringify(
+        b.subtractions.map((s) => ({
+          method: s.method,
+          threshold: s.threshold,
+          color: s.color,
+          tolerance: s.tolerance,
+          seedX: s.seedX,
+          seedY: s.seedY,
+        })),
+      ),
+    );
+    fd.append("shape_internal", String(b.shapeInternal));
     fd.append("perimeter_pct", String(b.perimeterPct));
     fd.append("trim_pct", String(b.trimPct));
     fd.append("falloff_pct", String(b.falloffPct));

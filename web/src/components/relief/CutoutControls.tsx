@@ -9,13 +9,15 @@
  */
 
 import { Field } from "../../ui";
-import type { StretchParams } from "./stretch";
+import type { StretchParams, SubMethod, Subtraction } from "./stretch";
+import { defaultSubtraction } from "./stretch";
 import { LabelHint, SelectField, Slider, Toggle } from "./fields";
 
 export interface CutoutControlsProps {
   params: StretchParams;
   onChange: (p: StretchParams) => void;
-  onPickColor: () => void;
+  /** Begin picking a colour/seed for the subtraction row at `index`. */
+  onPickColor: (index: number) => void;
 }
 
 export function CutoutControls({ params, onChange, onPickColor }: CutoutControlsProps) {
@@ -43,63 +45,34 @@ export function CutoutControls({ params, onChange, onPickColor }: CutoutControls
 
       {params.removeBackground && (
         <>
-          <SelectField
-            label="Method"
-            ariaLabel="Background removal method"
-            value={params.bgMode}
-            onChange={(v) => set("bgMode", v as StretchParams["bgMode"])}
-            options={[
-              { value: "dark", label: "Dark threshold" },
-              { value: "bright", label: "Bright threshold" },
-              { value: "colour", label: "Pick colour" },
-            ]}
-            hint="How the background is detected: a dark/bright luminance cut, or keying out a colour you pick."
-          />
-
-          {params.bgMode !== "colour" ? (
-            <Slider
-              label="Threshold"
-              value={params.bgThreshold}
-              min={0}
-              max={255}
-              step={1}
-              onChange={(v) => set("bgThreshold", v)}
-              hint="Pixels at or below (dark) / above (bright) this value become transparent."
+          {params.subtractions.map((sub, i) => (
+            <SubtractionRow
+              key={i}
+              index={i}
+              sub={sub}
+              canRemove={params.subtractions.length > 1}
+              onChange={(next) =>
+                set(
+                  "subtractions",
+                  params.subtractions.map((s, j) => (j === i ? next : s)),
+                )
+              }
+              onRemove={() =>
+                set(
+                  "subtractions",
+                  params.subtractions.filter((_, j) => j !== i),
+                )
+              }
+              onPick={() => onPickColor(i)}
             />
-          ) : (
-            <>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={onPickColor}
-                  className="rounded-[5px] border border-[var(--color-border)] px-2 py-1 text-xs hover:border-[var(--color-primary)]/50"
-                >
-                  Pick from image
-                </button>
-                <span
-                  className="inline-block h-5 w-5 rounded-[4px] border border-[var(--color-border)]"
-                  style={{
-                    background: params.bgColor
-                      ? `rgb(${params.bgColor.join(",")})`
-                      : "transparent",
-                  }}
-                  aria-hidden
-                />
-                <span className="font-mono text-[10px] text-[var(--color-ink-muted)]">
-                  {params.bgColor ? params.bgColor.join(", ") : "no colour picked"}
-                </span>
-              </div>
-              <Slider
-                label="Tolerance"
-                value={params.bgTolerance}
-                min={0}
-                max={200}
-                step={1}
-                onChange={(v) => set("bgTolerance", v)}
-                hint="How far a pixel's colour can be from the picked colour and still count as background."
-              />
-            </>
-          )}
+          ))}
+          <button
+            type="button"
+            onClick={() => set("subtractions", [...params.subtractions, defaultSubtraction()])}
+            className="self-start rounded-[5px] border border-dashed border-[var(--color-border)] px-2 py-1 text-[11px] text-[color:var(--color-ink-muted)] hover:border-[var(--color-primary)]/50 hover:text-[color:var(--color-ink)]"
+          >
+            + Subtract another
+          </button>
 
           {/* ── Edge shaping (depends on the alpha above) ──────────────── */}
           <div
@@ -192,6 +165,13 @@ export function CutoutControls({ params, onChange, onPickColor }: CutoutControls
               />
             </>
           )}
+
+          <Toggle
+            label="Shape internal edges"
+            checked={params.shapeInternal}
+            onChange={(v) => set("shapeInternal", v)}
+            hint="Apply the edge shaping above to internal holes (e.g. an inner pocket) too. Off = only the outer silhouette is shaped; holes stay hard-edged."
+          />
         </>
       )}
 
@@ -203,5 +183,102 @@ export function CutoutControls({ params, onChange, onPickColor }: CutoutControls
         </Field>
       )}
     </>
+  );
+}
+
+const METHOD_OPTIONS: { value: SubMethod; label: string }[] = [
+  { value: "dark", label: "Dark threshold" },
+  { value: "bright", label: "Bright threshold" },
+  { value: "colour", label: "Pick colour" },
+  { value: "area", label: "Pick area" },
+];
+
+function SubtractionRow({
+  index,
+  sub,
+  canRemove,
+  onChange,
+  onRemove,
+  onPick,
+}: {
+  index: number;
+  sub: Subtraction;
+  canRemove: boolean;
+  onChange: (next: Subtraction) => void;
+  onRemove: () => void;
+  onPick: () => void;
+}) {
+  const isColourLike = sub.method === "colour" || sub.method === "area";
+  return (
+    <div className="flex flex-col gap-2 rounded-[6px] border border-[color:var(--color-border)] p-2">
+      <div className="flex items-end gap-2">
+        <div className="flex-1">
+          <SelectField
+            label={`Subtraction ${index + 1}`}
+            ariaLabel={`Subtraction ${index + 1} method`}
+            value={sub.method}
+            onChange={(v) =>
+              // Drop the seed on any method change — it pins a specific click
+              // location that only ``area`` uses, and a stale one would key the
+              // wrong region after switching modes.
+              onChange({ ...sub, method: v as SubMethod, seedX: null, seedY: null })
+            }
+            options={METHOD_OPTIONS}
+            hint="How this layer detects background: a dark/bright luminance cut, a global colour key, or a connected area (only the region you click)."
+          />
+        </div>
+        {canRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label={`Remove subtraction ${index + 1}`}
+            className="mb-0.5 rounded-[5px] border border-[var(--color-border)] px-2 py-1 text-xs text-[color:var(--color-ink-muted)] hover:border-[var(--color-primary)]/50 hover:text-[color:var(--color-ink)]"
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {!isColourLike ? (
+        <Slider
+          label="Threshold"
+          value={sub.threshold}
+          min={0}
+          max={255}
+          step={1}
+          onChange={(v) => onChange({ ...sub, threshold: v })}
+          hint="Pixels at or below (dark) / above (bright) this value become transparent."
+        />
+      ) : (
+        <>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onPick}
+              className="rounded-[5px] border border-[var(--color-border)] px-2 py-1 text-xs hover:border-[var(--color-primary)]/50"
+            >
+              {sub.method === "area" ? "Pick area from image" : "Pick from image"}
+            </button>
+            <span
+              className="inline-block h-5 w-5 rounded-[4px] border border-[var(--color-border)]"
+              style={{ background: sub.color ? `rgb(${sub.color.join(",")})` : "transparent" }}
+              aria-hidden
+            />
+            <span className="font-mono text-[10px] text-[var(--color-ink-muted)]">
+              {sub.color ? sub.color.join(", ") : "no colour picked"}
+            </span>
+          </div>
+          <Slider
+            label="Tolerance"
+            value={sub.tolerance}
+            min={0}
+            max={200}
+            step={1}
+            onChange={(v) => onChange({ ...sub, tolerance: v })}
+            hint="How far a pixel's colour can be from the picked colour and still count as background."
+          />
+        </>
+      )}
+    </div>
   );
 }

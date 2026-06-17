@@ -19,6 +19,29 @@ export type StretchMode =
   | "equalize"
   | "clahe";
 
+export type SubMethod = "dark" | "bright" | "colour" | "area";
+
+/** One background-subtraction op. `colour`/`area` carry a picked colour; `area`
+ *  also carries a fractional (0..1) seed click used to keep only the connected
+ *  region under the cursor. */
+export interface Subtraction {
+  method: SubMethod;
+  /** dark/bright luminance cut (0..255). */
+  threshold: number;
+  /** colour/area: picked RGB; null until sampled. */
+  color: [number, number, number] | null;
+  /** colour/area: Euclidean RGB distance (0..441). */
+  tolerance: number;
+  /** area: fractional (0..1) seed, in source-image space; null until picked. */
+  seedX: number | null;
+  seedY: number | null;
+}
+
+/** A fresh subtraction row with sensible defaults. */
+export function defaultSubtraction(method: SubMethod = "dark"): Subtraction {
+  return { method, threshold: 8, color: null, tolerance: 40, seedX: null, seedY: null };
+}
+
 export interface StretchParams {
   mode: StretchMode;
   /** Linear: low/high percentile clip (0..10 %). */
@@ -42,13 +65,10 @@ export interface StretchParams {
   expandPct: number;
   /** Mask near-black (or near-white) pixels to transparency — backend. */
   removeBackground: boolean;
-  bgThreshold: number;
-  /** Background removal method. */
-  bgMode: "dark" | "bright" | "colour";
-  /** Picked background colour (RGB) for `colour` mode; null until sampled. */
-  bgColor: [number, number, number] | null;
-  /** Euclidean RGB distance for `colour` mode (0..441). */
-  bgTolerance: number;
+  /** Stacked background subtractions; their masks union. At least one row. */
+  subtractions: Subtraction[];
+  /** Shape internal-hole edges too (default: outer silhouette only). */
+  shapeInternal: boolean;
   /** Round the jagged silhouette boundary by perimeterPct% of its shorter side. */
   perimeterEnabled: boolean;
   perimeterPct: number;
@@ -80,10 +100,8 @@ export const DEFAULT_STRETCH_PARAMS: StretchParams = {
   removeEmptyLayers: false,
   expandPct: 0,
   removeBackground: false,
-  bgThreshold: 8,
-  bgMode: "dark",
-  bgColor: null,
-  bgTolerance: 40,
+  subtractions: [defaultSubtraction("dark")],
+  shapeInternal: false,
   perimeterEnabled: false,
   perimeterPct: 2,
   trimEnabled: false,
