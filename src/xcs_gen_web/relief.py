@@ -25,6 +25,7 @@ __all__ = [
     "parse_rgb",
     "colour_background_alpha",
     "trim_alpha",
+    "edge_falloff",
 ]
 
 
@@ -174,6 +175,37 @@ def trim_alpha(alpha: np.ndarray, pct: float) -> np.ndarray:
     if not eroded.any():
         return alpha  # clamp: never erase the whole object
     return np.ascontiguousarray(np.where(eroded > 0, 255, 0).astype(np.uint8))
+
+
+def edge_falloff(
+    gray: np.ndarray, alpha: np.ndarray, pct: float, direction: str = "down"
+) -> np.ndarray:
+    """Ramp the height within a band of ``pct``% of the object's shorter bbox side
+    just inside the foreground boundary, via smoothstep, toward a target:
+    ``"down"`` → 0 (bevel to floor), ``"up"`` → 255 (rim to peak). Background
+    (``alpha == 0``) is untouched. No-op for ``pct <= 0`` or a sub-pixel band."""
+    if gray.ndim != 2 or alpha.ndim != 2:
+        raise ValueError("edge_falloff expects single-channel gray + alpha")
+    if gray.shape != alpha.shape:
+        raise ValueError("edge_falloff: gray and alpha must have the same shape")
+    if pct <= 0:
+        return gray
+    fg = (alpha > 0).astype(np.uint8)
+    ys, xs = np.where(fg > 0)
+    if ys.size == 0:
+        return gray
+    short = min(int(ys.max() - ys.min() + 1), int(xs.max() - xs.min() + 1))
+    band = pct / 100.0 * short
+    if band < 1:
+        return gray
+    dist = cv2.distanceTransform(fg, cv2.DIST_L2, 3)
+    t = np.clip(dist / band, 0.0, 1.0)
+    c = t * t * (3.0 - 2.0 * t)  # smoothstep — zero-slope at both ends
+    target = 255.0 if str(direction) == "up" else 0.0
+    g = gray.astype(np.float32)
+    blended = target + (g - target) * c
+    out = np.where(fg > 0, np.rint(blended), g)
+    return np.ascontiguousarray(np.clip(out, 0, 255).astype(np.uint8))
 
 
 def encode_png_la(gray: np.ndarray, alpha: np.ndarray) -> bytes:

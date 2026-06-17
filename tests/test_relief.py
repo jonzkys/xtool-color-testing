@@ -176,3 +176,36 @@ def test_trim_alpha_guards_negative_and_shape():
     assert (trim_alpha(alpha, -5) == alpha).all()   # negative pct → identity
     with pytest.raises(ValueError):
         trim_alpha(np.zeros((4, 4, 3), np.uint8), 10)  # non-2D → ValueError
+
+
+def test_edge_falloff_down_bevels_to_floor():
+    from xcs_gen_web.relief import edge_falloff
+    gray = np.full((40, 40), 200, np.uint8)
+    alpha = np.zeros((40, 40), np.uint8)
+    alpha[5:35, 5:35] = 255                       # 30×30 object (short side 30)
+    out = edge_falloff(gray, alpha, 20, "down")   # band = 6 px
+    assert out[5, 20] < 80                          # edge ramped toward the floor
+    assert out[20, 20] == 200                       # centre (beyond band) unchanged
+    row = out[20, 5:21].astype(int)                 # edge → centre along a row
+    assert (np.diff(row) >= 0).all()                # monotonic non-decreasing
+
+
+def test_edge_falloff_up_and_noop():
+    from xcs_gen_web.relief import edge_falloff
+    gray = np.full((40, 40), 100, np.uint8)
+    alpha = np.zeros((40, 40), np.uint8)
+    alpha[5:35, 5:35] = 255
+    up = edge_falloff(gray, alpha, 20, "up")
+    assert up[5, 20] > 180                           # edge ramped toward the peak
+    assert up[20, 20] == 100                         # centre (beyond band) unchanged
+    assert (edge_falloff(gray, alpha, 0, "down") == gray).all()  # pct 0 → identity
+
+
+def test_edge_falloff_guards_shape():
+    import pytest
+    from xcs_gen_web.relief import edge_falloff
+    gray = np.zeros((10, 10), np.uint8)
+    with pytest.raises(ValueError):
+        edge_falloff(np.zeros((10, 10, 3), np.uint8), gray, 20)  # non-2D
+    with pytest.raises(ValueError):
+        edge_falloff(gray, np.zeros((10, 20), np.uint8), 20)     # shape mismatch
