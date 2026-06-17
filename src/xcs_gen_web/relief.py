@@ -22,6 +22,8 @@ __all__ = [
     "encode_png_la",
     "to_grayscale_u8",
     "encode_png",
+    "parse_rgb",
+    "colour_background_alpha",
 ]
 
 
@@ -110,6 +112,39 @@ def background_alpha(gray: np.ndarray, threshold: int, high: bool = False) -> np
         raise ValueError("background_alpha expects a single-channel image")
     t = max(0, min(255, int(threshold)))
     mask = gray >= t if high else gray <= t
+    alpha = np.where(mask, 0, 255).astype(np.uint8)
+    return np.ascontiguousarray(alpha)
+
+
+def parse_rgb(s: str) -> tuple[int, int, int] | None:
+    """Parse ``'r,g,b'`` (each 0..255, clamped) → tuple, or None if malformed/empty."""
+    parts = str(s).split(",")
+    if len(parts) != 3:
+        return None
+    try:
+        vals = [max(0, min(255, int(round(float(p))))) for p in parts]
+    except ValueError:
+        return None
+    return (vals[0], vals[1], vals[2])
+
+
+def colour_background_alpha(
+    bgr: np.ndarray, color_rgb: tuple[int, int, int], tolerance: float
+) -> np.ndarray:
+    """Alpha mask (uint8 0/255): background = pixels within Euclidean RGB distance
+    ``tolerance`` of ``color_rgb`` (the picked background colour); foreground = 255.
+    Accepts BGR / BGRA / single-channel (gray treated as R=G=B)."""
+    if bgr.ndim == 2:
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_GRAY2RGB)
+    elif bgr.ndim == 3 and bgr.shape[2] == 4:
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGRA2RGB)
+    elif bgr.ndim == 3 and bgr.shape[2] == 3:
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    else:
+        raise ValueError(f"unsupported image shape {bgr.shape}")
+    target = np.array(color_rgb, dtype=np.float32).reshape(1, 1, 3)
+    dist = np.sqrt(((rgb.astype(np.float32) - target) ** 2).sum(axis=2))
+    mask = dist <= float(tolerance)  # background
     alpha = np.where(mask, 0, 255).astype(np.uint8)
     return np.ascontiguousarray(alpha)
 

@@ -118,3 +118,33 @@ def test_encode_png_la_round_trips_alpha():
     assert img.mode == "LA"
     px = np.array(img)
     assert px[0, 0, 1] == 0 and px[1, 1, 1] == 255
+
+
+def test_parse_rgb_parses_and_clamps():
+    from xcs_gen_web.relief import parse_rgb
+    assert parse_rgb("10,20,30") == (10, 20, 30)
+    assert parse_rgb("300,-5,40") == (255, 0, 40)  # clamped 0..255
+    assert parse_rgb("") is None
+    assert parse_rgb("1,2") is None
+    assert parse_rgb("a,b,c") is None
+
+
+def test_colour_background_alpha_keys_picked_colour():
+    from xcs_gen_web.relief import colour_background_alpha
+    # BGR image: left column a known colour, right column black.
+    img = np.zeros((2, 2, 3), np.uint8)
+    img[:, 0] = (30, 20, 10)  # BGR → RGB (10, 20, 30)
+    alpha = colour_background_alpha(img, (10, 20, 30), 5)
+    assert (alpha[:, 0] == 0).all()    # picked colour → background (transparent)
+    assert (alpha[:, 1] == 255).all()  # black → foreground
+
+
+def test_colour_background_alpha_respects_tolerance():
+    from xcs_gen_web.relief import colour_background_alpha
+    img = np.zeros((1, 2, 3), np.uint8)
+    img[0, 0] = (0, 0, 0)    # RGB (0,0,0)
+    img[0, 1] = (0, 0, 20)   # BGR → RGB (20,0,0), distance 20 from black
+    tight = colour_background_alpha(img, (0, 0, 0), 10)   # 20 > 10 → fg
+    assert tight[0, 0] == 0 and tight[0, 1] == 255
+    loose = colour_background_alpha(img, (0, 0, 0), 30)   # 20 <= 30 → bg
+    assert loose[0, 0] == 0 and loose[0, 1] == 0
