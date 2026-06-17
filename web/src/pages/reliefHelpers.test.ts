@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   DEFAULT_RELIEF_PARAMS,
+  padToCanvas,
   previewRatio,
   reliefSmooth,
   scaleParamsForPreview,
@@ -98,6 +99,16 @@ describe("reliefSmooth form fields", () => {
     expect(sent[0].get("bg_threshold")).toBe("8");
     expect(sent[0].get("bg_mode")).toBe("dark");
     vi.unstubAllGlobals();
+  });
+});
+
+describe("padToCanvas", () => {
+  it("returns the source unchanged when padPct <= 0", () => {
+    const src = document.createElement("canvas");
+    src.width = 10;
+    src.height = 8;
+    expect(padToCanvas(src, 0, [0, 0, 0])).toBe(src);
+    expect(padToCanvas(src, -5, [0, 0, 0])).toBe(src);
   });
 });
 

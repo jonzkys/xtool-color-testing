@@ -36,6 +36,10 @@ export interface StretchParams {
   claheTiles: number;
   /** Offset the lowest populated value to 0 (drop unused bottom of the range). */
   removeEmptyLayers: boolean;
+  /** Pad the canvas by expandPct% (each side) with the background colour
+   *  before processing, so an object near the border still has room for an
+   *  outward berm / offset. 0 = no padding. */
+  expandPct: number;
   /** Mask near-black (or near-white) pixels to transparency — backend. */
   removeBackground: boolean;
   bgThreshold: number;
@@ -74,6 +78,7 @@ export const DEFAULT_STRETCH_PARAMS: StretchParams = {
   claheClipLimit: 2,
   claheTiles: 8,
   removeEmptyLayers: false,
+  expandPct: 0,
   removeBackground: false,
   bgThreshold: 8,
   bgMode: "dark",
