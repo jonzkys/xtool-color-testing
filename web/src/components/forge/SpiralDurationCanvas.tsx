@@ -7,8 +7,8 @@
 // true polylines (result.paths) rather than the not-to-scale schematic.
 import { useEffect, useMemo, useRef } from "react";
 import type { ForgeConfig, GeneratedPath, StageParams } from "../../lib/forge/types";
-import { spiralPathDurations, fmtDuration } from "../../lib/forge/estimate";
-import { logNormalize, durationColor, HEAT_STOPS } from "../../lib/forge/heatmap";
+import { spiralPathDurations } from "../../lib/forge/estimate";
+import { logNormalize, durationColor, HEAT_STOPS, fmtSeconds } from "../../lib/forge/heatmap";
 
 export interface SpiralDurationCanvasProps {
   paths: GeneratedPath[];
@@ -85,10 +85,10 @@ export function SpiralDurationCanvas({ paths, config, source, width, height }: S
       <canvas ref={ref} style={{ width, height }} className="block rounded bg-[var(--color-surface)]" />
       {has ? (
         <div className="pointer-events-none absolute left-3 right-3 bottom-2.5 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-ink-subtle)]">
-          <span>{fmtDuration(data.dMin)}</span>
+          <span>{fmtSeconds(data.dMin)}</span>
           <span className="h-2 flex-1 rounded-[2px]" style={{ background: gradientCss }} aria-hidden />
-          <span>{fmtDuration(data.dMax)}</span>
-          <span className="ml-1 normal-case tracking-[0.06em] text-[var(--color-ink-muted)]">time / feature · red = least</span>
+          <span>{fmtSeconds(data.dMax)}</span>
+          <span className="ml-1 normal-case tracking-[0.06em] text-[var(--color-ink-muted)]">per-pass time · red = least</span>
         </div>
       ) : (
         <div className="pointer-events-none absolute left-3 bottom-2.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-ink-subtle)]">
@@ -97,7 +97,7 @@ export function SpiralDurationCanvas({ paths, config, source, width, height }: S
       )}
       <span className="sr-only">
         {has
-          ? `Duration heatmap of ${data.durs.length} spiral path${data.durs.length === 1 ? "" : "s"}. Colour scale red = shortest, steel = longest; range ${fmtDuration(data.dMin)} to ${fmtDuration(data.dMax)}.`
+          ? `Per-pass duration heatmap of ${data.durs.length} spiral path${data.durs.length === 1 ? "" : "s"}. Colour scale red = shortest pass, steel = longest; range ${fmtSeconds(data.dMin)} to ${fmtSeconds(data.dMax)}.`
           : "Duration heatmap: nothing to show yet."}
       </span>
     </div>

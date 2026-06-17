@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { logNormalize, durationColor, HEAT_STOPS } from "./heatmap";
+import { logNormalize, durationColor, HEAT_STOPS, fmtSeconds } from "./heatmap";
 
 describe("logNormalize", () => {
   it("returns [] for empty input", () => {
@@ -51,5 +51,24 @@ describe("durationColor", () => {
     expect(c).not.toBe(HEAT_STOPS[0].hex);
     expect(c).not.toBe(HEAT_STOPS[1].hex);
     expect(c).toMatch(/^#[0-9a-f]{6}$/);
+  });
+});
+
+describe("fmtSeconds", () => {
+  it("keeps 2 decimals under 1s, 1 decimal under 10s, whole above", () => {
+    expect(fmtSeconds(0.04)).toBe("0.04s");
+    expect(fmtSeconds(0.5)).toBe("0.50s");
+    expect(fmtSeconds(1.4)).toBe("1.4s");
+    expect(fmtSeconds(14.6)).toBe("15s");
+  });
+
+  it("shows sub-10ms as <0.01s rather than a bare 0.00s", () => {
+    expect(fmtSeconds(0.004)).toBe("<0.01s");
+  });
+
+  it("guards zero / negatives / non-finite", () => {
+    expect(fmtSeconds(0)).toBe("0s");
+    expect(fmtSeconds(-2)).toBe("0s");
+    expect(fmtSeconds(NaN)).toBe("0s");
   });
 });

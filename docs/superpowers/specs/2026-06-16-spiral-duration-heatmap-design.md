@@ -37,17 +37,20 @@ estimator so the numbers reconcile.
 
 ## The metric
 
-Per spiral path:
+Per spiral path — **how long one pass of it takes**:
 
 ```
-durationSec = passes × pathLength ÷ speed
+seconds = pathLength ÷ speed   (a single pass, NOT × passes)
 ```
 
-where `passes` and `speed` are the path's **resolved group params**
-(`CUT_08_SPIRAL` vs `CUT_09_SPIRAL_DETAIL`), resolved the SAME way the estimator
-does — so the heatmap totals reconcile with the headline "estimated cut time".
-This is total (all-passes) dwell on the feature: low = under-served (the small
-features the user worries about), high = over-served / slow.
+where `speed` is the path's **resolved group param** (`CUT_08_SPIRAL` vs
+`CUT_09_SPIRAL_DETAIL`), resolved the SAME way the estimator does. Multiply by
+passes (+ the estimator's per-pass overhead) to recover the headline "estimated
+cut time" total. Per-pass traversal time is the intuitive per-feature number:
+low = the laser crosses it quickest (small features), high = slow. (Earlier draft
+used total all-passes dwell; switched to single-pass per user request — the log
+colouring is near-identical since passes is uniform, but the legend reads as
+seconds-per-pass.)
 
 Within a single path duration is uniform (constant speed), so each path is a
 solid tint; the *set* of paths forms the heatmap across the part. (This matches
