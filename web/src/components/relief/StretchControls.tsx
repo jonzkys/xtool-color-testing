@@ -16,6 +16,7 @@ import type { StretchMode, StretchParams } from "./stretch";
 export interface StretchControlsProps {
   params: StretchParams;
   onChange: (p: StretchParams) => void;
+  onPickColor: () => void;
 }
 
 const MODE_OPTIONS: { value: StretchMode; label: string }[] = [
@@ -45,7 +46,7 @@ function modeHint(mode: StretchMode): string {
   }
 }
 
-export function StretchControls({ params, onChange }: StretchControlsProps) {
+export function StretchControls({ params, onChange, onPickColor }: StretchControlsProps) {
   // Immutable single-field patch (mirrors ReliefControls.set).
   const set = <K extends keyof StretchParams>(key: K, value: StretchParams[K]) =>
     onChange({ ...params, [key]: value });
@@ -201,20 +202,101 @@ export function StretchControls({ params, onChange }: StretchControlsProps) {
         </p>
         {params.removeBackground && (
           <>
-            <Slider
-              label="Threshold"
-              value={params.bgThreshold}
-              min={0}
-              max={64}
-              step={1}
-              onChange={(v) => set("bgThreshold", v)}
-              hint="Pixels at or below this value become transparent."
-            />
+            <Field label="Method">
+              <Select
+                aria-label="Background removal method"
+                value={params.bgMode}
+                onChange={(e) => set("bgMode", e.target.value as "dark" | "bright" | "colour")}
+              >
+                <option value="dark">Dark threshold</option>
+                <option value="bright">Bright threshold</option>
+                <option value="colour">Pick colour</option>
+              </Select>
+            </Field>
+
+            {params.bgMode !== "colour" ? (
+              <Slider
+                label="Threshold"
+                value={params.bgThreshold}
+                min={0}
+                max={255}
+                step={1}
+                onChange={(v) => set("bgThreshold", v)}
+                hint="Pixels at or below this value become transparent."
+              />
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={onPickColor}
+                    className="rounded-[5px] border border-[var(--color-border)] px-2 py-1 text-xs hover:border-[var(--color-primary)]/50"
+                  >
+                    Pick from image
+                  </button>
+                  <span
+                    className="inline-block h-5 w-5 rounded-[4px] border border-[var(--color-border)]"
+                    style={{ background: params.bgColor ? `rgb(${params.bgColor.join(",")})` : "transparent" }}
+                    aria-hidden
+                  />
+                  <span className="font-mono text-[10px] text-[var(--color-ink-muted)]">
+                    {params.bgColor ? params.bgColor.join(", ") : "no colour picked"}
+                  </span>
+                </div>
+                <Slider
+                  label="Tolerance"
+                  value={params.bgTolerance}
+                  min={0}
+                  max={200}
+                  step={1}
+                  onChange={(v) => set("bgTolerance", v)}
+                />
+              </>
+            )}
+
             <Toggle
-              label="Background is the bright end"
-              checked={params.bgHigh}
-              onChange={(v) => set("bgHigh", v)}
+              label="Trim outline"
+              checked={params.trimEnabled}
+              onChange={(v) => set("trimEnabled", v)}
             />
+            {params.trimEnabled && (
+              <Slider
+                label="Trim %"
+                value={params.trimPct}
+                min={0}
+                max={25}
+                step={0.5}
+                onChange={(v) => set("trimPct", v)}
+              />
+            )}
+
+            <Toggle
+              label="Edge falloff"
+              checked={params.falloffEnabled}
+              onChange={(v) => set("falloffEnabled", v)}
+            />
+            {params.falloffEnabled && (
+              <>
+                <Field label="Direction">
+                  <Select
+                    aria-label="Edge falloff direction"
+                    value={params.falloffDir}
+                    onChange={(e) => set("falloffDir", e.target.value as "down" | "up")}
+                  >
+                    <option value="down">Down — bevel to floor</option>
+                    <option value="up">Up — rim to peak</option>
+                  </Select>
+                </Field>
+                <Slider
+                  label="Falloff %"
+                  value={params.falloffPct}
+                  min={0}
+                  max={50}
+                  step={0.5}
+                  onChange={(v) => set("falloffPct", v)}
+                />
+              </>
+            )}
           </>
         )}
       </Section>
