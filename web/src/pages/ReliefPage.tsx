@@ -16,7 +16,8 @@
  *     a few hundred ms instead of grinding on a 4k map.
  *   - export re-runs the smooth on the FULL-RES bitmap with the
  *     UNSCALED params, then downloads the PNG.
- *   - left:  ``ReliefControls`` — strength / edge / speckle / layers.
+ *   - left:  two collapsible groups — ``CutoutControls`` (background +
+ *     edge shaping) and ``SurfaceControls`` (denoise / stretch / layers).
  *   - right: source + export, plus ``ReliefInspect`` (luminance
  *     histogram, gradient thumbnail, % pixels changed).
  */
@@ -25,9 +26,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, EmptyState, PageContainer, Section, Toolbar } from "../ui";
 import { ReliefCompare2D } from "../components/relief/ReliefCompare2D";
 import { ReliefSplit2D } from "../components/relief/ReliefSplit2D";
-import { ReliefControls } from "../components/relief/ReliefControls";
 import { ReliefInspect } from "../components/relief/ReliefInspect";
 import { ReliefSurface3D } from "../components/relief/ReliefSurface3D";
+import { CollapsibleGroup } from "../components/relief/CollapsibleGroup";
+import { CutoutControls } from "../components/relief/CutoutControls";
+import { SurfaceControls } from "../components/relief/SurfaceControls";
 import {
   DEFAULT_RELIEF_PARAMS,
   downscaleForPreview,
@@ -36,7 +39,6 @@ import {
   scaleParamsForPreview,
   type ReliefParams,
 } from "./reliefHelpers";
-import { StretchControls } from "../components/relief/StretchControls";
 import {
   DEFAULT_STRETCH_PARAMS,
   buildLut,
@@ -614,14 +616,31 @@ export function ReliefPage() {
         )}
 
         <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_300px] items-stretch gap-4">
-          {/* ── Settings (left) — smoothing controls ─────────────────── */}
+          {/* ── Settings (left) — Cutout + Surface groups ────────────── */}
           <div className="flex min-h-0 flex-col gap-4 overflow-y-auto pr-1">
-            <ReliefControls params={params} onChange={setParams} />
-            <StretchControls
-              params={stretchParams}
-              onChange={setStretchParams}
-              onPickColor={() => setPickingColor(true)}
-            />
+            <CollapsibleGroup
+              title="Cutout"
+              storageKey="relief.group.cutout"
+              hint="Lift the object off its background, then shape the cut edge. The edge controls depend on background removal."
+            >
+              <CutoutControls
+                params={stretchParams}
+                onChange={setStretchParams}
+                onPickColor={() => setPickingColor(true)}
+              />
+            </CollapsibleGroup>
+            <CollapsibleGroup
+              title="Surface"
+              storageKey="relief.group.surface"
+              hint="Shape the height-field itself: denoise, tone stretch, and layer hints."
+            >
+              <SurfaceControls
+                reliefParams={params}
+                onReliefChange={setParams}
+                stretchParams={stretchParams}
+                onStretchChange={setStretchParams}
+              />
+            </CollapsibleGroup>
           </div>
 
           {/* ── Compare (centre) ────────────────────────────────────── */}
