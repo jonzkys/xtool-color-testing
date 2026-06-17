@@ -923,14 +923,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> Response:
         """Smooth a grayscale depth map and return the cleaned PNG. Stateless.
 
-        ``smooth=false`` skips the smoothing pass (raw heightfield). Optional
-        CLAHE runs after the smooth. Optional background removal (``bg_mode``):
+        ``smooth=false`` skips the smoothing pass (raw heightfield). Background
+        removal (``bg_mode``) runs next so the rest operates on the cut-out:
         ``dark`` masks dark pixels (default), ``bright`` masks bright pixels,
         ``colour`` keys the picked ``bg_color`` within ``bg_tolerance`` — all
-        returning an ``LA`` PNG. ``perimeter_pct`` then rounds the jagged
-        silhouette boundary, ``trim_pct`` erodes the object outline, and
-        ``falloff_pct`` ramps a soft edge. The monotonic tone modes are applied
-        client-side as a LUT."""
+        returning an ``LA`` PNG. Optional CLAHE then equalizes the foreground
+        only; ``perimeter_pct`` rounds the jagged silhouette boundary,
+        ``trim_pct`` erodes the object outline, and ``falloff_pct`` ramps a soft
+        edge. The monotonic tone modes are applied client-side as a LUT (their
+        histogram likewise skips the masked background)."""
         raw = file.file.read()
         try:
             bgr = decode_image_bytes(raw)
@@ -949,12 +950,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 median_ksize=median_ksize,
             )
             out = smooth_heightfield(gray, params)
-        if clahe:
-            out = apply_clahe(
-                out,
-                clip_limit=max(0.1, min(40.0, clahe_clip)),
-                tiles=max(1, min(32, clahe_tiles)),
-            )
+        # Background removal FIRST, so every follow-up step (CLAHE here, the
+        # client monotonic stretches downstream, and the edge shaping below)
+        # operates on the cut-out rather than the whole frame.
         alpha = None
         if remove_bg:
             if bg_mode == "colour":
@@ -969,6 +967,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     out, threshold=max(0, min(255, bg_threshold)),
                     high=(bg_mode == "bright"),
                 )
+        if clahe:
+            # ``mask=alpha`` keeps a large background from skewing CLAHE's
+            # adaptive tiles near the object edge (no-op when nothing's masked).
+            out = apply_clahe(
+                out,
+                clip_limit=max(0.1, min(40.0, clahe_clip)),
+                tiles=max(1, min(32, clahe_tiles)),
+                mask=alpha,
+            )
         if alpha is not None:
             perimeter = max(0.0, min(25.0, perimeter_pct))
             trim = max(0.0, min(50.0, trim_pct))

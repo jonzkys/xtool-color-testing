@@ -162,6 +162,29 @@ def test_relief_smooth_perimeter_returns_la_png():
     assert out.size == (48, 48)
 
 
+def test_relief_smooth_clahe_with_bg_removal_returns_la_png():
+    # CLAHE now runs AFTER background removal (mask-aware) — exercise the
+    # reordered path end-to-end.
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/relief/smooth",
+        files={"file": ("depth.png", _png_rgb(), "image/png")},
+        data={
+            "smooth": "false",
+            "clahe": "true",
+            "clahe_clip": "3",
+            "clahe_tiles": "8",
+            "remove_bg": "true",
+            "bg_mode": "dark",
+            "bg_threshold": "8",
+        },
+    )
+    assert resp.status_code == 200
+    out = Image.open(BytesIO(resp.content))
+    assert out.mode == "LA"            # grayscale + alpha (background removed)
+    assert out.getpixel((2, 2))[1] == 0  # background still transparent
+
+
 def test_relief_smooth_colour_mode_without_colour_is_opaque():
     client = TestClient(create_app())
     resp = client.post(
