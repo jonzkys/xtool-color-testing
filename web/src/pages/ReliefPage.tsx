@@ -31,6 +31,7 @@ import {
   DEFAULT_RELIEF_PARAMS,
   downscaleForPreview,
   reliefSmooth,
+  sampleRgb,
   scaleParamsForPreview,
   type ReliefParams,
 } from "./reliefHelpers";
@@ -64,6 +65,38 @@ export function ReliefPage() {
   const [stretchParams, setStretchParams] = useState<StretchParams>(
     DEFAULT_STRETCH_PARAMS,
   );
+  // Build the background removal opts passed to reliefSmooth at BOTH call
+  // sites (debounced preview + export).  Extracted so adding new fields here
+  // automatically propagates to both.
+  const bgOpts = useCallback(
+    () =>
+      stretchParams.removeBackground
+        ? {
+            mode: stretchParams.bgMode,
+            threshold: stretchParams.bgThreshold,
+            color: stretchParams.bgColor,
+            tolerance: stretchParams.bgTolerance,
+            trimPct: stretchParams.trimEnabled ? stretchParams.trimPct : 0,
+            falloffPct: stretchParams.falloffEnabled
+              ? stretchParams.falloffPct
+              : 0,
+            falloffDir: stretchParams.falloffDir,
+          }
+        : undefined,
+    [
+      stretchParams.removeBackground,
+      stretchParams.bgMode,
+      stretchParams.bgThreshold,
+      stretchParams.bgColor,
+      stretchParams.bgTolerance,
+      stretchParams.trimEnabled,
+      stretchParams.trimPct,
+      stretchParams.falloffEnabled,
+      stretchParams.falloffPct,
+      stretchParams.falloffDir,
+    ],
+  );
+
   // Active LUT (monotonic modes) — passed to the inspect curve overlay; null
   // for none/clahe so the overlay draws nothing.
   const [lut, setLut] = useState<Uint8Array | null>(null);
@@ -119,6 +152,33 @@ export function ReliefPage() {
   const [smoothedData, setSmoothedData] = useState<ImageData | null>(null);
   const [cleanedData, setCleanedData] = useState<ImageData | null>(null); // final (post-stretch)
 
+  // Eyedropper: when true, the next click on the source thumbnail samples a colour.
+  const [pickingColor, setPickingColor] = useState(false);
+
+  // Click handler for the source-image wrapper (eyedropper mode). The source
+  // thumbnail is displayed at width:100% with natural aspect, so
+  // (clientX - r.left) / r.width maps directly to a fractional pixel in
+  // originalData (same aspect as the source bitmap).
+  const onSourceClick = useCallback(
+    (e: React.MouseEvent<HTMLElement>) => {
+      if (!pickingColor || !originalData) return;
+      const r = e.currentTarget.getBoundingClientRect();
+      const rgb = sampleRgb(
+        originalData,
+        (e.clientX - r.left) / r.width,
+        (e.clientY - r.top) / r.height,
+      );
+      setStretchParams((p) => ({
+        ...p,
+        bgColor: rgb,
+        bgMode: "colour",
+        removeBackground: true,
+      }));
+      setPickingColor(false);
+    },
+    [pickingColor, originalData],
+  );
+
   // ── File decode ───────────────────────────────────────────────────
   const onFile = useCallback(async (file: File) => {
     setErrorMsg(null);
@@ -165,12 +225,7 @@ export function ReliefPage() {
                     tiles: stretchParams.claheTiles,
                   }
                 : undefined,
-            background: stretchParams.removeBackground
-              ? {
-                  threshold: stretchParams.bgThreshold,
-                  high: stretchParams.bgHigh,
-                }
-              : undefined,
+            background: bgOpts(),
           };
           const smoothed = await reliefSmooth(
             blob,
@@ -210,13 +265,11 @@ export function ReliefPage() {
     params.smoothEnabled,
     // CLAHE and background removal are the stretch features that touch the
     // backend. A boolean for CLAHE so switching between monotonic modes
-    // doesn't cost a round-trip.
+    // doesn't cost a round-trip. bgOpts covers all background-removal fields.
     stretchParams.mode === "clahe",
     stretchParams.claheClipLimit,
     stretchParams.claheTiles,
-    stretchParams.removeBackground,
-    stretchParams.bgThreshold,
-    stretchParams.bgHigh,
+    bgOpts,
     renderTick,
   ]);
 
@@ -371,9 +424,7 @@ export function ReliefPage() {
                 tiles: stretchParams.claheTiles,
               }
             : undefined,
-        background: stretchParams.removeBackground
-          ? { threshold: stretchParams.bgThreshold, high: stretchParams.bgHigh }
-          : undefined,
+        background: bgOpts(),
       };
       const smoothed = await reliefSmooth(fullBlob, params, opts);
 
@@ -413,7 +464,7 @@ export function ReliefPage() {
     } finally {
       setExporting(false);
     }
-  }, [bitmap, params, stretchParams]);
+  }, [bitmap, params, stretchParams, bgOpts]);
 
   // ── Centre host: measure CSS box for the compare canvas ───────────
   // The host is mounted only once a depth map exists, so attach the
@@ -541,7 +592,11 @@ export function ReliefPage() {
           {/* ── Settings (left) — smoothing controls ─────────────────── */}
           <div className="flex min-h-0 flex-col gap-4 overflow-y-auto pr-1">
             <ReliefControls params={params} onChange={setParams} />
-            <StretchControls params={stretchParams} onChange={setStretchParams} />
+            <StretchControls
+              params={stretchParams}
+              onChange={setStretchParams}
+              onPickColor={() => setPickingColor(true)}
+            />
           </div>
 
           {/* ── Compare (centre) ────────────────────────────────────── */}
@@ -636,17 +691,43 @@ export function ReliefPage() {
                 >
                   {bitmap ? "Replace depth map…" : "Upload depth map…"}
                 </Button>
-                {bitmap && (
-                  <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 font-mono text-[11px] tabular-nums">
-                    <RowStat
-                      label="Dimensions"
-                      value={`${bitmap.width} × ${bitmap.height}`}
-                    />
-                    <RowStat
-                      label="Preview cap"
-                      value={`${PREVIEW_MAX_EDGE}px`}
-                    />
-                  </dl>
+                {bitmap && originalUrl && (
+                  <>
+                    {/* Source thumbnail — also the eyedropper click target.
+                        Displayed at natural aspect so (clientX–r.left)/r.width
+                        maps directly to a fractional pixel in originalData. */}
+                    <div
+                      onClick={onSourceClick}
+                      style={
+                        pickingColor && originalData
+                          ? { cursor: "crosshair" }
+                          : undefined
+                      }
+                      className="mt-1 overflow-hidden rounded-[4px]"
+                      title={
+                        pickingColor
+                          ? "Click to sample a background colour"
+                          : undefined
+                      }
+                    >
+                      <img
+                        src={originalUrl}
+                        alt="Source depth map"
+                        className="block w-full"
+                        draggable={false}
+                      />
+                    </div>
+                    <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 font-mono text-[11px] tabular-nums">
+                      <RowStat
+                        label="Dimensions"
+                        value={`${bitmap.width} × ${bitmap.height}`}
+                      />
+                      <RowStat
+                        label="Preview cap"
+                        value={`${PREVIEW_MAX_EDGE}px`}
+                      />
+                    </dl>
+                  </>
                 )}
               </Section>
               <Section title="Export" dense>
