@@ -6,10 +6,11 @@
  * cleaned buffers; this component just turns whichever buffer it is handed
  * into a mesh — the ``show`` prop is a label only, used for the corner tag.
  *
- * Compare mode: pass ``compareData`` and the component renders TWO surfaces
- * side by side in ONE scene sharing ONE camera — orbit/zoom moves both
- * identically, so the eye compares the same angle. ``heightData`` is the
- * left surface, ``compareData`` the right; ``labels`` tags each.
+ * Compare mode: pass ``compareData`` and the component splits the canvas into
+ * two side-by-side VIEWPORTS, each its own scene with its surface centred, and
+ * drives BOTH from ONE shared camera. Orbit/zoom moves both to the identical
+ * angle while each surface stays framed in its own panel — so you can study a
+ * feature in both at once without one drifting out of view.
  *
  * Code-splitting: three.js is imported DYNAMICALLY inside the setup effect,
  * never at module top-level, so Rollup hoists the whole engine into its own
@@ -17,13 +18,11 @@
  * file's imports with care — a static ``import * as THREE`` at the top would
  * drag ~600 kB back into the main bundle.
  *
- * Lifecycle: the renderer / scene / camera / controls are built ONCE and
- * held in a ref across the component's life. Subsequent height-field changes
- * re-displace the existing geometry in place; ``width`` / ``height`` changes
- * resize the renderer + camera. The engine is torn down and rebuilt only
- * when toggling between single and compare (the mesh count + framing differ)
- * or on unmount (renderer.dispose is essential — contexts leak hard
- * otherwise, and browsers cap the number of live ones).
+ * Lifecycle: the renderer / camera / controls are built ONCE and held in a ref.
+ * Height-field changes re-displace the existing geometry in place; resize
+ * updates the renderer + camera. The engine is rebuilt only when toggling
+ * single↔compare (viewport layout differs) or on unmount (renderer.dispose is
+ * essential — contexts leak hard otherwise, and browsers cap the live count).
  */
 
 import { useEffect, useRef } from "react";
@@ -37,6 +36,7 @@ import type {
   Mesh,
   PlaneGeometry,
   MeshStandardMaterial,
+  Vector2,
 } from "three";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
@@ -60,42 +60,32 @@ const RELIEF_SCALE = 0.25;
 /** Hard cap on mesh resolution per axis — a 4k depth map must never spawn
  *  a million-vertex grid. */
 const MAX_SEG = 256;
-/** Half the gap between the two planes in compare mode (plane = 1 wide). */
-const HALF_GAP = 0.09;
+/** Gap (CSS px) between the two compare viewports. */
+const VIEWPORT_GAP = 8;
 
-/** Live three.js handles, created once and reused across re-renders. */
+/** Live three.js handles, created once and reused across re-renders. One scene
+ *  per surface (each surface centred at the origin); a single shared camera. */
 interface Engine {
   THREE: typeof import("three");
   renderer: WebGLRenderer;
-  scene: Scene;
   camera: PerspectiveCamera;
   controls: OrbitControls;
-  geometries: PlaneGeometry[];
+  scenes: Scene[];
   meshes: Mesh[];
+  geometries: PlaneGeometry[];
   material: MeshStandardMaterial;
+  size: Vector2;
+  compare: boolean;
   raf: number;
-}
-
-/** X-offset (plane-units) of surface ``i`` of ``count``. One surface is
- *  centred; two straddle the origin with a small gap so the camera frames
- *  both symmetrically. */
-function xOffsetFor(i: number, count: number): number {
-  if (count < 2) return 0;
-  return i === 0 ? -(0.5 + HALF_GAP) : 0.5 + HALF_GAP;
 }
 
 /**
  * Displace a PlaneGeometry's Z by sampling ``data`` (downsampled to the
- * mesh grid) → luminance 0..1 → ``z = lum * RELIEF_SCALE``. The plane is
- * built in the XY plane with ``segX+1 × segY+1`` vertices laid out
- * row-major from top-left, which lines the vertex grid up directly with
- * image rows/columns. Recomputes normals so lighting follows the surface.
- *
- * Each mesh vertex AREA-AVERAGES the source pixels its cell covers, treating
- * the (transparent) background as floor — luminance 0. Nearest-sampling a
- * coarse mesh over a hard height step (a raised edge border meeting the
- * floor) aliases it into a forest of spikes; averaging the WHOLE cell turns
- * every step into a clean one-cell ramp.
+ * mesh grid) → luminance 0..1 → ``z = lum * RELIEF_SCALE``. Each mesh vertex
+ * AREA-AVERAGES the source pixels its cell covers, treating the (transparent)
+ * background as floor — luminance 0. Nearest-sampling a coarse mesh over a
+ * hard height step aliases it into a forest of spikes; averaging the WHOLE
+ * cell turns every step into a clean one-cell ramp.
  */
 function displace(
   geometry: PlaneGeometry,
@@ -154,6 +144,15 @@ function buildGeometry(
   return geo;
 }
 
+/** Add the standard key + ambient lights to a scene (each compare scene needs
+ *  its own — lights don't cross scene boundaries). */
+function addLights(THREE: typeof import("three"), scene: Scene) {
+  const dir = new THREE.DirectionalLight(0xffffff, 1.35);
+  dir.position.set(-0.8, -1.0, 1.4);
+  scene.add(dir);
+  scene.add(new THREE.AmbientLight(0xb8b0a4, 0.55));
+}
+
 export function ReliefSurface3D({
   heightData,
   show,
@@ -171,9 +170,6 @@ export function ReliefSurface3D({
   latest.current = { heightData, compareData, width, height };
 
   // ── Engine setup (async) ──────────────────────────────────────────
-  // Built when there's data to show, and rebuilt when toggling between
-  // single and compare (the mesh count + camera framing differ). The
-  // `disposed` flag guards against teardown before the import resolves.
   useEffect(() => {
     if (!heightData) return;
     if (engineRef.current) return;
@@ -203,16 +199,15 @@ export function ReliefSurface3D({
       renderer.setPixelRatio(window.devicePixelRatio || 1);
       renderer.setSize(cw, ch);
       renderer.setClearColor(0x14110f, 1); // matches the 2D compare backdrop
+      renderer.autoClear = false; // we clear once/frame then draw each viewport
       renderer.domElement.style.display = "block";
       renderer.domElement.style.borderRadius = "8px";
       hostRef.current.appendChild(renderer.domElement);
 
-      const scene = new THREE.Scene();
-
-      const camera = new THREE.PerspectiveCamera(45, cw / ch, 0.01, 100);
-      // Look down at the plane(s) from a front-raised three-quarter angle.
-      // Compare mode pulls the camera back so both planes fit the frame.
-      const dist = isCompare ? 1.95 : 1.05;
+      // Each viewport is half-width in compare; size the camera to that aspect.
+      const vpW = isCompare ? (cw - VIEWPORT_GAP) / 2 : cw;
+      const camera = new THREE.PerspectiveCamera(45, vpW / ch, 0.01, 100);
+      const dist = isCompare ? 1.35 : 1.05;
       camera.position.set(0, -dist, dist);
       camera.up.set(0, 0, 1);
       camera.lookAt(0, 0, 0);
@@ -221,7 +216,7 @@ export function ReliefSurface3D({
       controls.enableDamping = true;
       controls.dampingFactor = 0.08;
       controls.minDistance = 0.6;
-      controls.maxDistance = isCompare ? 10 : 6;
+      controls.maxDistance = 6;
       controls.target.set(0, 0, RELIEF_SCALE * 0.4);
 
       const material = new THREE.MeshStandardMaterial({
@@ -232,32 +227,31 @@ export function ReliefSurface3D({
       });
 
       const datas = isCompare ? [hd, cd] : [hd];
+      const scenes: Scene[] = [];
       const geometries: PlaneGeometry[] = [];
       const meshes: Mesh[] = [];
-      datas.forEach((d, idx) => {
+      datas.forEach((d) => {
+        const scene = new THREE.Scene();
         const geo = d ? buildGeometry(THREE, d) : new THREE.PlaneGeometry(1, 1);
         const mesh = new THREE.Mesh(geo, material);
-        mesh.position.x = xOffsetFor(idx, datas.length);
         scene.add(mesh);
+        addLights(THREE, scene);
+        scenes.push(scene);
         geometries.push(geo);
         meshes.push(mesh);
       });
 
-      // Angled key light + soft ambient so the relief micro-geometry reads.
-      const dir = new THREE.DirectionalLight(0xffffff, 1.35);
-      dir.position.set(-0.8, -1.0, 1.4);
-      scene.add(dir);
-      scene.add(new THREE.AmbientLight(0xb8b0a4, 0.55));
-
       const engine: Engine = {
         THREE,
         renderer,
-        scene,
         camera,
         controls,
-        geometries,
+        scenes,
         meshes,
+        geometries,
         material,
+        size: new THREE.Vector2(cw, ch),
+        compare: isCompare,
         raf: 0,
       };
       engineRef.current = engine;
@@ -266,7 +260,27 @@ export function ReliefSurface3D({
         if (disposed) return;
         engine.raf = requestAnimationFrame(tick);
         controls.update();
-        renderer.render(scene, camera);
+        const { x: sw, y: sh } = renderer.getSize(engine.size);
+
+        // Clear the whole canvas once (incl. the gap), then draw each viewport.
+        renderer.setScissorTest(false);
+        renderer.setViewport(0, 0, sw, sh);
+        renderer.clear();
+
+        if (engine.scenes.length < 2) {
+          renderer.render(engine.scenes[0], camera);
+          return;
+        }
+        renderer.setScissorTest(true);
+        const halfW = (sw - VIEWPORT_GAP) / 2;
+        // Left viewport.
+        renderer.setViewport(0, 0, halfW, sh);
+        renderer.setScissor(0, 0, halfW, sh);
+        renderer.render(engine.scenes[0], camera);
+        // Right viewport.
+        renderer.setViewport(halfW + VIEWPORT_GAP, 0, halfW, sh);
+        renderer.setScissor(halfW + VIEWPORT_GAP, 0, halfW, sh);
+        renderer.render(engine.scenes[1], camera);
       };
       tick();
     })();
@@ -281,23 +295,18 @@ export function ReliefSurface3D({
       e.geometries.forEach((g) => g.dispose());
       e.material.dispose();
       e.renderer.dispose();
-      // forceContextLoss frees the GPU context immediately rather than
-      // waiting on GC — important when toggling the tab repeatedly.
       e.renderer.forceContextLoss?.();
       const canvas = e.renderer.domElement;
       canvas.parentNode?.removeChild(canvas);
     };
-    // Re-run when data appears/disappears OR the single↔compare mode flips;
-    // width/height are read from `latest` at build time and handled by the
-    // resize effect after.
+    // Re-run when data appears/disappears OR the single↔compare layout flips.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [heightData === null, compare]);
 
   // ── Re-displace on data / show change ─────────────────────────────
-  // Rebuild a mesh's geometry when its height-field changes. We rebuild
+  // Rebuild a scene's mesh geometry when its height-field changes. We rebuild
   // rather than mutate because the segment count is a function of image
-  // dimensions, which can differ across maps. mesh.position (the x-offset)
-  // is preserved across the geometry swap.
+  // dimensions, which can differ across maps.
   useEffect(() => {
     const e = engineRef.current;
     if (!e || !heightData) return;
@@ -311,8 +320,6 @@ export function ReliefSurface3D({
       e.geometries[idx] = next;
       old.dispose();
     });
-    // `show` is a dep so a single-mode flip with identical dimensions still
-    // re-runs (the parent swaps the heightData reference, but be explicit).
   }, [heightData, compareData, compare, show]);
 
   // ── Resize on host box change ─────────────────────────────────────
@@ -322,7 +329,8 @@ export function ReliefSurface3D({
     const cw = Math.max(1, width);
     const ch = Math.max(1, height);
     e.renderer.setSize(cw, ch);
-    e.camera.aspect = cw / ch;
+    const vpW = e.compare ? (cw - VIEWPORT_GAP) / 2 : cw;
+    e.camera.aspect = vpW / ch;
     e.camera.updateProjectionMatrix();
   }, [width, height]);
 
@@ -370,6 +378,11 @@ export function ReliefSurface3D({
           <span className="pointer-events-none absolute right-3 top-3 font-mono text-[10px] uppercase tracking-[0.14em] text-white/55">
             {rightLabel}
           </span>
+          {/* Hairline divider between the two viewports. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/10"
+          />
         </>
       ) : (
         <span className="pointer-events-none absolute left-3 top-3 font-mono text-[10px] uppercase tracking-[0.14em] text-white/55">
