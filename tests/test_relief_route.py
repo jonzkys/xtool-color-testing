@@ -106,3 +106,50 @@ def test_relief_smooth_clamps_bg_threshold():
         data={"remove_bg": "true", "bg_threshold": "9999"},
     )
     assert resp.status_code == 200
+
+
+def _png_rgb(w=48, h=48):
+    from PIL import Image as _I
+    buf = BytesIO()
+    img = _I.new("RGB", (w, h), (0, 0, 0))      # black background
+    for y in range(12, 36):                       # a mid-grey square object
+        for x in range(12, 36):
+            img.putpixel((x, y), (150, 150, 150))
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_relief_smooth_colour_trim_falloff_returns_la_png():
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/relief/smooth",
+        files={"file": ("depth.png", _png_rgb(), "image/png")},
+        data={
+            "smooth": "false",
+            "remove_bg": "true",
+            "bg_mode": "colour",
+            "bg_color": "0,0,0",      # key out the black background
+            "bg_tolerance": "20",
+            "trim_pct": "5",
+            "falloff_pct": "10",
+            "falloff_dir": "down",
+        },
+    )
+    assert resp.status_code == 200
+    out = Image.open(BytesIO(resp.content))
+    assert out.mode == "LA"            # grayscale + alpha
+    assert out.size == (48, 48)
+    # the keyed background is transparent
+    assert out.getpixel((2, 2))[1] == 0
+
+
+def test_relief_smooth_colour_mode_without_colour_is_opaque():
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/relief/smooth",
+        files={"file": ("depth.png", _png_rgb(), "image/png")},
+        data={"smooth": "false", "remove_bg": "true", "bg_mode": "colour", "bg_color": ""},
+    )
+    assert resp.status_code == 200
+    out = Image.open(BytesIO(resp.content))
+    assert out.mode == "L"             # nothing picked → no alpha, plain L PNG
