@@ -24,6 +24,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, EmptyState, PageContainer, Section, Toolbar } from "../ui";
 import { ReliefCompare2D } from "../components/relief/ReliefCompare2D";
+import { ReliefSplit2D } from "../components/relief/ReliefSplit2D";
 import { ReliefControls } from "../components/relief/ReliefControls";
 import { ReliefInspect } from "../components/relief/ReliefInspect";
 import { ReliefSurface3D } from "../components/relief/ReliefSurface3D";
@@ -54,6 +55,8 @@ const PREVIEW_MAX_EDGE = 800;
 type Status = "idle" | "smoothing" | "ready" | "error";
 /** Centre-preview view mode. */
 type PreviewView = "2d" | "3d";
+/** Overlay (2D wipe / single 3D surface) vs. side-by-side compare. */
+type CompareMode = "overlay" | "split";
 /** Which height-field the 3D surface displays. */
 type SurfaceShow = "original" | "cleaned";
 
@@ -123,6 +126,7 @@ export function ReliefPage() {
   // surface flips between the source and cleaned height-fields via `show`
   // (default cleaned — the result is what the user is dialling in).
   const [view, setView] = useState<PreviewView>("2d");
+  const [compare, setCompare] = useState<CompareMode>("overlay");
   const [show, setShow] = useState<SurfaceShow>("cleaned");
 
   // Object-URL bookkeeping so we can revoke on replace / unmount and
@@ -625,19 +629,28 @@ export function ReliefPage() {
             <Card padded={false} className="flex min-h-0 flex-1 flex-col p-3">
               {bitmap ? (
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-                  {/* View chrome: 2D split ↔ 3D surface, plus the 3D
-                      orig/clean flip. */}
+                  {/* View chrome: 2D ↔ 3D, overlay ↔ side-by-side, plus the
+                      3D orig/clean flip (overlay only). */}
                   <div className="flex shrink-0 flex-wrap items-center gap-3">
                     <SegmentedControl<PreviewView>
                       label="preview view"
                       value={view}
                       onChange={setView}
                       options={[
-                        { id: "2d", label: "2D split" },
-                        { id: "3d", label: "3D surface" },
+                        { id: "2d", label: "2D" },
+                        { id: "3d", label: "3D" },
                       ]}
                     />
-                    {view === "3d" && (
+                    <SegmentedControl<CompareMode>
+                      label="compare mode"
+                      value={compare}
+                      onChange={setCompare}
+                      options={[
+                        { id: "overlay", label: "Overlay" },
+                        { id: "split", label: "Side-by-side" },
+                      ]}
+                    />
+                    {view === "3d" && compare === "overlay" && (
                       <SegmentedControl<SurfaceShow>
                         label="surface source"
                         value={show}
@@ -662,13 +675,31 @@ export function ReliefPage() {
                     }}
                   >
                     {view === "2d" ? (
-                      <ReliefCompare2D
-                        originalUrl={originalUrl}
-                        cleanedUrl={cleanedUrl}
+                      compare === "split" ? (
+                        <ReliefSplit2D
+                          originalUrl={originalUrl}
+                          cleanedUrl={cleanedUrl}
+                          picking={pickingColor}
+                          onPick={onPickFraction}
+                        />
+                      ) : (
+                        <ReliefCompare2D
+                          originalUrl={originalUrl}
+                          cleanedUrl={cleanedUrl}
+                          width={hostW}
+                          height={hostH}
+                          picking={pickingColor}
+                          onPick={onPickFraction}
+                        />
+                      )
+                    ) : compare === "split" ? (
+                      <ReliefSurface3D
+                        heightData={originalData}
+                        compareData={cleanedData}
+                        labels={["original", "cleaned"]}
+                        show="original"
                         width={hostW}
                         height={hostH}
-                        picking={pickingColor}
-                        onPick={onPickFraction}
                       />
                     ) : (
                       <ReliefSurface3D
