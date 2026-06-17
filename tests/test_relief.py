@@ -365,3 +365,23 @@ def test_falloff_curve_endpoints_and_intensity():
     mid_gentle = float(falloff_curve(np.array([0.25]), 0)[0])   # linear → 0.25
     mid_sharp = float(falloff_curve(np.array([0.25]), 100)[0])  # smootherstep → lower
     assert mid_gentle > mid_sharp
+
+
+def test_threshold_background_mask_dark_and_bright():
+    from xcs_gen_web.relief import threshold_background_mask
+    gray = np.full((4, 4), 100, np.uint8)
+    gray[0, 0] = 5
+    gray[1, 1] = 250
+    dark = threshold_background_mask(gray, 8, high=False)
+    assert dark.dtype == bool and dark[0, 0] and not dark[2, 2]
+    bright = threshold_background_mask(gray, 200, high=True)
+    assert bright[1, 1] and not bright[2, 2]
+
+
+def test_colour_background_mask_keys_picked_colour():
+    from xcs_gen_web.relief import colour_background_mask
+    img = np.zeros((2, 2, 3), np.uint8)
+    img[:, 0] = (30, 20, 10)  # BGR → RGB (10, 20, 30)
+    m = colour_background_mask(img, (10, 20, 30), 5)
+    assert m.dtype == bool
+    assert m[:, 0].all() and not m[:, 1].any()

@@ -28,6 +28,8 @@ __all__ = [
     "smooth_perimeter",
     "edge_falloff",
     "falloff_curve",
+    "threshold_background_mask",
+    "colour_background_mask",
 ]
 
 
@@ -126,18 +128,22 @@ def apply_clahe(
     return np.ascontiguousarray(clahe.apply(src), dtype=np.uint8)
 
 
-def background_alpha(gray: np.ndarray, threshold: int, high: bool = False) -> np.ndarray:
-    """Alpha mask (uint8 0/255) marking background pixels transparent.
+def threshold_background_mask(gray: np.ndarray, threshold: int, high: bool = False) -> np.ndarray:
+    """Boolean background mask (True = background) from a luminance cut.
 
-    ``high=False``: background is the dark end (``gray <= threshold``) — the
-    common case (surrounding black background). ``high=True``: the bright end
-    (``gray >= threshold``) for inverted maps."""
+    ``high=False``: background is the dark end (``gray <= threshold``); the
+    common case. ``high=True``: the bright end (``gray >= threshold``)."""
     if gray.ndim != 2:
-        raise ValueError("background_alpha expects a single-channel image")
+        raise ValueError("threshold_background_mask expects a single-channel image")
     t = max(0, min(255, int(threshold)))
-    mask = gray >= t if high else gray <= t
-    alpha = np.where(mask, 0, 255).astype(np.uint8)
-    return np.ascontiguousarray(alpha)
+    return (gray >= t) if high else (gray <= t)
+
+
+def background_alpha(gray: np.ndarray, threshold: int, high: bool = False) -> np.ndarray:
+    """Alpha mask (uint8 0/255) marking background pixels transparent — the
+    alpha form of ``threshold_background_mask``."""
+    mask = threshold_background_mask(gray, threshold, high)
+    return np.ascontiguousarray(np.where(mask, 0, 255).astype(np.uint8))
 
 
 def parse_rgb(s: str) -> tuple[int, int, int] | None:
@@ -152,25 +158,34 @@ def parse_rgb(s: str) -> tuple[int, int, int] | None:
     return (vals[0], vals[1], vals[2])
 
 
+def _to_rgb(bgr: np.ndarray) -> np.ndarray:
+    """Coerce BGR / BGRA / single-channel to an RGB array."""
+    if bgr.ndim == 2:
+        return cv2.cvtColor(bgr, cv2.COLOR_GRAY2RGB)
+    if bgr.ndim == 3 and bgr.shape[2] == 4:
+        return cv2.cvtColor(bgr, cv2.COLOR_BGRA2RGB)
+    if bgr.ndim == 3 and bgr.shape[2] == 3:
+        return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    raise ValueError(f"unsupported image shape {bgr.shape}")
+
+
+def colour_background_mask(
+    bgr: np.ndarray, color_rgb: tuple[int, int, int], tolerance: float
+) -> np.ndarray:
+    """Boolean background mask (True = background): pixels within Euclidean RGB
+    distance ``tolerance`` of ``color_rgb``. Accepts BGR / BGRA / single-channel."""
+    rgb = _to_rgb(bgr)
+    target = np.array(color_rgb, dtype=np.float32).reshape(1, 1, 3)
+    dist = np.sqrt(((rgb.astype(np.float32) - target) ** 2).sum(axis=2))
+    return dist <= float(tolerance)
+
+
 def colour_background_alpha(
     bgr: np.ndarray, color_rgb: tuple[int, int, int], tolerance: float
 ) -> np.ndarray:
-    """Alpha mask (uint8 0/255): background = pixels within Euclidean RGB distance
-    ``tolerance`` of ``color_rgb`` (the picked background colour); foreground = 255.
-    Accepts BGR / BGRA / single-channel (gray treated as R=G=B)."""
-    if bgr.ndim == 2:
-        rgb = cv2.cvtColor(bgr, cv2.COLOR_GRAY2RGB)
-    elif bgr.ndim == 3 and bgr.shape[2] == 4:
-        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGRA2RGB)
-    elif bgr.ndim == 3 and bgr.shape[2] == 3:
-        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-    else:
-        raise ValueError(f"unsupported image shape {bgr.shape}")
-    target = np.array(color_rgb, dtype=np.float32).reshape(1, 1, 3)
-    dist = np.sqrt(((rgb.astype(np.float32) - target) ** 2).sum(axis=2))
-    mask = dist <= float(tolerance)  # background
-    alpha = np.where(mask, 0, 255).astype(np.uint8)
-    return np.ascontiguousarray(alpha)
+    """Alpha form of ``colour_background_mask`` (uint8 0/255)."""
+    mask = colour_background_mask(bgr, color_rgb, tolerance)
+    return np.ascontiguousarray(np.where(mask, 0, 255).astype(np.uint8))
 
 
 def trim_alpha(alpha: np.ndarray, pct: float) -> np.ndarray:
