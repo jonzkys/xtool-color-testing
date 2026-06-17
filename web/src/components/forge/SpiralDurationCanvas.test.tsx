@@ -18,7 +18,7 @@ describe("SpiralDurationCanvas", () => {
   it("renders the legend when there are paths", () => {
     const paths = [mkPath(STAGE_GROUPS.spiral, 100), mkPath(STAGE_GROUPS.spiralDetail, 6)];
     render(<SpiralDurationCanvas paths={paths} config={SPIRAL_CUT} width={300} height={200} />);
-    expect(screen.getByText(/time \/ feature/i)).toBeInTheDocument();
+    expect(screen.getByText(/per-pass time/i)).toBeInTheDocument();
     expect(screen.queryByText(/no cut paths/i)).not.toBeInTheDocument();
   });
 

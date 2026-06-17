@@ -166,14 +166,13 @@ export function estimateForge(
 }
 
 /**
- * Per spiral path: its cut duration in seconds, resolved the SAME way the
- * estimator's spiral branch does (group params over source, falling back to the
- * working regime). Non-spiral paths are dropped. Σ(seconds) equals the spiral
- * stages' seconds in `estimateForge` by construction — both call
- * `spiralSeconds(p, passes, speed)` with passes/speed from the same
- * `effectiveRate(sp, source)` chain — so the heatmap and the headline cut-time
- * agree. This is also the hook a future size-aware tuning pass modulates
- * (per-path speed/passes).
+ * Per spiral path: how long a SINGLE pass of it takes (length ÷ speed), in
+ * seconds — the per-path traversal time, NOT multiplied by the pass count. Speed
+ * is resolved the same way the estimator's spiral branch does (group params over
+ * source, falling back to the working regime), so the detail group (CUT_09) picks
+ * up its own speed. Multiply by passes (+ per-pass overhead) to get the total the
+ * headline estimate reports. Non-spiral paths are dropped. This is the per-path
+ * hook a future size-aware tuning pass modulates.
  */
 export function spiralPathDurations(
   paths: GeneratedPath[],
@@ -186,9 +185,9 @@ export function spiralPathDurations(
     .map((p) => {
       const sp = resolved[p.groupName] ?? {};
       const rate = effectiveRate(sp, source);
-      const passes = (sp.passes as number | undefined) ?? rate.repeat;
       const speed = (sp.speed as number | undefined) ?? rate.speedMmS;
-      return { path: p, seconds: spiralSeconds(p, passes, speed) };
+      const len = p.rings.reduce((s, arm) => s + spiralPathLength(arm), 0);
+      return { path: p, seconds: len / Math.max(1, speed) };
     });
 }
 

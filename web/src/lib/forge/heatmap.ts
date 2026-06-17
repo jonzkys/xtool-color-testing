@@ -42,3 +42,14 @@ export function durationColor(t: number): string {
   const bl = lerp(a.rgb[2], b.rgb[2], f);
   return `#${hex2(r)}${hex2(g)}${hex2(bl)}`;
 }
+
+/** Compact seconds label for the heatmap legend. Per-pass times are often
+ *  sub-second, so keep 2 decimals under 1s, 1 decimal under 10s, whole above —
+ *  unlike `fmtDuration`, which rounds to whole seconds (→ "0:00" here). */
+export function fmtSeconds(s: number): string {
+  if (!Number.isFinite(s) || s <= 0) return "0s";
+  if (s < 0.01) return "<0.01s"; // sub-10ms reads sensibly, not a bare "0.00s"
+  if (s < 1) return `${s.toFixed(2)}s`;
+  if (s < 10) return `${s.toFixed(1)}s`;
+  return `${Math.round(s)}s`;
+}
