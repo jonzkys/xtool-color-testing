@@ -319,17 +319,28 @@ def edge_falloff(
         cv2.drawContours(filled, contours, -1, 1, thickness=cv2.FILLED)
         dilated = cv2.dilate(filled, kernel, iterations=1)
         ring = (dilated > 0) & (filled == 0)
-        # Ramp each ring pixel from its nearest edge height to the target.
+        # Object rim height, spread outward to seed the ring's INNER edge.
         eroded = cv2.erode(filled, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)), iterations=1)
         boundary_gray = np.where((filled > 0) & (eroded == 0), gray, 0).astype(np.uint8)
         base = cv2.dilate(boundary_gray, kernel, iterations=1).astype(np.float32)
-        dist_out = cv2.distanceTransform((filled == 0).astype(np.uint8), cv2.DIST_L2, 3)
-        c = falloff_curve(dist_out / band, intensity)  # 0 at boundary → 1 at outer
-        ring_h = base * (1.0 - c) + tgt * c
+        # Anchor the TARGET at the outer edge and interpolate inward to the rim
+        # height: measure distance inward from the skirt's outer boundary. This
+        # guarantees the outermost rim is exactly the target — a clean, uniform
+        # top. (Normalising distance OUTWARD from the object instead left the rim
+        # a varying amount short of the target → the sawtooth teeth.)
+        dist_from_outer = cv2.distanceTransform(dilated, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
+        c = falloff_curve(np.clip(dist_from_outer / band, 0.0, 1.0), intensity)  # 0 outer → 1 inner
+        ring_h = tgt * (1.0 - c) + base * c
         out = np.where(ring, ring_h, g)
-        # Soften residual jaggedness in the skirt (blur only the ring band).
-        ksm = max(3, radius | 1)
-        smoothed = cv2.GaussianBlur(out.astype(np.float32), (ksm, ksm), 0)
+        # Soften single-pixel jitter in the skirt with a LIGHT normalised
+        # (mask-weighted) blur over the grown region — small kernel so the outer
+        # rim stays at the target, and mask-weighted so the background can't bleed
+        # it back toward the floor.
+        ksm = max(3, min(5, radius | 1))
+        m = dilated.astype(np.float32)
+        num = cv2.GaussianBlur(out.astype(np.float32) * m, (ksm, ksm), 0)
+        den = cv2.GaussianBlur(m, (ksm, ksm), 0)
+        smoothed = num / np.maximum(den, 1e-6)
         out = np.where(ring, smoothed, out)
         # Add only the outer skirt; preserve the original foreground's internal
         # holes (the fill above was just to locate the outer silhouette).

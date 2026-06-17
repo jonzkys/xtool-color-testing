@@ -265,6 +265,21 @@ def test_edge_falloff_outward_grows_and_ramps():
     assert out[30, 18] < 200                         # ...and ramped below the edge height
 
 
+def test_edge_falloff_outward_rim_reaches_target_uniformly():
+    from xcs_gen_web.relief import edge_falloff
+    # Outward skirt to the peak: the OUTER rim must land at (near) the target all
+    # the way round — not a varying amount short of it (the sawtooth teeth).
+    gray = np.full((120, 120), 120, np.uint8)
+    alpha = np.zeros((120, 120), np.uint8)
+    alpha[40:80, 40:80] = 255                         # 40×40 object (short side 40)
+    out, a2 = edge_falloff(gray, alpha, 25, mode="outward", target=255)  # band 10 → peak
+    ys = np.where((a2 > 0).any(axis=1))[0]
+    top = int(ys.min())                               # outermost grown row
+    rim = out[top:top + 2, 45:75][a2[top:top + 2, 45:75] > 0].astype(int)
+    assert rim.min() > 220                            # the whole rim gets near the peak
+    assert int(rim.max() - rim.min()) < 25            # uniform — no teeth
+
+
 def test_edge_falloff_outward_does_not_wall_internal_holes():
     from xcs_gen_web.relief import edge_falloff
     # An annulus: 30×30 object with a 10×10 hole punched in the middle.
