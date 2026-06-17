@@ -410,3 +410,21 @@ def test_area_background_mask_empty_when_seed_off_colour_or_missing():
     # no seed at all → empty
     none = area_background_mask(img, (255, 0, 0), 10, None)
     assert not none.any()
+
+
+def test_combine_backgrounds_unions_masks():
+    from xcs_gen_web.relief import combine_backgrounds
+    a = np.zeros((4, 4), bool)
+    b = np.zeros((4, 4), bool)
+    a[0, 0] = True
+    b[3, 3] = True
+    alpha = combine_backgrounds([a, b])
+    assert alpha.dtype == np.uint8
+    assert alpha[0, 0] == 0 and alpha[3, 3] == 0   # either mask → background
+    assert alpha[1, 1] == 255                      # neither → foreground
+
+
+def test_combine_backgrounds_empty_is_all_foreground():
+    from xcs_gen_web.relief import combine_backgrounds
+    alpha = combine_backgrounds([], shape=(3, 3))
+    assert alpha.shape == (3, 3) and (alpha == 255).all()

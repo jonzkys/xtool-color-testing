@@ -31,6 +31,7 @@ __all__ = [
     "threshold_background_mask",
     "colour_background_mask",
     "area_background_mask",
+    "combine_backgrounds",
 ]
 
 
@@ -442,6 +443,26 @@ def edge_falloff(
     blended = tgt + (g - tgt) * c
     out = np.where(fg > 0, np.rint(blended), g)
     return np.ascontiguousarray(np.clip(out, 0, 255).astype(np.uint8)), alpha
+
+
+def combine_backgrounds(
+    masks: list[np.ndarray], shape: tuple[int, int] | None = None
+) -> np.ndarray:
+    """OR a list of boolean background masks (True = background) into an alpha
+    (uint8 0/255: 0 = background/transparent, 255 = foreground). An empty list
+    returns all-foreground (255) when ``shape`` is given; raises ``ValueError``
+    without it."""
+    if masks:
+        bg = np.zeros(masks[0].shape, dtype=bool)
+        for m in masks:
+            if m.shape != bg.shape:
+                raise ValueError("combine_backgrounds: masks must share a shape")
+            bg |= m.astype(bool)
+    elif shape is not None:
+        bg = np.zeros(shape, dtype=bool)
+    else:
+        raise ValueError("combine_backgrounds: empty masks needs an explicit shape")
+    return np.ascontiguousarray(np.where(bg, 0, 255).astype(np.uint8))
 
 
 def encode_png_la(gray: np.ndarray, alpha: np.ndarray) -> bytes:
