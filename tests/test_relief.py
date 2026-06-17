@@ -385,3 +385,28 @@ def test_colour_background_mask_keys_picked_colour():
     m = colour_background_mask(img, (10, 20, 30), 5)
     assert m.dtype == bool
     assert m[:, 0].all() and not m[:, 1].any()
+
+
+def test_area_background_mask_keeps_only_seed_component():
+    from xcs_gen_web.relief import area_background_mask
+    img = np.zeros((10, 30, 3), np.uint8)        # black background
+    img[2:8, 2:8] = (0, 0, 255)                  # BGR red blob A (left)  → RGB (255,0,0)
+    img[2:8, 22:28] = (0, 0, 255)                # red blob B (right)
+    # seed inside blob A: fractional (x, y)
+    m = area_background_mask(img, (255, 0, 0), 10, (5 / 30, 5 / 10))
+    assert m.dtype == bool
+    assert m[5, 5]            # blob A (seed's component) → background
+    assert not m[5, 25]       # blob B same colour but disconnected → kept
+    assert not m[0, 0]        # black background → not in colour range
+
+
+def test_area_background_mask_empty_when_seed_off_colour_or_missing():
+    from xcs_gen_web.relief import area_background_mask
+    img = np.zeros((10, 10, 3), np.uint8)
+    img[2:8, 2:8] = (0, 0, 255)                  # red blob
+    # seed on the black background (not within tolerance of red) → empty
+    off = area_background_mask(img, (255, 0, 0), 10, (0.0, 0.0))
+    assert not off.any()
+    # no seed at all → empty
+    none = area_background_mask(img, (255, 0, 0), 10, None)
+    assert not none.any()

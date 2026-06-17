@@ -30,6 +30,7 @@ __all__ = [
     "falloff_curve",
     "threshold_background_mask",
     "colour_background_mask",
+    "area_background_mask",
 ]
 
 
@@ -178,6 +179,32 @@ def colour_background_mask(
     target = np.array(color_rgb, dtype=np.float32).reshape(1, 1, 3)
     dist = np.sqrt(((rgb.astype(np.float32) - target) ** 2).sum(axis=2))
     return dist <= float(tolerance)
+
+
+def area_background_mask(
+    bgr: np.ndarray,
+    color_rgb: tuple[int, int, int],
+    tolerance: float,
+    seed_xy: tuple[float, float] | None,
+) -> np.ndarray:
+    """Boolean background mask: the ``colour_background_mask`` for ``color_rgb``,
+    restricted to the single connected component (8-connectivity) containing the
+    seed pixel. ``seed_xy`` is a fractional (x, y) in [0, 1) — resolved the same
+    way the frontend eyedropper samples colour, so it lands on the picked pixel
+    at any resolution. Seed outside the colour range, or ``None`` → empty mask."""
+    cand = colour_background_mask(bgr, color_rgb, tolerance)
+    if seed_xy is None:
+        return np.zeros(cand.shape, dtype=bool)
+    h, w = cand.shape
+    fx = min(0.999999, max(0.0, float(seed_xy[0])))
+    fy = min(0.999999, max(0.0, float(seed_xy[1])))
+    x = min(w - 1, int(fx * w))
+    y = min(h - 1, int(fy * h))
+    _num, labels = cv2.connectedComponents(cand.astype(np.uint8), connectivity=8)
+    lbl = int(labels[y, x])
+    if lbl == 0:
+        return np.zeros(cand.shape, dtype=bool)
+    return labels == lbl
 
 
 def colour_background_alpha(
