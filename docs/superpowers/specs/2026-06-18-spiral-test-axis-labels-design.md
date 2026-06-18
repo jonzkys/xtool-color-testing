@@ -11,8 +11,8 @@ space) with an **axis layout** like the calibration test pages, and engrave the
 text with a **real font (JetBrains Mono), filled** — matching how xTool Studio
 renders text (`demo-files/test-font.xs`):
 
-- A single compact **title** line at the top — an auto summary of the fixed cut
-  params (`P:… F:… PW:… S:… ID:… DI:… DS:…`), with an optional free-text prefix.
+- A single compact **title** line at the top — an auto summary of the fixed
+  params (`D:… P:… F:… PW:… S:… ID:… DI:… DS:…`), with an optional free-text prefix.
 - **X axis** — the channel-width value under each column (bottom edge).
 - **Y axis** — the pitch value beside each row (left edge).
 - One value per row/column, not a full label per cell, so **cells shrink**.
@@ -34,11 +34,12 @@ This supersedes the per-cell 7-segment labels and the manual "Label size" contro
 - **No runtime font dependency:** a one-off dev script bakes the needed glyphs
   into a committed table; the runtime stays sync and dependency-free.
 - **Title:** an **auto, live cut-param summary** so each sheet records the fixed
-  settings (the axes already show what varies). Format:
-  `P:{power} F:{freq} PW:{pulseWidth} S:{speed} ID:{focusInitial} DI:{focusInterval} DS:{focusStep}`
-  — composed from `cfg.cut` and kept in sync as the cut params change (so the
-  engraved title can never be stale). An optional free-text **prefix** (default
-  empty, e.g. a material/date note) is prepended.
+  settings (the axes already show what varies). Format (diameter prepended since
+  it isn't shown elsewhere on the sheet):
+  `D:{diameter} P:{power} F:{freq} PW:{pulseWidth} S:{speed} ID:{focusInitial} DI:{focusInterval} DS:{focusStep}`
+  — composed from `cfg` and kept in sync as the params change (so the engraved
+  title can never be stale). An optional free-text **prefix** (default empty,
+  e.g. a material/date note) is prepended.
 - **Sizing:** auto / diameter-aware — replaces the manual "Label size (mm)".
 - **Label engrave op:** `FILL_VECTOR_ENGRAVING` with the full fill params from
   the user's reference (Laser MOPA IR, Power, Speed, Pass, Lines per cm,
@@ -103,7 +104,7 @@ so the title never overflows the grid width.
 
 **Title text** is composed live from the cut params:
 `titleText = (labels.titlePrefix ? labels.titlePrefix + "  " : "") +
-"P:" + cut.power + " F:" + cut.frequency + " PW:" + cut.pulseWidth +
+"D:" + diameterMm + " P:" + cut.power + " F:" + cut.frequency + " PW:" + cut.pulseWidth +
 " S:" + cut.speed + " ID:" + cut.focusInitialMm + " DI:" + cut.focusIntervalPasses +
 " DS:" + cut.focusStepMm` (a small `composeTitle(cfg)` helper).
 
@@ -205,8 +206,8 @@ on-screen preview reads as solid text matching the engrave.
   (focus descent on) **and** a `FILL_VECTOR_ENGRAVING` label op carrying the fill
   params (power/speed/density/scanMode/laser); label displays are `isFill:true`,
   `fillRule:"nonzero"`; `isXsBuffer` true.
-- `composeTitle`: with `titlePrefix ""` → `"P:100 F:65 PW:80 S:1500 ID:0.01 DI:20 DS:0.06"`
-  for the default cut; a non-empty prefix is prepended.
+- `composeTitle`: with `titlePrefix ""` → `"D:10 P:100 F:65 PW:80 S:1500 ID:0.01 DI:20 DS:0.06"`
+  for the default config; a non-empty prefix is prepended.
 - Controls: Title-prefix field edits `labels.titlePrefix`; Axis-labels toggle; the
   fill params edit `score`.
 
