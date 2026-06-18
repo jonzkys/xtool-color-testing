@@ -64,3 +64,15 @@ export function getValidationProfile(
 export function representativeMode(machine: Machine): ModeId {
   return machine.modes.some((m) => m.id === "color_engrave") ? "color_engrave" : "engrave";
 }
+
+/** React hook: load the cached registry and return the constraint dict for
+ *  (machineId, mode), or null while loading / if unsupported. */
+export function useValidationProfile(machineId: string, mode: string): ValidationProfile | null {
+  const [registry, setRegistry] = useState<MachinesPayload | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getMachines().then((p) => { if (!cancelled) setRegistry(p); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  return getValidationProfile(registry, machineId, mode);
+}

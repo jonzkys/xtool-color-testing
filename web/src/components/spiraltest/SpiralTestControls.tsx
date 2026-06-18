@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import type { SpiralTestConfig } from "../../lib/forge/spiralTest";
-import { resolveAxis } from "../../lib/forge/spiralTest";
+import type { ValidationProfile } from "../../types";
 import { PARAMS, PARAM_ORDER, formatValue, type AxisSpec, type ParamKey } from "../../lib/forge/spiralParams";
+import { constraintFor, resolveAxisValues, snapStepped, steppedValues } from "../../lib/forge/spiralLimits";
 import { Field, Input, Section, Select } from "../../ui";
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
   onChange: (c: SpiralTestConfig) => void;
   footprint: { w: number; h: number };
   overBed: boolean;
+  profile?: ValidationProfile | null;
 }
 
 /** Parse a numeric field, keeping the prior value on empty/NaN (and NOT
@@ -27,7 +29,7 @@ function AxisHeading({ children }: { children: ReactNode }) {
   );
 }
 
-export function SpiralTestControls({ cfg, onChange, footprint, overBed }: Props) {
+export function SpiralTestControls({ cfg, onChange, footprint, overBed, profile = null }: Props) {
   const set = <K extends keyof SpiralTestConfig>(k: K, v: SpiralTestConfig[K]) =>
     onChange({ ...cfg, [k]: v });
 
@@ -35,27 +37,52 @@ export function SpiralTestControls({ cfg, onChange, footprint, overBed }: Props)
   const setXParam = (key: ParamKey) => onChange({ ...cfg, xParam: key, xAxis: { ...PARAMS[key].defaultAxis } });
   const setYParam = (key: ParamKey) => onChange({ ...cfg, yParam: key, yAxis: { ...PARAMS[key].defaultAxis } });
 
-  const xs = resolveAxis(cfg.xAxis).map((v) => formatValue(cfg.xParam, PARAMS[cfg.xParam].clamp(v))).join(", ");
-  const ys = resolveAxis(cfg.yAxis).map((v) => formatValue(cfg.yParam, PARAMS[cfg.yParam].clamp(v))).join(", ");
+  const xs = resolveAxisValues(profile, cfg.xParam, cfg.xAxis).map((v) => formatValue(cfg.xParam, v)).join(", ");
+  const ys = resolveAxisValues(profile, cfg.yParam, cfg.yAxis).map((v) => formatValue(cfg.yParam, v)).join(", ");
 
   const axisRange = (
     which: "x" | "y", param: ParamKey, axis: AxisSpec, commit: (a: AxisSpec) => void,
-  ) => (
-    <div className="grid grid-cols-3 gap-2">
-      <Field label="Min">
-        <Input aria-label={`${which} min`} type="number" mono step={PARAMS[param].step} value={axis.min}
-          onChange={(e) => commit({ ...axis, min: num(e.target.value, axis.min) })} />
-      </Field>
-      <Field label="Max">
-        <Input aria-label={`${which} max`} type="number" mono step={PARAMS[param].step} value={axis.max}
-          onChange={(e) => commit({ ...axis, max: num(e.target.value, axis.max) })} />
-      </Field>
-      <Field label="Steps">
-        <Input aria-label={`${which} steps`} type="number" mono step={1} value={axis.steps}
-          onChange={(e) => commit({ ...axis, steps: num(e.target.value, axis.steps) })} />
-      </Field>
-    </div>
-  );
+  ) => {
+    const opts = steppedValues(profile, param);
+    if (opts) {
+      // Discrete param: Min/Max are selects of allowed values; Steps is implied
+      // by the allowed-in-range count (shown in the readout), so it's omitted.
+      return (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Min">
+            <Select aria-label={`${which} min`} value={String(snapStepped(opts, axis.min))}
+              onChange={(e) => commit({ ...axis, min: Number(e.target.value) })}>
+              {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+            </Select>
+          </Field>
+          <Field label="Max">
+            <Select aria-label={`${which} max`} value={String(snapStepped(opts, axis.max))}
+              onChange={(e) => commit({ ...axis, max: Number(e.target.value) })}>
+              {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+            </Select>
+          </Field>
+        </div>
+      );
+    }
+    const c = constraintFor(profile, param);
+    const rangeAttrs = c?.kind === "range" ? { min: c.min, max: c.max } : {};
+    return (
+      <div className="grid grid-cols-3 gap-2">
+        <Field label="Min">
+          <Input aria-label={`${which} min`} type="number" mono step={PARAMS[param].step} value={axis.min} {...rangeAttrs}
+            onChange={(e) => commit({ ...axis, min: num(e.target.value, axis.min) })} />
+        </Field>
+        <Field label="Max">
+          <Input aria-label={`${which} max`} type="number" mono step={PARAMS[param].step} value={axis.max} {...rangeAttrs}
+            onChange={(e) => commit({ ...axis, max: num(e.target.value, axis.max) })} />
+        </Field>
+        <Field label="Steps">
+          <Input aria-label={`${which} steps`} type="number" mono step={1} value={axis.steps}
+            onChange={(e) => commit({ ...axis, steps: num(e.target.value, axis.steps) })} />
+        </Field>
+      </div>
+    );
+  };
 
   const paramOptions = (exclude: ParamKey) =>
     PARAM_ORDER.filter((k) => k !== exclude).map((k) => (

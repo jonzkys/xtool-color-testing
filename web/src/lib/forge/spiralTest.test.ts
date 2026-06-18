@@ -1,6 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { resolveAxis, circleRegion, composeTitle, buildSpiralTest, type SpiralTestConfig } from "./spiralTest";
 import { PARAMS, PARAM_ORDER, type ParamKey } from "./spiralParams";
+import type { ValidationProfile } from "../../types";
+
+const CUT_PROFILE: ValidationProfile = {
+  power: { kind: "range", min: 1, max: 100, step: 1 },
+  speed: { kind: "range", min: 2, max: 10000, step: 1 },
+  frequency: { kind: "range", min: 1, max: 4000, step: 1 },
+  passes: { kind: "range", min: 1, max: 300, step: 1 },
+  pulse_width: { kind: "stepped", values: [2, 4, 6, 9, 13, 20, 30, 45, 60, 80, 100, 150, 200, 250, 350, 500] },
+  laser: { kind: "enum", values: ["red", "blue"] },
+};
 
 function baseCfg(over: Partial<SpiralTestConfig> = {}): SpiralTestConfig {
   const fixed = Object.fromEntries(PARAM_ORDER.map((k) => [k, PARAMS[k].defaultFixed])) as Record<ParamKey, number>;
@@ -106,5 +116,28 @@ describe("buildSpiralTest", () => {
   });
   it("footprint exceeds a tiny bed", () => {
     expect(buildSpiralTest(baseCfg({ bedMm: { w: 5, h: 5 } })).overBed).toBe(true);
+  });
+});
+
+describe("buildSpiralTest with a machine profile", () => {
+  it("a pulse-width axis sweeps the allowed-in-range values (cells = allowed × rows)", () => {
+    const r = buildSpiralTest(baseCfg({
+      xParam: "pulseWidth", yParam: "pitch",
+      xAxis: { min: 60, max: 150, steps: 99 }, yAxis: { min: 0.03, max: 0.05, steps: 2 },
+    }), CUT_PROFILE);
+    // allowed in [60,150] = 60,80,100,150 → 4 cols × 2 rows
+    expect(r.cells.length).toBe(8);
+    expect(r.labelOutlines.some((l) => l.text === "80")).toBe(true);
+    expect(r.labelOutlines.some((l) => l.text === "150")).toBe(true);
+  });
+  it("clamps a fixed value above the machine max into the cut profile", () => {
+    const r = buildSpiralTest(baseCfg({
+      fixed: { ...baseCfg().fixed, speed: 99999 },
+    }), CUT_PROFILE);
+    expect(Object.values(r.stageParams).every((s) => s.speed === 10000)).toBe(true);
+  });
+  it("omitting the profile preserves the app-clamp behaviour", () => {
+    const r = buildSpiralTest(baseCfg({ fixed: { ...baseCfg().fixed, speed: 99999 } }));
+    expect(Object.values(r.stageParams).every((s) => s.speed === 99999)).toBe(true);
   });
 });
