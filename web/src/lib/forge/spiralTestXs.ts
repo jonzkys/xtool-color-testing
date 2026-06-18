@@ -2,7 +2,14 @@
 // Assemble a spiral-test grid into a single .xs file. Spiral cut via
 // buildGeneratedXcs (VECTOR_CUTTING); labels appended as filled
 // FILL_VECTOR_ENGRAVING displays.
-import { buildGeneratedXcs, parseXcsFile, ringsToDPath, MAX_PATH_POINTS } from "./xcs";
+//
+// Each hole's spiral is emitted as ONE continuous VECTOR_CUTTING object —
+// chunking is disabled (maxPathPoints = Infinity) so the focus descent runs
+// once per hole instead of restarting at every point-cap boundary. The cut
+// order is authored (userOrder=true → pathPlanning "custom" + isProcessByLayer)
+// so the machine cuts each hole fully before moving to the next rather than
+// auto-optimising hops between holes.
+import { buildGeneratedXcs, parseXcsFile, ringsToDPath } from "./xcs";
 import { legacyRawToXs } from "./xs";
 import type { SpiralTestConfig, SpiralTestResult } from "./spiralTest";
 import { ringsBBox } from "./spiralTest";
@@ -108,7 +115,8 @@ export function buildSpiralTestXs(result: SpiralTestResult, cfg: SpiralTestConfi
   // profiles arrive pre-grouped as result.stageParams (keyed by groupName).
   const doc = buildGeneratedXcs(
     parsed, inciseId, result.cutPaths, 1 /* mmPerUnit */, result.stageParams,
-    undefined /* scanAngle */, false /* userOrder */, MAX_PATH_POINTS, false /* joinStrands */,
+    undefined /* scanAngle */, true /* userOrder: author the cut order */,
+    Infinity /* maxPathPoints: never chunk — one continuous object per hole */, false /* joinStrands */,
   ) as {
     canvas: Array<{ displays: Array<Record<string, unknown>>; layerData: Record<string, unknown> }>;
     device: { data: { value: Array<[string, { displays: { value: Array<[string, unknown]> } }]> } };
@@ -135,5 +143,7 @@ export function buildSpiralTestXs(result: SpiralTestResult, cfg: SpiralTestConfi
     entries.push([id, fillEngraveEntry(cfg.score)]);
   });
 
-  return legacyRawToXs(doc, null, false);
+  // userOrder=true → pathPlanning "custom" + isProcessByLayer → the machine cuts
+  // in the authored display order (one hole fully, then the next).
+  return legacyRawToXs(doc, null, true);
 }
