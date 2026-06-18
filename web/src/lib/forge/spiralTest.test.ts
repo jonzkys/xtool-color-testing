@@ -141,3 +141,25 @@ describe("buildSpiralTest with a machine profile", () => {
     expect(Object.values(r.stageParams).every((s) => s.speed === 99999)).toBe(true);
   });
 });
+
+import type { CellShape } from "./spiralTest";
+
+describe("cell shapes", () => {
+  const SHAPES: CellShape[] = ["circle", "square", "diamond", "hexagon", "octagon", "star", "letterJ"];
+  it("every shape produces exactly one continuous arm per cell", () => {
+    for (const cellShape of SHAPES) {
+      const r = buildSpiralTest(baseCfg({
+        cellShape,
+        xAxis: { min: 0.6, max: 1.0, steps: 2 }, yAxis: { min: 0.03, max: 0.05, steps: 2 },
+      }));
+      expect(r.cells.length).toBe(4);
+      expect(r.cells.every((c) => c.cut.length === 1)).toBe(true);
+      expect(r.cutPaths.length).toBe(r.cells.length);
+    }
+  });
+  it("defaults to circle when cellShape is omitted", () => {
+    const omitted = buildSpiralTest(baseCfg());
+    const circle = buildSpiralTest(baseCfg({ cellShape: "circle" }));
+    expect(omitted.cutPaths.length).toBe(circle.cutPaths.length);
+  });
+});
