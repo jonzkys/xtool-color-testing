@@ -31,6 +31,8 @@ import { ReliefSurface3D } from "../components/relief/ReliefSurface3D";
 import { CollapsibleGroup } from "../components/relief/CollapsibleGroup";
 import { CutoutControls } from "../components/relief/CutoutControls";
 import { SurfaceControls } from "../components/relief/SurfaceControls";
+import { XsImportDialog } from "../components/relief/XsImportDialog";
+import { parseXsDepthMaps, pngBlob, type XsDepthJob } from "../lib/relief/xsImport";
 import {
   DEFAULT_RELIEF_PARAMS,
   downscaleForPreview,
@@ -222,6 +224,10 @@ export function ReliefPage() {
   // Eyedropper: the subtraction-row index awaiting a pick, or null.
   const [pickingFor, setPickingFor] = useState<number | null>(null);
 
+  // .xs import picker: null = closed; [] = "none found" error modal; non-empty
+  // = pick-a-depth-map modal. (Exactly one job imports directly, never here.)
+  const [xsJobs, setXsJobs] = useState<XsDepthJob[] | null>(null);
+
   // Set the picked colour + seed on the awaiting subtraction row. The colour is
   // sampled at the click; the seed (fraction) is stored for every pick and used
   // by the backend only for the `area` method.
@@ -262,28 +268,50 @@ export function ReliefPage() {
   );
 
   // ── File decode ───────────────────────────────────────────────────
-  const onFile = useCallback(async (file: File) => {
-    setErrorMsg(null);
-    try {
-      const bmp = await createImageBitmap(file, {
-        imageOrientation: "from-image",
-      });
-      // Close the previous bitmap before swapping — ImageBitmap memory is
-      // not GC'd promptly, so a 4k depth map would leak on every Replace.
-      setBitmap((prev) => {
-        prev?.close();
-        return bmp;
-      });
-      // Swap in the new original URL, revoking the old one first.
-      setOriginalUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return URL.createObjectURL(file);
-      });
-    } catch (err) {
-      setStatus("error");
-      setErrorMsg(`Couldn't read that image: ${(err as Error).message}`);
-    }
+  // Decode a depth-map image (File or extracted .xs Blob) into the cleaner.
+  const ingestImageBlob = useCallback(async (blob: Blob) => {
+    const bmp = await createImageBitmap(blob, { imageOrientation: "from-image" });
+    // Close the previous bitmap before swapping — ImageBitmap memory is not
+    // GC'd promptly, so a 4k depth map would leak on every Replace.
+    setBitmap((prev) => {
+      prev?.close();
+      return bmp;
+    });
+    // Swap in the new original URL, revoking the old one first.
+    setOriginalUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(blob);
+    });
   }, []);
+
+  const onFile = useCallback(
+    async (file: File) => {
+      setErrorMsg(null);
+      // ``.xs`` workspace → pull its depth-map / emboss jobs. 0 → error modal;
+      // exactly 1 → import it directly; ≥2 → picker modal.
+      if (/\.xs$/i.test(file.name)) {
+        try {
+          const jobs = parseXsDepthMaps(new Uint8Array(await file.arrayBuffer()));
+          if (jobs.length === 1) {
+            await ingestImageBlob(pngBlob(jobs[0].pngBytes));
+          } else {
+            setXsJobs(jobs); // [] → "none found" modal; 2+ → picker
+          }
+        } catch (err) {
+          setStatus("error");
+          setErrorMsg(`Couldn't read that .xs file: ${(err as Error).message}`);
+        }
+        return;
+      }
+      try {
+        await ingestImageBlob(file);
+      } catch (err) {
+        setStatus("error");
+        setErrorMsg(`Couldn't read that image: ${(err as Error).message}`);
+      }
+    },
+    [ingestImageBlob],
+  );
 
   // ── Debounced preview smooth ──────────────────────────────────────
   useEffect(() => {
@@ -600,7 +628,7 @@ export function ReliefPage() {
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.xs"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -888,6 +916,21 @@ export function ReliefPage() {
             )}
           </div>
         </div>
+
+        <XsImportDialog
+          open={xsJobs !== null}
+          jobs={xsJobs ?? []}
+          onPick={(job) => {
+            setXsJobs(null);
+            void ingestImageBlob(pngBlob(job.pngBytes)).catch((err) => {
+              setStatus("error");
+              setErrorMsg(
+                `Couldn't load that depth map: ${(err as Error).message}`,
+              );
+            });
+          }}
+          onCancel={() => setXsJobs(null)}
+        />
       </PageContainer>
     </div>
   );
