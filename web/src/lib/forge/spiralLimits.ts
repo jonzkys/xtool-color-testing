@@ -5,10 +5,9 @@
 // param's app-level clamp when a param is unbound (geometry/focus) or the
 // registry hasn't loaded yet.
 import type { FieldConstraint, ValidationProfile } from "../../types";
+import { clampToConstraint } from "../constraints";
 import { ALLOWED_PULSE_WIDTHS } from "../../laser/pulseWidths";
 import { PARAMS, resolveAxis, type AxisSpec, type ParamKey } from "./spiralParams";
-
-const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 /** The machine constraint for a param, or null when it's unbound (geometry/
  *  focus) or the profile hasn't loaded. */
@@ -18,15 +17,10 @@ export function constraintFor(profile: ValidationProfile | null, key: ParamKey):
   return profile[field] ?? null;
 }
 
-/** Nearest value in `values` by absolute distance. */
+/** Nearest value in `values` by absolute distance (ties → earlier value).
+ *  Delegates to the canonical constraint snapper so there's one implementation. */
 export function snapStepped(values: number[], v: number): number {
-  let best = values[0];
-  let bestD = Math.abs(v - best);
-  for (const w of values) {
-    const d = Math.abs(v - w);
-    if (d < bestD) { best = w; bestD = d; }
-  }
-  return best;
+  return clampToConstraint(v, { kind: "stepped", values }) as number;
 }
 
 function steppedInRange(values: number[], lo: number, hi: number): number[] {
@@ -35,14 +29,12 @@ function steppedInRange(values: number[], lo: number, hi: number): number[] {
 }
 
 /** Clamp/snap a value to the machine constraint, or the param's app clamp when
- *  unbound / loading. */
+ *  unbound / loading. Machine constraints are coerced via the canonical
+ *  clampToConstraint (range clamp+snap-from-min, stepped nearest) so this never
+ *  diverges from the backend's validation. */
 export function clampParam(profile: ValidationProfile | null, key: ParamKey, v: number): number {
   const c = constraintFor(profile, key);
-  if (c?.kind === "range") {
-    const step = c.step && c.step > 0 ? c.step : 1;
-    return clampN(Math.round(v / step) * step, c.min, c.max);
-  }
-  if (c?.kind === "stepped") return snapStepped(c.values as number[], v);
+  if (c) return clampToConstraint(v, c) as number;
   return PARAMS[key].clamp(v);
 }
 
