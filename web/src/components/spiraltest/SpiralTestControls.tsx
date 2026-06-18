@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import type { SpiralTestConfig } from "../../lib/forge/spiralTest";
 import { resolveAxis } from "../../lib/forge/spiralTest";
-import { Field, Input, Section } from "../../ui";
+import { PARAMS, PARAM_ORDER, formatValue, type AxisSpec, type ParamKey } from "../../lib/forge/spiralParams";
+import { Field, Input, Section, Select } from "../../ui";
 
 interface Props {
   cfg: SpiralTestConfig;
@@ -29,47 +30,62 @@ function AxisHeading({ children }: { children: ReactNode }) {
 export function SpiralTestControls({ cfg, onChange, footprint, overBed }: Props) {
   const set = <K extends keyof SpiralTestConfig>(k: K, v: SpiralTestConfig[K]) =>
     onChange({ ...cfg, [k]: v });
-  const xs = resolveAxis(cfg.channelWidth).map((v) => v.toFixed(2)).join(", ");
-  const ys = resolveAxis(cfg.pitch).map((v) => v.toFixed(3)).join(", ");
+
+  // Switching a param onto an axis resets that axis to the param's default range.
+  const setXParam = (key: ParamKey) => onChange({ ...cfg, xParam: key, xAxis: { ...PARAMS[key].defaultAxis } });
+  const setYParam = (key: ParamKey) => onChange({ ...cfg, yParam: key, yAxis: { ...PARAMS[key].defaultAxis } });
+
+  const xs = resolveAxis(cfg.xAxis).map((v) => formatValue(cfg.xParam, PARAMS[cfg.xParam].clamp(v))).join(", ");
+  const ys = resolveAxis(cfg.yAxis).map((v) => formatValue(cfg.yParam, PARAMS[cfg.yParam].clamp(v))).join(", ");
+
+  const axisRange = (
+    which: "x" | "y", axis: AxisSpec, set: (a: AxisSpec) => void,
+  ) => (
+    <div className="grid grid-cols-3 gap-2">
+      <Field label="Min">
+        <Input aria-label={`${which} min`} type="number" mono value={axis.min}
+          onChange={(e) => set({ ...axis, min: num(e.target.value, axis.min) })} />
+      </Field>
+      <Field label="Max">
+        <Input aria-label={`${which} max`} type="number" mono value={axis.max}
+          onChange={(e) => set({ ...axis, max: num(e.target.value, axis.max) })} />
+      </Field>
+      <Field label="Steps">
+        <Input aria-label={`${which} steps`} type="number" mono step={1} value={axis.steps}
+          onChange={(e) => set({ ...axis, steps: num(e.target.value, axis.steps) })} />
+      </Field>
+    </div>
+  );
+
+  const paramOptions = (exclude: ParamKey) =>
+    PARAM_ORDER.filter((k) => k !== exclude).map((k) => (
+      <option key={k} value={k}>{PARAMS[k].label} ({PARAMS[k].unit})</option>
+    ));
 
   return (
     <div className="flex flex-col gap-3">
-      <Section title="Grid" dense>
-        <AxisHeading>Channel width · X</AxisHeading>
-        <div className="grid grid-cols-3 gap-2">
-          <Field label="Min">
-            <Input aria-label="channel width min" type="number" mono step={0.05} value={cfg.channelWidth.min}
-              onChange={(e) => set("channelWidth", { ...cfg.channelWidth, min: num(e.target.value, cfg.channelWidth.min) })} />
-          </Field>
-          <Field label="Max">
-            <Input aria-label="channel width max" type="number" mono step={0.05} value={cfg.channelWidth.max}
-              onChange={(e) => set("channelWidth", { ...cfg.channelWidth, max: num(e.target.value, cfg.channelWidth.max) })} />
-          </Field>
-          <Field label="Steps">
-            <Input aria-label="channel width steps" type="number" mono step={1} value={cfg.channelWidth.steps}
-              onChange={(e) => set("channelWidth", { ...cfg.channelWidth, steps: num(e.target.value, cfg.channelWidth.steps) })} />
-          </Field>
-        </div>
-        <p className="mt-1.5 font-mono text-[10px] tabular-nums text-[color:var(--color-ink-muted)]">CW: {xs}</p>
+      <Section title="Axes" dense>
+        <AxisHeading>X axis</AxisHeading>
+        <Field label="Parameter">
+          <Select aria-label="x param" value={cfg.xParam}
+            onChange={(e) => setXParam(e.target.value as ParamKey)}>
+            {paramOptions(cfg.yParam)}
+          </Select>
+        </Field>
+        <div className="mt-2">{axisRange("x", cfg.xAxis, (a) => set("xAxis", a))}</div>
+        <p className="mt-1.5 font-mono text-[10px] tabular-nums text-[color:var(--color-ink-muted)]">X: {xs}</p>
 
         <div aria-hidden className="my-2.5 h-px" style={{ background: "var(--metal-bar-soft)" }} />
 
-        <AxisHeading>Pitch · Y</AxisHeading>
-        <div className="grid grid-cols-3 gap-2">
-          <Field label="Min">
-            <Input aria-label="pitch min" type="number" mono step={0.005} value={cfg.pitch.min}
-              onChange={(e) => set("pitch", { ...cfg.pitch, min: num(e.target.value, cfg.pitch.min) })} />
-          </Field>
-          <Field label="Max">
-            <Input aria-label="pitch max" type="number" mono step={0.005} value={cfg.pitch.max}
-              onChange={(e) => set("pitch", { ...cfg.pitch, max: num(e.target.value, cfg.pitch.max) })} />
-          </Field>
-          <Field label="Steps">
-            <Input aria-label="pitch steps" type="number" mono step={1} value={cfg.pitch.steps}
-              onChange={(e) => set("pitch", { ...cfg.pitch, steps: num(e.target.value, cfg.pitch.steps) })} />
-          </Field>
-        </div>
-        <p className="mt-1.5 font-mono text-[10px] tabular-nums text-[color:var(--color-ink-muted)]">Pitch: {ys}</p>
+        <AxisHeading>Y axis</AxisHeading>
+        <Field label="Parameter">
+          <Select aria-label="y param" value={cfg.yParam}
+            onChange={(e) => setYParam(e.target.value as ParamKey)}>
+            {paramOptions(cfg.xParam)}
+          </Select>
+        </Field>
+        <div className="mt-2">{axisRange("y", cfg.yAxis, (a) => set("yAxis", a))}</div>
+        <p className="mt-1.5 font-mono text-[10px] tabular-nums text-[color:var(--color-ink-muted)]">Y: {ys}</p>
       </Section>
 
       <Section title="Circle & layout" dense>

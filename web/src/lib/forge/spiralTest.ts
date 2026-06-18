@@ -1,13 +1,16 @@
 // web/src/lib/forge/spiralTest.ts
-// 2D spiral-test grid: a channel-width × pitch sweep of spiral-cut circles, with
-// an axis layout — a title (auto cut-param summary) + per-column channel-width
-// values (X, bottom) + per-row pitch values (Y, left), engraved as real-font
-// filled text. Pure geometry; reuses the Forge spiral generator + font renderer.
-import type { GeneratedPath, Pt } from "./types";
+// 2D spiral-test grid with selectable X/Y axis parameters. Each cell's spiral is
+// generated and cut with that cell's (x-param, y-param) values; every other
+// sweepable param stays fixed. Geometry params (channel width, pitch) shape the
+// spiral; profile params (speed/passes/power/frequency/pulse width/focus step/
+// focus interval) only change the VECTOR_CUTTING settings. Profiles are deduped
+// into CUT_<n> groups so a geometry-only sweep stays one profile. Pure geometry.
+import type { GeneratedPath, Pt, StageParams } from "./types";
 import { spiralFromRegion } from "./spiral";
 import { renderText, textWidth } from "./textPaths";
+import { PARAMS, PARAM_ORDER, PROFILE_KEYS, formatValue, type AxisSpec, type ParamKey } from "./spiralParams";
 
-export interface AxisSpec { min: number; max: number; steps: number; }
+export type { AxisSpec, ParamKey } from "./spiralParams";
 
 /** `steps` values linearly spaced over [min, max] (steps>=1; 1 → [min]). */
 export function resolveAxis(a: AxisSpec): number[] {
@@ -30,18 +33,19 @@ export function circleRegion(cx: number, cy: number, d: number, segments = 96): 
 }
 
 export interface SpiralTestConfig {
-  channelWidth: AxisSpec;   // X axis (mm)
-  pitch: AxisSpec;          // Y axis (mm)
+  xParam: ParamKey;
+  yParam: ParamKey;                  // must differ from xParam
+  xAxis: AxisSpec;
+  yAxis: AxisSpec;
+  fixed: Record<ParamKey, number>;   // value used when a param is OFF-axis
   diameterMm: number;
   side: "outside" | "inside";
   minChannelMm: number;
   gapMm: number;
   bedMm: { w: number; h: number };
+  focusInitialMm: number;            // fixed initial focus drop (not sweepable)
+  laser: "red" | "blue" | "uv";      // cut laser (fixed)
   labels: { show: boolean; titlePrefix: string };
-  cut: {
-    passes: number; focusInitialMm: number; focusStepMm: number; focusIntervalPasses: number;
-    power: number; speed: number; frequency: number; pulseWidth: number; laser: "red" | "blue" | "uv";
-  };
   /** Label engrave op (a FILL_VECTOR_ENGRAVING pass over the real-font glyphs). */
   score: {
     laser: "red" | "blue" | "uv"; power: number; speed: number; passes: number;
@@ -52,9 +56,10 @@ export interface SpiralTestConfig {
 
 export interface CellInfo {
   row: number; col: number;
-  channelWidthMm: number; pitchMm: number;
+  xValue: number; yValue: number;
   centerMm: { x: number; y: number };
   cut: Pt[][];        // the cell's arms (open polylines), positioned in mm
+  groupName: string;  // the CUT_<n> profile group this cell belongs to
   warnings: string[];
 }
 
@@ -63,8 +68,9 @@ export interface LabelOutline { text: string; rings: Pt[][]; }
 
 export interface SpiralTestResult {
   cells: CellInfo[];
-  cutPaths: GeneratedPath[];     // one per arm, group "CUT_SPIRAL"
-  labelOutlines: LabelOutline[]; // title + axis values (filled glyph rings)
+  cutPaths: GeneratedPath[];                  // one per arm, groupName = CUT_<n>
+  stageParams: Record<string, StageParams>;   // keyed by groupName
+  labelOutlines: LabelOutline[];
   footprintMm: { w: number; h: number };
   overBed: boolean;
   warnings: string[];
@@ -73,12 +79,16 @@ export interface SpiralTestResult {
 const MARGIN_MM = 5;     // outer page margin
 const PAD_MM = 1.2;      // padding between grid and axis labels / title
 
-/** The auto title: an optional prefix + a fixed-param summary. Stays in sync
- *  with the config so the engraved title is never stale. */
+/** The auto title: optional prefix + the two axis param names + a fixed-param
+ *  summary (only the params NOT on an axis; always D + initial drop). */
 export function composeTitle(cfg: SpiralTestConfig): string {
-  const c = cfg.cut;
-  const body = `D:${cfg.diameterMm} P:${c.power} F:${c.frequency} PW:${c.pulseWidth} ` +
-    `S:${c.speed} ID:${c.focusInitialMm} DI:${c.focusIntervalPasses} DS:${c.focusStepMm}`;
+  const axisPart = `X:${PARAMS[cfg.xParam].label}  Y:${PARAMS[cfg.yParam].label}`;
+  const offAxis = PARAM_ORDER.filter((k) => k !== cfg.xParam && k !== cfg.yParam);
+  const fixedPart = [
+    `D:${cfg.diameterMm}`, `ID:${cfg.focusInitialMm}`,
+    ...offAxis.map((k) => `${PARAMS[k].abbrev}:${formatValue(k, cfg.fixed[k])}`),
+  ].join(" ");
+  const body = `${axisPart}   ${fixedPart}`;
   const pre = cfg.labels.titlePrefix.trim();
   return pre ? `${pre}  ${body}` : body;
 }
@@ -98,31 +108,50 @@ export function ringsBBox(rings: Pt[][]): { minX: number; minY: number; w: numbe
   return { minX: x0, minY: y0, w: x1 - x0, h: y1 - y0 };
 }
 
+/** Stable dedup key over the profile-param subset of a resolved cell map. */
+function profileKeyOf(map: Record<ParamKey, number>): string {
+  return PROFILE_KEYS.map((k) => `${k}:${map[k]}`).join("|");
+}
+
+/** Build a VECTOR_CUTTING StageParams from a cell's resolved param map. */
+function stageParamsOf(map: Record<ParamKey, number>, cfg: SpiralTestConfig): StageParams {
+  return {
+    power: map.power, speed: map.speed, passes: map.passes,
+    pulseWidth: map.pulseWidth, frequency: map.frequency, laser: cfg.laser,
+    cuttingDrop: true, sinkingMethod: "step",
+    firstCuttingDropValue: cfg.focusInitialMm, cuttingDropValue: cfg.focusInitialMm,
+    descentIntervalDescent: map.focusInterval, descentPerStep: map.focusStep,
+  };
+}
+
 export function buildSpiralTest(cfg: SpiralTestConfig): SpiralTestResult {
-  const cws = resolveAxis(cfg.channelWidth);
-  const pitches = resolveAxis(cfg.pitch);
-  const maxCw = Math.max(...cws);
+  const xVals = resolveAxis(cfg.xAxis).map((v) => PARAMS[cfg.xParam].clamp(v));
+  const yVals = resolveAxis(cfg.yAxis).map((v) => PARAMS[cfg.yParam].clamp(v));
   const show = cfg.labels.show;
 
-  // Cells shrink: just disc + channel ring + gap (no per-cell label band).
+  // Channel-width values present anywhere in the grid → max for a uniform cell.
+  const channelValues =
+    cfg.xParam === "channelWidth" ? xVals
+    : cfg.yParam === "channelWidth" ? yVals
+    : [cfg.fixed.channelWidth];
+  const maxCw = Math.max(...channelValues);
+
   const cell = cfg.diameterMm + 2 * maxCw + cfg.gapMm;
 
-  // Diameter-aware text size, plus the title fitted to the grid width.
   const axisTextMm = show ? clamp(cell * 0.22, 1.2, 4) : 0;
-  const gridW = cws.length * cell;
-  const gridH = pitches.length * cell;
+  const gridW = xVals.length * cell;
+  const gridH = yVals.length * cell;
   const title = composeTitle(cfg);
   const titleTextMm = show ? Math.min(axisTextMm * 1.4, gridW / Math.max(1, textWidth(title, 1))) : 0;
 
-  // Measure the title's true vertical extent (ascent + any descent) so the top
-  // band reserves real glyph height, not just the em — otherwise the title
-  // descends into the top row's channel band at large diameters.
+  // Measure the title's true vertical extent so the top band reserves real glyph
+  // height (ascent + descent), not just the em.
   const titleProbe = show ? renderText(title, titleTextMm, { x: 0, y: 0 }) : [];
-  const titleProbeBox = ringsBBox(titleProbe); // null when the title has no glyphs
+  const titleProbeBox = ringsBBox(titleProbe);
   const titleH = titleProbeBox ? titleProbeBox.h : 0;
 
-  // Left margin holds the Y (pitch) values; top band holds the title.
-  const yLabelW = show ? Math.max(...pitches.map((p) => textWidth(p.toFixed(3), axisTextMm))) : 0;
+  // Left margin holds the Y values (at the Y param's precision); top band the title.
+  const yLabelW = show ? Math.max(...yVals.map((v) => textWidth(formatValue(cfg.yParam, v), axisTextMm))) : 0;
   const leftMargin = show ? yLabelW + PAD_MM : 0;
   const topBand = show ? titleH + PAD_MM * 2 : 0;
   const bottomMargin = show ? axisTextMm + PAD_MM * 2 : 0;
@@ -134,53 +163,62 @@ export function buildSpiralTest(cfg: SpiralTestConfig): SpiralTestResult {
   const cutPaths: GeneratedPath[] = [];
   const labelOutlines: LabelOutline[] = [];
   const warnSet = new Set<string>();
+  const stageParams: Record<string, StageParams> = {};
+  const groupByKey = new Map<string, string>(); // profileKey → groupName
   let order = 0;
 
-  for (let row = 0; row < pitches.length; row++) {
-    for (let col = 0; col < cws.length; col++) {
-      const channelWidthMm = cws[col];
-      const pitchMm = pitches[row];
+  for (let row = 0; row < yVals.length; row++) {
+    for (let col = 0; col < xVals.length; col++) {
+      const paramMap = { ...cfg.fixed, [cfg.xParam]: xVals[col], [cfg.yParam]: yVals[row] } as Record<ParamKey, number>;
       const cx = gridX0 + cell / 2 + col * cell;
       const cy = gridY0 + cell / 2 + row * cell;
 
       const region = circleRegion(cx, cy, cfg.diameterMm);
       const res = spiralFromRegion(region, {
-        channelWidthMm, pitchMm, side: cfg.side, minChannelMm: cfg.minChannelMm,
+        channelWidthMm: paramMap.channelWidth, pitchMm: paramMap.pitch,
+        side: cfg.side, minChannelMm: cfg.minChannelMm,
       });
       res.warnings.forEach((w) => warnSet.add(w));
 
+      // Resolve (dedup) this cell's cut profile to a CUT_<n> group.
+      const pk = profileKeyOf(paramMap);
+      let groupName = groupByKey.get(pk);
+      if (groupName === undefined) {
+        groupName = `CUT_${groupByKey.size}`;
+        groupByKey.set(pk, groupName);
+        stageParams[groupName] = stageParamsOf(paramMap, cfg);
+      }
+
       for (const arm of res.arms) {
         cutPaths.push({
-          sourceObjectId: "spiral-test", generatedClass: "spiral", groupName: "CUT_SPIRAL",
-          layerStart: 0, layerEnd: cfg.cut.passes, widthMultiplier: 1, offsetMm: 0,
+          sourceObjectId: "spiral-test", generatedClass: "spiral", groupName,
+          layerStart: 0, layerEnd: paramMap.passes, widthMultiplier: 1, offsetMm: 0,
           sideMode: cfg.side, operationOrder: order++, enabled: true, rings: [arm],
         });
       }
-      cells.push({ row, col, channelWidthMm, pitchMm, centerMm: { x: cx, y: cy }, cut: res.arms, warnings: res.warnings });
+      cells.push({ row, col, xValue: xVals[col], yValue: yVals[row], centerMm: { x: cx, y: cy }, cut: res.arms, groupName, warnings: res.warnings });
     }
   }
 
   if (show) {
-    // Title — centred over the grid; baseline set from the measured ascent so
-    // the glyphs' top sits at MARGIN_MM and the whole title clears the grid.
+    // Title — centred over the grid; baseline from the measured ascent.
     const titleBaselineY = MARGIN_MM + (titleProbeBox ? -titleProbeBox.minY : titleTextMm);
     const titleW = textWidth(title, titleTextMm);
     const titleX = gridX0 + Math.max(0, (gridW - titleW) / 2);
-    const tRings = renderText(title, titleTextMm, { x: titleX, y: titleBaselineY });
-    labelOutlines.push({ text: title, rings: tRings });
+    labelOutlines.push({ text: title, rings: renderText(title, titleTextMm, { x: titleX, y: titleBaselineY }) });
 
-    // X axis — channel-width value centred under each column, in the bottom margin.
+    // X axis — value centred under each column, at the X param's precision.
     const xBaselineY = gridY0 + gridH + PAD_MM + axisTextMm;
-    for (let col = 0; col < cws.length; col++) {
-      const t = cws[col].toFixed(2);
+    for (let col = 0; col < xVals.length; col++) {
+      const t = formatValue(cfg.xParam, xVals[col]);
       const w = textWidth(t, axisTextMm);
       const colCx = gridX0 + cell / 2 + col * cell;
       labelOutlines.push({ text: t, rings: renderText(t, axisTextMm, { x: colCx - w / 2, y: xBaselineY }) });
     }
 
-    // Y axis — pitch value right-aligned in the left margin, vertically centred on the row.
-    for (let row = 0; row < pitches.length; row++) {
-      const t = pitches[row].toFixed(3);
+    // Y axis — value right-aligned in the left margin, centred on the row.
+    for (let row = 0; row < yVals.length; row++) {
+      const t = formatValue(cfg.yParam, yVals[row]);
       const w = textWidth(t, axisTextMm);
       const rowCy = gridY0 + cell / 2 + row * cell;
       labelOutlines.push({ text: t, rings: renderText(t, axisTextMm, { x: gridX0 - PAD_MM - w, y: rowCy + axisTextMm * 0.35 }) });
@@ -190,13 +228,12 @@ export function buildSpiralTest(cfg: SpiralTestConfig): SpiralTestResult {
   const allLabelRings = labelOutlines.flatMap((l) => l.rings);
   const labelBox = ringsBBox(allLabelRings);
   const cutBox = ringsBBox(cutPaths.flatMap((p) => p.rings));
-  // Footprint = everything, padded back to a MARGIN_MM border.
   const right = Math.max(gridX0 + gridW, labelBox ? labelBox.minX + labelBox.w : 0, cutBox ? cutBox.minX + cutBox.w : 0);
   const bottom = Math.max(gridY0 + gridH + bottomMargin, labelBox ? labelBox.minY + labelBox.h : 0);
   const footprintMm = { w: right + MARGIN_MM, h: bottom + MARGIN_MM };
 
   return {
-    cells, cutPaths, labelOutlines, footprintMm,
+    cells, cutPaths, stageParams, labelOutlines, footprintMm,
     overBed: footprintMm.w > cfg.bedMm.w || footprintMm.h > cfg.bedMm.h,
     warnings: [...warnSet],
   };

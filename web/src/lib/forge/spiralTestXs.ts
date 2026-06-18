@@ -4,7 +4,6 @@
 // FILL_VECTOR_ENGRAVING displays.
 import { buildGeneratedXcs, parseXcsFile, ringsToDPath, MAX_PATH_POINTS } from "./xcs";
 import { legacyRawToXs } from "./xs";
-import type { StageParams } from "./types";
 import type { SpiralTestConfig, SpiralTestResult } from "./spiralTest";
 import { ringsBBox } from "./spiralTest";
 
@@ -104,20 +103,11 @@ export function buildSpiralTestXs(result: SpiralTestResult, cfg: SpiralTestConfi
   const parsed = parseXcsFile(TEMPLATE_BYTES);
   const inciseId = parsed.targets[0].id;
 
-  const stageParams: Record<string, StageParams> = {
-    CUT_SPIRAL: {
-      power: cfg.cut.power, speed: cfg.cut.speed, passes: cfg.cut.passes,
-      pulseWidth: cfg.cut.pulseWidth, frequency: cfg.cut.frequency, laser: cfg.cut.laser,
-      cuttingDrop: true, sinkingMethod: "step",
-      firstCuttingDropValue: cfg.cut.focusInitialMm, cuttingDropValue: cfg.cut.focusInitialMm,
-      descentIntervalDescent: cfg.cut.focusIntervalPasses, descentPerStep: cfg.cut.focusStepMm,
-    },
-  };
-
   // Spiral cut via the proven writer (cut paths only — labels are filled, so
-  // they cannot ride the spiral-only / open-path code path).
+  // they cannot ride the spiral-only / open-path code path). Per-cell cut
+  // profiles arrive pre-grouped as result.stageParams (keyed by groupName).
   const doc = buildGeneratedXcs(
-    parsed, inciseId, result.cutPaths, 1 /* mmPerUnit */, stageParams,
+    parsed, inciseId, result.cutPaths, 1 /* mmPerUnit */, result.stageParams,
     undefined /* scanAngle */, false /* userOrder */, MAX_PATH_POINTS, false /* joinStrands */,
   ) as {
     canvas: Array<{ displays: Array<Record<string, unknown>>; layerData: Record<string, unknown> }>;
