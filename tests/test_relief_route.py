@@ -242,7 +242,8 @@ def test_relief_smooth_empty_subtractions_is_plain_png():
         data={"smooth": "false", "remove_bg": "true", "subtractions": "[]"},
     )
     assert resp.status_code == 200
-    assert Image.open(BytesIO(resp.content)).mode == "L"
+    out = Image.open(BytesIO(resp.content))
+    assert out.mode == "L"
 
 
 def _png_donut():
@@ -305,5 +306,6 @@ def test_relief_smooth_shape_internal_changes_the_result():
 
     default = smooth("false")
     shaped = smooth("true")
-    assert Image.open(BytesIO(shaped)).mode == "LA"
+    shaped_mode = Image.open(BytesIO(shaped)).mode
+    assert shaped_mode == "LA"
     assert shaped != default  # the flag demonstrably alters the output
