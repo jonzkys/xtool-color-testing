@@ -60,8 +60,10 @@ function templateBytes(): ArrayBuffer {
   return new TextEncoder().encode(JSON.stringify(doc)).buffer;
 }
 
+const TEMPLATE_BYTES = templateBytes();
+
 export function buildSpiralTestXs(result: SpiralTestResult, cfg: SpiralTestConfig): ArrayBuffer {
-  const parsed = parseXcsFile(templateBytes());
+  const parsed = parseXcsFile(TEMPLATE_BYTES);
   const inciseId = parsed.targets[0].id;
 
   const stageParams: Record<string, StageParams> = {
