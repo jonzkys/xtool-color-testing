@@ -16,18 +16,15 @@ export interface SpiralTestTime {
 /** Estimate total job seconds: spiral cuts (vector, per deduped profile) +
  *  label fill-engrave (raster). */
 export function estimateSpiralTestSeconds(result: SpiralTestResult, cfg: SpiralTestConfig): SpiralTestTime {
-  // Cut: per group, passes × Σ(arm length) / speed. Group params carry the
-  // per-cell swept passes/speed (deduped into result.stageParams).
-  const lenByGroup = new Map<string, number>();
-  for (const p of result.cutPaths) {
-    const len = p.rings.reduce((s, arm) => s + spiralPathLength(arm), 0);
-    lenByGroup.set(p.groupName, (lenByGroup.get(p.groupName) ?? 0) + len);
-  }
+  // Cut: each arm is its own vector cut with its own per-pass overhead (like the
+  // Forge estimator's per-path spiral branch). passes/speed come from the arm's
+  // deduped CUT_<n> profile in result.stageParams.
   let cutSeconds = 0;
-  for (const [group, len] of lenByGroup) {
-    const sp = result.stageParams[group];
+  for (const p of result.cutPaths) {
+    const sp = result.stageParams[p.groupName];
     const passes = sp?.passes ?? 1;
     const speed = sp?.speed ?? RATE_FALLBACK.speedMmS;
+    const len = p.rings.reduce((s, arm) => s + spiralPathLength(arm), 0);
     cutSeconds += vectorCutSeconds(len, passes, speed);
   }
 
