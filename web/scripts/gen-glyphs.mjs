@@ -1,6 +1,7 @@
 // One-off: bake JetBrains Mono glyph outlines into src/lib/forge/glyphTable.json.
-// JetBrains Mono is OFL (already bundled via @fontsource); we embed an outline
-// subset for engraved labels. Run: node scripts/gen-glyphs.mjs <path-to-JetBrainsMono-Regular.ttf>
+// JetBrains Mono is OFL; pass the Regular TTF as the first arg (fetch it from
+// the JetBrains/JetBrainsMono repo). We embed an outline subset for engraved
+// labels. Run: node scripts/gen-glyphs.mjs <path-to-JetBrainsMono-Regular.ttf>
 import opentype from "opentype.js";
 import { readFileSync, writeFileSync } from "node:fs";
 

@@ -87,6 +87,14 @@ export function SpiralTestPage() {
                   <Input aria-label="speed" type="number" mono value={cfg.cut.speed}
                     onChange={(e) => setCut("speed", num(e.target.value, cfg.cut.speed))} />
                 </Field>
+                <Field label="Pulse width (ns)">
+                  <Input aria-label="pulse width" type="number" mono value={cfg.cut.pulseWidth}
+                    onChange={(e) => setCut("pulseWidth", num(e.target.value, cfg.cut.pulseWidth))} />
+                </Field>
+                <Field label="Frequency (kHz)">
+                  <Input aria-label="frequency" type="number" mono value={cfg.cut.frequency}
+                    onChange={(e) => setCut("frequency", num(e.target.value, cfg.cut.frequency))} />
+                </Field>
               </div>
 
               {/* Focus descent — the cut's Z mechanism, matching the Spiral page:
