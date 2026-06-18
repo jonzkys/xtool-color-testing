@@ -7,6 +7,7 @@ import { buildSpiralTest, type SpiralTestConfig } from "../lib/forge/spiralTest"
 import { buildSpiralTestXs } from "../lib/forge/spiralTestXs";
 import { PARAMS, PARAM_ORDER, type ParamKey } from "../lib/forge/spiralParams";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { useValidationProfile } from "../state/machine";
 
 const DEFAULT_CFG: SpiralTestConfig = {
   xParam: "channelWidth", yParam: "pitch",
@@ -28,16 +29,19 @@ function num(v: string, fallback: number): number {
 
 export function SpiralTestPage() {
   const [cfg, setCfg] = useState<SpiralTestConfig>(DEFAULT_CFG);
+  // Machine limits for the cut op (F2 Ultra MOPA-IR fiber spiral cut). Null
+  // while the registry loads → app-default clamps; usually already cached.
+  const profile = useValidationProfile("F2Ultra", "cut");
   // Inputs stay instant (they read `cfg`); only the expensive build + preview
   // run off a debounced copy, so a flurry of keystrokes can't lag the page or
   // briefly explode a too-dense spiral mid-edit.
   const debouncedCfg = useDebouncedValue(cfg, 400);
-  const result = useMemo(() => buildSpiralTest(debouncedCfg), [debouncedCfg]);
+  const result = useMemo(() => buildSpiralTest(debouncedCfg, profile), [debouncedCfg, profile]);
 
   const onExport = () => {
     // Build fresh from the live cfg so the export always reflects the latest
     // form values even if the debounced preview hasn't caught up yet.
-    const buf = buildSpiralTestXs(buildSpiralTest(cfg), cfg);
+    const buf = buildSpiralTestXs(buildSpiralTest(cfg, profile), cfg);
     const url = URL.createObjectURL(new Blob([buf], { type: "application/octet-stream" }));
     const a = document.createElement("a");
     a.href = url; a.download = "spiral-test.xs"; a.click();
@@ -66,7 +70,7 @@ export function SpiralTestPage() {
 
         <div className="grid min-h-0 flex-1 grid-cols-[272px_minmax(0,1fr)_248px] grid-rows-[minmax(0,1fr)] items-stretch gap-3 pt-3">
           <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1 [&>*]:shrink-0">
-            <SpiralTestControls cfg={cfg} onChange={setCfg} footprint={result.footprintMm} overBed={result.overBed} />
+            <SpiralTestControls cfg={cfg} onChange={setCfg} footprint={result.footprintMm} overBed={result.overBed} profile={profile} />
           </div>
 
           <Card padded={false} className="flex min-h-0 min-w-0 p-3">
@@ -74,7 +78,7 @@ export function SpiralTestPage() {
           </Card>
 
           <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pl-1 [&>*]:shrink-0">
-            <FixedParams cfg={cfg} onChange={setCfg} />
+            <FixedParams cfg={cfg} onChange={setCfg} profile={profile} />
 
             <Section title="Label engrave" dense>
               <div className="grid grid-cols-2 gap-2">

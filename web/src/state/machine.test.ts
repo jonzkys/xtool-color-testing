@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { renderHook, waitFor } from "@testing-library/react";
 import type { MachinesPayload } from "../types";
-import { getValidationProfile, representativeMode } from "./machine";
+import { getValidationProfile, representativeMode, useValidationProfile } from "./machine";
+import * as machinesApi from "../api/machines";
 
 const REGISTRY: MachinesPayload = {
   machines: [
@@ -83,5 +85,24 @@ describe("representativeMode", () => {
   });
   it("falls back to engrave otherwise", () => {
     expect(representativeMode(mk(["engrave", "score", "cut"]))).toBe("engrave");
+  });
+});
+
+const PAYLOAD: MachinesPayload = {
+  machines: [{
+    id: "F2Ultra", display_name: "F2 Ultra", ext_id: "GS004-CLASS-4", ext_name: "F2 Ultra",
+    image: "/machines/f2ultra.png",
+    lasers: [{ kind: "fiber", wattage: 60, spot_mm: [0.03, 0.03] }],
+    modes: [{ id: "cut", profile: "F2Ultra:cut" }],
+  }],
+  profiles: { "F2Ultra:cut": { speed: { kind: "range", min: 2, max: 10000, step: 1 } } },
+};
+
+describe("useValidationProfile", () => {
+  it("returns the (machine, mode) constraints once the registry loads", async () => {
+    vi.spyOn(machinesApi, "getMachines").mockResolvedValue(PAYLOAD);
+    const { result } = renderHook(() => useValidationProfile("F2Ultra", "cut"));
+    await waitFor(() => expect(result.current).not.toBeNull());
+    expect(result.current!.speed).toEqual({ kind: "range", min: 2, max: 10000, step: 1 });
   });
 });

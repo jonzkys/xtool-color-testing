@@ -3,6 +3,16 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 import { SpiralTestControls } from "./SpiralTestControls";
 import type { SpiralTestConfig } from "../../lib/forge/spiralTest";
 import { PARAMS, PARAM_ORDER, type ParamKey } from "../../lib/forge/spiralParams";
+import type { ValidationProfile } from "../../types";
+
+const CUT_PROFILE: ValidationProfile = {
+  power: { kind: "range", min: 1, max: 100, step: 1 },
+  speed: { kind: "range", min: 2, max: 10000, step: 1 },
+  frequency: { kind: "range", min: 1, max: 4000, step: 1 },
+  passes: { kind: "range", min: 1, max: 300, step: 1 },
+  pulse_width: { kind: "stepped", values: [2, 4, 6, 9, 13, 20, 30, 45, 60, 80, 100, 150, 200, 250, 350, 500] },
+  laser: { kind: "enum", values: ["red", "blue"] },
+};
 
 function baseCfg(over: Partial<SpiralTestConfig> = {}): SpiralTestConfig {
   const fixed = Object.fromEntries(PARAM_ORDER.map((k) => [k, PARAMS[k].defaultFixed])) as Record<ParamKey, number>;
@@ -49,5 +59,12 @@ describe("SpiralTestControls", () => {
     render(<SpiralTestControls cfg={baseCfg()} onChange={onChange} footprint={{ w: 1, h: 1 }} overBed={false} />);
     fireEvent.change(screen.getByLabelText("title prefix"), { target: { value: "BRASS" } });
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ labels: expect.objectContaining({ titlePrefix: "BRASS" }) }));
+  });
+  it("renders Min/Max selects (and no Steps) when the axis param is discrete", () => {
+    render(<SpiralTestControls cfg={baseCfg({ xParam: "pulseWidth", yParam: "pitch", xAxis: { min: 50, max: 500, steps: 4 } })}
+      onChange={() => {}} footprint={{ w: 1, h: 1 }} overBed={false} profile={CUT_PROFILE} />);
+    expect(screen.getByLabelText("x min").tagName).toBe("SELECT");
+    expect(screen.getByLabelText("x max").tagName).toBe("SELECT");
+    expect(screen.queryByLabelText("x steps")).toBeNull();
   });
 });

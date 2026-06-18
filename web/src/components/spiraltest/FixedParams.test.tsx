@@ -3,6 +3,16 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { FixedParams } from "./FixedParams";
 import type { SpiralTestConfig } from "../../lib/forge/spiralTest";
 import { PARAMS, PARAM_ORDER, type ParamKey } from "../../lib/forge/spiralParams";
+import type { ValidationProfile } from "../../types";
+
+const CUT_PROFILE: ValidationProfile = {
+  power: { kind: "range", min: 1, max: 100, step: 1 },
+  speed: { kind: "range", min: 2, max: 10000, step: 1 },
+  frequency: { kind: "range", min: 1, max: 4000, step: 1 },
+  passes: { kind: "range", min: 1, max: 300, step: 1 },
+  pulse_width: { kind: "stepped", values: [2, 4, 6, 9, 13, 20, 30, 45, 60, 80, 100, 150, 200, 250, 350, 500] },
+  laser: { kind: "enum", values: ["red", "blue"] },
+};
 
 function baseCfg(over: Partial<SpiralTestConfig> = {}): SpiralTestConfig {
   const fixed = Object.fromEntries(PARAM_ORDER.map((k) => [k, PARAMS[k].defaultFixed])) as Record<ParamKey, number>;
@@ -39,5 +49,23 @@ describe("FixedParams", () => {
     expect(screen.getByText(/Descent @ 250p: 0\.750 mm/)).toBeInTheDocument();
     rerender(<FixedParams cfg={baseCfg({ xParam: "focusStep", xAxis: PARAMS.focusStep.defaultAxis })} onChange={() => {}} />);
     expect(screen.getByText(/Descent @ varies: —/)).toBeInTheDocument();
+  });
+  it("renders pulse width as a select of the machine's allowed values", () => {
+    render(<FixedParams cfg={baseCfg()} onChange={() => {}} profile={CUT_PROFILE} />);
+    const sel = screen.getByLabelText("fixed pulseWidth");
+    expect(sel.tagName).toBe("SELECT");
+    expect([...sel.querySelectorAll("option")].map((o) => o.textContent)).toContain("500");
+  });
+  it("emits a chosen pulse-width value", () => {
+    const onChange = vi.fn();
+    render(<FixedParams cfg={baseCfg()} onChange={onChange} profile={CUT_PROFILE} />);
+    fireEvent.change(screen.getByLabelText("fixed pulseWidth"), { target: { value: "150" } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ fixed: expect.objectContaining({ pulseWidth: 150 }) }));
+  });
+  it("a range param input carries machine min/max", () => {
+    render(<FixedParams cfg={baseCfg()} onChange={() => {}} profile={CUT_PROFILE} />);
+    const speed = screen.getByLabelText("fixed speed");
+    expect(speed).toHaveAttribute("min", "2");
+    expect(speed).toHaveAttribute("max", "10000");
   });
 });
