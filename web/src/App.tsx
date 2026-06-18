@@ -59,6 +59,9 @@ const ForgePage = lazy(() =>
 const SpiralPage = lazy(() =>
   import("./pages/SpiralPage").then((m) => ({ default: m.SpiralPage })),
 );
+const SpiralTestPage = lazy(() =>
+  import("./pages/SpiralTestPage").then((m) => ({ default: m.SpiralTestPage })),
+);
 const ChangelogPage = lazy(() =>
   import("./pages/ChangelogPage").then((m) => ({ default: m.ChangelogPage })),
 );
@@ -193,6 +196,7 @@ export default function App() {
     : route.name === "exposure"   ? "Exposure"
     : route.name === "guide"      ? "Guide"
     : route.name === "spiral"     ? "Spiral Cut"
+    : route.name === "spiral-test" ? "Spiral Test"
     : route.name === "forge"      ? "Contour Forge"
     : route.name === "changelog"  ? "Changelog"
     : route.name === "gcode"      ? "Gcode"
@@ -236,6 +240,7 @@ export default function App() {
           {gate === "ready" && route.name === "styleguide"   && <StyleguidePage />}
           {gate === "ready" && route.name === "guide"        && <GuidePage />}
           {gate === "ready" && route.name === "spiral"       && <SpiralPage />}
+          {gate === "ready" && route.name === "spiral-test"  && <SpiralTestPage />}
           {gate === "ready" && route.name === "forge"        && <ForgePage />}
           {gate === "ready" && route.name === "changelog"    && <ChangelogPage />}
           {gate === "ready" && route.name === "gcode"        && <GcodeViewerPage />}

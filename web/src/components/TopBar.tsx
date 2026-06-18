@@ -43,6 +43,7 @@ type NavRouteName =
   | "saved-spectrums"
   | "relief"
   | "spiral"
+  | "spiral-test"
   | "forge";
 
 interface NavChild {
@@ -84,6 +85,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Cut",
     children: [
       { label: "Spiral", route: "spiral" },
+      { label: "Spiral Test", route: "spiral-test" },
       { label: "Forge (deprecated)", route: "forge" },
     ],
   },
@@ -331,6 +333,7 @@ function activeNavRoute(route: Route): NavRouteName | null {
     case "saved-spectrums":
     case "relief":
     case "spiral":
+    case "spiral-test":
     case "forge":
       return route.name;
     default:
