@@ -7,6 +7,7 @@ sharp drops. Pure numpy/cv2 — no HTTP.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from io import BytesIO
 
@@ -28,6 +29,13 @@ __all__ = [
     "smooth_perimeter",
     "edge_falloff",
     "falloff_curve",
+    "threshold_background_mask",
+    "colour_background_mask",
+    "area_background_mask",
+    "combine_backgrounds",
+    "split_internal_holes",
+    "Subtraction",
+    "parse_subtractions",
 ]
 
 
@@ -126,18 +134,22 @@ def apply_clahe(
     return np.ascontiguousarray(clahe.apply(src), dtype=np.uint8)
 
 
-def background_alpha(gray: np.ndarray, threshold: int, high: bool = False) -> np.ndarray:
-    """Alpha mask (uint8 0/255) marking background pixels transparent.
+def threshold_background_mask(gray: np.ndarray, threshold: int, high: bool = False) -> np.ndarray:
+    """Boolean background mask (True = background) from a luminance cut.
 
-    ``high=False``: background is the dark end (``gray <= threshold``) — the
-    common case (surrounding black background). ``high=True``: the bright end
-    (``gray >= threshold``) for inverted maps."""
+    ``high=False``: background is the dark end (``gray <= threshold``); the
+    common case. ``high=True``: the bright end (``gray >= threshold``)."""
     if gray.ndim != 2:
-        raise ValueError("background_alpha expects a single-channel image")
+        raise ValueError("threshold_background_mask expects a single-channel image")
     t = max(0, min(255, int(threshold)))
-    mask = gray >= t if high else gray <= t
-    alpha = np.where(mask, 0, 255).astype(np.uint8)
-    return np.ascontiguousarray(alpha)
+    return (gray >= t) if high else (gray <= t)
+
+
+def background_alpha(gray: np.ndarray, threshold: int, high: bool = False) -> np.ndarray:
+    """Alpha mask (uint8 0/255) marking background pixels transparent — the
+    alpha form of ``threshold_background_mask``."""
+    mask = threshold_background_mask(gray, threshold, high)
+    return np.ascontiguousarray(np.where(mask, 0, 255).astype(np.uint8))
 
 
 def parse_rgb(s: str) -> tuple[int, int, int] | None:
@@ -152,25 +164,60 @@ def parse_rgb(s: str) -> tuple[int, int, int] | None:
     return (vals[0], vals[1], vals[2])
 
 
+def _to_rgb(bgr: np.ndarray) -> np.ndarray:
+    """Coerce BGR / BGRA / single-channel to an RGB array."""
+    if bgr.ndim == 2:
+        return cv2.cvtColor(bgr, cv2.COLOR_GRAY2RGB)
+    if bgr.ndim == 3 and bgr.shape[2] == 4:
+        return cv2.cvtColor(bgr, cv2.COLOR_BGRA2RGB)
+    if bgr.ndim == 3 and bgr.shape[2] == 3:
+        return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    raise ValueError(f"unsupported image shape {bgr.shape}")
+
+
+def colour_background_mask(
+    bgr: np.ndarray, color_rgb: tuple[int, int, int], tolerance: float
+) -> np.ndarray:
+    """Boolean background mask (True = background): pixels within Euclidean RGB
+    distance ``tolerance`` of ``color_rgb``. Accepts BGR / BGRA / single-channel."""
+    rgb = _to_rgb(bgr)
+    target = np.array(color_rgb, dtype=np.float32).reshape(1, 1, 3)
+    dist = np.sqrt(((rgb.astype(np.float32) - target) ** 2).sum(axis=2))
+    return dist <= float(tolerance)
+
+
+def area_background_mask(
+    bgr: np.ndarray,
+    color_rgb: tuple[int, int, int],
+    tolerance: float,
+    seed_xy: tuple[float, float] | None,
+) -> np.ndarray:
+    """Boolean background mask: the ``colour_background_mask`` for ``color_rgb``,
+    restricted to the single connected component (8-connectivity) containing the
+    seed pixel. ``seed_xy`` is a fractional (x, y) in [0, 1) — resolved the same
+    way the frontend eyedropper samples colour, so it lands on the picked pixel
+    at any resolution. Seed outside the colour range, or ``None`` → empty mask."""
+    cand = colour_background_mask(bgr, color_rgb, tolerance)
+    if seed_xy is None:
+        return np.zeros(cand.shape, dtype=bool)
+    h, w = cand.shape
+    fx = min(0.999999, max(0.0, float(seed_xy[0])))
+    fy = min(0.999999, max(0.0, float(seed_xy[1])))
+    x = min(w - 1, int(fx * w))
+    y = min(h - 1, int(fy * h))
+    _num, labels = cv2.connectedComponents(cand.astype(np.uint8), connectivity=8)
+    lbl = int(labels[y, x])
+    if lbl == 0:
+        return np.zeros(cand.shape, dtype=bool)
+    return labels == lbl
+
+
 def colour_background_alpha(
     bgr: np.ndarray, color_rgb: tuple[int, int, int], tolerance: float
 ) -> np.ndarray:
-    """Alpha mask (uint8 0/255): background = pixels within Euclidean RGB distance
-    ``tolerance`` of ``color_rgb`` (the picked background colour); foreground = 255.
-    Accepts BGR / BGRA / single-channel (gray treated as R=G=B)."""
-    if bgr.ndim == 2:
-        rgb = cv2.cvtColor(bgr, cv2.COLOR_GRAY2RGB)
-    elif bgr.ndim == 3 and bgr.shape[2] == 4:
-        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGRA2RGB)
-    elif bgr.ndim == 3 and bgr.shape[2] == 3:
-        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-    else:
-        raise ValueError(f"unsupported image shape {bgr.shape}")
-    target = np.array(color_rgb, dtype=np.float32).reshape(1, 1, 3)
-    dist = np.sqrt(((rgb.astype(np.float32) - target) ** 2).sum(axis=2))
-    mask = dist <= float(tolerance)  # background
-    alpha = np.where(mask, 0, 255).astype(np.uint8)
-    return np.ascontiguousarray(alpha)
+    """Alpha form of ``colour_background_mask`` (uint8 0/255)."""
+    mask = colour_background_mask(bgr, color_rgb, tolerance)
+    return np.ascontiguousarray(np.where(mask, 0, 255).astype(np.uint8))
 
 
 def trim_alpha(alpha: np.ndarray, pct: float) -> np.ndarray:
@@ -402,6 +449,26 @@ def edge_falloff(
     return np.ascontiguousarray(np.clip(out, 0, 255).astype(np.uint8)), alpha
 
 
+def combine_backgrounds(
+    masks: list[np.ndarray], shape: tuple[int, int] | None = None
+) -> np.ndarray:
+    """OR a list of boolean background masks (True = background) into an alpha
+    (uint8 0/255: 0 = background/transparent, 255 = foreground). An empty list
+    returns all-foreground (255) when ``shape`` is given; raises ``ValueError``
+    without it."""
+    if masks:
+        bg = np.zeros(masks[0].shape, dtype=bool)
+        for m in masks:
+            if m.shape != bg.shape:
+                raise ValueError("combine_backgrounds: masks must share a shape")
+            bg |= m.astype(bool)
+    elif shape is not None:
+        bg = np.zeros(shape, dtype=bool)
+    else:
+        raise ValueError("combine_backgrounds: empty masks needs an explicit shape")
+    return np.ascontiguousarray(np.where(bg, 0, 255).astype(np.uint8))
+
+
 def encode_png_la(gray: np.ndarray, alpha: np.ndarray) -> bytes:
     """Encode grayscale + alpha as an ``LA`` PNG (transparent background)."""
     lum = Image.fromarray(np.ascontiguousarray(gray, dtype=np.uint8), mode="L")
@@ -416,3 +483,95 @@ def encode_png(gray: np.ndarray) -> bytes:
     buf = BytesIO()
     Image.fromarray(gray, mode="L").save(buf, format="PNG")
     return buf.getvalue()
+
+
+def split_internal_holes(alpha: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Split a 0/255 alpha into ``(solid_alpha, holes)``.
+
+    A "hole" is a background pixel (alpha == 0) not connected to the image
+    border — an enclosed pocket. ``holes`` is a boolean mask of those pixels;
+    ``solid_alpha`` is ``alpha`` with the holes filled to 255 (opaque), i.e. the
+    outer silhouette only. Border-connected background is left as background."""
+    if alpha.ndim != 2:
+        raise ValueError("split_internal_holes expects a single-channel alpha")
+    bg = (alpha == 0).astype(np.uint8)             # 1 = background
+    # Flood the OUTER background inward from a 1px background border so a corner
+    # that happens to be foreground can't trap the fill. Foreground (0) walls it.
+    bordered = cv2.copyMakeBorder(bg, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=1)
+    ffmask = np.zeros((bordered.shape[0] + 2, bordered.shape[1] + 2), np.uint8)
+    cv2.floodFill(bordered, ffmask, (0, 0), 2)     # outer background → 2
+    outer = bordered[1:-1, 1:-1] == 2
+    holes = (alpha == 0) & (~outer)
+    solid = alpha.copy()
+    solid[holes] = 255
+    return np.ascontiguousarray(solid), np.ascontiguousarray(holes)
+
+
+@dataclass(frozen=True)
+class Subtraction:
+    """One background-subtraction op. ``method`` ∈ dark|bright|colour|area.
+    ``threshold`` is the dark/bright luminance cut; ``color``/``tolerance`` the
+    colour key (colour/area); ``seed`` the fractional (x, y) click (area only)."""
+    method: str
+    threshold: int = 8
+    color: tuple[int, int, int] | None = None
+    tolerance: float = 40.0
+    seed: tuple[float, float] | None = None
+
+
+_SUB_METHODS = {"dark", "bright", "colour", "area"}
+
+
+def _parse_sub_color(v: object) -> tuple[int, int, int] | None:
+    if not isinstance(v, (list, tuple)) or len(v) != 3:
+        return None
+    try:
+        r, g, b = (max(0, min(255, int(round(float(c))))) for c in v)
+    except (ValueError, TypeError):
+        return None
+    return (r, g, b)
+
+
+def _parse_sub_seed(sx: object, sy: object) -> tuple[float, float] | None:
+    """Fractional (x, y) seed, each snapped to [0, 1]; either missing → None."""
+    if sx is None or sy is None:
+        return None
+    try:
+        return (max(0.0, min(1.0, float(sx))), max(0.0, min(1.0, float(sy))))
+    except (ValueError, TypeError):
+        return None
+
+
+def parse_subtractions(json_str: str) -> list[Subtraction]:
+    """Parse a JSON array of subtraction ops, tolerantly: clamp out-of-range
+    threshold (0..255) / tolerance (0..441), snap bad numbers to defaults, drop
+    entries without a usable method. Malformed / non-list JSON → ``[]``."""
+    try:
+        raw = json.loads(json_str) if json_str else []
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(raw, list):
+        return []
+    out: list[Subtraction] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        method = item.get("method")
+        if method not in _SUB_METHODS:
+            continue
+        try:
+            threshold = max(0, min(255, int(round(float(item.get("threshold", 8))))))
+        except (ValueError, TypeError):
+            threshold = 8
+        try:
+            tolerance = max(0.0, min(441.0, float(item.get("tolerance", 40.0))))
+        except (ValueError, TypeError):
+            tolerance = 40.0
+        out.append(Subtraction(
+            method=method,
+            threshold=threshold,
+            color=_parse_sub_color(item.get("color")),
+            tolerance=tolerance,
+            seed=_parse_sub_seed(item.get("seedX"), item.get("seedY")),
+        ))
+    return out

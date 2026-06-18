@@ -86,18 +86,24 @@ describe("reliefSmooth form fields", () => {
     vi.unstubAllGlobals();
   });
 
-  it("appends background fields when opts.background given", async () => {
+  it("appends subtraction + shape_internal fields when opts.background given", async () => {
     const sent = stub();
     await reliefSmooth(new Blob(["x"]), { ...DEFAULT_RELIEF_PARAMS }, {
       background: {
-        mode: "dark", threshold: 8, color: null, tolerance: 40,
+        subtractions: [
+          { method: "dark", threshold: 8, color: null, tolerance: 40, seedX: null, seedY: null },
+          { method: "area", threshold: 8, color: [10, 20, 30], tolerance: 25, seedX: 0.5, seedY: 0.25 },
+        ],
         perimeterPct: 0, trimPct: 0, falloffPct: 0, falloffMode: "inward",
-        falloffTarget: 0, falloffIntensity: 50,
+        falloffTarget: 0, falloffIntensity: 50, shapeInternal: true,
       },
     });
     expect(sent[0].get("remove_bg")).toBe("true");
-    expect(sent[0].get("bg_threshold")).toBe("8");
-    expect(sent[0].get("bg_mode")).toBe("dark");
+    expect(sent[0].get("shape_internal")).toBe("true");
+    const subs = JSON.parse(sent[0].get("subtractions") as string);
+    expect(subs).toHaveLength(2);
+    expect(subs[0].method).toBe("dark");
+    expect(subs[1]).toMatchObject({ method: "area", color: [10, 20, 30], seedX: 0.5, seedY: 0.25 });
     vi.unstubAllGlobals();
   });
 });
@@ -125,34 +131,3 @@ describe("sampleRgb", () => {
   });
 });
 
-describe("reliefSmooth background fields", () => {
-  it("posts bg mode/colour/trim/falloff form fields", async () => {
-    let sent: FormData | null = null;
-    const orig = globalThis.fetch;
-    globalThis.fetch = (async (_url: string, init: RequestInit) => {
-      sent = init.body as FormData;
-      return { ok: true, blob: async () => new Blob() } as Response;
-    }) as typeof fetch;
-    try {
-      await reliefSmooth(new Blob(), { ...DEFAULT_RELIEF_PARAMS, smoothEnabled: true }, {
-        background: {
-          mode: "colour", threshold: 8, color: [10, 20, 30], tolerance: 25,
-          perimeterPct: 4, trimPct: 3, falloffPct: 7, falloffMode: "outward",
-          falloffTarget: 100, falloffIntensity: 70,
-        },
-      });
-    } finally {
-      globalThis.fetch = orig;
-    }
-    expect(sent!.get("remove_bg")).toBe("true");
-    expect(sent!.get("bg_mode")).toBe("colour");
-    expect(sent!.get("bg_color")).toBe("10,20,30");
-    expect(sent!.get("bg_tolerance")).toBe("25");
-    expect(sent!.get("perimeter_pct")).toBe("4");
-    expect(sent!.get("trim_pct")).toBe("3");
-    expect(sent!.get("falloff_pct")).toBe("7");
-    expect(sent!.get("falloff_mode")).toBe("outward");
-    expect(sent!.get("falloff_target")).toBe("100");
-    expect(sent!.get("falloff_intensity")).toBe("70");
-  });
-});

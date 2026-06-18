@@ -1,6 +1,7 @@
 """Tests for grayscale depth-map smoothing (relief)."""
 from __future__ import annotations
 
+import json
 from io import BytesIO
 
 import cv2
@@ -365,3 +366,122 @@ def test_falloff_curve_endpoints_and_intensity():
     mid_gentle = float(falloff_curve(np.array([0.25]), 0)[0])   # linear → 0.25
     mid_sharp = float(falloff_curve(np.array([0.25]), 100)[0])  # smootherstep → lower
     assert mid_gentle > mid_sharp
+
+
+def test_threshold_background_mask_dark_and_bright():
+    from xcs_gen_web.relief import threshold_background_mask
+    gray = np.full((4, 4), 100, np.uint8)
+    gray[0, 0] = 5
+    gray[1, 1] = 250
+    dark = threshold_background_mask(gray, 8, high=False)
+    assert dark.dtype == bool and dark[0, 0] and not dark[2, 2]
+    bright = threshold_background_mask(gray, 200, high=True)
+    assert bright[1, 1] and not bright[2, 2]
+
+
+def test_colour_background_mask_keys_picked_colour():
+    from xcs_gen_web.relief import colour_background_mask
+    img = np.zeros((2, 2, 3), np.uint8)
+    img[:, 0] = (30, 20, 10)  # BGR → RGB (10, 20, 30)
+    m = colour_background_mask(img, (10, 20, 30), 5)
+    assert m.dtype == bool
+    assert m[:, 0].all() and not m[:, 1].any()
+
+
+def test_area_background_mask_keeps_only_seed_component():
+    from xcs_gen_web.relief import area_background_mask
+    img = np.zeros((10, 30, 3), np.uint8)        # black background
+    img[2:8, 2:8] = (0, 0, 255)                  # BGR red blob A (left)  → RGB (255,0,0)
+    img[2:8, 22:28] = (0, 0, 255)                # red blob B (right)
+    # seed inside blob A: fractional (x, y)
+    m = area_background_mask(img, (255, 0, 0), 10, (5 / 30, 5 / 10))
+    assert m.dtype == bool
+    assert m[5, 5]            # blob A (seed's component) → background
+    assert not m[5, 25]       # blob B same colour but disconnected → kept
+    assert not m[0, 0]        # black background → not in colour range
+
+
+def test_area_background_mask_empty_when_seed_off_colour_or_missing():
+    from xcs_gen_web.relief import area_background_mask
+    img = np.zeros((10, 10, 3), np.uint8)
+    img[2:8, 2:8] = (0, 0, 255)                  # red blob
+    # seed on the black background (not within tolerance of red) → empty
+    off = area_background_mask(img, (255, 0, 0), 10, (0.0, 0.0))
+    assert not off.any()
+    # no seed at all → empty
+    none = area_background_mask(img, (255, 0, 0), 10, None)
+    assert not none.any()
+
+
+def test_combine_backgrounds_unions_masks():
+    from xcs_gen_web.relief import combine_backgrounds
+    a = np.zeros((4, 4), bool)
+    b = np.zeros((4, 4), bool)
+    a[0, 0] = True
+    b[3, 3] = True
+    alpha = combine_backgrounds([a, b])
+    assert alpha.dtype == np.uint8
+    assert alpha[0, 0] == 0 and alpha[3, 3] == 0   # either mask → background
+    assert alpha[1, 1] == 255                      # neither → foreground
+
+
+def test_combine_backgrounds_empty_is_all_foreground():
+    from xcs_gen_web.relief import combine_backgrounds
+    alpha = combine_backgrounds([], shape=(3, 3))
+    assert alpha.shape == (3, 3) and (alpha == 255).all()
+
+
+def test_split_internal_holes_marks_enclosed_background():
+    from xcs_gen_web.relief import split_internal_holes
+    alpha = np.full((20, 20), 255, np.uint8)     # solid object
+    alpha[8:12, 8:12] = 0                          # an enclosed internal hole
+    alpha[0, :] = 0                                # border-connected background strip
+    solid, holes = split_internal_holes(alpha)
+    assert holes.dtype == bool
+    assert holes[9, 9]               # enclosed hole detected
+    assert not holes[0, 5]           # border background is NOT a hole
+    assert solid[9, 9] == 255        # hole filled solid
+    assert solid[0, 5] == 0          # border background unchanged in solid
+
+
+def test_split_internal_holes_no_holes_is_identity():
+    from xcs_gen_web.relief import split_internal_holes
+    alpha = np.full((10, 10), 255, np.uint8)
+    alpha[0, :] = 0                                # only border background
+    solid, holes = split_internal_holes(alpha)
+    assert not holes.any()
+    assert np.array_equal(solid, alpha)
+
+
+def test_parse_subtractions_parses_and_clamps():
+    from xcs_gen_web.relief import parse_subtractions, Subtraction
+    js = json.dumps([
+        {"method": "dark", "threshold": 9999},                  # clamp to 255
+        {"method": "colour", "color": [300, -5, 40], "tolerance": 999},
+        {"method": "area", "color": [10, 20, 30], "tolerance": 25,
+         "seedX": 0.5, "seedY": 0.25},
+        {"method": "bogus"},                                     # dropped (bad method)
+        {"threshold": 5},                                        # dropped (no method)
+        "not a dict",                                            # dropped
+    ])
+    subs = parse_subtractions(js)
+    assert len(subs) == 3
+    assert subs[0] == Subtraction("dark", threshold=255)
+    assert subs[1].method == "colour"
+    assert subs[1].color == (255, 0, 40) and subs[1].tolerance == 441.0
+    assert subs[2].method == "area" and subs[2].seed == (0.5, 0.25)
+
+
+def test_parse_subtractions_clamps_out_of_range_seed():
+    from xcs_gen_web.relief import parse_subtractions
+    js = json.dumps([{"method": "area", "color": [1, 2, 3], "seedX": -0.5, "seedY": 9.0}])
+    subs = parse_subtractions(js)
+    assert subs[0].seed == (0.0, 1.0)
+
+
+def test_parse_subtractions_tolerates_junk():
+    from xcs_gen_web.relief import parse_subtractions
+    assert parse_subtractions("") == []
+    assert parse_subtractions("not json") == []
+    assert parse_subtractions("{}") == []            # not a list
+    assert parse_subtractions("[1, 2, 3]") == []     # no dicts

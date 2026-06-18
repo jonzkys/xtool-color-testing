@@ -81,10 +81,7 @@ export function ReliefPage() {
     () =>
       stretchParams.removeBackground
         ? {
-            mode: stretchParams.bgMode,
-            threshold: stretchParams.bgThreshold,
-            color: stretchParams.bgColor,
-            tolerance: stretchParams.bgTolerance,
+            subtractions: stretchParams.subtractions,
             perimeterPct: stretchParams.perimeterEnabled
               ? stretchParams.perimeterPct
               : 0,
@@ -95,14 +92,12 @@ export function ReliefPage() {
             falloffMode: stretchParams.falloffMode,
             falloffTarget: stretchParams.falloffTarget,
             falloffIntensity: stretchParams.falloffIntensity,
+            shapeInternal: stretchParams.shapeInternal,
           }
         : undefined,
     [
       stretchParams.removeBackground,
-      stretchParams.bgMode,
-      stretchParams.bgThreshold,
-      stretchParams.bgColor,
-      stretchParams.bgTolerance,
+      stretchParams.subtractions,
       stretchParams.perimeterEnabled,
       stretchParams.perimeterPct,
       stretchParams.trimEnabled,
@@ -112,6 +107,7 @@ export function ReliefPage() {
       stretchParams.falloffMode,
       stretchParams.falloffTarget,
       stretchParams.falloffIntensity,
+      stretchParams.shapeInternal,
     ],
   );
 
@@ -120,17 +116,21 @@ export function ReliefPage() {
   // (no ImageBitmap lifecycle) and used as the single source for the preview,
   // 3D, inspect, and export alike — so they stay pixel-aligned. When the pad is
   // 0 this is the raw bitmap unchanged.
+  // The pad colour only depends on removal being on and the FIRST subtraction's
+  // method/colour (padColorFor ignores tolerance, seeds, and later rows), so
+  // memoise it on exactly those — editing a tolerance slider won't rebuild the
+  // padded canvas.
+  const firstSub = stretchParams.subtractions[0];
+  const padColor = useMemo(
+    () => padColorFor(stretchParams),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stretchParams.removeBackground, firstSub?.method, firstSub?.color],
+  );
   const workingSource: ReliefSource | null = useMemo(() => {
     if (!bitmap) return null;
     if (stretchParams.expandPct <= 0) return bitmap;
-    return padToCanvas(bitmap, stretchParams.expandPct, padColorFor(stretchParams));
-  }, [
-    bitmap,
-    stretchParams.expandPct,
-    stretchParams.bgMode,
-    stretchParams.bgColor,
-    stretchParams.removeBackground,
-  ]);
+    return padToCanvas(bitmap, stretchParams.expandPct, padColor);
+  }, [bitmap, stretchParams.expandPct, padColor]);
 
   // Active LUT (monotonic modes) — passed to the inspect curve overlay; null
   // for none/clahe so the overlay draws nothing.
@@ -221,47 +221,50 @@ export function ReliefPage() {
   const [smoothedData, setSmoothedData] = useState<ImageData | null>(null);
   const [cleanedData, setCleanedData] = useState<ImageData | null>(null); // final (post-stretch)
 
-  // Eyedropper: when true, the next click on the source thumbnail samples a colour.
-  const [pickingColor, setPickingColor] = useState(false);
+  // Eyedropper: the subtraction-row index awaiting a pick, or null.
+  const [pickingFor, setPickingFor] = useState<number | null>(null);
 
   // .xs import picker: null = closed; [] = "none found" error modal; non-empty
   // = pick-a-depth-map modal. (Exactly one job imports directly, never here.)
   const [xsJobs, setXsJobs] = useState<XsDepthJob[] | null>(null);
 
-  // Click handler for the source-image wrapper (eyedropper mode). The source
-  // thumbnail is displayed at width:100% with natural aspect, so
-  // (clientX - r.left) / r.width maps directly to a fractional pixel in
-  // originalData (same aspect as the source bitmap).
-  const onSourceClick = useCallback(
-    (e: React.MouseEvent<HTMLElement>) => {
-      if (!pickingColor || !originalData) return;
-      const r = e.currentTarget.getBoundingClientRect();
-      const rgb = sampleRgb(
-        originalData,
-        (e.clientX - r.left) / r.width,
-        (e.clientY - r.top) / r.height,
-      );
-      setStretchParams((p) => ({
-        ...p,
-        bgColor: rgb,
-        bgMode: "colour",
-        removeBackground: true,
-      }));
-      setPickingColor(false);
-    },
-    [pickingColor, originalData],
-  );
-
-  // Eyedropper pick from the main 2D preview: ReliefCompare2D hands back the
-  // clicked position as image fractions (letterbox already accounted for).
-  const onPickFraction = useCallback(
-    (fx: number, fy: number) => {
+  // Set the picked colour + seed on the awaiting subtraction row. The colour is
+  // sampled at the click; the seed (fraction) is stored for every pick and used
+  // by the backend only for the `area` method.
+  const applyPick = useCallback(
+    (index: number, fx: number, fy: number) => {
       if (!originalData) return;
       const rgb = sampleRgb(originalData, fx, fy);
-      setStretchParams((p) => ({ ...p, bgColor: rgb, bgMode: "colour", removeBackground: true }));
-      setPickingColor(false);
+      setStretchParams((p) => ({
+        ...p,
+        removeBackground: true,
+        subtractions: p.subtractions.map((s, j) =>
+          j === index ? { ...s, color: rgb, seedX: fx, seedY: fy } : s,
+        ),
+      }));
+      setPickingFor(null);
     },
     [originalData],
+  );
+
+  // The source thumbnail is displayed at width:100% with natural aspect, so
+  // (clientX - r.left) / r.width maps directly to a fractional pixel.
+  const onSourceClick = useCallback(
+    (e: React.MouseEvent<HTMLElement>) => {
+      if (pickingFor === null || !originalData) return;
+      const r = e.currentTarget.getBoundingClientRect();
+      applyPick(pickingFor, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+    },
+    [pickingFor, originalData, applyPick],
+  );
+
+  // Eyedropper pick from the main 2D preview: the canvas hands back the clicked
+  // position as image fractions (letterbox already accounted for).
+  const onPickFraction = useCallback(
+    (fx: number, fy: number) => {
+      if (pickingFor !== null) applyPick(pickingFor, fx, fy);
+    },
+    [pickingFor, applyPick],
   );
 
   // ── File decode ───────────────────────────────────────────────────
@@ -707,7 +710,7 @@ export function ReliefPage() {
               <CutoutControls
                 params={stretchParams}
                 onChange={setStretchParams}
-                onPickColor={() => setPickingColor(true)}
+                onPickColor={(index) => setPickingFor(index)}
               />
             </CollapsibleGroup>
             <CollapsibleGroup
@@ -779,7 +782,7 @@ export function ReliefPage() {
                         <ReliefSplit2D
                           originalUrl={displayOriginalUrl}
                           cleanedUrl={cleanedUrl}
-                          picking={pickingColor}
+                          picking={pickingFor !== null}
                           onPick={onPickFraction}
                         />
                       ) : (
@@ -788,7 +791,7 @@ export function ReliefPage() {
                           cleanedUrl={cleanedUrl}
                           width={hostW}
                           height={hostH}
-                          picking={pickingColor}
+                          picking={pickingFor !== null}
                           onPick={onPickFraction}
                         />
                       )
@@ -853,13 +856,13 @@ export function ReliefPage() {
                     <div
                       onClick={onSourceClick}
                       style={
-                        pickingColor && originalData
+                        pickingFor !== null && originalData
                           ? { cursor: "crosshair" }
                           : undefined
                       }
                       className="mt-1 overflow-hidden rounded-[4px]"
                       title={
-                        pickingColor
+                        pickingFor !== null
                           ? "Click to sample a background colour"
                           : undefined
                       }
@@ -938,8 +941,12 @@ export function ReliefPage() {
  *  (dark threshold, or removal off) black — a depth-0 floor that engraves as
  *  nothing. */
 function padColorFor(p: StretchParams): [number, number, number] {
-  if (p.removeBackground && p.bgMode === "bright") return [255, 255, 255];
-  if (p.removeBackground && p.bgMode === "colour" && p.bgColor) return p.bgColor;
+  const first = p.subtractions[0];
+  if (p.removeBackground && first) {
+    if (first.method === "bright") return [255, 255, 255];
+    if ((first.method === "colour" || first.method === "area") && first.color)
+      return first.color;
+  }
   return [0, 0, 0];
 }
 
