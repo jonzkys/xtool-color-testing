@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { SpiralTestConfig } from "../../lib/forge/spiralTest";
+import type { SpiralTestConfig, CellShape } from "../../lib/forge/spiralTest";
 import type { ValidationProfile } from "../../types";
 import { PARAMS, PARAM_ORDER, formatValue, type AxisSpec, type ParamKey } from "../../lib/forge/spiralParams";
 import { constraintFor, resolveAxisValues, snapStepped, steppedValues } from "../../lib/forge/spiralLimits";
@@ -115,9 +115,21 @@ export function SpiralTestControls({ cfg, onChange, footprint, overBed, profile 
         <p className="mt-1.5 font-mono text-[10px] tabular-nums text-[color:var(--color-ink-muted)]">Y: {ys}</p>
       </Section>
 
-      <Section title="Circle & layout" dense>
+      <Section title="Shape & layout" dense>
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Diameter (mm)">
+          <Field label="Shape" className="col-span-2">
+            <Select aria-label="cell shape" value={cfg.cellShape ?? "circle"}
+              onChange={(e) => set("cellShape", e.target.value as CellShape)}>
+              <option value="circle">Circle</option>
+              <option value="square">Square</option>
+              <option value="diamond">Diamond</option>
+              <option value="hexagon">Hexagon</option>
+              <option value="octagon">Octagon</option>
+              <option value="star">Star</option>
+              <option value="letterJ">J</option>
+            </Select>
+          </Field>
+          <Field label="Size (mm)">
             <Input aria-label="diameter" type="number" mono step={0.5} value={cfg.diameterMm}
               onChange={(e) => set("diameterMm", num(e.target.value, cfg.diameterMm))} />
           </Field>

@@ -15,7 +15,7 @@ const DEFAULT_CFG: SpiralTestConfig = {
   xParam: "channelWidth", yParam: "pitch",
   xAxis: { ...PARAMS.channelWidth.defaultAxis }, yAxis: { ...PARAMS.pitch.defaultAxis },
   fixed: Object.fromEntries(PARAM_ORDER.map((k) => [k, PARAMS[k].defaultFixed])) as Record<ParamKey, number>,
-  diameterMm: 10, side: "outside", minChannelMm: 0.4, gapMm: 4, bedMm: { w: 300, h: 300 },
+  diameterMm: 10, cellShape: "circle", side: "outside", minChannelMm: 0.4, gapMm: 4, bedMm: { w: 300, h: 300 },
   focusInitialMm: 0.01, laser: "red",
   labels: { show: true, titlePrefix: "" },
   // Label engrave — MOPA IR fill-engrave preset.

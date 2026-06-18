@@ -54,6 +54,12 @@ describe("SpiralTestControls", () => {
     fireEvent.change(screen.getByLabelText("diameter"), { target: { value: "12" } });
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ diameterMm: 12 }));
   });
+  it("emits a changed cell shape", () => {
+    const onChange = vi.fn();
+    render(<SpiralTestControls cfg={baseCfg()} onChange={onChange} footprint={{ w: 1, h: 1 }} overBed={false} />);
+    fireEvent.change(screen.getByLabelText("cell shape"), { target: { value: "star" } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ cellShape: "star" }));
+  });
   it("edits the title prefix", () => {
     const onChange = vi.fn();
     render(<SpiralTestControls cfg={baseCfg()} onChange={onChange} footprint={{ w: 1, h: 1 }} overBed={false} />);
