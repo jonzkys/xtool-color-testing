@@ -130,7 +130,7 @@ export function SpiralTestControls({ cfg, onChange, footprint, overBed, profile 
             </Select>
           </Field>
           <Field label="Size (mm)">
-            <Input aria-label="diameter" type="number" mono step={0.5} value={cfg.diameterMm}
+            <Input aria-label="size" type="number" mono step={0.5} value={cfg.diameterMm}
               onChange={(e) => set("diameterMm", num(e.target.value, cfg.diameterMm))} />
           </Field>
           <Field label="Gap (mm)">

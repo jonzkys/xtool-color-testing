@@ -48,10 +48,10 @@ describe("SpiralTestControls", () => {
     // yParam is "pitch" → not offered in the X select
     expect(within(xSelect).queryByRole("option", { name: /Pitch/ })).toBeNull();
   });
-  it("emits a changed diameter", () => {
+  it("emits a changed size", () => {
     const onChange = vi.fn();
     render(<SpiralTestControls cfg={baseCfg()} onChange={onChange} footprint={{ w: 1, h: 1 }} overBed={false} />);
-    fireEvent.change(screen.getByLabelText("diameter"), { target: { value: "12" } });
+    fireEvent.change(screen.getByLabelText("size"), { target: { value: "12" } });
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ diameterMm: 12 }));
   });
   it("emits a changed cell shape", () => {
