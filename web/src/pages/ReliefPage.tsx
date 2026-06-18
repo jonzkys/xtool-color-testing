@@ -114,16 +114,21 @@ export function ReliefPage() {
   // (no ImageBitmap lifecycle) and used as the single source for the preview,
   // 3D, inspect, and export alike — so they stay pixel-aligned. When the pad is
   // 0 this is the raw bitmap unchanged.
+  // The pad colour only depends on removal being on and the FIRST subtraction's
+  // method/colour (padColorFor ignores tolerance, seeds, and later rows), so
+  // memoise it on exactly those — editing a tolerance slider won't rebuild the
+  // padded canvas.
+  const firstSub = stretchParams.subtractions[0];
+  const padColor = useMemo(
+    () => padColorFor(stretchParams),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stretchParams.removeBackground, firstSub?.method, firstSub?.color],
+  );
   const workingSource: ReliefSource | null = useMemo(() => {
     if (!bitmap) return null;
     if (stretchParams.expandPct <= 0) return bitmap;
-    return padToCanvas(bitmap, stretchParams.expandPct, padColorFor(stretchParams));
-  }, [
-    bitmap,
-    stretchParams.expandPct,
-    stretchParams.subtractions,
-    stretchParams.removeBackground,
-  ]);
+    return padToCanvas(bitmap, stretchParams.expandPct, padColor);
+  }, [bitmap, stretchParams.expandPct, padColor]);
 
   // Active LUT (monotonic modes) — passed to the inspect curve overlay; null
   // for none/clahe so the overlay draws nothing.
