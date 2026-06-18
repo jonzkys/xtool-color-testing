@@ -39,15 +39,15 @@ export function SpiralTestControls({ cfg, onChange, footprint, overBed }: Props)
   const ys = resolveAxis(cfg.yAxis).map((v) => formatValue(cfg.yParam, PARAMS[cfg.yParam].clamp(v))).join(", ");
 
   const axisRange = (
-    which: "x" | "y", axis: AxisSpec, commit: (a: AxisSpec) => void,
+    which: "x" | "y", param: ParamKey, axis: AxisSpec, commit: (a: AxisSpec) => void,
   ) => (
     <div className="grid grid-cols-3 gap-2">
       <Field label="Min">
-        <Input aria-label={`${which} min`} type="number" mono value={axis.min}
+        <Input aria-label={`${which} min`} type="number" mono step={PARAMS[param].step} value={axis.min}
           onChange={(e) => commit({ ...axis, min: num(e.target.value, axis.min) })} />
       </Field>
       <Field label="Max">
-        <Input aria-label={`${which} max`} type="number" mono value={axis.max}
+        <Input aria-label={`${which} max`} type="number" mono step={PARAMS[param].step} value={axis.max}
           onChange={(e) => commit({ ...axis, max: num(e.target.value, axis.max) })} />
       </Field>
       <Field label="Steps">
@@ -72,7 +72,7 @@ export function SpiralTestControls({ cfg, onChange, footprint, overBed }: Props)
             {paramOptions(cfg.yParam)}
           </Select>
         </Field>
-        <div className="mt-2">{axisRange("x", cfg.xAxis, (a) => set("xAxis", a))}</div>
+        <div className="mt-2">{axisRange("x", cfg.xParam, cfg.xAxis, (a) => set("xAxis", a))}</div>
         <p className="mt-1.5 font-mono text-[10px] tabular-nums text-[color:var(--color-ink-muted)]">X: {xs}</p>
 
         <div aria-hidden className="my-2.5 h-px" style={{ background: "var(--metal-bar-soft)" }} />
@@ -84,7 +84,7 @@ export function SpiralTestControls({ cfg, onChange, footprint, overBed }: Props)
             {paramOptions(cfg.xParam)}
           </Select>
         </Field>
-        <div className="mt-2">{axisRange("y", cfg.yAxis, (a) => set("yAxis", a))}</div>
+        <div className="mt-2">{axisRange("y", cfg.yParam, cfg.yAxis, (a) => set("yAxis", a))}</div>
         <p className="mt-1.5 font-mono text-[10px] tabular-nums text-[color:var(--color-ink-muted)]">Y: {ys}</p>
       </Section>
 

@@ -14,6 +14,7 @@ describe("spiralParams registry", () => {
       expect(d.abbrev.length).toBeGreaterThan(0);
       expect(["geometry", "profile"]).toContain(d.kind);
       expect(Number.isFinite(d.defaultFixed)).toBe(true);
+      expect(d.step).toBeGreaterThan(0); // precision-appropriate, never the default 1-snap
       expect(d.defaultAxis.steps).toBeGreaterThanOrEqual(1);
     }
   });

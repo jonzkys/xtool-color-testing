@@ -36,7 +36,7 @@ export function FixedParams({ cfg, onChange }: Props) {
             <Field key={k} label={`${PARAMS[k].label}${ax ? ` (on ${ax})` : ` (${PARAMS[k].unit})`}`}>
               {/* On-axis params are disabled here and show the off-axis fallback
                   value (not the swept axis value); the "(on X/Y)" suffix flags it. */}
-              <Input aria-label={`fixed ${k}`} type="number" mono value={cfg.fixed[k]} disabled={ax !== null}
+              <Input aria-label={`fixed ${k}`} type="number" mono step={PARAMS[k].step} value={cfg.fixed[k]} disabled={ax !== null}
                 onChange={(e) => setFixed(k, num(e.target.value, cfg.fixed[k]))} />
             </Field>
           );
