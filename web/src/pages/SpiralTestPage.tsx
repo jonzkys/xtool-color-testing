@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Button, Card, Field, PageContainer, Section } from "../ui";
+import { Button, Card, Field, Input, PageContainer, Section } from "../ui";
 import { SpiralTestControls } from "../components/spiraltest/SpiralTestControls";
 import { SpiralTestPreview } from "../components/spiraltest/SpiralTestPreview";
 import { buildSpiralTest, type SpiralTestConfig } from "../lib/forge/spiralTest";
@@ -15,7 +15,7 @@ const DEFAULT_CFG: SpiralTestConfig = {
   score: { power: 8, speed: 300, passes: 1 },
 };
 
-/** Parse a numeric field, keeping the previous value on empty/NaN — and crucially
+/** Parse a numeric field, keeping the prior value on empty/NaN — and crucially
  *  NOT clobbering a valid 0 (which `parseFloat(v) || fallback` would). */
 function num(v: string, fallback: number): number {
   const n = parseFloat(v);
@@ -34,33 +34,73 @@ export function SpiralTestPage() {
     URL.revokeObjectURL(url);
   };
 
+  const setCut = <K extends keyof SpiralTestConfig["cut"]>(k: K, v: SpiralTestConfig["cut"][K]) =>
+    setCfg({ ...cfg, cut: { ...cfg.cut, [k]: v } });
+
   return (
-    <PageContainer>
-      <div className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)_280px] items-stretch gap-4">
-        <div className="overflow-y-auto pr-1">
-          <SpiralTestControls cfg={cfg} onChange={setCfg} footprint={result.footprintMm} overBed={result.overBed} />
+    <div className="relative flex flex-col" style={{ height: "calc(100dvh - 56px)" }}>
+      <PageContainer maxWidth="wide" className="relative flex min-h-0 flex-1 flex-col overflow-hidden pt-3 pb-3">
+        {/* Header band — gives the page breathing room under the top bar and a
+            live status (cell count + footprint, ember when it exceeds the bed). */}
+        <div className="flex shrink-0 items-baseline gap-3 pb-1">
+          <h1 className="font-mono text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-ink-subtle)]">
+            Spiral Test
+          </h1>
+          <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-[color:var(--color-ink-subtle)]/70">
+            parameter sweep
+          </span>
+          <span className="ml-auto font-mono text-[11px] tabular-nums"
+            style={{ color: result.overBed ? "var(--color-primary)" : "var(--color-ink-muted)" }}>
+            {result.cells.length} cells · {result.footprintMm.w.toFixed(0)}×{result.footprintMm.h.toFixed(0)} mm
+            {result.overBed ? " · exceeds bed" : ""}
+          </span>
         </div>
-        <Card padded={false} className="flex min-h-0 flex-1 p-3">
-          <SpiralTestPreview result={result} />
-        </Card>
-        <div className="flex flex-col gap-4 overflow-y-auto pl-1">
-          <Section title="Cut params" dense>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Passes"><input aria-label="passes" type="number" value={cfg.cut.passes}
-                onChange={(e) => setCfg({ ...cfg, cut: { ...cfg.cut, passes: num(e.target.value, cfg.cut.passes) } })} /></Field>
-              <Field label="Power"><input aria-label="power" type="number" value={cfg.cut.power}
-                onChange={(e) => setCfg({ ...cfg, cut: { ...cfg.cut, power: num(e.target.value, cfg.cut.power) } })} /></Field>
-              <Field label="Speed"><input aria-label="speed" type="number" value={cfg.cut.speed}
-                onChange={(e) => setCfg({ ...cfg, cut: { ...cfg.cut, speed: num(e.target.value, cfg.cut.speed) } })} /></Field>
-              <Field label="Focus step"><input aria-label="focus step" type="number" step="0.01" value={cfg.cut.focusStepMm}
-                onChange={(e) => setCfg({ ...cfg, cut: { ...cfg.cut, focusStepMm: num(e.target.value, cfg.cut.focusStepMm) } })} /></Field>
-            </div>
-          </Section>
-          <Section title="Export" dense>
-            <Button variant="primary" size="sm" className="w-full" onClick={onExport}>Export .xs</Button>
-          </Section>
+
+        <div className="grid min-h-0 flex-1 grid-cols-[272px_minmax(0,1fr)_248px] grid-rows-[minmax(0,1fr)] items-stretch gap-3 pt-3">
+          {/* Left rail — grid + layout config */}
+          <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1 [&>*]:shrink-0">
+            <SpiralTestControls cfg={cfg} onChange={setCfg} footprint={result.footprintMm} overBed={result.overBed} />
+          </div>
+
+          {/* Centre — live preview */}
+          <Card padded={false} className="flex min-h-0 min-w-0 p-3">
+            <SpiralTestPreview result={result} />
+          </Card>
+
+          {/* Right rail — cut params + export */}
+          <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pl-1 [&>*]:shrink-0">
+            <Section title="Cut params" dense>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Passes">
+                  <Input aria-label="passes" type="number" mono value={cfg.cut.passes}
+                    onChange={(e) => setCut("passes", num(e.target.value, cfg.cut.passes))} />
+                </Field>
+                <Field label="Power">
+                  <Input aria-label="power" type="number" mono value={cfg.cut.power}
+                    onChange={(e) => setCut("power", num(e.target.value, cfg.cut.power))} />
+                </Field>
+                <Field label="Speed">
+                  <Input aria-label="speed" type="number" mono value={cfg.cut.speed}
+                    onChange={(e) => setCut("speed", num(e.target.value, cfg.cut.speed))} />
+                </Field>
+                <Field label="Focus step">
+                  <Input aria-label="focus step" type="number" mono step={0.01} value={cfg.cut.focusStepMm}
+                    onChange={(e) => setCut("focusStepMm", num(e.target.value, cfg.cut.focusStepMm))} />
+                </Field>
+              </div>
+            </Section>
+
+            <Section title="Export" dense>
+              <Button variant="primary" size="sm" className="w-full" onClick={onExport}>
+                Export .xs
+              </Button>
+              <p className="mt-2 font-mono text-[10px] leading-relaxed text-[color:var(--color-ink-subtle)]">
+                One .xs: spiral cuts + engraved labels as two operations.
+              </p>
+            </Section>
+          </div>
         </div>
-      </div>
-    </PageContainer>
+      </PageContainer>
+    </div>
   );
 }
