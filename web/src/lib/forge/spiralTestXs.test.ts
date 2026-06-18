@@ -3,6 +3,16 @@ import { buildSpiralTest, type SpiralTestConfig } from "./spiralTest";
 import { buildSpiralTestXs } from "./spiralTestXs";
 import { isXsBuffer, xsToLegacyRaw } from "./xs";
 import { PARAMS, PARAM_ORDER, type ParamKey } from "./spiralParams";
+import type { ValidationProfile } from "../../types";
+
+const CUT_PROFILE: ValidationProfile = {
+  power: { kind: "range", min: 1, max: 100, step: 1 },
+  speed: { kind: "range", min: 2, max: 10000, step: 1 },
+  frequency: { kind: "range", min: 1, max: 4000, step: 1 },
+  passes: { kind: "range", min: 1, max: 300, step: 1 },
+  pulse_width: { kind: "stepped", values: [2, 4, 6, 9, 13, 20, 30, 45, 60, 80, 100, 150, 200, 250, 350, 500] },
+  laser: { kind: "enum", values: ["red", "blue"] },
+};
 
 function baseCfg(over: Partial<SpiralTestConfig> = {}): SpiralTestConfig {
   const fixed = Object.fromEntries(PARAM_ORDER.map((k) => [k, PARAMS[k].defaultFixed])) as Record<ParamKey, number>;
@@ -68,5 +78,14 @@ describe("buildSpiralTestXs", () => {
       return cz?.power === 65 && cz?.speed === 1944 && cz?.density === 300 && cz?.bitmapScanMode === "zMode";
     });
     expect(anyFill).toBe(true);
+  });
+  it("a pulse-width sweep emits distinct cut pulse widths from the allowed set", () => {
+    const cfg = baseCfg({ xParam: "pulseWidth", yParam: "pitch", xAxis: { min: 60, max: 150, steps: 99 } });
+    const { raw } = xsToLegacyRaw(buildSpiralTestXs(buildSpiralTest(cfg, CUT_PROFILE), cfg));
+    const pws = new Set(cutCustomizes(raw).map((c) => c.pulseWidth));
+    expect(pws.has(60)).toBe(true);
+    expect(pws.has(80)).toBe(true);
+    expect(pws.has(150)).toBe(true);
+    expect(pws.has(83)).toBe(false); // only allowed values appear
   });
 });

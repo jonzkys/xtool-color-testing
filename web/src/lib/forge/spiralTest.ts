@@ -8,7 +8,9 @@
 import type { GeneratedPath, Pt, StageParams } from "./types";
 import { spiralFromRegion } from "./spiral";
 import { renderText, textWidth } from "./textPaths";
-import { PARAMS, PARAM_ORDER, PROFILE_KEYS, formatValue, resolveAxis, type AxisSpec, type ParamKey } from "./spiralParams";
+import { PARAMS, PARAM_ORDER, PROFILE_KEYS, formatValue, type AxisSpec, type ParamKey } from "./spiralParams";
+import { clampParam, resolveAxisValues } from "./spiralLimits";
+import type { ValidationProfile } from "../../types";
 
 export type { AxisSpec, ParamKey } from "./spiralParams";
 export { resolveAxis } from "./spiralParams";
@@ -116,9 +118,9 @@ function stageParamsOf(map: Record<ParamKey, number>, cfg: SpiralTestConfig): St
   };
 }
 
-export function buildSpiralTest(cfg: SpiralTestConfig): SpiralTestResult {
-  const xVals = resolveAxis(cfg.xAxis).map((v) => PARAMS[cfg.xParam].clamp(v));
-  const yVals = resolveAxis(cfg.yAxis).map((v) => PARAMS[cfg.yParam].clamp(v));
+export function buildSpiralTest(cfg: SpiralTestConfig, profile: ValidationProfile | null = null): SpiralTestResult {
+  const xVals = resolveAxisValues(profile, cfg.xParam, cfg.xAxis);
+  const yVals = resolveAxisValues(profile, cfg.yParam, cfg.yAxis);
   const show = cfg.labels.show;
 
   // Channel-width values present anywhere in the grid → max for a uniform cell.
@@ -161,7 +163,11 @@ export function buildSpiralTest(cfg: SpiralTestConfig): SpiralTestResult {
 
   for (let row = 0; row < yVals.length; row++) {
     for (let col = 0; col < xVals.length; col++) {
-      const paramMap = { ...cfg.fixed, [cfg.xParam]: xVals[col], [cfg.yParam]: yVals[row] } as Record<ParamKey, number>;
+      const paramMap = Object.fromEntries(
+        PARAM_ORDER.map((k) => [k, clampParam(profile, k, cfg.fixed[k])]),
+      ) as Record<ParamKey, number>;
+      paramMap[cfg.xParam] = xVals[col];
+      paramMap[cfg.yParam] = yVals[row];
       const cx = gridX0 + cell / 2 + col * cell;
       const cy = gridY0 + cell / 2 + row * cell;
 
