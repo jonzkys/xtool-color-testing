@@ -28,10 +28,14 @@ const intMin1 = (v: number) => Math.max(1, Math.round(v));
 const nonNeg = (v: number) => Math.max(0, v);
 const positive = (v: number) => Math.max(1e-4, v);
 const pct = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
+// Pitch is the spiral's trench spacing; the generator builds ~channelWidth/pitch
+// offset levels, so a near-zero pitch explodes the point count and freezes the
+// build. Floor it at a physically sane 0.01 mm (10 µm) — well below any real cut.
+const pitchClamp = (v: number) => Math.max(0.01, v);
 
 export const PARAMS: Record<ParamKey, ParamDef> = {
   channelWidth:  { key: "channelWidth",  label: "Channel width", abbrev: "CW", unit: "mm",     dp: 2, step: 0.05,  kind: "geometry", clamp: positive, defaultFixed: 0.8,  defaultAxis: { min: 0.6,  max: 1.0,  steps: 4 } },
-  pitch:         { key: "pitch",         label: "Pitch",         abbrev: "PT", unit: "mm",     dp: 3, step: 0.005, kind: "geometry", clamp: positive, defaultFixed: 0.04, defaultAxis: { min: 0.03, max: 0.05, steps: 4 } },
+  pitch:         { key: "pitch",         label: "Pitch",         abbrev: "PT", unit: "mm",     dp: 3, step: 0.005, kind: "geometry", clamp: pitchClamp, defaultFixed: 0.04, defaultAxis: { min: 0.03, max: 0.05, steps: 4 } },
   speed:         { key: "speed",         label: "Speed",         abbrev: "S",  unit: "mm/s",   dp: 0, step: 50,    kind: "profile",  clamp: intMin1,  defaultFixed: 1500, defaultAxis: { min: 1000, max: 2000, steps: 4 } },
   passes:        { key: "passes",        label: "Passes",        abbrev: "PA", unit: "×",      dp: 0, step: 10,    kind: "profile",  clamp: intMin1,  defaultFixed: 250,  defaultAxis: { min: 150,  max: 300,  steps: 4 } },
   power:         { key: "power",         label: "Power",         abbrev: "P",  unit: "%",      dp: 0, step: 5,     kind: "profile",  clamp: pct,      defaultFixed: 100,  defaultAxis: { min: 60,   max: 100,  steps: 4 } },

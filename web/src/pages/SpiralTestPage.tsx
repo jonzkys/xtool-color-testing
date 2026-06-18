@@ -6,6 +6,7 @@ import { FixedParams } from "../components/spiraltest/FixedParams";
 import { buildSpiralTest, type SpiralTestConfig } from "../lib/forge/spiralTest";
 import { buildSpiralTestXs } from "../lib/forge/spiralTestXs";
 import { PARAMS, PARAM_ORDER, type ParamKey } from "../lib/forge/spiralParams";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
 
 const DEFAULT_CFG: SpiralTestConfig = {
   xParam: "channelWidth", yParam: "pitch",
@@ -27,10 +28,16 @@ function num(v: string, fallback: number): number {
 
 export function SpiralTestPage() {
   const [cfg, setCfg] = useState<SpiralTestConfig>(DEFAULT_CFG);
-  const result = useMemo(() => buildSpiralTest(cfg), [cfg]);
+  // Inputs stay instant (they read `cfg`); only the expensive build + preview
+  // run off a debounced copy, so a flurry of keystrokes can't lag the page or
+  // briefly explode a too-dense spiral mid-edit.
+  const debouncedCfg = useDebouncedValue(cfg, 400);
+  const result = useMemo(() => buildSpiralTest(debouncedCfg), [debouncedCfg]);
 
   const onExport = () => {
-    const buf = buildSpiralTestXs(result, cfg);
+    // Build fresh from the live cfg so the export always reflects the latest
+    // form values even if the debounced preview hasn't caught up yet.
+    const buf = buildSpiralTestXs(buildSpiralTest(cfg), cfg);
     const url = URL.createObjectURL(new Blob([buf], { type: "application/octet-stream" }));
     const a = document.createElement("a");
     a.href = url; a.download = "spiral-test.xs"; a.click();

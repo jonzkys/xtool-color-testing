@@ -36,7 +36,9 @@ describe("spiralParams registry", () => {
     expect(PARAMS.power.clamp(150)).toBe(100);         // 0..100
     expect(PARAMS.power.clamp(-5)).toBe(0);
     expect(PARAMS.pulseWidth.clamp(-3)).toBe(0);       // >= 0
-    expect(PARAMS.pitch.clamp(-1)).toBeGreaterThan(0); // > 0
+    expect(PARAMS.pitch.clamp(-1)).toBe(0.01);         // floored at 0.01 (no near-zero spiral explosion)
+    expect(PARAMS.pitch.clamp(0)).toBe(0.01);
+    expect(PARAMS.pitch.clamp(0.04)).toBe(0.04);       // normal values pass through
     expect(PARAMS.focusStep.clamp(0)).toBe(0);         // >= 0
   });
 });
