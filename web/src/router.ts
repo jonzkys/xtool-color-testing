@@ -16,6 +16,7 @@ export type Route =
   | { name: "styleguide" }
   | { name: "guide" }
   | { name: "spiral" }
+  | { name: "spiral-test" }
   | { name: "forge" }
   | { name: "changelog" }
   | { name: "gcode" }
@@ -63,6 +64,7 @@ export function parseRoute(hash: string): Route {
   if (mst) return { name: "stability", id: Number(mst[1]) };
   if (h === "styleguide") return { name: "styleguide" };
   if (h === "guide") return { name: "guide" };
+  if (h === "spiral-test") return { name: "spiral-test" };
   if (h === "spiral") return { name: "spiral" };
   if (h === "forge") return { name: "forge" };
   if (h === "changelog") return { name: "changelog" };
@@ -105,6 +107,7 @@ export function formatRoute(r: Route): string {
     case "styleguide":  return "#/styleguide";
     case "guide":       return "#/guide";
     case "spiral":      return "#/spiral";
+    case "spiral-test": return "#/spiral-test";
     case "forge":       return "#/forge";
     case "changelog":   return "#/changelog";
     case "gcode":       return "#/gcode";
