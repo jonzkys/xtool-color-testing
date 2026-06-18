@@ -8,18 +8,10 @@
 import type { GeneratedPath, Pt, StageParams } from "./types";
 import { spiralFromRegion } from "./spiral";
 import { renderText, textWidth } from "./textPaths";
-import { PARAMS, PARAM_ORDER, PROFILE_KEYS, formatValue, type AxisSpec, type ParamKey } from "./spiralParams";
+import { PARAMS, PARAM_ORDER, PROFILE_KEYS, formatValue, resolveAxis, type AxisSpec, type ParamKey } from "./spiralParams";
 
 export type { AxisSpec, ParamKey } from "./spiralParams";
-
-/** `steps` values linearly spaced over [min, max] (steps>=1; 1 → [min]). */
-export function resolveAxis(a: AxisSpec): number[] {
-  const n = Math.max(1, Math.floor(a.steps));
-  if (n === 1) return [a.min];
-  const out: number[] = [];
-  for (let i = 0; i < n; i++) out.push(a.min + ((a.max - a.min) * i) / (n - 1));
-  return out;
-}
+export { resolveAxis } from "./spiralParams";
 
 /** One closed loop of `segments` points on a circle of diameter `d` at (cx,cy). */
 export function circleRegion(cx: number, cy: number, d: number, segments = 96): Pt[][] {
