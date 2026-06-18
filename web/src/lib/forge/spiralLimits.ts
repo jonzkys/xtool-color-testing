@@ -28,6 +28,17 @@ function steppedInRange(values: number[], lo: number, hi: number): number[] {
   return values.filter((w) => w >= a && w <= b).sort((x, y) => x - y);
 }
 
+/** The discrete value set for a stepped param: the constraint's values, or the
+ *  hard-coded pulse-width set as a loading fallback; null for non-stepped. Used
+ *  by both resolveAxisValues and steppedValues so they never disagree on the
+ *  null-profile (registry-loading) fallback. */
+function steppedSetFor(profile: ValidationProfile | null, key: ParamKey): number[] | null {
+  const c = constraintFor(profile, key);
+  if (c?.kind === "stepped") return c.values as number[];
+  if (key === "pulseWidth") return [...ALLOWED_PULSE_WIDTHS];
+  return null;
+}
+
 /** Clamp/snap a value to the machine constraint, or the param's app clamp when
  *  unbound / loading. Machine constraints are coerced via the canonical
  *  clampToConstraint (range clamp+snap-from-min, stepped nearest) so this never
@@ -40,11 +51,10 @@ export function clampParam(profile: ValidationProfile | null, key: ParamKey, v: 
 
 /** The swept values for an axis, machine-aware. */
 export function resolveAxisValues(profile: ValidationProfile | null, key: ParamKey, axis: AxisSpec): number[] {
-  const c = constraintFor(profile, key);
-  if (c?.kind === "stepped") {
-    const vals = c.values as number[];
-    const inRange = steppedInRange(vals, axis.min, axis.max);
-    return inRange.length > 0 ? inRange : [snapStepped(vals, (axis.min + axis.max) / 2)];
+  const stepped = steppedSetFor(profile, key);
+  if (stepped) {
+    const inRange = steppedInRange(stepped, axis.min, axis.max);
+    return inRange.length > 0 ? inRange : [snapStepped(stepped, (axis.min + axis.max) / 2)];
   }
   return resolveAxis(axis).map((v) => clampParam(profile, key, v));
 }
@@ -52,8 +62,6 @@ export function resolveAxisValues(profile: ValidationProfile | null, key: ParamK
 /** Discrete option list for a stepped param (for a <Select>), sorted ascending;
  *  the pulse-width set is the loading fallback; null for non-stepped params. */
 export function steppedValues(profile: ValidationProfile | null, key: ParamKey): number[] | null {
-  const c = constraintFor(profile, key);
-  if (c?.kind === "stepped") return (c.values as number[]).slice().sort((a, b) => a - b);
-  if (key === "pulseWidth") return [...ALLOWED_PULSE_WIDTHS];
-  return null;
+  const s = steppedSetFor(profile, key);
+  return s ? s.slice().sort((a, b) => a - b) : null;
 }

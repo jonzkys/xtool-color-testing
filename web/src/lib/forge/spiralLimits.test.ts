@@ -23,7 +23,6 @@ describe("clampParam", () => {
     expect(clampParam(PROFILE, "speed", 99999)).toBe(10000);
     expect(clampParam(PROFILE, "speed", 1.4)).toBe(2);
     expect(clampParam(PROFILE, "power", 150)).toBe(100);
-    expect(clampParam(PROFILE, "passes", 999)).toBe(300);
   });
   it("stepped params snap to the nearest allowed value", () => {
     expect(clampParam(PROFILE, "pulseWidth", 83)).toBe(80);
@@ -32,6 +31,11 @@ describe("clampParam", () => {
   it("unbound params fall back to the app clamp", () => {
     expect(clampParam(PROFILE, "pitch", -1)).toBe(0.01); // pitch app floor
     expect(clampParam(PROFILE, "channelWidth", -1)).toBeGreaterThan(0);
+    // passes is intentionally app-bound (not machine-limited to Studio's 300):
+    // capped at 10000 even when the profile says 300.
+    expect(clampParam(PROFILE, "passes", 999)).toBe(999);
+    expect(clampParam(PROFILE, "passes", 99999)).toBe(10000);
+    expect(clampParam(PROFILE, "passes", 0.2)).toBe(1);
   });
   it("null profile falls back to the app clamp even for machine-bound params", () => {
     expect(clampParam(null, "speed", 1.4)).toBe(1); // app intMin1 (round, >=1)
@@ -50,6 +54,10 @@ describe("resolveAxisValues", () => {
   });
   it("null profile uses the app linspace+clamp path", () => {
     expect(resolveAxisValues(null, "speed", { min: 1000, max: 2000, steps: 2 })).toEqual([1000, 2000]);
+  });
+  it("pulse width sweeps the discrete fallback set even when the profile is null (loading)", () => {
+    // Mirrors steppedValues' null fallback so the readout matches the discrete selects.
+    expect(resolveAxisValues(null, "pulseWidth", { min: 60, max: 150, steps: 99 })).toEqual([60, 80, 100, 150]);
   });
 });
 
