@@ -39,20 +39,20 @@ export function SpiralTestControls({ cfg, onChange, footprint, overBed }: Props)
   const ys = resolveAxis(cfg.yAxis).map((v) => formatValue(cfg.yParam, PARAMS[cfg.yParam].clamp(v))).join(", ");
 
   const axisRange = (
-    which: "x" | "y", axis: AxisSpec, set: (a: AxisSpec) => void,
+    which: "x" | "y", axis: AxisSpec, commit: (a: AxisSpec) => void,
   ) => (
     <div className="grid grid-cols-3 gap-2">
       <Field label="Min">
         <Input aria-label={`${which} min`} type="number" mono value={axis.min}
-          onChange={(e) => set({ ...axis, min: num(e.target.value, axis.min) })} />
+          onChange={(e) => commit({ ...axis, min: num(e.target.value, axis.min) })} />
       </Field>
       <Field label="Max">
         <Input aria-label={`${which} max`} type="number" mono value={axis.max}
-          onChange={(e) => set({ ...axis, max: num(e.target.value, axis.max) })} />
+          onChange={(e) => commit({ ...axis, max: num(e.target.value, axis.max) })} />
       </Field>
       <Field label="Steps">
         <Input aria-label={`${which} steps`} type="number" mono step={1} value={axis.steps}
-          onChange={(e) => set({ ...axis, steps: num(e.target.value, axis.steps) })} />
+          onChange={(e) => commit({ ...axis, steps: num(e.target.value, axis.steps) })} />
       </Field>
     </div>
   );
