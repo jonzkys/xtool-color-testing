@@ -30,3 +30,54 @@ describe("formatLabel", () => {
     expect(formatLabel(1, 0.035)).toBe("1.00/0.035");
   });
 });
+
+import { buildSpiralTest, type SpiralTestConfig } from "./spiralTest";
+
+const CFG: SpiralTestConfig = {
+  channelWidth: { min: 0.6, max: 1.0, steps: 3 }, // 3 cols
+  pitch: { min: 0.03, max: 0.05, steps: 2 },       // 2 rows
+  diameterMm: 8,
+  side: "outside",
+  minChannelMm: 0.4,
+  gapMm: 4,
+  bedMm: { w: 300, h: 300 },
+  label: { sizeMm: 2.5, show: true },
+  cut: { passes: 200, focusInitialMm: 0.01, focusStepMm: 0.06, focusIntervalPasses: 20,
+         power: 100, speed: 1500, frequency: 65, pulseWidth: 80, laser: "red" },
+  score: { power: 8, speed: 300, passes: 1 },
+};
+
+describe("buildSpiralTest", () => {
+  it("produces one cell per (col,row) with the swept channel/pitch", () => {
+    const r = buildSpiralTest(CFG);
+    expect(r.cells.length).toBe(6); // 3 × 2
+    const c00 = r.cells.find((c) => c.col === 0 && c.row === 0)!;
+    expect(c00.channelWidthMm).toBeCloseTo(0.6, 5);
+    expect(c00.pitchMm).toBeCloseTo(0.03, 5);
+    const c21 = r.cells.find((c) => c.col === 2 && c.row === 1)!;
+    expect(c21.channelWidthMm).toBeCloseTo(1.0, 5);
+    expect(c21.pitchMm).toBeCloseTo(0.05, 5);
+  });
+  it("emits cut GeneratedPaths (spiral class) plus one score path per cell", () => {
+    const r = buildSpiralTest(CFG);
+    expect(r.cutPaths.length).toBeGreaterThanOrEqual(6); // >=1 arm per cell
+    expect(r.cutPaths.every((p) => p.generatedClass === "spiral")).toBe(true);
+    expect(r.cutPaths.every((p) => p.groupName === "CUT_SPIRAL")).toBe(true);
+    expect(r.cutPaths.every((p) => p.rings.length === 1)).toBe(true); // one arm per path
+    expect(r.labelPaths.length).toBe(6);
+    expect(r.labelPaths.every((p) => p.generatedClass === "spiral")).toBe(true);
+    expect(r.labelPaths.every((p) => p.groupName === "SCORE_LABEL")).toBe(true);
+  });
+  it("computes footprint and over-bed flag", () => {
+    const r = buildSpiralTest(CFG);
+    expect(r.footprintMm.w).toBeGreaterThan(0);
+    expect(r.footprintMm.h).toBeGreaterThan(0);
+    expect(r.overBed).toBe(false);
+    const tiny = buildSpiralTest({ ...CFG, bedMm: { w: 5, h: 5 } });
+    expect(tiny.overBed).toBe(true);
+  });
+  it("omits labels when label.show is false", () => {
+    const r = buildSpiralTest({ ...CFG, label: { sizeMm: 2.5, show: false } });
+    expect(r.labelPaths.length).toBe(0);
+  });
+});
