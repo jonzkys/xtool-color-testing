@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Button, Card, Field, Input, PageContainer, Section } from "../ui";
+import { Button, Card, Field, Input, PageContainer, Section, Select } from "../ui";
 import { SpiralTestControls } from "../components/spiraltest/SpiralTestControls";
 import { SpiralTestPreview } from "../components/spiraltest/SpiralTestPreview";
 import { buildSpiralTest, type SpiralTestConfig } from "../lib/forge/spiralTest";
@@ -13,7 +13,8 @@ const DEFAULT_CFG: SpiralTestConfig = {
   bedMm: { w: 300, h: 300 }, label: { sizeMm: 2.5, show: true },
   cut: { passes: 250, focusInitialMm: 0.01, focusStepMm: 0.06, focusIntervalPasses: 20,
          power: 100, speed: 1500, frequency: 65, pulseWidth: 80, laser: "red" },
-  score: { power: 8, speed: 300, passes: 1 },
+  // Label engrave — MOPA IR text-engrave preset (vector line-engrave).
+  score: { laser: "red", power: 65, speed: 1944, passes: 1, pulseWidth: 500, frequency: 65 },
 };
 
 /** Parse a numeric field, keeping the prior value on empty/NaN — and crucially
@@ -37,6 +38,8 @@ export function SpiralTestPage() {
 
   const setCut = <K extends keyof SpiralTestConfig["cut"]>(k: K, v: SpiralTestConfig["cut"][K]) =>
     setCfg({ ...cfg, cut: { ...cfg.cut, [k]: v } });
+  const setScore = <K extends keyof SpiralTestConfig["score"]>(k: K, v: SpiralTestConfig["score"][K]) =>
+    setCfg({ ...cfg, score: { ...cfg.score, [k]: v } });
 
   return (
     <div className="relative flex flex-col" style={{ height: "calc(100dvh - 56px)" }}>
@@ -115,6 +118,42 @@ export function SpiralTestPage() {
                   </div>
                 </div>
               </div>
+            </Section>
+
+            <Section title="Label engrave" dense>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Laser" className="col-span-2">
+                  <Select aria-label="label laser" value={cfg.score.laser}
+                    onChange={(e) => setScore("laser", e.target.value as SpiralTestConfig["score"]["laser"])}>
+                    <option value="red">MOPA IR</option>
+                    <option value="blue">Blue</option>
+                    <option value="uv">UV</option>
+                  </Select>
+                </Field>
+                <Field label="Power (%)">
+                  <Input aria-label="label power" type="number" mono value={cfg.score.power}
+                    onChange={(e) => setScore("power", num(e.target.value, cfg.score.power))} />
+                </Field>
+                <Field label="Speed (mm/s)">
+                  <Input aria-label="label speed" type="number" mono value={cfg.score.speed}
+                    onChange={(e) => setScore("speed", num(e.target.value, cfg.score.speed))} />
+                </Field>
+                <Field label="Pass">
+                  <Input aria-label="label pass" type="number" mono value={cfg.score.passes}
+                    onChange={(e) => setScore("passes", Math.max(1, Math.round(num(e.target.value, cfg.score.passes))))} />
+                </Field>
+                <Field label="Pulse width (ns)">
+                  <Input aria-label="label pulse width" type="number" mono value={cfg.score.pulseWidth}
+                    onChange={(e) => setScore("pulseWidth", num(e.target.value, cfg.score.pulseWidth))} />
+                </Field>
+                <Field label="Frequency (kHz)">
+                  <Input aria-label="label frequency" type="number" mono value={cfg.score.frequency}
+                    onChange={(e) => setScore("frequency", num(e.target.value, cfg.score.frequency))} />
+                </Field>
+              </div>
+              <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-[color:var(--color-ink-subtle)]">
+                Vector engrave along the label strokes.
+              </p>
             </Section>
 
             <Section title="Export" dense>

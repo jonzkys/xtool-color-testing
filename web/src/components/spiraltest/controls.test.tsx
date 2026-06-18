@@ -8,7 +8,7 @@ const CFG: SpiralTestConfig = {
   diameterMm: 10, side: "outside", minChannelMm: 0.4, gapMm: 4, bedMm: { w: 300, h: 300 },
   label: { sizeMm: 2.5, show: true },
   cut: { passes: 250, focusInitialMm: 0.01, focusStepMm: 0.06, focusIntervalPasses: 20, power: 100, speed: 1500, frequency: 65, pulseWidth: 80, laser: "red" },
-  score: { power: 8, speed: 300, passes: 1 },
+  score: { laser: "red", power: 65, speed: 1944, passes: 1, pulseWidth: 500, frequency: 65 },
 };
 
 describe("SpiralTestControls", () => {

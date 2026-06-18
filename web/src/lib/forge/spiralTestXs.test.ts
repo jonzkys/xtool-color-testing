@@ -10,11 +10,11 @@ const CFG: SpiralTestConfig = {
   bedMm: { w: 300, h: 300 }, label: { sizeMm: 2.5, show: true },
   cut: { passes: 200, focusInitialMm: 0.01, focusStepMm: 0.06, focusIntervalPasses: 20,
          power: 100, speed: 1500, frequency: 65, pulseWidth: 80, laser: "red" },
-  score: { power: 8, speed: 300, passes: 1 },
+  score: { laser: "red", power: 65, speed: 1944, passes: 1, pulseWidth: 500, frequency: 65 },
 };
 
 describe("buildSpiralTestXs", () => {
-  it("emits a valid .xs that round-trips with both cut and score operations", () => {
+  it("emits a valid .xs that round-trips with a VECTOR_CUTTING cut op + a VECTOR_ENGRAVING label op", () => {
     const result = buildSpiralTest(CFG);
     const buf = buildSpiralTestXs(result, CFG);
     expect(isXsBuffer(buf)).toBe(true);
@@ -29,8 +29,9 @@ describe("buildSpiralTestXs", () => {
 
     const entries = r.device.data.value[0][1].displays.value;
     const types = entries.map(([, e]) => e.processingType);
-    // every generated path is VECTOR_CUTTING (labels are low-power single-pass cuts)
-    expect(types.every((t) => t === "VECTOR_CUTTING")).toBe(true);
+    // two operations: spiral cuts (VECTOR_CUTTING) + engraved labels (VECTOR_ENGRAVING)
+    expect(types).toContain("VECTOR_CUTTING");
+    expect(types).toContain("VECTOR_ENGRAVING");
 
     // the cut group carries focus step-down; at least one entry has it on
     const anyFocus = entries.some(([, e]) => {
@@ -38,11 +39,12 @@ describe("buildSpiralTestXs", () => {
       return cz?.cuttingDrop === true && cz?.descentPerStep === 0.06;
     });
     expect(anyFocus).toBe(true);
-    // at least one entry is the low-power label op (power 8, no descent)
-    const anyLabel = entries.some(([, e]) => {
-      const cz = e.data?.VECTOR_CUTTING?.parameter?.customize as Record<string, unknown> | undefined;
-      return cz?.power === 8 && cz?.cuttingDrop === false;
+    // at least one entry is the label vector-engrave op carrying the MOPA IR params
+    const anyEngrave = entries.some(([, e]) => {
+      const cz = e.data?.VECTOR_ENGRAVING?.parameter?.customize as Record<string, unknown> | undefined;
+      return cz?.power === 65 && cz?.speed === 1944 && cz?.pulseWidth === 500
+        && cz?.mopaFrequency === 65 && cz?.processingLightSource === "red";
     });
-    expect(anyLabel).toBe(true);
+    expect(anyEngrave).toBe(true);
   });
 });

@@ -45,7 +45,11 @@ export interface SpiralTestConfig {
     passes: number; focusInitialMm: number; focusStepMm: number; focusIntervalPasses: number;
     power: number; speed: number; frequency: number; pulseWidth: number; laser: "red" | "blue" | "uv";
   };
-  score: { power: number; speed: number; passes: number };
+  /** Label engrave op (a VECTOR_ENGRAVING pass along the single-stroke text). */
+  score: {
+    laser: "red" | "blue" | "uv"; power: number; speed: number; passes: number;
+    pulseWidth: number; frequency: number;
+  };
 }
 
 export interface CellInfo {

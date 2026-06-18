@@ -66,6 +66,9 @@ export function buildSpiralTestXs(result: SpiralTestResult, cfg: SpiralTestConfi
   const parsed = parseXcsFile(TEMPLATE_BYTES);
   const inciseId = parsed.targets[0].id;
 
+  // Only the cut group needs stageParams — buildGeneratedXcs emits every spiral
+  // path as VECTOR_CUTTING, then we retag the label group's device entries to a
+  // VECTOR_ENGRAVING op below (a vector line-engrave along the single-stroke text).
   const stageParams: Record<string, StageParams> = {
     CUT_SPIRAL: {
       power: cfg.cut.power, speed: cfg.cut.speed, passes: cfg.cut.passes,
@@ -74,10 +77,6 @@ export function buildSpiralTestXs(result: SpiralTestResult, cfg: SpiralTestConfi
       firstCuttingDropValue: cfg.cut.focusInitialMm, cuttingDropValue: cfg.cut.focusInitialMm,
       descentIntervalDescent: cfg.cut.focusIntervalPasses, descentPerStep: cfg.cut.focusStepMm,
     },
-    SCORE_LABEL: {
-      power: cfg.score.power, speed: cfg.score.speed, passes: cfg.score.passes,
-      laser: "red", cuttingDrop: false,
-    },
   };
 
   const allPaths = [...result.cutPaths, ...result.labelPaths];
@@ -85,5 +84,52 @@ export function buildSpiralTestXs(result: SpiralTestResult, cfg: SpiralTestConfi
     parsed, inciseId, allPaths, 1 /* mmPerUnit */, stageParams,
     undefined /* scanAngle */, false /* userOrder */, MAX_PATH_POINTS, false /* joinStrands */,
   );
+  retagLabelsAsEngrave(doc, cfg.score);
   return legacyRawToXs(doc, null, false);
+}
+
+/** VECTOR_ENGRAVING device entry mirroring a real Studio vector-engrave op. */
+function engraveEntry(score: SpiralTestConfig["score"]): Record<string, unknown> {
+  return {
+    isFill: false,
+    type: "PATH",
+    processingType: "VECTOR_ENGRAVING",
+    data: {
+      VECTOR_ENGRAVING: {
+        materialType: "customize",
+        planType: "blue",
+        parameter: {
+          customize: {
+            processingLightSource: score.laser,
+            power: score.power,
+            speed: score.speed,
+            repeat: score.passes,
+            pulseWidth: score.pulseWidth,
+            mopaFrequency: score.frequency,
+            enableKerf: false,
+            kerfDistance: 0,
+          },
+        },
+      },
+    },
+    processIgnore: false,
+    isWhiteModel: true,
+  };
+}
+
+/** Rewrite the SCORE_LABEL group's device entries (emitted as VECTOR_CUTTING by
+ *  buildGeneratedXcs) into a VECTOR_ENGRAVING op, so the labels engrave rather
+ *  than cut. The display geometry the writer produced is reused as-is. */
+function retagLabelsAsEngrave(doc: unknown, score: SpiralTestConfig["score"]): void {
+  const d = doc as {
+    canvas: Array<{ displays: Array<{ id: string; name?: string }> }>;
+    device: { data: { value: Array<[string, { displays: { value: Array<[string, unknown]> } }]> } };
+  };
+  const labelIds = new Set(
+    d.canvas[0].displays.filter((disp) => disp.name === "SCORE_LABEL").map((disp) => disp.id),
+  );
+  const entries = d.device.data.value[0][1].displays.value;
+  for (const pair of entries) {
+    if (labelIds.has(pair[0])) pair[1] = engraveEntry(score);
+  }
 }
