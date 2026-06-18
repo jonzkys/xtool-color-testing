@@ -56,3 +56,11 @@ export function ringsFillArea(rings: Pt[][]): number {
 export function ringsPerimeter(rings: Pt[][]): number {
   return rings.reduce((s, r) => s + loopPerimeter(r), 0);
 }
+
+/** Sum of |signed area| over all rings (mm²). Unlike ringsFillArea (outer minus
+ *  holes), this ADDS every ring — correct for a flat list of independent filled
+ *  shapes such as a multi-glyph label. (Over-counts glyph counters slightly,
+ *  which only feed the minor burn term in stageSeconds.) */
+export function ringsInkArea(rings: Pt[][]): number {
+  return rings.reduce((s, r) => s + Math.abs(signedArea(r)), 0);
+}

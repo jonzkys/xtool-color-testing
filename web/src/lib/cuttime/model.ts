@@ -82,3 +82,12 @@ export function fmtDuration(seconds: number): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
 }
+
+/** Linear vector-cut seconds: passes × (length/speed) + a tiny per-pass
+ *  overhead. Mirrors the Forge estimator's spiral branch; speed/passes floored
+ *  at 1. The companion to stageSeconds (raster) for length-based cuts. */
+export function vectorCutSeconds(lengthMm: number, passes: number, speedMmS: number): number {
+  const PER_PASS_OVERHEAD_S = 0.01;
+  const p = Math.max(1, passes);
+  return p * (Math.max(0, lengthMm) / Math.max(1, speedMmS) + PER_PASS_OVERHEAD_S);
+}

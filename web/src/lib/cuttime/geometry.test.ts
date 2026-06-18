@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ringsBBox, ringsFillArea, ringsPerimeter } from "./geometry";
+import { ringsBBox, ringsFillArea, ringsPerimeter, ringsInkArea } from "./geometry";
 
 type Pt = { x: number; y: number };
 const rect = (x: number, y: number, w: number, h: number): Pt[] => [
@@ -32,5 +32,16 @@ describe("ring geometry", () => {
     expect(ringsFillArea([])).toBe(0);
     expect(ringsBBox([])).toEqual({ w: 0, h: 0 });
     expect(ringsPerimeter([])).toBe(0);
+  });
+});
+
+describe("ringsInkArea", () => {
+  const sq = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
+  it("sums |area| over all rings (adds — unlike ringsFillArea's outer-minus-holes)", () => {
+    expect(ringsInkArea([sq])).toBeCloseTo(1, 6);
+    expect(ringsInkArea([sq, sq])).toBeCloseTo(2, 6);
+  });
+  it("is zero for no rings", () => {
+    expect(ringsInkArea([])).toBe(0);
   });
 });

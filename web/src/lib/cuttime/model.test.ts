@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stageSeconds, fmtDuration, DEFAULT_CALIBRATION } from "./model";
+import { stageSeconds, fmtDuration, DEFAULT_CALIBRATION, vectorCutSeconds } from "./model";
 import { ringsBBox, ringsFillArea } from "./geometry";
 
 type Pt = { x: number; y: number };
@@ -48,5 +48,17 @@ describe("cut-time model", () => {
     expect(fmtDuration(196)).toBe("3:16");
     expect(fmtDuration(11437)).toBe("3:10:37");
     expect(fmtDuration(0)).toBe("0:00");
+  });
+});
+
+describe("vectorCutSeconds", () => {
+  it("is passes × (length/speed) + a per-pass overhead", () => {
+    expect(vectorCutSeconds(1000, 2, 500)).toBeCloseTo(4.02, 6); // 2 × (1000/500 + 0.01)
+  });
+  it("floors passes and speed at 1", () => {
+    expect(vectorCutSeconds(100, 0, 0)).toBeCloseTo(100 / 1 + 0.01, 6); // passes→1, speed→1
+  });
+  it("zero length → just the per-pass overhead", () => {
+    expect(vectorCutSeconds(0, 3, 500)).toBeCloseTo(3 * 0.01, 6);
   });
 });
