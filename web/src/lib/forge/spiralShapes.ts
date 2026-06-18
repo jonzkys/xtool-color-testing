@@ -51,7 +51,10 @@ function bbox(rings: Pt[][]): { minX: number; minY: number; w: number; h: number
 }
 
 /** A glyph as a region: the baked outline, uniformly scaled so its larger
- *  dimension is `sizeMm`, centred at (cx,cy). */
+ *  dimension is `sizeMm`, centred at (cx,cy). USE SINGLE-SUBPATH GLYPHS ONLY
+ *  (e.g. "J"): a glyph with a counter ("O","A","B") yields multiple rings →
+ *  multiple spiral arms → multiple cut objects per cell, breaking the
+ *  one-continuous-movement guarantee. */
 function letterRegion(ch: string, cx: number, cy: number, sizeMm: number): Pt[][] {
   const raw = renderText(ch, sizeMm, { x: 0, y: 0 });
   const b = bbox(raw);
