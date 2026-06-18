@@ -112,6 +112,10 @@ export function buildSpiralTest(cfg: SpiralTestConfig): SpiralTestResult {
         const lx = cx - w / 2;                       // centred under the disc
         const ly = cy + r + maxCw + 1.0;             // just below the widest channel ring
         labelStrokes = renderLabel(labelText, cfg.label.sizeMm, { x: lx, y: ly });
+        // One GeneratedPath per label, but `rings` holds ALL the label's stroke
+        // segments (a multi-ring compound) — unlike cutPaths, which are strictly
+        // one arm per path. The writer emits every ring as one compound dPath, and
+        // the strokes are far under the point cap, so no per-arm split is needed.
         labelPaths.push({
           sourceObjectId: "spiral-test", generatedClass: "spiral", groupName: "SCORE_LABEL",
           layerStart: 0, layerEnd: cfg.score.passes, widthMultiplier: 1, offsetMm: 0,
