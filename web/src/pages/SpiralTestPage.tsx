@@ -4,6 +4,7 @@ import { SpiralTestControls } from "../components/spiraltest/SpiralTestControls"
 import { SpiralTestPreview } from "../components/spiraltest/SpiralTestPreview";
 import { buildSpiralTest, type SpiralTestConfig } from "../lib/forge/spiralTest";
 import { buildSpiralTestXs } from "../lib/forge/spiralTestXs";
+import { descentDepthMm } from "../lib/forge/depth";
 
 const DEFAULT_CFG: SpiralTestConfig = {
   channelWidth: { min: 0.6, max: 1.0, steps: 4 },
@@ -83,10 +84,36 @@ export function SpiralTestPage() {
                   <Input aria-label="speed" type="number" mono value={cfg.cut.speed}
                     onChange={(e) => setCut("speed", num(e.target.value, cfg.cut.speed))} />
                 </Field>
-                <Field label="Focus step">
-                  <Input aria-label="focus step" type="number" mono step={0.01} value={cfg.cut.focusStepMm}
-                    onChange={(e) => setCut("focusStepMm", num(e.target.value, cfg.cut.focusStepMm))} />
-                </Field>
+              </div>
+
+              {/* Focus descent — the cut's Z mechanism, matching the Spiral page:
+                  the focus walks down through the material as the spiral repeats. */}
+              <div className="mt-3 rounded border border-[color:var(--color-border)] p-2">
+                <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
+                  Focus descent
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Initial (mm)">
+                    <Input aria-label="focus initial" type="number" mono step={0.01} value={cfg.cut.focusInitialMm}
+                      onChange={(e) => setCut("focusInitialMm", Math.max(0, num(e.target.value, cfg.cut.focusInitialMm)))} />
+                  </Field>
+                  <Field label="Per step (mm)">
+                    <Input aria-label="focus step" type="number" mono step={0.01} value={cfg.cut.focusStepMm}
+                      onChange={(e) => setCut("focusStepMm", Math.max(0, num(e.target.value, cfg.cut.focusStepMm)))} />
+                  </Field>
+                  <Field label="Every N passes">
+                    <Input aria-label="focus interval passes" type="number" mono step={1} value={cfg.cut.focusIntervalPasses}
+                      onChange={(e) => setCut("focusIntervalPasses", Math.max(1, Math.round(num(e.target.value, cfg.cut.focusIntervalPasses))))} />
+                  </Field>
+                  <div className="flex flex-col justify-end pb-0.5">
+                    <span className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
+                      Descent @ {cfg.cut.passes}p
+                    </span>
+                    <span className="font-mono text-[12px] tabular-nums text-[color:var(--color-ink)]">
+                      {descentDepthMm(cfg.cut.passes, cfg.cut.focusIntervalPasses, cfg.cut.focusStepMm).toFixed(3)} mm
+                    </span>
+                  </div>
+                </div>
               </div>
             </Section>
 
