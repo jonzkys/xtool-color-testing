@@ -8,6 +8,8 @@ import { buildSpiralTestXs } from "../lib/forge/spiralTestXs";
 import { PARAMS, PARAM_ORDER, type ParamKey } from "../lib/forge/spiralParams";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useValidationProfile } from "../state/machine";
+import { estimateSpiralTestSeconds } from "../lib/forge/spiralTestTime";
+import { fmtDuration } from "../lib/cuttime/model";
 
 const DEFAULT_CFG: SpiralTestConfig = {
   xParam: "channelWidth", yParam: "pitch",
@@ -37,6 +39,8 @@ export function SpiralTestPage() {
   // briefly explode a too-dense spiral mid-edit.
   const debouncedCfg = useDebouncedValue(cfg, 400);
   const result = useMemo(() => buildSpiralTest(debouncedCfg, profile), [debouncedCfg, profile]);
+  // Ballpark job time (cut + label engrave); tracks the debounced preview.
+  const estSeconds = useMemo(() => estimateSpiralTestSeconds(result, debouncedCfg).totalSeconds, [result, debouncedCfg]);
 
   const onExport = () => {
     // Build fresh from the live cfg so the export always reflects the latest
@@ -64,6 +68,7 @@ export function SpiralTestPage() {
           <span className="ml-auto font-mono text-[11px] tabular-nums"
             style={{ color: result.overBed ? "var(--color-primary)" : "var(--color-ink-muted)" }}>
             {result.cells.length} cells · {result.footprintMm.w.toFixed(0)}×{result.footprintMm.h.toFixed(0)} mm
+            {" "}· ~{fmtDuration(estSeconds)}
             {result.overBed ? " · exceeds bed" : ""}
           </span>
         </div>
