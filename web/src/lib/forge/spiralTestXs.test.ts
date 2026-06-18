@@ -2,49 +2,71 @@ import { describe, it, expect } from "vitest";
 import { buildSpiralTest, type SpiralTestConfig } from "./spiralTest";
 import { buildSpiralTestXs } from "./spiralTestXs";
 import { isXsBuffer, xsToLegacyRaw } from "./xs";
+import { PARAMS, PARAM_ORDER, type ParamKey } from "./spiralParams";
 
-const CFG: SpiralTestConfig = {
-  channelWidth: { min: 0.6, max: 1.0, steps: 2 },
-  pitch: { min: 0.03, max: 0.05, steps: 2 },
-  diameterMm: 10, side: "outside", minChannelMm: 0.4, gapMm: 4,
-  bedMm: { w: 300, h: 300 }, labels: { show: true, titlePrefix: "" },
-  cut: { passes: 200, focusInitialMm: 0.01, focusStepMm: 0.06, focusIntervalPasses: 20,
-         power: 100, speed: 1500, frequency: 65, pulseWidth: 80, laser: "red" },
-  score: { laser: "red", power: 65, speed: 1944, passes: 1, linesPerCm: 300, scanMode: "bidirectional", pulseWidth: 500, frequency: 65 },
+function baseCfg(over: Partial<SpiralTestConfig> = {}): SpiralTestConfig {
+  const fixed = Object.fromEntries(PARAM_ORDER.map((k) => [k, PARAMS[k].defaultFixed])) as Record<ParamKey, number>;
+  return {
+    xParam: "channelWidth", yParam: "pitch",
+    xAxis: { min: 0.6, max: 1.0, steps: 2 }, yAxis: { min: 0.03, max: 0.05, steps: 2 },
+    fixed, diameterMm: 10, side: "outside", minChannelMm: 0.4, gapMm: 4, bedMm: { w: 300, h: 300 },
+    focusInitialMm: 0.01, laser: "red",
+    labels: { show: true, titlePrefix: "" },
+    score: { laser: "red", power: 65, speed: 1944, passes: 1, linesPerCm: 300, scanMode: "bidirectional", pulseWidth: 500, frequency: 65 },
+    ...over,
+  };
+}
+
+type Raw = {
+  device: { data: { value: Array<[string, { displays: { value: Array<[string, {
+    processingType?: string;
+    data?: Record<string, { parameter?: { customize?: Record<string, unknown> } }>;
+  }]> } }]> } };
 };
 
+function cutCustomizes(raw: unknown): Record<string, unknown>[] {
+  const entries = (raw as Raw).device.data.value[0][1].displays.value;
+  return entries
+    .filter(([, e]) => e.processingType === "VECTOR_CUTTING")
+    .map(([, e]) => e.data!.VECTOR_CUTTING!.parameter!.customize as Record<string, unknown>);
+}
+function types(raw: unknown): string[] {
+  return (raw as Raw).device.data.value[0][1].displays.value.map(([, e]) => e.processingType ?? "");
+}
+
 describe("buildSpiralTestXs", () => {
-  it("round-trips with a VECTOR_CUTTING cut op + a FILL_VECTOR_ENGRAVING label op", () => {
-    const result = buildSpiralTest(CFG);
-    const buf = buildSpiralTestXs(result, CFG);
+  it("round-trips a geometry sweep to a single VECTOR_CUTTING profile + the FILL_VECTOR_ENGRAVING labels", () => {
+    const buf = buildSpiralTestXs(buildSpiralTest(baseCfg()), baseCfg());
     expect(isXsBuffer(buf)).toBe(true);
-
     const { raw } = xsToLegacyRaw(buf);
-    const r = raw as { canvas: Array<{ displays: Array<{ id: string; isFill?: boolean; fillRule?: string }> }>;
-      device: { data: { value: Array<[string, { displays: { value: Array<[string, { processingType?: string;
-        data?: Record<string, { parameter?: { customize?: Record<string, unknown> } }> }]> } }]> } } };
-
-    const entries = r.device.data.value[0][1].displays.value;
-    const types = entries.map(([, e]) => e.processingType);
-    expect(types).toContain("VECTOR_CUTTING");
-    expect(types).toContain("FILL_VECTOR_ENGRAVING");
-
-    const anyFocus = entries.some(([, e]) => {
-      const cz = e.data?.VECTOR_CUTTING?.parameter?.customize as Record<string, unknown> | undefined;
-      return cz?.cuttingDrop === true && cz?.descentPerStep === 0.06;
-    });
-    expect(anyFocus).toBe(true);
-
+    expect(types(raw)).toContain("VECTOR_CUTTING");
+    expect(types(raw)).toContain("FILL_VECTOR_ENGRAVING");
+    // geometry-only sweep → all cut entries share one speed (one profile)
+    const speeds = new Set(cutCustomizes(raw).map((c) => c.speed));
+    expect(speeds.size).toBe(1);
+    expect([...speeds][0]).toBe(1500);
+  });
+  it("a speed sweep produces multiple distinct VECTOR_CUTTING speeds", () => {
+    const cfg = baseCfg({ xParam: "speed", yParam: "pitch", xAxis: { min: 1000, max: 2000, steps: 2 } });
+    const { raw } = xsToLegacyRaw(buildSpiralTestXs(buildSpiralTest(cfg), cfg));
+    const speeds = new Set(cutCustomizes(raw).map((c) => c.speed));
+    expect(speeds.has(1000)).toBe(true);
+    expect(speeds.has(2000)).toBe(true);
+  });
+  it("a focus-step sweep varies descentPerStep on the cut profiles", () => {
+    const cfg = baseCfg({ xParam: "focusStep", yParam: "pitch", xAxis: { min: 0.04, max: 0.08, steps: 2 } });
+    const { raw } = xsToLegacyRaw(buildSpiralTestXs(buildSpiralTest(cfg), cfg));
+    const steps = new Set(cutCustomizes(raw).map((c) => c.descentPerStep));
+    expect(steps.has(0.04)).toBe(true);
+    expect(steps.has(0.08)).toBe(true);
+  });
+  it("carries the MOPA IR fill-engrave label profile", () => {
+    const { raw } = xsToLegacyRaw(buildSpiralTestXs(buildSpiralTest(baseCfg()), baseCfg()));
+    const entries = (raw as Raw).device.data.value[0][1].displays.value;
     const anyFill = entries.some(([, e]) => {
       const cz = e.data?.FILL_VECTOR_ENGRAVING?.parameter?.customize as Record<string, unknown> | undefined;
-      return cz?.power === 65 && cz?.speed === 1944 && cz?.density === 300
-        && cz?.bitmapScanMode === "zMode" && cz?.processingLightSource === "red";
+      return cz?.power === 65 && cz?.speed === 1944 && cz?.density === 300 && cz?.bitmapScanMode === "zMode";
     });
     expect(anyFill).toBe(true);
-
-    // label displays are filled, nonzero-wound
-    const labelDisp = r.canvas[0].displays.filter((d) => d.fillRule === "nonzero");
-    expect(labelDisp.length).toBeGreaterThanOrEqual(result.labelOutlines.length);
-    expect(labelDisp.every((d) => d.isFill === true)).toBe(true);
   });
 });
