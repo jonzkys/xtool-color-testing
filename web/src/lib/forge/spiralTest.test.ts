@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { resolveAxis, circleRegion, formatLabel } from "./spiralTest";
+import { labelWidth } from "./strokeFont";
 
 describe("resolveAxis", () => {
   it("linearly spaces min..max over steps", () => {
@@ -79,5 +80,14 @@ describe("buildSpiralTest", () => {
   it("omits labels when label.show is false", () => {
     const r = buildSpiralTest({ ...CFG, label: { sizeMm: 2.5, show: false } });
     expect(r.labelPaths.length).toBe(0);
+  });
+  it("widens the cell to fit a label wider than the disc (no horizontal overlap)", () => {
+    // Small disc + big label → label width dominates the cell.
+    const cfg: SpiralTestConfig = { ...CFG, diameterMm: 4, label: { sizeMm: 4, show: true } };
+    const r = buildSpiralTest(cfg);
+    const cols = 3; // channelWidth steps in CFG
+    const cellW = (r.footprintMm.w - 2 * 5) / cols; // MARGIN_MM = 5
+    const widestLabel = labelWidth("1.00/0.050", 4); // 10-char label at size 4
+    expect(cellW).toBeGreaterThanOrEqual(widestLabel);
   });
 });

@@ -75,8 +75,17 @@ export function buildSpiralTest(cfg: SpiralTestConfig): SpiralTestResult {
   const maxCw = Math.max(...cws);
   const r = cfg.diameterMm / 2;
   const labelBand = cfg.label.show ? cfg.label.sizeMm + 1.5 : 0;
-  // Uniform cell box: disc + channel ring (max) + label band + gap.
-  const cell = cfg.diameterMm + 2 * maxCw + labelBand + cfg.gapMm;
+  // Uniform square cell. Height needs the disc + channel ring + label band;
+  // WIDTH must also fit the label, which (e.g. "1.00/0.050") is often wider
+  // than the disc — otherwise adjacent labels collide. Size the cell to the
+  // larger of the two so the grid never overlaps, then add the gap.
+  const discBox = cfg.diameterMm + 2 * maxCw;
+  const maxLabelW = cfg.label.show
+    ? Math.max(
+        ...cws.flatMap((cw) => pitches.map((p) => labelWidth(formatLabel(cw, p), cfg.label.sizeMm))),
+      )
+    : 0;
+  const cell = Math.max(discBox + labelBand, maxLabelW) + cfg.gapMm;
 
   const cells: CellInfo[] = [];
   const cutPaths: GeneratedPath[] = [];
