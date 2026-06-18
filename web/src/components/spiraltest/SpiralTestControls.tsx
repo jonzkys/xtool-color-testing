@@ -90,14 +90,14 @@ export function SpiralTestControls({ cfg, onChange, footprint, overBed }: Props)
             <Input aria-label="bed height" type="number" mono step={10} value={cfg.bedMm.h}
               onChange={(e) => set("bedMm", { ...cfg.bedMm, h: num(e.target.value, cfg.bedMm.h) })} />
           </Field>
-          <Field label="Label size (mm)">
-            <Input aria-label="label size" type="number" mono step={0.5} value={cfg.label.sizeMm}
-              onChange={(e) => set("label", { ...cfg.label, sizeMm: num(e.target.value, cfg.label.sizeMm) })} />
+          <Field label="Title prefix" className="col-span-2">
+            <Input aria-label="title prefix" type="text" value={cfg.labels.titlePrefix}
+              onChange={(e) => set("labels", { ...cfg.labels, titlePrefix: e.target.value })} />
           </Field>
-          <label className="flex items-center gap-2 self-end pb-2.5 text-[12.5px] text-[color:var(--color-ink-muted)] select-none cursor-pointer">
-            <input type="checkbox" className="accent-[color:var(--color-primary)]" checked={cfg.label.show}
-              onChange={(e) => set("label", { ...cfg.label, show: e.target.checked })} />
-            Labels
+          <label className="col-span-2 flex items-center gap-2 text-[12.5px] text-[color:var(--color-ink-muted)] select-none cursor-pointer">
+            <input type="checkbox" className="accent-[color:var(--color-primary)]" checked={cfg.labels.show}
+              onChange={(e) => set("labels", { ...cfg.labels, show: e.target.checked })} />
+            Axis labels
           </label>
         </div>
         <p className="mt-1 font-mono text-[11px] tabular-nums"

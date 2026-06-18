@@ -17,11 +17,10 @@ export function SpiralTestPreview({ result }: Props) {
           <path key={`c${i}-${j}`} d={path(ring)} fill="none" stroke="var(--color-ink)" strokeWidth={0.15} opacity={0.7} />
         )),
       )}
-      {result.labelPaths.flatMap((p, i) =>
-        p.rings.map((ring, j) => (
-          <path key={`l${i}-${j}`} d={path(ring)} fill="none" stroke="var(--color-primary)" strokeWidth={0.25} />
-        )),
-      )}
+      {result.labelOutlines.map((lbl, i) => (
+        <path key={`l${i}`} d={lbl.rings.map((r) => path(r) + "Z").join(" ")}
+          fillRule="nonzero" fill="var(--color-primary)" stroke="none" />
+      ))}
     </svg>
   );
 }

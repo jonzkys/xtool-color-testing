@@ -1,12 +1,10 @@
 // web/src/lib/forge/spiralTestXs.ts
-// Assemble a spiral-test grid into a single .xs file. Reuses the proven
-// buildGeneratedXcs path (all paths emitted as spiral VECTOR_CUTTING in two
-// groups) + the .xcs→.xs synthesis (legacyRawToXs(doc, null)). The label group
-// is a low-power single-pass cut (it marks rather than severs) — the spec's
-// sanctioned fallback, chosen so the whole job stays one VECTOR_CUTTING pipeline.
-import { buildGeneratedXcs, parseXcsFile, MAX_PATH_POINTS } from "./xcs";
+// Assemble a spiral-test grid into a single .xs file. Spiral cut via
+// buildGeneratedXcs (VECTOR_CUTTING); labels appended as filled
+// FILL_VECTOR_ENGRAVING displays.
+import { buildGeneratedXcs, parseXcsFile, ringsToDPath, MAX_PATH_POINTS } from "./xcs";
 import { legacyRawToXs } from "./xs";
-import type { StageParams } from "./types";
+import type { Pt, StageParams } from "./types";
 import type { SpiralTestConfig, SpiralTestResult } from "./spiralTest";
 
 // Synthetic canvas key for the template doc — legacyRawToXs(_, null) reuses it
@@ -62,13 +60,56 @@ function templateBytes(): ArrayBuffer {
 
 const TEMPLATE_BYTES = templateBytes();
 
+const LABEL_COLOR = "#0ea5e9"; // distinct layer colour for the engrave op
+
+function ringsBBox(rings: Pt[][]): { minX: number; minY: number; w: number; h: number } {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const r of rings) for (const p of r) {
+    if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
+    if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
+  }
+  return { minX: x0, minY: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/** FILL_VECTOR_ENGRAVING device entry (mirrors a Studio fill-engrave op). */
+function fillEngraveEntry(score: SpiralTestConfig["score"]): Record<string, unknown> {
+  return {
+    isFill: true,
+    type: "PATH",
+    processingType: "FILL_VECTOR_ENGRAVING",
+    data: {
+      FILL_VECTOR_ENGRAVING: {
+        materialType: "customize",
+        planType: "blue",
+        parameter: {
+          customize: {
+            bitmapEngraveMode: "normal",
+            speed: score.speed,
+            density: score.linesPerCm,
+            needGapNumDensity: true,
+            dotDuration: 100,
+            dpi: 500,
+            processingLightSource: score.laser,
+            power: score.power,
+            repeat: score.passes,
+            defocus: false,
+            defocus_distance: 3,
+            bitmapScanMode: score.scanMode === "bidirectional" ? "zMode" : "nMode",
+            pulseWidth: score.pulseWidth,
+            mopaFrequency: score.frequency,
+          },
+        },
+      },
+    },
+    processIgnore: false,
+    isWhiteModel: true,
+  };
+}
+
 export function buildSpiralTestXs(result: SpiralTestResult, cfg: SpiralTestConfig): ArrayBuffer {
   const parsed = parseXcsFile(TEMPLATE_BYTES);
   const inciseId = parsed.targets[0].id;
 
-  // Only the cut group needs stageParams — buildGeneratedXcs emits every spiral
-  // path as VECTOR_CUTTING, then we retag the label group's device entries to a
-  // VECTOR_ENGRAVING op below (a vector line-engrave along the single-stroke text).
   const stageParams: Record<string, StageParams> = {
     CUT_SPIRAL: {
       power: cfg.cut.power, speed: cfg.cut.speed, passes: cfg.cut.passes,
@@ -79,57 +120,35 @@ export function buildSpiralTestXs(result: SpiralTestResult, cfg: SpiralTestConfi
     },
   };
 
-  const allPaths = [...result.cutPaths, ...result.labelPaths];
+  // Spiral cut via the proven writer (cut paths only — labels are filled, so
+  // they cannot ride the spiral-only / open-path code path).
   const doc = buildGeneratedXcs(
-    parsed, inciseId, allPaths, 1 /* mmPerUnit */, stageParams,
+    parsed, inciseId, result.cutPaths, 1 /* mmPerUnit */, stageParams,
     undefined /* scanAngle */, false /* userOrder */, MAX_PATH_POINTS, false /* joinStrands */,
-  );
-  retagLabelsAsEngrave(doc, cfg.score);
-  return legacyRawToXs(doc, null, false);
-}
-
-/** VECTOR_ENGRAVING device entry mirroring a real Studio vector-engrave op. */
-function engraveEntry(score: SpiralTestConfig["score"]): Record<string, unknown> {
-  return {
-    isFill: false,
-    type: "PATH",
-    processingType: "VECTOR_ENGRAVING",
-    data: {
-      VECTOR_ENGRAVING: {
-        materialType: "customize",
-        planType: "blue",
-        parameter: {
-          customize: {
-            processingLightSource: score.laser,
-            power: score.power,
-            speed: score.speed,
-            repeat: score.passes,
-            pulseWidth: score.pulseWidth,
-            mopaFrequency: score.frequency,
-            enableKerf: false,
-            kerfDistance: 0,
-          },
-        },
-      },
-    },
-    processIgnore: false,
-    isWhiteModel: true,
-  };
-}
-
-/** Rewrite the SCORE_LABEL group's device entries (emitted as VECTOR_CUTTING by
- *  buildGeneratedXcs) into a VECTOR_ENGRAVING op, so the labels engrave rather
- *  than cut. The display geometry the writer produced is reused as-is. */
-function retagLabelsAsEngrave(doc: unknown, score: SpiralTestConfig["score"]): void {
-  const d = doc as {
-    canvas: Array<{ displays: Array<{ id: string; name?: string }> }>;
+  ) as {
+    canvas: Array<{ displays: Array<Record<string, unknown>>; layerData: Record<string, unknown> }>;
     device: { data: { value: Array<[string, { displays: { value: Array<[string, unknown]> } }]> } };
   };
-  const labelIds = new Set(
-    d.canvas[0].displays.filter((disp) => disp.name === "SCORE_LABEL").map((disp) => disp.id),
-  );
-  const entries = d.device.data.value[0][1].displays.value;
-  for (const pair of entries) {
-    if (labelIds.has(pair[0])) pair[1] = engraveEntry(score);
-  }
+
+  // Append each label string as a filled PATH display + a FILL_VECTOR_ENGRAVING entry.
+  const canvas = doc.canvas[0];
+  const entries = doc.device.data.value[0][1].displays.value;
+  canvas.layerData[LABEL_COLOR] = { name: "LABEL_ENGRAVE", order: Object.keys(canvas.layerData).length + 1, visible: true };
+  result.labelOutlines.forEach((lbl, i) => {
+    if (lbl.rings.length === 0) return;
+    const b = ringsBBox(lbl.rings);
+    const id = `label-${i}`;
+    canvas.displays.push({
+      id, type: "PATH", name: "LABEL_ENGRAVE",
+      dPath: ringsToDPath(lbl.rings, 1),
+      isClosePath: true, isFill: true, fillRule: "nonzero",
+      layerTag: LABEL_COLOR, layerColor: LABEL_COLOR,
+      scale: { x: 1, y: 1 }, angle: 0, pivot: { x: 0, y: 0 },
+      offsetX: 0, offsetY: 0, graphicX: 0, graphicY: 0,
+      x: b.minX, y: b.minY, width: b.w, height: b.h,
+    });
+    entries.push([id, fillEngraveEntry(cfg.score)]);
+  });
+
+  return legacyRawToXs(doc, null, false);
 }

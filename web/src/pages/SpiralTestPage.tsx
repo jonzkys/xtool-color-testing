@@ -10,11 +10,11 @@ const DEFAULT_CFG: SpiralTestConfig = {
   channelWidth: { min: 0.6, max: 1.0, steps: 4 },
   pitch: { min: 0.03, max: 0.05, steps: 4 },
   diameterMm: 10, side: "outside", minChannelMm: 0.4, gapMm: 4,
-  bedMm: { w: 300, h: 300 }, label: { sizeMm: 2.5, show: true },
+  bedMm: { w: 300, h: 300 }, labels: { show: true, titlePrefix: "" },
   cut: { passes: 250, focusInitialMm: 0.01, focusStepMm: 0.06, focusIntervalPasses: 20,
          power: 100, speed: 1500, frequency: 65, pulseWidth: 80, laser: "red" },
-  // Label engrave — MOPA IR text-engrave preset (vector line-engrave).
-  score: { laser: "red", power: 65, speed: 1944, passes: 1, pulseWidth: 500, frequency: 65 },
+  // Label engrave — MOPA IR fill-engrave preset.
+  score: { laser: "red", power: 65, speed: 1944, passes: 1, linesPerCm: 300, scanMode: "bidirectional", pulseWidth: 500, frequency: 65 },
 };
 
 /** Parse a numeric field, keeping the prior value on empty/NaN — and crucially
@@ -142,6 +142,17 @@ export function SpiralTestPage() {
                   <Input aria-label="label pass" type="number" mono value={cfg.score.passes}
                     onChange={(e) => setScore("passes", Math.max(1, Math.round(num(e.target.value, cfg.score.passes))))} />
                 </Field>
+                <Field label="Lines per cm">
+                  <Input aria-label="label lines per cm" type="number" mono value={cfg.score.linesPerCm}
+                    onChange={(e) => setScore("linesPerCm", num(e.target.value, cfg.score.linesPerCm))} />
+                </Field>
+                <Field label="Engraving mode" className="col-span-2">
+                  <Select aria-label="label engraving mode" value={cfg.score.scanMode}
+                    onChange={(e) => setScore("scanMode", e.target.value as SpiralTestConfig["score"]["scanMode"])}>
+                    <option value="bidirectional">Bi-directional</option>
+                    <option value="unidirectional">Uni-directional</option>
+                  </Select>
+                </Field>
                 <Field label="Pulse width (ns)">
                   <Input aria-label="label pulse width" type="number" mono value={cfg.score.pulseWidth}
                     onChange={(e) => setScore("pulseWidth", num(e.target.value, cfg.score.pulseWidth))} />
@@ -152,7 +163,7 @@ export function SpiralTestPage() {
                 </Field>
               </div>
               <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-[color:var(--color-ink-subtle)]">
-                Vector engrave along the label strokes.
+                Real-font fill engrave (title + axis values).
               </p>
             </Section>
 
