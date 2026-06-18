@@ -11,7 +11,8 @@ space) with an **axis layout** like the calibration test pages, and engrave the
 text with a **real font (JetBrains Mono), filled** — matching how xTool Studio
 renders text (`demo-files/test-font.xs`):
 
-- A single compact **title** line (free text, default auto) at the top.
+- A single compact **title** line at the top — an auto summary of the fixed cut
+  params (`P:… F:… PW:… S:… ID:… DI:… DS:…`), with an optional free-text prefix.
 - **X axis** — the channel-width value under each column (bottom edge).
 - **Y axis** — the pitch value beside each row (left edge).
 - One value per row/column, not a full label per cell, so **cells shrink**.
@@ -32,7 +33,12 @@ This supersedes the per-cell 7-segment labels and the manual "Label size" contro
   paths instead — the part that actually marks the brass.)
 - **No runtime font dependency:** a one-off dev script bakes the needed glyphs
   into a committed table; the runtime stays sync and dependency-free.
-- **Title:** a free-text field, defaulting to an auto string from the params.
+- **Title:** an **auto, live cut-param summary** so each sheet records the fixed
+  settings (the axes already show what varies). Format:
+  `P:{power} F:{freq} PW:{pulseWidth} S:{speed} ID:{focusInitial} DI:{focusInterval} DS:{focusStep}`
+  — composed from `cfg.cut` and kept in sync as the cut params change (so the
+  engraved title can never be stale). An optional free-text **prefix** (default
+  empty, e.g. a material/date note) is prepended.
 - **Sizing:** auto / diameter-aware — replaces the manual "Label size (mm)".
 - **Label engrave op:** `FILL_VECTOR_ENGRAVING` with the full fill params from
   the user's reference (Laser MOPA IR, Power, Speed, Pass, Lines per cm,
@@ -40,7 +46,8 @@ This supersedes the per-cell 7-segment labels and the manual "Label size" contro
 
 ## Font: pre-baked JetBrains Mono glyph table
 
-**Charset:** `0-9`, `A-Z`, space, and `. / - ( ) %` (titles are upper-cased).
+**Charset:** `0-9`, `A-Z`, space, and `. / - ( ) % :` (titles are upper-cased).
+The `:` is needed for the `P:` / `F:` / … param-summary title.
 
 **Generation (one-off, committed output):** `web/scripts/gen-glyphs.mjs` uses
 `opentype.js` (a **dev** dependency) + a JetBrains Mono **TTF** (OFL; fetched/
@@ -94,9 +101,15 @@ is removed.)
 Title size: `titleTextMm = min(axisTextMm · 1.4, gridWidthMm / textWidth(title, 1))`
 so the title never overflows the grid width.
 
+**Title text** is composed live from the cut params:
+`titleText = (labels.titlePrefix ? labels.titlePrefix + "  " : "") +
+"P:" + cut.power + " F:" + cut.frequency + " PW:" + cut.pulseWidth +
+" S:" + cut.speed + " ID:" + cut.focusInitialMm + " DI:" + cut.focusIntervalPasses +
+" DS:" + cut.focusStepMm` (a small `composeTitle(cfg)` helper).
+
 **Label geometry (real-font outlines):**
-- **Title:** `renderText(labels.title, titleTextMm, …)` centred over the grid in
-  the top band.
+- **Title:** `renderText(titleText, titleTextMm, …)` centred over the grid in the
+  top band.
 - **X axis:** for each column, `renderText(channelWidth.toFixed(2), axisTextMm, …)`
   centred under the column in the bottom margin.
 - **Y axis:** for each row, `renderText(pitch.toFixed(3), axisTextMm, …)`
@@ -152,7 +165,8 @@ now appended directly as filled fill-engrave displays.
 
 ## Controls / preview / config (`web/src/...`)
 
-**Config:** `label: { sizeMm, show }` → `labels: { show: boolean; title: string }`.
+**Config:** `label: { sizeMm, show }` → `labels: { show: boolean; titlePrefix: string }`
+(the title body is auto-derived from `cut`, not stored; `titlePrefix` defaults to `""`).
 `score` expands to the fill param set:
 ```ts
 score: {
@@ -163,10 +177,11 @@ score: {
 ```
 Defaults: `laser "red"` (MOPA IR), `power 65`, `speed 1944`, `passes 1`,
 `linesPerCm 300`, `scanMode "bidirectional"`, `pulseWidth 500`, `frequency 65`.
-Default title: `"SPIRAL CW(X) PITCH(Y) D10"` (composed from the diameter).
+`labels.titlePrefix` defaults to `""` (the title body auto-derives from `cut`).
 
-**SpiralTestControls:** remove the "Label size (mm)" field; add a **Title** text
-`Input` (aria-label "title"); keep the **Axis labels** (`labels.show`) toggle.
+**SpiralTestControls:** remove the "Label size (mm)" field; add a **Title prefix**
+text `Input` (aria-label "title prefix", optional note prepended to the auto
+param summary); keep the **Axis labels** (`labels.show`) toggle.
 
 **SpiralTestPage right rail — "Label engrave" section** expands to the full fill
 panel: Laser (MOPA IR select), Power (%), Speed (mm/s), Pass, **Lines per cm**,
@@ -190,8 +205,10 @@ on-screen preview reads as solid text matching the engrave.
   (focus descent on) **and** a `FILL_VECTOR_ENGRAVING` label op carrying the fill
   params (power/speed/density/scanMode/laser); label displays are `isFill:true`,
   `fillRule:"nonzero"`; `isXsBuffer` true.
-- Controls: Title field edits `labels.title`; Axis-labels toggle; the fill params
-  edit `score`.
+- `composeTitle`: with `titlePrefix ""` → `"P:100 F:65 PW:80 S:1500 ID:0.01 DI:20 DS:0.06"`
+  for the default cut; a non-empty prefix is prepended.
+- Controls: Title-prefix field edits `labels.titlePrefix`; Axis-labels toggle; the
+  fill params edit `score`.
 
 **Browser (golden path)**
 - Render at small (e.g. 2 mm) and large (e.g. 20 mm) diameters — axis values and
