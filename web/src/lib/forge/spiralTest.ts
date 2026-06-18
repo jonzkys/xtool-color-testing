@@ -88,7 +88,7 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 /** Bbox of a set of rings; null if empty. */
-function ringsBBox(rings: Pt[][]): { minX: number; minY: number; w: number; h: number } | null {
+export function ringsBBox(rings: Pt[][]): { minX: number; minY: number; w: number; h: number } | null {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const r of rings) for (const p of r) {
     if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
@@ -114,10 +114,17 @@ export function buildSpiralTest(cfg: SpiralTestConfig): SpiralTestResult {
   const title = composeTitle(cfg);
   const titleTextMm = show ? Math.min(axisTextMm * 1.4, gridW / Math.max(1, textWidth(title, 1))) : 0;
 
+  // Measure the title's true vertical extent (ascent + any descent) so the top
+  // band reserves real glyph height, not just the em — otherwise the title
+  // descends into the top row's channel band at large diameters.
+  const titleProbe = show ? renderText(title, titleTextMm, { x: 0, y: 0 }) : [];
+  const titleProbeBox = ringsBBox(titleProbe); // null when the title has no glyphs
+  const titleH = titleProbeBox ? titleProbeBox.h : 0;
+
   // Left margin holds the Y (pitch) values; top band holds the title.
   const yLabelW = show ? Math.max(...pitches.map((p) => textWidth(p.toFixed(3), axisTextMm))) : 0;
   const leftMargin = show ? yLabelW + PAD_MM : 0;
-  const topBand = show ? titleTextMm + PAD_MM * 2 : 0;
+  const topBand = show ? titleH + PAD_MM * 2 : 0;
   const bottomMargin = show ? axisTextMm + PAD_MM * 2 : 0;
 
   const gridX0 = MARGIN_MM + leftMargin;
@@ -154,8 +161,9 @@ export function buildSpiralTest(cfg: SpiralTestConfig): SpiralTestResult {
   }
 
   if (show) {
-    // Title — centred over the grid, baseline near the top.
-    const titleBaselineY = MARGIN_MM + titleTextMm;
+    // Title — centred over the grid; baseline set from the measured ascent so
+    // the glyphs' top sits at MARGIN_MM and the whole title clears the grid.
+    const titleBaselineY = MARGIN_MM + (titleProbeBox ? -titleProbeBox.minY : titleTextMm);
     const titleW = textWidth(title, titleTextMm);
     const titleX = gridX0 + Math.max(0, (gridW - titleW) / 2);
     const tRings = renderText(title, titleTextMm, { x: titleX, y: titleBaselineY });

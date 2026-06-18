@@ -75,4 +75,19 @@ describe("buildSpiralTest", () => {
   it("footprint exceeds a tiny bed", () => {
     expect(buildSpiralTest({ ...CFG, bedMm: { w: 5, h: 5 } }).overBed).toBe(true);
   });
+  it("title clears the grid top (descent-aware) at large diameters", () => {
+    for (const diameterMm of [4, 30, 50]) {
+      const r = buildSpiralTest({
+        ...CFG, diameterMm,
+        channelWidth: { min: 0.6, max: 1.0, steps: 5 },
+        pitch: { min: 0.03, max: 0.05, steps: 5 },
+      });
+      const titleBottom = Math.max(...r.labelOutlines[0].rings.flat().map((p) => p.y));
+      // gridY0 = top of the cell band = (top-row center y) - cell/2
+      const maxCw = 1.0, gap = 4, cell = diameterMm + 2 * maxCw + gap;
+      const cyTop = Math.min(...r.cells.map((c) => c.centerMm.y));
+      const gridTop = cyTop - cell / 2;
+      expect(titleBottom).toBeLessThanOrEqual(gridTop + 1e-6);
+    }
+  });
 });

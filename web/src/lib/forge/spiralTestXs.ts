@@ -4,8 +4,9 @@
 // FILL_VECTOR_ENGRAVING displays.
 import { buildGeneratedXcs, parseXcsFile, ringsToDPath, MAX_PATH_POINTS } from "./xcs";
 import { legacyRawToXs } from "./xs";
-import type { Pt, StageParams } from "./types";
+import type { StageParams } from "./types";
 import type { SpiralTestConfig, SpiralTestResult } from "./spiralTest";
+import { ringsBBox } from "./spiralTest";
 
 // Synthetic canvas key for the template doc — legacyRawToXs(_, null) reuses it
 // as the .xs canvas id. Any stable UUID-shaped string works.
@@ -62,15 +63,6 @@ const TEMPLATE_BYTES = templateBytes();
 
 const LABEL_COLOR = "#0ea5e9"; // distinct layer colour for the engrave op
 
-function ringsBBox(rings: Pt[][]): { minX: number; minY: number; w: number; h: number } {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const r of rings) for (const p of r) {
-    if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
-    if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
-  }
-  return { minX: x0, minY: y0, w: x1 - x0, h: y1 - y0 };
-}
-
 /** FILL_VECTOR_ENGRAVING device entry (mirrors a Studio fill-engrave op). */
 function fillEngraveEntry(score: SpiralTestConfig["score"]): Record<string, unknown> {
   return {
@@ -87,6 +79,8 @@ function fillEngraveEntry(score: SpiralTestConfig["score"]): Record<string, unkn
             speed: score.speed,
             density: score.linesPerCm,
             needGapNumDensity: true,
+            // dotDuration / dpi / defocus_distance are fixed Studio fill-engrave
+            // defaults (not exposed in config); the rest is config-driven.
             dotDuration: 100,
             dpi: 500,
             processingLightSource: score.laser,
@@ -137,6 +131,7 @@ export function buildSpiralTestXs(result: SpiralTestResult, cfg: SpiralTestConfi
   result.labelOutlines.forEach((lbl, i) => {
     if (lbl.rings.length === 0) return;
     const b = ringsBBox(lbl.rings);
+    if (!b) return;
     const id = `label-${i}`;
     canvas.displays.push({
       id, type: "PATH", name: "LABEL_ENGRAVE",

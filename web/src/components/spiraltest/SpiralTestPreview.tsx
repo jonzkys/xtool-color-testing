@@ -2,7 +2,7 @@ import type { SpiralTestResult } from "../../lib/forge/spiralTest";
 
 interface Props { result: SpiralTestResult; }
 
-/** Draw the generated cut arms (dark) + label strokes (ember) + footprint box. */
+/** Draw the generated cut arms (dark) + filled label outlines + footprint box. */
 export function SpiralTestPreview({ result }: Props) {
   const { footprintMm: f } = result;
   const path = (poly: { x: number; y: number }[]) =>
