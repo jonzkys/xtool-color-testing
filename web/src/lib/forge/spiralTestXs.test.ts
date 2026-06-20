@@ -88,4 +88,19 @@ describe("buildSpiralTestXs", () => {
     expect(pws.has(150)).toBe(true);
     expect(pws.has(83)).toBe(false); // only allowed values appear
   });
+  it("emits ONE continuous cut object per hole (no point-cap chunking)", () => {
+    // A circle config: each arm is ~3936 pts (> the old 1500 cap), which used to
+    // split into ~3 objects. With chunking disabled it's one object per arm.
+    const cfg = baseCfg({ xAxis: { min: 0.6, max: 1.0, steps: 2 }, yAxis: { min: 0.03, max: 0.05, steps: 2 } });
+    const result = buildSpiralTest(cfg);
+    const { raw } = xsToLegacyRaw(buildSpiralTestXs(result, cfg));
+    const r = raw as { canvas: Array<{ displays: Array<{ id: string }> }>;
+      device: { data: { value: Array<[string, { displays: { value: Array<[string, { processingType?: string }]> } }]> } } };
+    const entries = r.device.data.value[0][1].displays.value;
+    const cutCount = entries.filter(([, e]) => e.processingType === "VECTOR_CUTTING").length;
+    expect(cutCount).toBe(result.cutPaths.length);          // one cut object per arm
+    expect(result.cutPaths.length).toBe(result.cells.length); // one arm per cell
+    const cutDisplays = r.canvas[0].displays.filter((d) => d.id.startsWith("forge-"));
+    expect(cutDisplays.every((d) => !/^forge-\d+-\d+$/.test(d.id))).toBe(true); // no chunk-suffixed ids
+  });
 });

@@ -11,20 +11,13 @@ import { renderText, textWidth } from "./textPaths";
 import { PARAMS, PARAM_ORDER, PROFILE_KEYS, formatValue, type AxisSpec, type ParamKey } from "./spiralParams";
 import { clampParam, resolveAxisValues } from "./spiralLimits";
 import type { ValidationProfile } from "../../types";
+import { shapeRegion, type CellShape } from "./spiralShapes";
 
 export type { AxisSpec, ParamKey } from "./spiralParams";
 export { resolveAxis } from "./spiralParams";
 
-/** One closed loop of `segments` points on a circle of diameter `d` at (cx,cy). */
-export function circleRegion(cx: number, cy: number, d: number, segments = 96): Pt[][] {
-  const r = d / 2;
-  const loop: Pt[] = [];
-  for (let i = 0; i < segments; i++) {
-    const t = (2 * Math.PI * i) / segments;
-    loop.push({ x: cx + r * Math.cos(t), y: cy + r * Math.sin(t) });
-  }
-  return [loop];
-}
+export { circleRegion } from "./spiralShapes";
+export type { CellShape } from "./spiralShapes";
 
 export interface SpiralTestConfig {
   xParam: ParamKey;
@@ -33,6 +26,7 @@ export interface SpiralTestConfig {
   yAxis: AxisSpec;
   fixed: Record<ParamKey, number>;   // value used when a param is OFF-axis
   diameterMm: number;
+  cellShape?: CellShape;             // cut-out shape (default "circle")
   side: "outside" | "inside";
   minChannelMm: number;
   gapMm: number;
@@ -171,7 +165,7 @@ export function buildSpiralTest(cfg: SpiralTestConfig, profile: ValidationProfil
       const cx = gridX0 + cell / 2 + col * cell;
       const cy = gridY0 + cell / 2 + row * cell;
 
-      const region = circleRegion(cx, cy, cfg.diameterMm);
+      const region = shapeRegion(cfg.cellShape ?? "circle", cx, cy, cfg.diameterMm);
       const res = spiralFromRegion(region, {
         channelWidthMm: paramMap.channelWidth, pitchMm: paramMap.pitch,
         side: cfg.side, minChannelMm: cfg.minChannelMm,
