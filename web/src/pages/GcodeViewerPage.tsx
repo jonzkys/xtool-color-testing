@@ -117,9 +117,7 @@ function layerKind(layer: Layer): "vector" | "bitmap" {
 function layerPeakPower(layer: Layer): number | null {
   let max = 0;
   for (const block of layer.blocks) {
-    for (const seg of block.segments) {
-      if (seg.s > max) max = seg.s;
-    }
+    if (block.peakS > max) max = block.peakS;
   }
   return max > 0 ? max : null;
 }
@@ -731,7 +729,7 @@ export function GcodeViewerPage() {
                           `${(singleBlock.bbox.maxX - singleBlock.bbox.minX).toFixed(2)} × ${(singleBlock.bbox.maxY - singleBlock.bbox.minY).toFixed(2)} mm`,
                           "ok",
                         ],
-                        ["SEGS", singleBlock.segments.length.toLocaleString(), "ok"],
+                        ["SEGS", singleBlock.geometry.count.toLocaleString(), "ok"],
                         [
                           "PEAK S",
                           `${singleBlock.peakS}${peakSPct}`,

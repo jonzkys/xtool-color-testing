@@ -4,7 +4,6 @@ import type {
   BlockConfig,
   GcodeFile,
   Job,
-  Segment,
 } from "./types";
 
 /**
@@ -14,6 +13,11 @@ import type {
  * Line-scan state machine: outside motion → inside motion → collecting
  * blockConfig + segments. Logical layers are formed by grouping
  * consecutive blocks with byte-identical `# blockConfig=` JSON.
+ *
+ * Vertices accumulate into per-block growable typed-array builders and
+ * finalize to columnar `BlockGeometry` (Float32 x/y/s + Uint8 rapid) so a
+ * multi-million-segment file stays small and its buffers can be transferred
+ * zero-copy out of the worker.
  */
 
 const GC_HEADER_RE = /^# gc=(\{.*\})\s*$/;
@@ -23,6 +27,41 @@ const COORD_TOKEN_RE = /([XYSFZ])(-?\d+(?:\.\d+)?)/g;
 
 function emptyBbox(): BBox {
   return { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+}
+
+/** Growable Float32 column: doubles capacity on overflow, finalizes to an
+ *  exact-size copy (so the transferred buffer is tight, not the spare cap). */
+class F32Builder {
+  private buf = new Float32Array(64);
+  len = 0;
+  push(v: number): void {
+    if (this.len === this.buf.length) {
+      const next = new Float32Array(this.buf.length * 2);
+      next.set(this.buf);
+      this.buf = next;
+    }
+    this.buf[this.len++] = v;
+  }
+  toArray(): Float32Array {
+    return this.buf.slice(0, this.len);
+  }
+}
+
+/** Growable Uint8 column (same contract as F32Builder). */
+class U8Builder {
+  private buf = new Uint8Array(64);
+  len = 0;
+  push(v: number): void {
+    if (this.len === this.buf.length) {
+      const next = new Uint8Array(this.buf.length * 2);
+      next.set(this.buf);
+      this.buf = next;
+    }
+    this.buf[this.len++] = v;
+  }
+  toArray(): Uint8Array {
+    return this.buf.slice(0, this.len);
+  }
 }
 
 function isInnerHeadTail(token: string): boolean {
@@ -41,7 +80,15 @@ function mergeBbox(a: BBox, b: BBox): BBox {
 interface PendingBlock {
   startLine: number;
   configRaw: string | null;
-  segments: Segment[];
+  xb: F32Builder;
+  yb: F32Builder;
+  sb: F32Builder;
+  rb: U8Builder;
+  count: number;
+  /** Last pushed vertex (modal prev-state; replaces reading back the array). */
+  prevX: number;
+  prevY: number;
+  prevS: number;
   bbox: BBox;
   peakS: number;
   feedF: number;
@@ -61,7 +108,13 @@ function finalizeBlock(block: PendingBlock): Block | null {
   return {
     startLine: block.startLine,
     config,
-    segments: block.segments,
+    geometry: {
+      x: block.xb.toArray(),
+      y: block.yb.toArray(),
+      s: block.sb.toArray(),
+      rapid: block.rb.toArray(),
+      count: block.count,
+    },
     bbox: block.bbox,
     peakS: block.peakS,
     feedF: block.feedF,
@@ -74,7 +127,7 @@ function pushBlockToJob(job: Job, block: Block): void {
   const last = job.layers[job.layers.length - 1];
   if (last && last.config.raw === block.config.raw) {
     last.blocks.push(block);
-    last.totalSegments += block.segments.length;
+    last.totalSegments += block.geometry.count;
     last.bbox = mergeBbox(last.bbox, block.bbox);
   } else {
     job.layers.push({
@@ -82,7 +135,7 @@ function pushBlockToJob(job: Job, block: Block): void {
       config: block.config,
       blocks: [block],
       bbox: { ...block.bbox },
-      totalSegments: block.segments.length,
+      totalSegments: block.geometry.count,
     });
   }
   job.bbox = mergeBbox(job.bbox, block.bbox);
@@ -153,7 +206,14 @@ export function parseGcode(text: string): GcodeFile {
         pendingBlock = {
           startLine: i + 1,
           configRaw: null,
-          segments: [],
+          xb: new F32Builder(),
+          yb: new F32Builder(),
+          sb: new F32Builder(),
+          rb: new U8Builder(),
+          count: 0,
+          prevX: NaN,
+          prevY: NaN,
+          prevS: 0,
           bbox: emptyBbox(),
           peakS: 0,
           feedF: 0,
@@ -196,14 +256,12 @@ export function parseGcode(text: string): GcodeFile {
     const isG1 = line.startsWith("G1") && (line.length === 2 || !/[0-9]/.test(line[2]));
     if (!isG0 && !isG1) continue;
 
-    const lastSegment = pendingBlock
-      ? pendingBlock.segments[pendingBlock.segments.length - 1]
-      : null;
-    const prevX = lastSegment ? lastSegment.x : NaN;
-    const prevY = lastSegment ? lastSegment.y : NaN;
+    const hasPrev = pendingBlock != null && pendingBlock.count > 0;
+    const prevX = hasPrev ? pendingBlock!.prevX : NaN;
+    const prevY = hasPrev ? pendingBlock!.prevY : NaN;
     let curX = prevX;
     let curY = prevY;
-    let curS = lastSegment ? lastSegment.s : 0;
+    let curS = hasPrev ? pendingBlock!.prevS : 0;
     let sawXY = false;
     /** Z value extracted from this line, interpreted per absoluteMode
      * (absolute target vs delta). Resolved against `currentZ` below. */
@@ -256,10 +314,17 @@ export function parseGcode(text: string): GcodeFile {
     // X/Y segments only attach to an open block.
     if (!pendingBlock) continue;
 
-    if (!sawXY && lastSegment == null) continue;
+    if (!sawXY && pendingBlock.count === 0) continue;
     if (Number.isNaN(curX) || Number.isNaN(curY)) continue;
 
-    pendingBlock.segments.push({ x: curX, y: curY, s: curS, rapid: isG0 });
+    pendingBlock.xb.push(curX);
+    pendingBlock.yb.push(curY);
+    pendingBlock.sb.push(curS);
+    pendingBlock.rb.push(isG0 ? 1 : 0);
+    pendingBlock.count++;
+    pendingBlock.prevX = curX;
+    pendingBlock.prevY = curY;
+    pendingBlock.prevS = curS;
     pendingBlock.bbox = {
       minX: Math.min(pendingBlock.bbox.minX, curX),
       minY: Math.min(pendingBlock.bbox.minY, curY),

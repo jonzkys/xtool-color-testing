@@ -69,12 +69,13 @@ describe("parseGcode", () => {
     const layer = job.layers[0];
     expect(layer.blocks).toHaveLength(1);
     const block = layer.blocks[0];
-    expect(block.segments).toEqual([
-      { x: 10, y: 20, s: 0,   rapid: true  },
-      { x: 15, y: 20, s: 900, rapid: false },
-      { x: 15, y: 25, s: 900, rapid: false },
-      { x: 12, y: 25, s: 0,   rapid: false },
-    ]);
+    expect(block.geometry.count).toBe(4);
+    expect(Array.from(block.geometry.x)).toEqual([10, 15, 15, 12]);
+    expect(Array.from(block.geometry.y)).toEqual([20, 20, 25, 25]);
+    expect(Array.from(block.geometry.s)).toEqual([0, 900, 900, 0]);
+    expect(Array.from(block.geometry.rapid)).toEqual([1, 0, 0, 0]); // first is G0
+    expect(block.geometry.x).toBeInstanceOf(Float32Array);
+    expect(block.geometry.rapid).toBeInstanceOf(Uint8Array);
     expect(block.bbox).toEqual({ minX: 10, minY: 20, maxX: 15, maxY: 25 });
     expect(layer.totalSegments).toBe(4);
     expect(job.bbox).toEqual({ minX: 10, minY: 20, maxX: 15, maxY: 25 });
@@ -139,10 +140,14 @@ describe("parseGcode", () => {
     });
     expect(vectorLayer).toBeDefined();
     expect(vectorLayer!.blocks).toHaveLength(1);
-    const burnSegs = vectorLayer!.blocks[0].segments.filter(s => !s.rapid && s.s > 0);
-    expect(burnSegs).toHaveLength(1);
-    expect(burnSegs[0].x).toBeCloseTo(117.040, 3);
-    expect(burnSegs[0].y).toBeCloseTo(106.439, 3);
+    const geo = vectorLayer!.blocks[0].geometry;
+    const burn: number[] = [];
+    for (let k = 0; k < geo.count; k++) {
+      if (geo.rapid[k] === 0 && geo.s[k] > 0) burn.push(k);
+    }
+    expect(burn).toHaveLength(1);
+    expect(geo.x[burn[0]]).toBeCloseTo(117.040, 3);
+    expect(geo.y[burn[0]]).toBeCloseTo(106.439, 3);
 
     expect(job.bbox.minX).toBeGreaterThanOrEqual(0);
     expect(job.bbox.minY).toBeGreaterThanOrEqual(0);
