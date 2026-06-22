@@ -545,3 +545,26 @@ def test_encode_depth_png_8bit_with_alpha_is_LA():
     alpha = np.array([[0, 255]], dtype=np.uint8)
     im = Image.open(io.BytesIO(encode_depth_png(g, alpha, 8)))
     assert im.mode == "LA"
+
+
+from xcs_gen_web.relief import (
+    ReliefSmoothParams, smooth_heightfield, smooth_heightfield01,
+)
+
+
+def test_smooth01_produces_sub_256_levels_on_a_gradient():
+    yy, xx = np.mgrid[0:64, 0:64].astype(np.float32)
+    g01 = ((xx + yy) / 126.0).astype(np.float32)
+    out = smooth_heightfield01(g01, ReliefSmoothParams(strength=4, spike_removal=False))
+    assert out.dtype == np.float32
+    assert out.min() >= 0.0 and out.max() <= 1.0
+    assert len(np.unique(np.rint(out * 65535))) > 256
+
+
+def test_smooth_u8_wrapper_returns_uint8():
+    rng = np.random.default_rng(0)
+    g = rng.integers(0, 256, size=(48, 48), dtype=np.uint8)
+    p = ReliefSmoothParams(strength=6, edge_threshold=40, spike_removal=True)
+    out = smooth_heightfield(g, p)
+    assert out.dtype == np.uint8
+    assert out.shape == g.shape

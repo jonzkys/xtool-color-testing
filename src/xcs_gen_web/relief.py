@@ -18,6 +18,7 @@ from PIL import Image
 __all__ = [
     "ReliefSmoothParams",
     "smooth_heightfield",
+    "smooth_heightfield01",
     "apply_clahe",
     "background_alpha",
     "encode_png_la",
@@ -68,36 +69,40 @@ def to_grayscale_u8(img: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(gray, dtype=np.uint8)
 
 
-def smooth_heightfield(gray: np.ndarray, p: ReliefSmoothParams) -> np.ndarray:
-    """Edge-aware denoise of a single-channel uint8 heightfield."""
-    if gray.ndim != 2:
-        raise ValueError("smooth_heightfield expects a single-channel image")
+def smooth_heightfield01(gray01: np.ndarray, p: ReliefSmoothParams) -> np.ndarray:
+    """Edge-aware denoise of a float32 [0,1] heightfield (true-precision core)."""
+    if gray01.ndim != 2:
+        raise ValueError("smooth_heightfield01 expects a single-channel image")
+    work = np.ascontiguousarray(gray01, dtype=np.float32)
 
-    # 1. spike removal — kill single-pixel oscillation
-    work = gray
+    # 1. spike removal — median needs an integer type; do it at 16-bit scale.
     if p.spike_removal:
-        work = cv2.medianBlur(work, p.median_ksize)
+        u16 = np.rint(np.clip(work, 0.0, 1.0) * 65535.0).astype(np.uint16)
+        work = cv2.medianBlur(u16, p.median_ksize).astype(np.float32) / 65535.0
 
-    # 2. edge-aware smooth — bilateral; sigmaColor IS the guard rail
-    # d=0 → neighbourhood auto-derived from sigmaSpace (~2*strength+1 px); keep strength small (cost is O(d^2 * pixels)).
+    et = max(1, int(p.edge_threshold)) / 255.0  # threshold in [0,1] units
+    # 2. edge-aware smooth — bilateral on float32; sigmaColor IS the guard rail.
     smoothed = cv2.bilateralFilter(
-        work, d=0,
-        sigmaColor=max(1, int(p.edge_threshold)),
-        sigmaSpace=max(1, int(p.strength)),
+        work, d=0, sigmaColor=et, sigmaSpace=max(1, int(p.strength)),
     )
 
-    # 3. explicit guard-rail freeze — hard-preserve real sharp drops.
-    #    Measured on the DE-SPIKED image so spikes (already gone) aren't refrozen;
-    #    morphological gradient = local max-min range, in intensity units, so the
-    #    threshold compares apples-to-apples with edge_threshold.
+    # 3. explicit guard-rail freeze — hard-preserve real sharp drops (on de-spiked).
     if p.edge_preserve:
         kernel = np.ones((3, 3), np.uint8)
         local_range = cv2.morphologyEx(work, cv2.MORPH_GRADIENT, kernel)
-        edge_mask = (local_range > int(p.edge_threshold)).astype(np.uint8)
+        edge_mask = (local_range > et).astype(np.uint8)
         edge_mask = cv2.dilate(edge_mask, kernel, iterations=1)
         smoothed = np.where(edge_mask.astype(bool), work, smoothed)
 
-    return np.ascontiguousarray(smoothed, dtype=np.uint8)
+    return np.ascontiguousarray(np.clip(smoothed, 0.0, 1.0), dtype=np.float32)
+
+
+def smooth_heightfield(gray: np.ndarray, p: ReliefSmoothParams) -> np.ndarray:
+    """Edge-aware denoise of a single-channel uint8 heightfield (preview path)."""
+    if gray.ndim != 2:
+        raise ValueError("smooth_heightfield expects a single-channel image")
+    out01 = smooth_heightfield01(gray.astype(np.float32) / 255.0, p)
+    return np.ascontiguousarray(np.rint(out01 * 255.0).astype(np.uint8))
 
 
 def apply_clahe(
