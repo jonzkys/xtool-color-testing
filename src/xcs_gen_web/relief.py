@@ -39,6 +39,8 @@ __all__ = [
     "parse_subtractions",
     "decode_gray01",
     "encode_depth_png",
+    "ToneParams",
+    "apply_tone01",
 ]
 
 
@@ -587,6 +589,86 @@ def _parse_sub_seed(sx: object, sy: object) -> tuple[float, float] | None:
         return (max(0.0, min(1.0, float(sx))), max(0.0, min(1.0, float(sy))))
     except (ValueError, TypeError):
         return None
+
+
+@dataclass(frozen=True)
+class ToneParams:
+    mode: str = "none"          # none|linear|gamma|asinh|equalize|clahe
+    clip_low_pct: float = 0.1   # linear
+    clip_high_pct: float = 0.1  # linear
+    clip_pct: float = 0.1       # gamma/asinh symmetric clip
+    gamma: float = 1.0
+    asinh_strength: float = 0.5
+    remove_empty_layers: bool = False
+
+
+def _hist256(gray01: np.ndarray, fg_mask: np.ndarray | None) -> np.ndarray:
+    """256-bin histogram of the (foreground) heightfield — matches stretch.ts."""
+    vals = gray01 if fg_mask is None else gray01[fg_mask.astype(bool)]
+    if vals.size == 0:
+        return np.zeros(256, dtype=np.int64)
+    idx = np.clip(np.rint(vals.ravel() * 255.0), 0, 255).astype(np.int64)
+    return np.bincount(idx, minlength=256)
+
+
+def _percentile_bounds(hist: np.ndarray, low_pct: float, high_pct: float) -> tuple[int, int]:
+    total = int(hist.sum())
+    if total == 0:
+        return 0, 255
+    lo_target = max(0.0, low_pct) / 100.0 * total
+    hi_target = (1.0 - max(0.0, high_pct) / 100.0) * total
+    cum = np.cumsum(hist)
+    lo = int(np.searchsorted(cum, lo_target, side="right"))
+    lo = min(255, lo)
+    hi = int(np.argmax(cum >= hi_target)) if (cum >= hi_target).any() else 255
+    if hi <= lo:
+        hi = min(255, lo + 1)
+    return lo, hi
+
+
+def apply_tone01(
+    gray01: np.ndarray, p: ToneParams, fg_mask: np.ndarray | None
+) -> np.ndarray:
+    """Apply a monotonic tone curve to a float32 [0,1] heightfield, matching
+    web/src/components/relief/stretch.ts::buildLut. CLAHE is handled elsewhere;
+    here it (like ``none``) is identity unless ``remove_empty_layers``."""
+    g = np.clip(gray01.astype(np.float32), 0.0, 1.0)
+    hist = _hist256(g, fg_mask)
+
+    if p.mode in ("none", "clahe"):
+        if p.remove_empty_layers and p.mode == "none":
+            nz = np.nonzero(hist)[0]
+            floor = int(nz[0]) / 255.0 if nz.size else 0.0
+            return np.clip(g - floor, 0.0, 1.0)
+        return g
+
+    if p.mode == "equalize":
+        total = int(hist.sum())
+        if total == 0:
+            return g
+        cdf = np.cumsum(hist).astype(np.float64)
+        nz = np.nonzero(hist)[0]
+        cdf_min = cdf[nz[0]] if nz.size else 0.0
+        denom = max(1.0, total - cdf_min)
+        lut = np.clip(np.rint((cdf - cdf_min) / denom * 255.0), 0, 255) / 255.0
+        idx = np.clip(np.rint(g * 255.0), 0, 255).astype(np.int64)
+        return lut[idx].astype(np.float32)
+
+    if p.mode == "linear":
+        lo, hi = _percentile_bounds(hist, p.clip_low_pct, p.clip_high_pct)
+    else:
+        lo, hi = _percentile_bounds(hist, p.clip_pct, p.clip_pct)
+    lo01, hi01 = lo / 255.0, hi / 255.0
+    rng = max(1.0 / 255.0, hi01 - lo01)
+    x = np.clip((g - lo01) / rng, 0.0, 1.0)
+    if p.mode == "gamma":
+        y = np.power(x, p.gamma)
+    elif p.mode == "asinh":
+        k = 1.0 + p.asinh_strength * 40.0
+        y = np.arcsinh(k * x) / np.arcsinh(k)
+    else:  # linear
+        y = x
+    return np.clip(y, 0.0, 1.0).astype(np.float32)
 
 
 def parse_subtractions(json_str: str) -> list[Subtraction]:

@@ -568,3 +568,50 @@ def test_smooth_u8_wrapper_returns_uint8():
     out = smooth_heightfield(g, p)
     assert out.dtype == np.uint8
     assert out.shape == g.shape
+
+
+from xcs_gen_web.relief import ToneParams, apply_tone01
+
+
+def _u8(g01):
+    return np.rint(np.clip(g01, 0, 1) * 255).astype(int)
+
+
+def test_tone_none_is_identity():
+    g = np.linspace(0, 1, 256, dtype=np.float32).reshape(1, 256)
+    out = apply_tone01(g, ToneParams(mode="none"), None)
+    np.testing.assert_array_equal(_u8(out), _u8(g))
+
+
+def test_tone_gamma_matches_pow_curve():
+    g = np.linspace(0, 1, 256, dtype=np.float32).reshape(1, 256)
+    out = apply_tone01(g, ToneParams(mode="gamma", gamma=0.5, clip_pct=0.0), None)
+    np.testing.assert_allclose(out, np.sqrt(g), atol=1.5 / 255)
+
+
+def test_tone_linear_clips_percentiles():
+    g = (np.arange(100, dtype=np.float32) / 99.0).reshape(1, 100)
+    out = apply_tone01(g, ToneParams(mode="linear", clip_low_pct=10, clip_high_pct=10), None)
+    assert out[0, 0] == 0.0 and out[0, 5] == 0.0
+    assert out[0, 99] == 1.0
+    assert 0.0 < out[0, 50] < 1.0
+
+
+def test_tone_equalize_flattens_cdf():
+    rng = np.random.default_rng(1)
+    g = (rng.integers(40, 120, size=(64, 64)).astype(np.float32) / 255.0)
+    out = apply_tone01(g, ToneParams(mode="equalize"), None)
+    assert out.max() - out.min() > (g.max() - g.min())
+
+
+def test_tone_removeEmptyLayers_offsets_floor():
+    g = (np.array([[40, 60, 80]], dtype=np.float32) / 255.0)
+    out = apply_tone01(g, ToneParams(mode="none", remove_empty_layers=True), None)
+    np.testing.assert_array_equal(_u8(out), [[0, 20, 40]])
+
+
+def test_tone_histogram_uses_foreground_only():
+    g = (np.array([[10, 200, 200, 200]], dtype=np.float32) / 255.0)
+    fg = np.array([[False, True, True, True]])
+    out = apply_tone01(g, ToneParams(mode="linear", clip_low_pct=0, clip_high_pct=0), fg)
+    assert out[0, 1] >= out[0, 0]
