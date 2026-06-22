@@ -14,14 +14,20 @@ export interface BlockConfig {
   parsed: unknown;
 }
 
-export interface Segment {
-  /** End-point of this move, in gcode mm. */
-  x: number;
-  y: number;
-  /** Laser power 0–1000. 0 means "travel / non-burn". */
-  s: number;
-  /** True if the originating command was G0 (rapid). */
-  rapid: boolean;
+/** Columnar geometry for one block — one entry per motion vertex. Typed arrays
+ *  (not objects) so 2.8 M segments cost ~13 B each (~36 MB) instead of ~170 B,
+ *  and the worker can transfer the buffers zero-copy. */
+export interface BlockGeometry {
+  /** Vertex X (gcode mm). */
+  x: Float32Array;
+  /** Vertex Y (gcode mm). */
+  y: Float32Array;
+  /** Laser power 0–1000 (0 = travel / non-burn). */
+  s: Float32Array;
+  /** 1 = G0 rapid, 0 = G1 cut. */
+  rapid: Uint8Array;
+  /** Number of vertices (length of each column). */
+  count: number;
 }
 
 export interface Block {
@@ -29,7 +35,7 @@ export interface Block {
    * (motion_start line). Useful for surfacing forensic detail. */
   startLine: number;
   config: BlockConfig;
-  segments: Segment[];
+  geometry: BlockGeometry;
   bbox: BBox;
   /** Maximum non-zero S (laser power) observed in the block's
    * burn segments. 0 if the block has no burn segments. Used to

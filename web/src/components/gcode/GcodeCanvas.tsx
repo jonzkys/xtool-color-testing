@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { BBox, Block } from "../../lib/gcode/types";
+import { decimateIndices } from "../../lib/gcode/decimate";
 
 /** A block paired with the configured peak power of its parent layer.
  * Used so the canvas can detect cleanup passes (peakS << configured)
@@ -32,6 +33,10 @@ interface GcodeCanvasProps {
 /** Number of power buckets for batched stroking. Visually
  * indistinguishable from per-segment colour at 16 bands. */
 const POWER_BANDS = 16;
+
+/** Collapse vertices closer than this (CSS px, screen space) to the last drawn
+ *  vertex — sub-pixel detail you can't see, removed for speed. */
+const MIN_DRAW_PX = 0.5;
 
 /** A block is treated as a "cleanup pass" when its peak S falls
  * below this fraction of the configured peak power. */
@@ -122,57 +127,64 @@ export function GcodeCanvas({
     ctx.lineCap = "round";
 
     if (items.length > 0) {
-      if (showTravels) {
-        const travels = new Path2D();
-        for (const item of items) {
-          const segs = item.block.segments;
-          for (let i = 1; i < segs.length; i++) {
-            const s = segs[i];
-            if (!(s.rapid || s.s === 0)) continue;
-            const p = segs[i - 1];
-            travels.moveTo(toX(p.x), toY(p.y));
-            travels.lineTo(toX(s.x), toY(s.y));
+      const travels = new Path2D();
+      const buckets: Path2D[] = Array.from({ length: POWER_BANDS }, () => new Path2D());
+      const cleanupPath = new Path2D();
+      let cleanupSegCount = 0;
+
+      // One decimated pass per block; route each drawn segment by its end
+      // vertex (travel vs cut, power bucket vs cleanup). Decimation is purely
+      // geometric (distance from the last kept vertex), blind to the rapid
+      // flag — so a collapsed run straddling a travel/cut boundary is drawn per
+      // its end vertex. That's a sub-pixel approximation, invisible at this
+      // fit-to-view scale (travels are long and survive; only tiny runs merge).
+      for (const item of items) {
+        const cleanup = isCleanup(item);
+        const g = item.block.geometry;
+        const keep = decimateIndices(g.x, g.y, g.count, t.scale, t.ox, t.oy, MIN_DRAW_PX);
+        for (let k = 1; k < keep.length; k++) {
+          const i = keep[k];
+          const pI = keep[k - 1];
+          const px = toX(g.x[pI]);
+          const py = toY(g.y[pI]);
+          const cx = toX(g.x[i]);
+          const cy = toY(g.y[i]);
+          if (g.rapid[i] === 1 || g.s[i] === 0) {
+            if (showTravels) {
+              travels.moveTo(px, py);
+              travels.lineTo(cx, cy);
+            }
+            continue;
+          }
+          if (cleanup) {
+            cleanupPath.moveTo(px, py);
+            cleanupPath.lineTo(cx, cy);
+            cleanupSegCount++;
+          } else {
+            let b = Math.floor((g.s[i] / 1000) * POWER_BANDS);
+            if (b < 0) b = 0;
+            if (b >= POWER_BANDS) b = POWER_BANDS - 1;
+            buckets[b].moveTo(px, py);
+            buckets[b].lineTo(cx, cy);
           }
         }
+      }
+
+      // Draw order: travels under, then the warm power ramp, then cleanup on top.
+      if (showTravels) {
         ctx.strokeStyle = "rgba(150,150,150,0.30)";
         ctx.lineWidth = 0.7;
         ctx.setLineDash([2, 4]);
         ctx.stroke(travels);
         ctx.setLineDash([]);
       }
-      const buckets: Path2D[] = Array.from(
-        { length: POWER_BANDS },
-        () => new Path2D(),
-      );
-      const cleanupPath = new Path2D();
-      let cleanupSegCount = 0;
-      for (const item of items) {
-        const cleanup = isCleanup(item);
-        const segs = item.block.segments;
-        for (let i = 1; i < segs.length; i++) {
-          const s = segs[i];
-          if (s.rapid || s.s === 0) continue;
-          const p = segs[i - 1];
-          if (cleanup) {
-            cleanupPath.moveTo(toX(p.x), toY(p.y));
-            cleanupPath.lineTo(toX(s.x), toY(s.y));
-            cleanupSegCount++;
-          } else {
-            let b = Math.floor((s.s / 1000) * POWER_BANDS);
-            if (b < 0) b = 0;
-            if (b >= POWER_BANDS) b = POWER_BANDS - 1;
-            buckets[b].moveTo(toX(p.x), toY(p.y));
-            buckets[b].lineTo(toX(s.x), toY(s.y));
-          }
-        }
-      }
       ctx.lineWidth = 1;
       for (let b = 0; b < POWER_BANDS; b++) {
         const t2 = (b + 0.5) / POWER_BANDS;
         const r = Math.round(t2 * 255);
-        const g = Math.round(t2 * 80);
+        const gg = Math.round(t2 * 80);
         const bl = Math.round(t2 * 16);
-        ctx.strokeStyle = `rgb(${r}, ${g}, ${bl})`;
+        ctx.strokeStyle = `rgb(${r}, ${gg}, ${bl})`;
         ctx.stroke(buckets[b]);
       }
       if (cleanupSegCount > 0) {
@@ -249,14 +261,15 @@ export function GcodeCanvas({
     const toX = (x: number) => x * t.scale + t.ox;
     const toY = (y: number) => y * t.scale + t.oy;
     const path = new Path2D();
-    const segs = highlight.segments;
-    for (let i = 1; i < segs.length; i++) {
-      const s = segs[i];
-      // Include rapids in the highlight outline so the block's full
-      // path silhouette is visible — useful when the block is small.
-      const p = segs[i - 1];
-      path.moveTo(toX(p.x), toY(p.y));
-      path.lineTo(toX(s.x), toY(s.y));
+    // Include rapids in the highlight outline so the block's full path
+    // silhouette is visible — useful when the block is small. Decimated too.
+    const g = highlight.geometry;
+    const keep = decimateIndices(g.x, g.y, g.count, t.scale, t.ox, t.oy, MIN_DRAW_PX);
+    for (let k = 1; k < keep.length; k++) {
+      const i = keep[k];
+      const pI = keep[k - 1];
+      path.moveTo(toX(g.x[pI]), toY(g.y[pI]));
+      path.lineTo(toX(g.x[i]), toY(g.y[i]));
     }
     // Cyan glow underlay so the highlight stands out even on a
     // patch of white-stroked cleanup segments.

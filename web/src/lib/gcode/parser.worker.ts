@@ -18,7 +18,18 @@ self.onmessage = (e: MessageEvent<ParserRequest>) => {
     const file = parseGcode(e.data.text);
     const elapsedMs = performance.now() - t0;
     const resp: ParserResponse = { type: "parsed", file, elapsedMs };
-    (self as unknown as Worker).postMessage(resp);
+    // Transfer every block's geometry buffers zero-copy (they're distinct
+    // ArrayBuffers — slice() in the builders makes tight, unshared copies).
+    const transfer: Transferable[] = [];
+    for (const job of file.jobs) {
+      for (const layer of job.layers) {
+        for (const block of layer.blocks) {
+          const g = block.geometry;
+          transfer.push(g.x.buffer, g.y.buffer, g.s.buffer, g.rapid.buffer);
+        }
+      }
+    }
+    (self as unknown as Worker).postMessage(resp, transfer);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const resp: ParserResponse = { type: "error", message };
