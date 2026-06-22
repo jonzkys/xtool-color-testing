@@ -485,3 +485,63 @@ def test_parse_subtractions_tolerates_junk():
     assert parse_subtractions("not json") == []
     assert parse_subtractions("{}") == []            # not a list
     assert parse_subtractions("[1, 2, 3]") == []     # no dicts
+
+
+import io
+import numpy as np
+from PIL import Image
+from xcs_gen_web.relief import decode_gray01, encode_depth_png
+
+
+def _png_bytes(arr: np.ndarray, mode: str) -> bytes:
+    buf = io.BytesIO()
+    Image.fromarray(arr, mode=mode).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_decode_gray01_8bit_normalizes_to_unit_range():
+    src = np.array([[0, 128, 255]], dtype=np.uint8)
+    g = decode_gray01(_png_bytes(src, "L"))
+    assert g.dtype == np.float32
+    assert g.shape == (1, 3)
+    np.testing.assert_allclose(g, [[0.0, 128 / 255, 1.0]], atol=1e-6)
+
+
+def test_decode_gray01_16bit_preserves_precision():
+    src = np.array([[0, 30000, 65535]], dtype=np.uint16)
+    g = decode_gray01(_png_bytes(src, "I;16"))
+    assert g.dtype == np.float32
+    np.testing.assert_allclose(g, [[0.0, 30000 / 65535, 1.0]], atol=1e-6)
+
+
+def test_encode_depth_png_16bit_roundtrip_is_true_16bit():
+    ramp = np.linspace(0.0, 1.0, 1000, dtype=np.float32).reshape(1, 1000)
+    png = encode_depth_png(ramp, None, 16)
+    im = Image.open(io.BytesIO(png))
+    assert im.mode in ("I;16", "I")
+    out = np.asarray(im)
+    assert len(np.unique(out)) > 256
+
+
+def test_encode_depth_png_8bit_is_mode_L():
+    g = np.array([[0.0, 0.5, 1.0]], dtype=np.float32)
+    im = Image.open(io.BytesIO(encode_depth_png(g, None, 8)))
+    assert im.mode == "L"
+    np.testing.assert_array_equal(np.asarray(im), [[0, 128, 255]])
+
+
+def test_encode_depth_png_16bit_flattens_alpha_to_floor():
+    g = np.array([[0.5, 0.9]], dtype=np.float32)
+    alpha = np.array([[0, 255]], dtype=np.uint8)
+    im = Image.open(io.BytesIO(encode_depth_png(g, alpha, 16)))
+    assert im.mode in ("I;16", "I")
+    out = np.asarray(im)
+    assert out[0, 0] == 0
+    assert out[0, 1] == round(0.9 * 65535)
+
+
+def test_encode_depth_png_8bit_with_alpha_is_LA():
+    g = np.array([[0.5, 0.9]], dtype=np.float32)
+    alpha = np.array([[0, 255]], dtype=np.uint8)
+    im = Image.open(io.BytesIO(encode_depth_png(g, alpha, 8)))
+    assert im.mode == "LA"

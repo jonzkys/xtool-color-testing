@@ -36,6 +36,8 @@ __all__ = [
     "split_internal_holes",
     "Subtraction",
     "parse_subtractions",
+    "decode_gray01",
+    "encode_depth_png",
 ]
 
 
@@ -483,6 +485,46 @@ def encode_png(gray: np.ndarray) -> bytes:
     buf = BytesIO()
     Image.fromarray(gray, mode="L").save(buf, format="PNG")
     return buf.getvalue()
+
+
+def decode_gray01(raw: bytes) -> np.ndarray:
+    """Decode PNG/image bytes to a single-channel float32 heightfield in [0,1],
+    preserving the source bit depth (8-bit → /255, 16-bit → /65535). Non-gray
+    sources are reduced to luminance."""
+    im = Image.open(BytesIO(raw))
+    im.load()
+    if im.mode in ("I;16", "I;16B", "I;16L", "I"):
+        arr = np.asarray(im, dtype=np.float32)
+        return np.ascontiguousarray(arr / 65535.0)
+    if im.mode == "F":
+        arr = np.asarray(im, dtype=np.float32)
+        m = float(arr.max()) or 1.0
+        return np.ascontiguousarray(np.clip(arr / m, 0.0, 1.0))
+    if im.mode != "L":
+        im = im.convert("L")
+    arr = np.asarray(im, dtype=np.float32)
+    return np.ascontiguousarray(arr / 255.0)
+
+
+def encode_depth_png(
+    gray01: np.ndarray, alpha: np.ndarray | None, bit_depth: int
+) -> bytes:
+    """Quantize a float32 [0,1] heightfield and encode a PNG at the requested
+    bit depth. 8-bit → mode L (or LA when ``alpha`` is given); 16-bit → mode
+    I;16 grayscale, with any transparent pixels flattened to the floor (0)."""
+    g = np.clip(gray01, 0.0, 1.0)
+    if int(bit_depth) >= 16:
+        if alpha is not None:
+            g = np.where(alpha > 0, g, 0.0)
+        u16 = np.rint(g * 65535.0).astype(np.uint16)
+        buf = BytesIO()
+        # uint16 → Pillow infers mode "I;16" (passing mode= is deprecated).
+        Image.fromarray(np.ascontiguousarray(u16)).save(buf, format="PNG")
+        return buf.getvalue()
+    u8 = np.rint(g * 255.0).astype(np.uint8)
+    if alpha is not None:
+        return encode_png_la(u8, alpha)
+    return encode_png(u8)
 
 
 def split_internal_holes(alpha: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
