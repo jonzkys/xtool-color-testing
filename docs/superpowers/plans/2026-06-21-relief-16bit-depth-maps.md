@@ -456,11 +456,15 @@ def test_clahe01_stays_in_range_and_float():
 
 
 def test_edge_falloff01_inward_ramps_toward_target():
-    g = np.ones((40, 40), dtype=np.float32) * 0.8
-    alpha = np.full((40, 40), 255, dtype=np.uint8)
+    # An object on a background — inward falloff needs a real silhouette boundary
+    # (a full-frame foreground has none, so the distance transform finds no edge).
+    g = np.zeros((60, 60), dtype=np.float32)
+    g[10:50, 10:50] = 0.8
+    alpha = np.where(g > 0, 255, 0).astype(np.uint8)
     out, _a = edge_falloff01(g, alpha, pct=20.0, mode="inward", target01=0.0, intensity=50.0)
     assert out.dtype == np.float32
-    assert out[0, 0] < out[20, 20]   # edge eased toward 0, centre untouched
+    assert out[11, 11] < out[30, 30]             # edge eased toward 0 ...
+    assert abs(float(out[30, 30]) - 0.8) < 1e-6   # ... centre untouched
 
 
 def test_smooth_perimeter01_preserves_range():
