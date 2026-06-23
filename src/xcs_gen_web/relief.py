@@ -18,7 +18,9 @@ from PIL import Image
 __all__ = [
     "ReliefSmoothParams",
     "smooth_heightfield",
+    "smooth_heightfield01",
     "apply_clahe",
+    "apply_clahe01",
     "background_alpha",
     "encode_png_la",
     "to_grayscale_u8",
@@ -27,7 +29,9 @@ __all__ = [
     "colour_background_alpha",
     "trim_alpha",
     "smooth_perimeter",
+    "smooth_perimeter01",
     "edge_falloff",
+    "edge_falloff01",
     "falloff_curve",
     "threshold_background_mask",
     "colour_background_mask",
@@ -36,6 +40,10 @@ __all__ = [
     "split_internal_holes",
     "Subtraction",
     "parse_subtractions",
+    "decode_gray01",
+    "encode_depth_png",
+    "ToneParams",
+    "apply_tone01",
 ]
 
 
@@ -66,36 +74,40 @@ def to_grayscale_u8(img: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(gray, dtype=np.uint8)
 
 
-def smooth_heightfield(gray: np.ndarray, p: ReliefSmoothParams) -> np.ndarray:
-    """Edge-aware denoise of a single-channel uint8 heightfield."""
-    if gray.ndim != 2:
-        raise ValueError("smooth_heightfield expects a single-channel image")
+def smooth_heightfield01(gray01: np.ndarray, p: ReliefSmoothParams) -> np.ndarray:
+    """Edge-aware denoise of a float32 [0,1] heightfield (true-precision core)."""
+    if gray01.ndim != 2:
+        raise ValueError("smooth_heightfield01 expects a single-channel image")
+    work = np.ascontiguousarray(gray01, dtype=np.float32)
 
-    # 1. spike removal — kill single-pixel oscillation
-    work = gray
+    # 1. spike removal — median needs an integer type; do it at 16-bit scale.
     if p.spike_removal:
-        work = cv2.medianBlur(work, p.median_ksize)
+        u16 = np.rint(np.clip(work, 0.0, 1.0) * 65535.0).astype(np.uint16)
+        work = cv2.medianBlur(u16, p.median_ksize).astype(np.float32) / 65535.0
 
-    # 2. edge-aware smooth — bilateral; sigmaColor IS the guard rail
-    # d=0 → neighbourhood auto-derived from sigmaSpace (~2*strength+1 px); keep strength small (cost is O(d^2 * pixels)).
+    et = max(1, int(p.edge_threshold)) / 255.0  # threshold in [0,1] units
+    # 2. edge-aware smooth — bilateral on float32; sigmaColor IS the guard rail.
     smoothed = cv2.bilateralFilter(
-        work, d=0,
-        sigmaColor=max(1, int(p.edge_threshold)),
-        sigmaSpace=max(1, int(p.strength)),
+        work, d=0, sigmaColor=et, sigmaSpace=max(1, int(p.strength)),
     )
 
-    # 3. explicit guard-rail freeze — hard-preserve real sharp drops.
-    #    Measured on the DE-SPIKED image so spikes (already gone) aren't refrozen;
-    #    morphological gradient = local max-min range, in intensity units, so the
-    #    threshold compares apples-to-apples with edge_threshold.
+    # 3. explicit guard-rail freeze — hard-preserve real sharp drops (on de-spiked).
     if p.edge_preserve:
         kernel = np.ones((3, 3), np.uint8)
         local_range = cv2.morphologyEx(work, cv2.MORPH_GRADIENT, kernel)
-        edge_mask = (local_range > int(p.edge_threshold)).astype(np.uint8)
+        edge_mask = (local_range > et).astype(np.uint8)
         edge_mask = cv2.dilate(edge_mask, kernel, iterations=1)
         smoothed = np.where(edge_mask.astype(bool), work, smoothed)
 
-    return np.ascontiguousarray(smoothed, dtype=np.uint8)
+    return np.ascontiguousarray(np.clip(smoothed, 0.0, 1.0), dtype=np.float32)
+
+
+def smooth_heightfield(gray: np.ndarray, p: ReliefSmoothParams) -> np.ndarray:
+    """Edge-aware denoise of a single-channel uint8 heightfield (preview path)."""
+    if gray.ndim != 2:
+        raise ValueError("smooth_heightfield expects a single-channel image")
+    out01 = smooth_heightfield01(gray.astype(np.float32) / 255.0, p)
+    return np.ascontiguousarray(np.rint(out01 * 255.0).astype(np.uint8))
 
 
 def apply_clahe(
@@ -485,6 +497,46 @@ def encode_png(gray: np.ndarray) -> bytes:
     return buf.getvalue()
 
 
+def decode_gray01(raw: bytes) -> np.ndarray:
+    """Decode PNG/image bytes to a single-channel float32 heightfield in [0,1],
+    preserving the source bit depth (8-bit → /255, 16-bit → /65535). Non-gray
+    sources are reduced to luminance."""
+    im = Image.open(BytesIO(raw))
+    im.load()
+    if im.mode in ("I;16", "I;16B", "I;16L", "I"):
+        arr = np.asarray(im, dtype=np.float32)
+        return np.ascontiguousarray(arr / 65535.0)
+    if im.mode == "F":
+        arr = np.asarray(im, dtype=np.float32)
+        m = float(arr.max()) or 1.0
+        return np.ascontiguousarray(np.clip(arr / m, 0.0, 1.0))
+    if im.mode != "L":
+        im = im.convert("L")
+    arr = np.asarray(im, dtype=np.float32)
+    return np.ascontiguousarray(arr / 255.0)
+
+
+def encode_depth_png(
+    gray01: np.ndarray, alpha: np.ndarray | None, bit_depth: int
+) -> bytes:
+    """Quantize a float32 [0,1] heightfield and encode a PNG at the requested
+    bit depth. 8-bit → mode L (or LA when ``alpha`` is given); 16-bit → mode
+    I;16 grayscale, with any transparent pixels flattened to the floor (0)."""
+    g = np.clip(gray01, 0.0, 1.0)
+    if int(bit_depth) >= 16:
+        if alpha is not None:
+            g = np.where(alpha > 0, g, 0.0)
+        u16 = np.rint(g * 65535.0).astype(np.uint16)
+        buf = BytesIO()
+        # uint16 → Pillow infers mode "I;16" (passing mode= is deprecated).
+        Image.fromarray(np.ascontiguousarray(u16)).save(buf, format="PNG")
+        return buf.getvalue()
+    u8 = np.rint(g * 255.0).astype(np.uint8)
+    if alpha is not None:
+        return encode_png_la(u8, alpha)
+    return encode_png(u8)
+
+
 def split_internal_holes(alpha: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Split a 0/255 alpha into ``(solid_alpha, holes)``.
 
@@ -542,6 +594,86 @@ def _parse_sub_seed(sx: object, sy: object) -> tuple[float, float] | None:
         return None
 
 
+@dataclass(frozen=True)
+class ToneParams:
+    mode: str = "none"          # none|linear|gamma|asinh|equalize|clahe
+    clip_low_pct: float = 0.1   # linear
+    clip_high_pct: float = 0.1  # linear
+    clip_pct: float = 0.1       # gamma/asinh symmetric clip
+    gamma: float = 1.0
+    asinh_strength: float = 0.5
+    remove_empty_layers: bool = False
+
+
+def _hist256(gray01: np.ndarray, fg_mask: np.ndarray | None) -> np.ndarray:
+    """256-bin histogram of the (foreground) heightfield — matches stretch.ts."""
+    vals = gray01 if fg_mask is None else gray01[fg_mask.astype(bool)]
+    if vals.size == 0:
+        return np.zeros(256, dtype=np.int64)
+    idx = np.clip(np.rint(vals.ravel() * 255.0), 0, 255).astype(np.int64)
+    return np.bincount(idx, minlength=256)
+
+
+def _percentile_bounds(hist: np.ndarray, low_pct: float, high_pct: float) -> tuple[int, int]:
+    total = int(hist.sum())
+    if total == 0:
+        return 0, 255
+    lo_target = max(0.0, low_pct) / 100.0 * total
+    hi_target = (1.0 - max(0.0, high_pct) / 100.0) * total
+    cum = np.cumsum(hist)
+    lo = int(np.searchsorted(cum, lo_target, side="right"))
+    lo = min(255, lo)
+    hi = int(np.argmax(cum >= hi_target)) if (cum >= hi_target).any() else 255
+    if hi <= lo:
+        hi = min(255, lo + 1)
+    return lo, hi
+
+
+def apply_tone01(
+    gray01: np.ndarray, p: ToneParams, fg_mask: np.ndarray | None
+) -> np.ndarray:
+    """Apply a monotonic tone curve to a float32 [0,1] heightfield, matching
+    web/src/components/relief/stretch.ts::buildLut. CLAHE is handled elsewhere;
+    here it (like ``none``) is identity unless ``remove_empty_layers``."""
+    g = np.clip(gray01.astype(np.float32), 0.0, 1.0)
+    hist = _hist256(g, fg_mask)
+
+    if p.mode in ("none", "clahe"):
+        if p.remove_empty_layers and p.mode == "none":
+            nz = np.nonzero(hist)[0]
+            floor = int(nz[0]) / 255.0 if nz.size else 0.0
+            return np.clip(g - floor, 0.0, 1.0)
+        return g
+
+    if p.mode == "equalize":
+        total = int(hist.sum())
+        if total == 0:
+            return g
+        cdf = np.cumsum(hist).astype(np.float64)
+        nz = np.nonzero(hist)[0]
+        cdf_min = cdf[nz[0]] if nz.size else 0.0
+        denom = max(1.0, total - cdf_min)
+        lut = np.clip(np.rint((cdf - cdf_min) / denom * 255.0), 0, 255) / 255.0
+        idx = np.clip(np.rint(g * 255.0), 0, 255).astype(np.int64)
+        return lut[idx].astype(np.float32)
+
+    if p.mode == "linear":
+        lo, hi = _percentile_bounds(hist, p.clip_low_pct, p.clip_high_pct)
+    else:
+        lo, hi = _percentile_bounds(hist, p.clip_pct, p.clip_pct)
+    lo01, hi01 = lo / 255.0, hi / 255.0
+    rng = max(1.0 / 255.0, hi01 - lo01)
+    x = np.clip((g - lo01) / rng, 0.0, 1.0)
+    if p.mode == "gamma":
+        y = np.power(x, p.gamma)
+    elif p.mode == "asinh":
+        k = 1.0 + p.asinh_strength * 40.0
+        y = np.arcsinh(k * x) / np.arcsinh(k)
+    else:  # linear
+        y = x
+    return np.clip(y, 0.0, 1.0).astype(np.float32)
+
+
 def parse_subtractions(json_str: str) -> list[Subtraction]:
     """Parse a JSON array of subtraction ops, tolerantly: clamp out-of-range
     threshold (0..255) / tolerance (0..441), snap bad numbers to defaults, drop
@@ -575,3 +707,132 @@ def parse_subtractions(json_str: str) -> list[Subtraction]:
             seed=_parse_sub_seed(item.get("seedX"), item.get("seedY")),
         ))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Float-native edge ops — for the high-bit-depth export pipeline.
+# These are companions to apply_clahe / smooth_perimeter / edge_falloff that
+# work entirely in float32 [0,1] so no intermediate uint8 cast re-quantizes a
+# 16-bit surface to 256 levels.  The uint8 originals above are UNCHANGED and
+# continue to power the preview path.
+# ---------------------------------------------------------------------------
+
+
+def apply_clahe01(
+    gray01: np.ndarray, clip_limit: float, tiles: int, mask: np.ndarray | None = None
+) -> np.ndarray:
+    """CLAHE on a float [0,1] heightfield. cv2 CLAHE needs an integer type, so
+    run it at 16-bit and rescale — a 16-bit→16-bit lookup, no 8-bit truncation."""
+    if gray01.ndim != 2:
+        raise ValueError("apply_clahe01 expects a single-channel image")
+    u16 = np.rint(np.clip(gray01, 0.0, 1.0) * 65535.0).astype(np.uint16)
+    n = max(1, int(tiles))
+    clahe = cv2.createCLAHE(clipLimit=max(0.1, float(clip_limit)), tileGridSize=(n, n))
+    src = u16
+    if mask is not None:
+        if mask.shape != gray01.shape:
+            raise ValueError("apply_clahe01: mask and gray must have the same shape")
+        fg = mask > 0
+        if fg.any() and not fg.all():
+            src = u16.copy()
+            src[~fg] = int(round(float(u16[fg].mean())))
+    return np.ascontiguousarray(clahe.apply(src).astype(np.float32) / 65535.0)
+
+
+def smooth_perimeter01(
+    gray01: np.ndarray, alpha: np.ndarray, pct: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Float [0,1] form of ``smooth_perimeter`` — rounds the silhouette boundary
+    and evens the rim height. Preserves full precision (no uint8 quantize)."""
+    if gray01.ndim != 2 or alpha.ndim != 2:
+        raise ValueError("smooth_perimeter01 expects single-channel gray + alpha")
+    if gray01.shape != alpha.shape:
+        raise ValueError("smooth_perimeter01: gray and alpha must share a shape")
+    if pct <= 0:
+        return np.ascontiguousarray(gray01, dtype=np.float32), alpha
+    fg = (alpha > 0).astype(np.uint8)
+    ys, xs = np.where(fg > 0)
+    if ys.size == 0:
+        return np.ascontiguousarray(gray01, dtype=np.float32), alpha
+    short = min(int(ys.max() - ys.min() + 1), int(xs.max() - xs.min() + 1))
+    radius = int(round(pct / 100.0 * short))
+    if radius < 1:
+        return np.ascontiguousarray(gray01, dtype=np.float32), alpha
+    blurred = cv2.GaussianBlur(fg.astype(np.float32) * 255.0, (0, 0), float(radius))
+    clean = (blurred >= 127.5).astype(np.uint8)
+    if not clean.any():
+        return np.ascontiguousarray(gray01, dtype=np.float32), alpha
+    new_alpha = np.where(clean > 0, 255, 0).astype(np.uint8)
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1, 2 * radius + 1))
+    out = gray01.astype(np.float32)
+    added = (clean > 0) & (fg == 0)
+    if added.any():
+        edge_fill = cv2.dilate(np.where(fg > 0, out, 0.0), k, iterations=1)
+        out = np.where(added, edge_fill, out)
+    new_fg = clean.astype(np.float32)
+    band_mask = (clean > 0) & (cv2.erode(clean, k, iterations=1) == 0)
+    if band_mask.any():
+        ksm = max(3, radius | 1)
+        num = cv2.GaussianBlur(out * new_fg, (ksm, ksm), 0)
+        den = cv2.GaussianBlur(new_fg, (ksm, ksm), 0)
+        out = np.where(band_mask, num / np.maximum(den, 1e-6), out)
+    out = np.clip(out, 0.0, 1.0).astype(np.float32)
+    return np.ascontiguousarray(out), np.ascontiguousarray(new_alpha)
+
+
+def edge_falloff01(
+    gray01: np.ndarray, alpha: np.ndarray, pct: float, mode: str = "inward",
+    target01: float = 0.0, intensity: float = 50.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Float [0,1] form of ``edge_falloff`` (inward bevel / outward berm).
+    ``target01`` is the eased-to level in [0,1]. Preserves full precision."""
+    if gray01.ndim != 2 or alpha.ndim != 2:
+        raise ValueError("edge_falloff01 expects single-channel gray + alpha")
+    if gray01.shape != alpha.shape:
+        raise ValueError("edge_falloff01: gray and alpha must share a shape")
+    if pct <= 0:
+        return np.ascontiguousarray(gray01, dtype=np.float32), alpha
+    fg = (alpha > 0).astype(np.uint8)
+    ys, xs = np.where(fg > 0)
+    if ys.size == 0:
+        return np.ascontiguousarray(gray01, dtype=np.float32), alpha
+    short = min(int(ys.max() - ys.min() + 1), int(xs.max() - xs.min() + 1))
+    band = pct / 100.0 * short
+    if band < 1:
+        return np.ascontiguousarray(gray01, dtype=np.float32), alpha
+    tgt = max(0.0, min(1.0, float(target01)))
+    g = gray01.astype(np.float32)
+    radius = int(round(band))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1, 2 * radius + 1))
+    floor_fade01 = FLOOR_FADE / 255.0
+
+    if str(mode) == "outward":
+        contours, _ = cv2.findContours(fg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        filled = np.zeros_like(fg)
+        cv2.drawContours(filled, contours, -1, 1, thickness=cv2.FILLED)
+        dilated = cv2.dilate(filled, kernel, iterations=1)
+        ring = (dilated > 0) & (filled == 0)
+        eroded = cv2.erode(filled, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)), iterations=1)
+        boundary_gray = np.where((filled > 0) & (eroded == 0), g, 0.0)
+        base = cv2.dilate(boundary_gray, kernel, iterations=1)
+        t_out = np.clip(
+            cv2.distanceTransform(dilated, cv2.DIST_L2, cv2.DIST_MASK_PRECISE) / band,
+            0.0, 1.0,
+        )
+        u_out = falloff_curve(np.clip(t_out / 0.5, 0.0, 1.0), intensity)
+        u_in = falloff_curve(np.clip((t_out - 0.5) / 0.5, 0.0, 1.0), intensity)
+        ring_h = np.where(t_out <= 0.5, tgt * u_out, tgt * (1.0 - u_in) + base * u_in)
+        out = np.where(ring, ring_h, g)
+        ring_alpha = np.clip(ring_h / floor_fade01, 0.0, 1.0) * 255.0
+        out_alpha = np.where(fg > 0, 255.0, np.where(ring, ring_alpha, 0.0))
+        return (
+            np.ascontiguousarray(np.clip(out, 0.0, 1.0).astype(np.float32)),
+            np.ascontiguousarray(np.clip(np.rint(out_alpha), 0, 255).astype(np.uint8)),
+        )
+
+    clean = _smooth_mask(fg, radius)
+    dist = cv2.distanceTransform(clean, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
+    c = falloff_curve(dist / band, intensity)
+    blended = tgt + (g - tgt) * c
+    out = np.where(fg > 0, blended, g)
+    return np.ascontiguousarray(np.clip(out, 0.0, 1.0).astype(np.float32)), alpha

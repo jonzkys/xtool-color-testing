@@ -485,3 +485,163 @@ def test_parse_subtractions_tolerates_junk():
     assert parse_subtractions("not json") == []
     assert parse_subtractions("{}") == []            # not a list
     assert parse_subtractions("[1, 2, 3]") == []     # no dicts
+
+
+import io
+import numpy as np
+from PIL import Image
+from xcs_gen_web.relief import decode_gray01, encode_depth_png
+
+
+def _png_bytes(arr: np.ndarray, mode: str) -> bytes:
+    buf = io.BytesIO()
+    Image.fromarray(arr, mode=mode).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_decode_gray01_8bit_normalizes_to_unit_range():
+    src = np.array([[0, 128, 255]], dtype=np.uint8)
+    g = decode_gray01(_png_bytes(src, "L"))
+    assert g.dtype == np.float32
+    assert g.shape == (1, 3)
+    np.testing.assert_allclose(g, [[0.0, 128 / 255, 1.0]], atol=1e-6)
+
+
+def test_decode_gray01_16bit_preserves_precision():
+    src = np.array([[0, 30000, 65535]], dtype=np.uint16)
+    g = decode_gray01(_png_bytes(src, "I;16"))
+    assert g.dtype == np.float32
+    np.testing.assert_allclose(g, [[0.0, 30000 / 65535, 1.0]], atol=1e-6)
+
+
+def test_encode_depth_png_16bit_roundtrip_is_true_16bit():
+    ramp = np.linspace(0.0, 1.0, 1000, dtype=np.float32).reshape(1, 1000)
+    png = encode_depth_png(ramp, None, 16)
+    im = Image.open(io.BytesIO(png))
+    assert im.mode in ("I;16", "I")
+    out = np.asarray(im)
+    assert len(np.unique(out)) > 256
+
+
+def test_encode_depth_png_8bit_is_mode_L():
+    g = np.array([[0.0, 0.5, 1.0]], dtype=np.float32)
+    im = Image.open(io.BytesIO(encode_depth_png(g, None, 8)))
+    assert im.mode == "L"
+    np.testing.assert_array_equal(np.asarray(im), [[0, 128, 255]])
+
+
+def test_encode_depth_png_16bit_flattens_alpha_to_floor():
+    g = np.array([[0.5, 0.9]], dtype=np.float32)
+    alpha = np.array([[0, 255]], dtype=np.uint8)
+    im = Image.open(io.BytesIO(encode_depth_png(g, alpha, 16)))
+    assert im.mode in ("I;16", "I")
+    out = np.asarray(im)
+    assert out[0, 0] == 0
+    assert out[0, 1] == round(0.9 * 65535)
+
+
+def test_encode_depth_png_8bit_with_alpha_is_LA():
+    g = np.array([[0.5, 0.9]], dtype=np.float32)
+    alpha = np.array([[0, 255]], dtype=np.uint8)
+    im = Image.open(io.BytesIO(encode_depth_png(g, alpha, 8)))
+    assert im.mode == "LA"
+
+
+from xcs_gen_web.relief import (
+    ReliefSmoothParams, smooth_heightfield, smooth_heightfield01,
+)
+
+
+def test_smooth01_produces_sub_256_levels_on_a_gradient():
+    yy, xx = np.mgrid[0:64, 0:64].astype(np.float32)
+    g01 = ((xx + yy) / 126.0).astype(np.float32)
+    out = smooth_heightfield01(g01, ReliefSmoothParams(strength=4, spike_removal=False))
+    assert out.dtype == np.float32
+    assert out.min() >= 0.0 and out.max() <= 1.0
+    assert len(np.unique(np.rint(out * 65535))) > 256
+
+
+def test_smooth_u8_wrapper_returns_uint8():
+    rng = np.random.default_rng(0)
+    g = rng.integers(0, 256, size=(48, 48), dtype=np.uint8)
+    p = ReliefSmoothParams(strength=6, edge_threshold=40, spike_removal=True)
+    out = smooth_heightfield(g, p)
+    assert out.dtype == np.uint8
+    assert out.shape == g.shape
+
+
+from xcs_gen_web.relief import ToneParams, apply_tone01
+
+
+def _u8(g01):
+    return np.rint(np.clip(g01, 0, 1) * 255).astype(int)
+
+
+def test_tone_none_is_identity():
+    g = np.linspace(0, 1, 256, dtype=np.float32).reshape(1, 256)
+    out = apply_tone01(g, ToneParams(mode="none"), None)
+    np.testing.assert_array_equal(_u8(out), _u8(g))
+
+
+def test_tone_gamma_matches_pow_curve():
+    g = np.linspace(0, 1, 256, dtype=np.float32).reshape(1, 256)
+    out = apply_tone01(g, ToneParams(mode="gamma", gamma=0.5, clip_pct=0.0), None)
+    np.testing.assert_allclose(out, np.sqrt(g), atol=1.5 / 255)
+
+
+def test_tone_linear_clips_percentiles():
+    g = (np.arange(100, dtype=np.float32) / 99.0).reshape(1, 100)
+    out = apply_tone01(g, ToneParams(mode="linear", clip_low_pct=10, clip_high_pct=10), None)
+    assert out[0, 0] == 0.0 and out[0, 5] == 0.0
+    assert out[0, 99] == 1.0
+    assert 0.0 < out[0, 50] < 1.0
+
+
+def test_tone_equalize_flattens_cdf():
+    rng = np.random.default_rng(1)
+    g = (rng.integers(40, 120, size=(64, 64)).astype(np.float32) / 255.0)
+    out = apply_tone01(g, ToneParams(mode="equalize"), None)
+    assert out.max() - out.min() > (g.max() - g.min())
+
+
+def test_tone_removeEmptyLayers_offsets_floor():
+    g = (np.array([[40, 60, 80]], dtype=np.float32) / 255.0)
+    out = apply_tone01(g, ToneParams(mode="none", remove_empty_layers=True), None)
+    np.testing.assert_array_equal(_u8(out), [[0, 20, 40]])
+
+
+def test_tone_histogram_uses_foreground_only():
+    g = (np.array([[10, 200, 200, 200]], dtype=np.float32) / 255.0)
+    fg = np.array([[False, True, True, True]])
+    out = apply_tone01(g, ToneParams(mode="linear", clip_low_pct=0, clip_high_pct=0), fg)
+    assert out[0, 1] >= out[0, 0]
+
+
+from xcs_gen_web.relief import apply_clahe01, smooth_perimeter01, edge_falloff01
+
+
+def test_clahe01_stays_in_range_and_float():
+    rng = np.random.default_rng(2)
+    g = (rng.integers(60, 140, size=(64, 64)).astype(np.float32) / 255.0)
+    out = apply_clahe01(g, clip_limit=2.0, tiles=8)
+    assert out.dtype == np.float32 and out.min() >= 0.0 and out.max() <= 1.0
+
+
+def test_edge_falloff01_inward_ramps_toward_target():
+    # An object on a background — inward falloff ramps the band just inside the
+    # object's silhouette toward the target, leaving the interior untouched.
+    g = np.zeros((60, 60), dtype=np.float32)
+    g[10:50, 10:50] = 0.8
+    alpha = np.where(g > 0, 255, 0).astype(np.uint8)
+    out, _a = edge_falloff01(g, alpha, pct=20.0, mode="inward", target01=0.0, intensity=50.0)
+    assert out.dtype == np.float32
+    assert out[11, 11] < out[30, 30]            # edge eased toward 0 ...
+    assert abs(float(out[30, 30]) - 0.8) < 1e-6  # ... centre untouched
+
+
+def test_smooth_perimeter01_preserves_range():
+    g = np.zeros((40, 40), dtype=np.float32)
+    g[8:32, 8:32] = 0.7
+    alpha = np.where(g > 0, 255, 0).astype(np.uint8)
+    out, _a = smooth_perimeter01(g, alpha, pct=10.0)
+    assert out.dtype == np.float32 and out.max() <= 1.0
