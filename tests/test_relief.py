@@ -615,3 +615,33 @@ def test_tone_histogram_uses_foreground_only():
     fg = np.array([[False, True, True, True]])
     out = apply_tone01(g, ToneParams(mode="linear", clip_low_pct=0, clip_high_pct=0), fg)
     assert out[0, 1] >= out[0, 0]
+
+
+from xcs_gen_web.relief import apply_clahe01, smooth_perimeter01, edge_falloff01
+
+
+def test_clahe01_stays_in_range_and_float():
+    rng = np.random.default_rng(2)
+    g = (rng.integers(60, 140, size=(64, 64)).astype(np.float32) / 255.0)
+    out = apply_clahe01(g, clip_limit=2.0, tiles=8)
+    assert out.dtype == np.float32 and out.min() >= 0.0 and out.max() <= 1.0
+
+
+def test_edge_falloff01_inward_ramps_toward_target():
+    # An object on a background — inward falloff ramps the band just inside the
+    # object's silhouette toward the target, leaving the interior untouched.
+    g = np.zeros((60, 60), dtype=np.float32)
+    g[10:50, 10:50] = 0.8
+    alpha = np.where(g > 0, 255, 0).astype(np.uint8)
+    out, _a = edge_falloff01(g, alpha, pct=20.0, mode="inward", target01=0.0, intensity=50.0)
+    assert out.dtype == np.float32
+    assert out[11, 11] < out[30, 30]            # edge eased toward 0 ...
+    assert abs(float(out[30, 30]) - 0.8) < 1e-6  # ... centre untouched
+
+
+def test_smooth_perimeter01_preserves_range():
+    g = np.zeros((40, 40), dtype=np.float32)
+    g[8:32, 8:32] = 0.7
+    alpha = np.where(g > 0, 255, 0).astype(np.uint8)
+    out, _a = smooth_perimeter01(g, alpha, pct=10.0)
+    assert out.dtype == np.float32 and out.max() <= 1.0

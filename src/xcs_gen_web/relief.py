@@ -20,6 +20,7 @@ __all__ = [
     "smooth_heightfield",
     "smooth_heightfield01",
     "apply_clahe",
+    "apply_clahe01",
     "background_alpha",
     "encode_png_la",
     "to_grayscale_u8",
@@ -28,7 +29,9 @@ __all__ = [
     "colour_background_alpha",
     "trim_alpha",
     "smooth_perimeter",
+    "smooth_perimeter01",
     "edge_falloff",
+    "edge_falloff01",
     "falloff_curve",
     "threshold_background_mask",
     "colour_background_mask",
@@ -704,3 +707,132 @@ def parse_subtractions(json_str: str) -> list[Subtraction]:
             seed=_parse_sub_seed(item.get("seedX"), item.get("seedY")),
         ))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Float-native edge ops — for the high-bit-depth export pipeline.
+# These are companions to apply_clahe / smooth_perimeter / edge_falloff that
+# work entirely in float32 [0,1] so no intermediate uint8 cast re-quantizes a
+# 16-bit surface to 256 levels.  The uint8 originals above are UNCHANGED and
+# continue to power the preview path.
+# ---------------------------------------------------------------------------
+
+
+def apply_clahe01(
+    gray01: np.ndarray, clip_limit: float, tiles: int, mask: np.ndarray | None = None
+) -> np.ndarray:
+    """CLAHE on a float [0,1] heightfield. cv2 CLAHE needs an integer type, so
+    run it at 16-bit and rescale — a 16-bit→16-bit lookup, no 8-bit truncation."""
+    if gray01.ndim != 2:
+        raise ValueError("apply_clahe01 expects a single-channel image")
+    u16 = np.rint(np.clip(gray01, 0.0, 1.0) * 65535.0).astype(np.uint16)
+    n = max(1, int(tiles))
+    clahe = cv2.createCLAHE(clipLimit=max(0.1, float(clip_limit)), tileGridSize=(n, n))
+    src = u16
+    if mask is not None:
+        if mask.shape != gray01.shape:
+            raise ValueError("apply_clahe01: mask and gray must have the same shape")
+        fg = mask > 0
+        if fg.any() and not fg.all():
+            src = u16.copy()
+            src[~fg] = int(round(float(u16[fg].mean())))
+    return np.ascontiguousarray(clahe.apply(src).astype(np.float32) / 65535.0)
+
+
+def smooth_perimeter01(
+    gray01: np.ndarray, alpha: np.ndarray, pct: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Float [0,1] form of ``smooth_perimeter`` — rounds the silhouette boundary
+    and evens the rim height. Preserves full precision (no uint8 quantize)."""
+    if gray01.ndim != 2 or alpha.ndim != 2:
+        raise ValueError("smooth_perimeter01 expects single-channel gray + alpha")
+    if gray01.shape != alpha.shape:
+        raise ValueError("smooth_perimeter01: gray and alpha must share a shape")
+    if pct <= 0:
+        return np.ascontiguousarray(gray01, dtype=np.float32), alpha
+    fg = (alpha > 0).astype(np.uint8)
+    ys, xs = np.where(fg > 0)
+    if ys.size == 0:
+        return np.ascontiguousarray(gray01, dtype=np.float32), alpha
+    short = min(int(ys.max() - ys.min() + 1), int(xs.max() - xs.min() + 1))
+    radius = int(round(pct / 100.0 * short))
+    if radius < 1:
+        return np.ascontiguousarray(gray01, dtype=np.float32), alpha
+    blurred = cv2.GaussianBlur(fg.astype(np.float32) * 255.0, (0, 0), float(radius))
+    clean = (blurred >= 127.5).astype(np.uint8)
+    if not clean.any():
+        return np.ascontiguousarray(gray01, dtype=np.float32), alpha
+    new_alpha = np.where(clean > 0, 255, 0).astype(np.uint8)
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1, 2 * radius + 1))
+    out = gray01.astype(np.float32)
+    added = (clean > 0) & (fg == 0)
+    if added.any():
+        edge_fill = cv2.dilate(np.where(fg > 0, out, 0.0), k, iterations=1)
+        out = np.where(added, edge_fill, out)
+    new_fg = clean.astype(np.float32)
+    band_mask = (clean > 0) & (cv2.erode(clean, k, iterations=1) == 0)
+    if band_mask.any():
+        ksm = max(3, radius | 1)
+        num = cv2.GaussianBlur(out * new_fg, (ksm, ksm), 0)
+        den = cv2.GaussianBlur(new_fg, (ksm, ksm), 0)
+        out = np.where(band_mask, num / np.maximum(den, 1e-6), out)
+    out = np.clip(out, 0.0, 1.0).astype(np.float32)
+    return np.ascontiguousarray(out), np.ascontiguousarray(new_alpha)
+
+
+def edge_falloff01(
+    gray01: np.ndarray, alpha: np.ndarray, pct: float, mode: str = "inward",
+    target01: float = 0.0, intensity: float = 50.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Float [0,1] form of ``edge_falloff`` (inward bevel / outward berm).
+    ``target01`` is the eased-to level in [0,1]. Preserves full precision."""
+    if gray01.ndim != 2 or alpha.ndim != 2:
+        raise ValueError("edge_falloff01 expects single-channel gray + alpha")
+    if gray01.shape != alpha.shape:
+        raise ValueError("edge_falloff01: gray and alpha must share a shape")
+    if pct <= 0:
+        return np.ascontiguousarray(gray01, dtype=np.float32), alpha
+    fg = (alpha > 0).astype(np.uint8)
+    ys, xs = np.where(fg > 0)
+    if ys.size == 0:
+        return np.ascontiguousarray(gray01, dtype=np.float32), alpha
+    short = min(int(ys.max() - ys.min() + 1), int(xs.max() - xs.min() + 1))
+    band = pct / 100.0 * short
+    if band < 1:
+        return np.ascontiguousarray(gray01, dtype=np.float32), alpha
+    tgt = max(0.0, min(1.0, float(target01)))
+    g = gray01.astype(np.float32)
+    radius = int(round(band))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1, 2 * radius + 1))
+    floor_fade01 = FLOOR_FADE / 255.0
+
+    if str(mode) == "outward":
+        contours, _ = cv2.findContours(fg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        filled = np.zeros_like(fg)
+        cv2.drawContours(filled, contours, -1, 1, thickness=cv2.FILLED)
+        dilated = cv2.dilate(filled, kernel, iterations=1)
+        ring = (dilated > 0) & (filled == 0)
+        eroded = cv2.erode(filled, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)), iterations=1)
+        boundary_gray = np.where((filled > 0) & (eroded == 0), g, 0.0)
+        base = cv2.dilate(boundary_gray, kernel, iterations=1)
+        t_out = np.clip(
+            cv2.distanceTransform(dilated, cv2.DIST_L2, cv2.DIST_MASK_PRECISE) / band,
+            0.0, 1.0,
+        )
+        u_out = falloff_curve(np.clip(t_out / 0.5, 0.0, 1.0), intensity)
+        u_in = falloff_curve(np.clip((t_out - 0.5) / 0.5, 0.0, 1.0), intensity)
+        ring_h = np.where(t_out <= 0.5, tgt * u_out, tgt * (1.0 - u_in) + base * u_in)
+        out = np.where(ring, ring_h, g)
+        ring_alpha = np.clip(ring_h / floor_fade01, 0.0, 1.0) * 255.0
+        out_alpha = np.where(fg > 0, 255.0, np.where(ring, ring_alpha, 0.0))
+        return (
+            np.ascontiguousarray(np.clip(out, 0.0, 1.0).astype(np.float32)),
+            np.ascontiguousarray(np.clip(np.rint(out_alpha), 0, 255).astype(np.uint8)),
+        )
+
+    clean = _smooth_mask(fg, radius)
+    dist = cv2.distanceTransform(clean, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
+    c = falloff_curve(dist / band, intensity)
+    blended = tgt + (g - tgt) * c
+    out = np.where(fg > 0, blended, g)
+    return np.ascontiguousarray(np.clip(out, 0.0, 1.0).astype(np.float32)), alpha
