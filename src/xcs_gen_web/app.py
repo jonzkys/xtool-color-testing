@@ -7,6 +7,8 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import cv2
+import numpy as np
 import anyio
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -84,16 +86,25 @@ from .capture_pipeline import decode_image_bytes
 from .pixel_art_converter import pixel_art_to_svg, pixel_art_to_xcs_bytes
 from .relief import (
     ReliefSmoothParams,
+    ToneParams,
     apply_clahe,
+    apply_clahe01,
+    apply_tone01,
     area_background_mask,
     colour_background_mask,
     combine_backgrounds,
+    decode_gray01,
     edge_falloff,
+    edge_falloff01,
+    encode_depth_png,
     encode_png,
     encode_png_la,
+    parse_rgb,
     parse_subtractions,
     smooth_heightfield,
+    smooth_heightfield01,
     smooth_perimeter,
+    smooth_perimeter01,
     split_internal_holes,
     threshold_background_mask,
     to_grayscale_u8,
@@ -1006,6 +1017,123 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             png = encode_png_la(out, alpha)
         else:
             png = encode_png(out)
+        return Response(content=png, media_type="image/png",
+                        headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/relief/export")
+    def relief_export(
+        file: UploadFile = File(...),
+        bit_depth: int = Form(16),
+        strength: int = Form(8),
+        edge_preserve: bool = Form(True),
+        edge_threshold: int = Form(40),
+        spike_removal: bool = Form(True),
+        median_ksize: int = Form(3),
+        smooth: bool = Form(True),
+        tone_mode: str = Form("none"),
+        clip_low_pct: float = Form(0.1),
+        clip_high_pct: float = Form(0.1),
+        clip_pct: float = Form(0.1),
+        gamma: float = Form(1.0),
+        asinh_strength: float = Form(0.5),
+        remove_empty_layers: bool = Form(False),
+        clahe_clip: float = Form(2.0),
+        clahe_tiles: int = Form(8),
+        remove_bg: bool = Form(False),
+        subtractions: str = Form("[]"),
+        shape_internal: bool = Form(False),
+        perimeter_pct: float = Form(0.0),
+        trim_pct: float = Form(0.0),
+        falloff_pct: float = Form(0.0),
+        falloff_mode: str = Form("inward"),
+        falloff_target: float = Form(0.0),
+        falloff_intensity: float = Form(50.0),
+        expand_pct: float = Form(0.0),
+        pad_color: str = Form("0,0,0"),
+    ) -> Response:
+        """Full-precision relief render → 8- or 16-bit PNG. Decodes the ORIGINAL
+        bytes at native depth and runs the whole pipeline in float [0,1],
+        quantizing only at encode. Mirrors /api/relief/smooth's ordering; the
+        monotonic tone curve (a client LUT in the preview) is applied here too."""
+        raw = file.file.read()
+        try:
+            gray = decode_gray01(raw)
+            bgr = decode_image_bytes(raw)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Could not decode image")
+        if gray.size == 0 or min(gray.shape) < 2:
+            raise HTTPException(status_code=422, detail="Image too small")
+
+        exp = max(0.0, min(50.0, expand_pct))
+        if exp > 0:
+            rgb = parse_rgb(pad_color) or (0, 0, 0)
+            padc01 = float(0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255.0
+            py = int(round(gray.shape[0] * exp / 100.0))
+            px = int(round(gray.shape[1] * exp / 100.0))
+            if px > 0 or py > 0:
+                gray = cv2.copyMakeBorder(gray, py, py, px, px, cv2.BORDER_CONSTANT, value=padc01)
+                bgr = cv2.copyMakeBorder(bgr, py, py, px, px, cv2.BORDER_CONSTANT,
+                                         value=(int(rgb[2]), int(rgb[1]), int(rgb[0])))
+
+        if smooth:
+            gray = smooth_heightfield01(gray, ReliefSmoothParams(
+                strength=max(1, min(100, strength)),
+                edge_preserve=edge_preserve,
+                edge_threshold=max(1, min(255, edge_threshold)),
+                spike_removal=spike_removal,
+                median_ksize=median_ksize,
+            ))
+
+        alpha = None
+        if remove_bg:
+            gray_u8 = np.rint(gray * 255.0).astype(np.uint8)
+            masks = []
+            for sub in parse_subtractions(subtractions):
+                if sub.method in ("dark", "bright"):
+                    masks.append(threshold_background_mask(
+                        gray_u8, sub.threshold, high=(sub.method == "bright")))
+                elif sub.method == "colour" and sub.color is not None:
+                    masks.append(colour_background_mask(bgr, sub.color, sub.tolerance))
+                elif sub.method == "area" and sub.color is not None and sub.seed is not None:
+                    masks.append(area_background_mask(bgr, sub.color, sub.tolerance, sub.seed))
+            if masks:
+                alpha = combine_backgrounds(masks)
+
+        fg = (alpha > 0) if alpha is not None else None
+        if tone_mode == "clahe":
+            gray = apply_clahe01(gray, max(0.1, min(40.0, clahe_clip)),
+                                 max(1, min(32, clahe_tiles)), mask=alpha)
+        else:
+            gray = apply_tone01(gray, ToneParams(
+                mode=tone_mode, clip_low_pct=clip_low_pct, clip_high_pct=clip_high_pct,
+                clip_pct=clip_pct, gamma=gamma, asinh_strength=asinh_strength,
+                remove_empty_layers=remove_empty_layers,
+            ), fg)
+
+        if alpha is not None:
+            perimeter = max(0.0, min(25.0, perimeter_pct))
+            trim = max(0.0, min(50.0, trim_pct))
+            falloff = max(0.0, min(50.0, falloff_pct))
+            if perimeter > 0 or trim > 0 or falloff > 0:
+                if shape_internal:
+                    work, holes = alpha, None
+                else:
+                    work, holes = split_internal_holes(alpha)
+                if perimeter > 0:
+                    gray, work = smooth_perimeter01(gray, work, perimeter)
+                if trim > 0:
+                    work = trim_alpha(work, trim)
+                if falloff > 0:
+                    tgt01 = max(0.0, min(100.0, falloff_target)) / 100.0
+                    gray, work = edge_falloff01(
+                        gray, work, falloff, falloff_mode, tgt01,
+                        max(0.0, min(100.0, falloff_intensity)))
+                if holes is not None:
+                    work = work.copy()
+                    work[holes] = 0
+                alpha = work
+
+        png = encode_depth_png(gray, alpha, 16 if int(bit_depth) >= 16 else 8)
         return Response(content=png, media_type="image/png",
                         headers={"Cache-Control": "no-store"})
 

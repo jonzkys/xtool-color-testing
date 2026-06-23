@@ -1,13 +1,21 @@
 """Tests for the /api/relief/smooth route."""
 from __future__ import annotations
 
+import io
 import json
 from io import BytesIO
 
+import numpy as np
 from fastapi.testclient import TestClient
 from PIL import Image
 
 from xcs_gen_web.app import create_app
+
+
+def _png(arr, mode):
+    buf = io.BytesIO()
+    Image.fromarray(arr, mode=mode).save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def _png_bytes(w=32, h=32, color=100) -> bytes:
@@ -309,3 +317,49 @@ def test_relief_smooth_shape_internal_changes_the_result():
     shaped_mode = Image.open(BytesIO(shaped)).mode
     assert shaped_mode == "LA"
     assert shaped != default  # the flag demonstrably alters the output
+
+
+# ---------------------------------------------------------------------------
+# /api/relief/export — 8/16-bit full-precision render
+# ---------------------------------------------------------------------------
+
+def test_export_16bit_returns_true_16bit():
+    client = TestClient(create_app())
+    ramp = np.linspace(0, 255, 64 * 64).reshape(64, 64).astype(np.uint8)
+    r = client.post("/api/relief/export", files={"file": ("d.png", _png(ramp, "L"), "image/png")},
+                    data={"bit_depth": "16", "smooth": "true", "tone_mode": "gamma", "gamma": "0.5"})
+    assert r.status_code == 200
+    im = Image.open(io.BytesIO(r.content))
+    assert im.mode in ("I;16", "I")
+    assert len(np.unique(np.asarray(im))) > 256
+
+
+def test_export_8bit_returns_mode_L():
+    client = TestClient(create_app())
+    ramp = np.linspace(0, 255, 64 * 64).reshape(64, 64).astype(np.uint8)
+    r = client.post("/api/relief/export", files={"file": ("d.png", _png(ramp, "L"), "image/png")},
+                    data={"bit_depth": "8", "smooth": "true", "tone_mode": "none"})
+    assert r.status_code == 200
+    assert Image.open(io.BytesIO(r.content)).mode == "L"
+
+
+def test_export_preserves_16bit_input():
+    client = TestClient(create_app())
+    src = np.linspace(0, 65535, 64 * 64).reshape(64, 64).astype(np.uint16)
+    r = client.post("/api/relief/export", files={"file": ("d.png", _png(src, "I;16"), "image/png")},
+                    data={"bit_depth": "16", "smooth": "false", "tone_mode": "none"})
+    assert r.status_code == 200
+    assert len(np.unique(np.asarray(Image.open(io.BytesIO(r.content))))) > 256
+
+
+def test_export_16bit_with_bg_is_grayscale():
+    client = TestClient(create_app())
+    img = np.full((64, 64), 200, dtype=np.uint8)
+    img[:8, :] = 0
+    r = client.post("/api/relief/export", files={"file": ("d.png", _png(img, "L"), "image/png")},
+                    data={"bit_depth": "16", "smooth": "false", "tone_mode": "none",
+                          "remove_bg": "true", "subtractions": '[{"method":"dark","threshold":8}]'})
+    assert r.status_code == 200
+    im = Image.open(io.BytesIO(r.content))
+    assert im.mode in ("I;16", "I")
+    assert int(np.asarray(im)[0, 0]) == 0
