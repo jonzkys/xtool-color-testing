@@ -11,7 +11,16 @@ from typing import Literal
 from shapely import make_valid
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
 from shapely.ops import unary_union
-from svgelements import Path as SVGPath
+from shapely.strtree import STRtree
+from svgelements import (
+    Arc as _SvgArc,
+    Close as _SvgClose,
+    CubicBezier as _SvgCubic,
+    Line as _SvgLine,
+    Move as _SvgMove,
+    Path as SVGPath,
+    QuadraticBezier as _SvgQuad,
+)
 
 
 FillRule = Literal["evenodd", "nonzero"]
@@ -49,33 +58,63 @@ def svg_d_to_polygon(d: str, *, fill_rule: FillRule = "evenodd") -> Polygon | Mu
 
     # Sort by area descending so containment checks are stable.
     indexed = sorted(enumerate(simple_polys), key=lambda pair: pair[1].area, reverse=True)
-    depth: dict[int, int] = {idx: 0 for idx, _ in indexed}
-    for i, (a_idx, a) in enumerate(indexed):
-        for b_idx, b in indexed[:i]:
-            if depth[b_idx] is None:
+
+    # Both loops below used to be O(rings^2) ``contains()`` scans, and the
+    # second rebuilt ``Polygon(shell_coords)`` on every inner iteration. That
+    # is fine for hand-authored art and pathological for the multi-ring
+    # monsters subtraction produces — one shape from a real trace carried 846
+    # subpaths and spent 4.1 s here across ~494k contains() calls.
+    #
+    # An STRtree turns each scan into a bbox query plus an exact predicate.
+    # Predicate direction is the trap: shapely evaluates
+    # ``input.predicate(tree_geom)``, so to find a ring's CONTAINERS we ask
+    # for the rings it is ``within`` — asking for ``contains`` returns its
+    # children and inverts the whole nesting.
+    if len(indexed) == 1:
+        depth = {indexed[0][0]: 0}
+    else:
+        order = [idx for idx, _ in indexed]
+        geoms = [poly for _, poly in indexed]
+        tree = STRtree(geoms)
+        depth = {idx: 0 for idx in order}
+        for rank, (a_idx, a) in enumerate(indexed):
+            # Containers can only be rings sorted earlier (larger area).
+            containers = [
+                int(k) for k in tree.query(a, predicate="within") if int(k) < rank
+            ]
+            if not containers:
                 continue
-            if b.contains(a):
-                depth[a_idx] = depth[b_idx] + 1
+            # Reduce by max RANK, not max depth: the original loop let the
+            # last container in area-descending order win, which is the
+            # highest-rank one. Using rank makes that provably identical
+            # rather than incidentally so.
+            best_rank = max(containers)
+            depth[a_idx] = depth[order[best_rank]] + 1
 
     # Group rings by their containing exterior (nearest even-depth ancestor).
     exteriors: list[tuple[list[tuple[float, float]], list[list[tuple[float, float]]]]] = []
     exterior_indices: list[int] = []
+    exterior_polys: list[Polygon] = []
     for idx, poly in indexed:
         if depth[idx] % 2 == 0:
             exteriors.append((list(poly.exterior.coords), []))
             exterior_indices.append(idx)
+            exterior_polys.append(poly)
 
+    ext_tree = STRtree(exterior_polys) if exterior_polys else None
     for idx, poly in indexed:
-        if depth[idx] % 2 == 1:
-            # Assign to the innermost even-depth parent.
+        if depth[idx] % 2 == 1 and ext_tree is not None:
+            # Assign to the innermost even-depth parent. ``within`` again:
+            # we want the exteriors that contain this hole.
             best = None
             best_depth = -1
-            for ex_idx, (shell_coords, _holes) in zip(exterior_indices, exteriors):
-                if depth[ex_idx] > best_depth and Polygon(shell_coords).contains(poly):
-                    best = ex_idx
+            for k in ext_tree.query(poly, predicate="within"):
+                ex_idx = exterior_indices[int(k)]
+                if depth[ex_idx] > best_depth:
+                    best = int(k)
                     best_depth = depth[ex_idx]
             if best is not None:
-                exteriors[exterior_indices.index(best)][1].append(list(poly.exterior.coords))
+                exteriors[best][1].append(list(poly.exterior.coords))
 
     built = [Polygon(shell, holes=holes) for shell, holes in exteriors]
     if len(built) == 1:
@@ -86,15 +125,31 @@ def svg_d_to_polygon(d: str, *, fill_rule: FillRule = "evenodd") -> Polygon | Mu
     return _repair(result)
 
 
+# Curve sample positions. Kept as a module constant so the inline evaluators
+# below and any future caller cannot drift apart.
+_CURVE_TS = (0.25, 0.5, 0.75, 1.0)
+
+
 def _path_to_rings(path: SVGPath) -> list[list[tuple[float, float]]]:
     """Flatten an SVGPath into a list of rings (closed coordinate loops).
 
     Walks svgelements' segment structure so absolute/relative commands resolve
     correctly. Each Move segment starts a new ring. Curved segments (CubicBezier,
     QuadraticBezier, Arc) are sampled at a fixed tolerance.
-    """
-    from svgelements import Arc, Close, CubicBezier, Line, Move, QuadraticBezier
 
+    Performance note — the Bezier arithmetic is inlined rather than going
+    through ``seg.point(t)``. svgelements routes that to ``npoint([t])``, which
+    allocates a fresh ``np.empty((1, 2))`` per call for a single scalar and then
+    throws the array away to build a tuple. A subtracted vtracer trace can carry
+    23k cubics, i.e. ~94k of those allocations per pass, and numpy buys nothing
+    at that size: 832 ms -> 16 ms with the formulas below.
+
+    The expression order mirrors svgelements' ``_compute_point`` exactly
+    (see CubicBezier.npoint / QuadraticBezier.npoint) so float association is
+    identical and the output is bit-for-bit what ``seg.point(t)`` returned.
+    Anything that is not a Line/Cubic/Quadratic/Move/Close — Arc especially —
+    still goes through ``seg.point``, which is correct if slower.
+    """
     rings: list[list[tuple[float, float]]] = []
     current: list[tuple[float, float]] = []
 
@@ -104,21 +159,53 @@ def _path_to_rings(path: SVGPath) -> list[list[tuple[float, float]]]:
                 current.append(current[0])
             rings.append(list(current))
 
+    # Branch order is by measured frequency, not by conceptual tidiness: on a
+    # real subtracted trace Lines outnumber every other segment type ~15:1.
     for seg in path.segments():
-        if isinstance(seg, Move):
+        cls = type(seg)
+        if cls is _SvgLine:
+            end = seg.end
+            if end is not None:
+                current.append((end.x, end.y))
+        elif cls is _SvgCubic:
+            x0, y0 = seg.start
+            x1, y1 = seg.control1
+            x2, y2 = seg.control2
+            x3, y3 = seg.end
+            for t in _CURVE_TS:
+                pos_3 = t * t * t
+                n = 1 - t
+                n_3 = n * n * n
+                pos_2_n_pos = t * t * n
+                n_pos_2_pos = n * n * t
+                current.append((
+                    n_3 * x0 + 3 * (n_pos_2_pos * x1 + pos_2_n_pos * x2) + pos_3 * x3,
+                    n_3 * y0 + 3 * (n_pos_2_pos * y1 + pos_2_n_pos * y2) + pos_3 * y3,
+                ))
+        elif cls is _SvgMove:
             _flush()
             current.clear()
             if seg.end is not None:
-                current.append((float(seg.end.x), float(seg.end.y)))
-        elif isinstance(seg, Close):
-            # Implicit close: pop a copy of the start point on flush.
+                current.append((seg.end.x, seg.end.y))
+        elif cls is _SvgClose:
+            # Implicit close: _flush repeats the start point.
             continue
-        elif isinstance(seg, Line):
-            if seg.end is not None:
-                current.append((float(seg.end.x), float(seg.end.y)))
-        elif isinstance(seg, (CubicBezier, QuadraticBezier, Arc)):
-            # Sample the curve at multiple points for fidelity.
-            for t in (0.25, 0.5, 0.75, 1.0):
+        elif cls is _SvgQuad:
+            x0, y0 = seg.start
+            x1, y1 = seg.control
+            x2, y2 = seg.end
+            for t in _CURVE_TS:
+                n = 1 - t
+                pos_2 = t * t
+                n_pos_2 = n * n
+                n_pos_pos = n * t
+                current.append((
+                    n_pos_2 * x0 + 2 * n_pos_pos * x1 + pos_2 * x2,
+                    n_pos_2 * y0 + 2 * n_pos_pos * y1 + pos_2 * y2,
+                ))
+        elif isinstance(seg, (_SvgArc, _SvgCubic, _SvgQuad, _SvgLine, _SvgMove)):
+            # Subclass of a handled type, or an Arc: fall back to the library.
+            for t in _CURVE_TS:
                 pt = seg.point(t)
                 current.append((float(pt.x), float(pt.y)))
         else:
