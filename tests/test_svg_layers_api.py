@@ -1,6 +1,7 @@
 """Tests for the SVG Layers converter and /api/svg-layers endpoint."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -396,3 +397,76 @@ def test_api_layers_endpoint_rejects_hatched_with_empty_passes():
 # its pure-JS near-white logic is covered by the browser-side detection.
 # ``is_near_white`` (pure function in xcs_gen/svg_source.py) still has
 # its own unit tests in tests/test_svg_source.py.
+
+
+def test_api_preview_width_is_a_uniform_scale():
+    """``width_mm`` scales the preview and (almost exactly) nothing else.
+
+    The SVG-layers page deliberately omits ``width_mm`` from its preview
+    effect's dependency array: changing the project width must not cost a
+    multi-second round trip, because the response differs from the previous
+    one only by a constant factor on every coordinate AND on the viewBox —
+    and the pane renders it at ``width/height 100%`` with
+    ``preserveAspectRatio``, so the on-screen pixels are identical.
+
+    Measured on Pikachu at 50 mm vs 100 mm: 120 of 122 paths are *bit*-exactly
+    2x (max deviation 0.000000000 mm). The other two are multi-ring shapes
+    that survived subtraction, where shapely's ``difference`` picks up or
+    drops a sub-micron sliver ring depending on the coordinate magnitude it
+    is handed. Same fill, same z-position, visually identical — so the
+    frontend assumption holds — but it is a tolerance, not an identity, and
+    this test says so out loud.
+
+    If this ever stops being true (a width-dependent tolerance, a minimum
+    feature size, a non-uniform fit), the frontend must put the dep back.
+    """
+    client = TestClient(create_app())
+
+    def preview(width_mm: float) -> str:
+        resp = client.post("/api/svg-preview", json={
+            "svg_content": PIKACHU_SVG.read_text(),
+            "width_mm": width_mm,
+            "subtract_overlaps": True,
+        })
+        assert resp.status_code == 200
+        return resp.json()["svg"]
+
+    small = preview(50)
+    large = preview(100)
+
+    paths_small = re.findall(r'<path d="([^"]+)" fill="([^"]+)"', small)
+    paths_large = re.findall(r'<path d="([^"]+)" fill="([^"]+)"', large)
+
+    # Same shapes, same colours, same z-order.
+    assert len(paths_small) == len(paths_large) > 0
+    assert [f for _, f in paths_small] == [f for _, f in paths_large]
+
+    # Must handle scientific notation — svgelements emits e.g. "7.779E-06"
+    # for near-zero relative deltas, and a naive r"-?\d+\.\d+" splits the
+    # mantissa from the exponent and reports nonsense.
+    num_re = re.compile(r"-?\d+\.?\d*(?:[eE][-+]?\d+)?")
+
+    exact = 0
+    for (d_small, _), (d_large, _) in zip(paths_small, paths_large):
+        nums_small = [float(n) for n in num_re.findall(d_small)]
+        nums_large = [float(n) for n in num_re.findall(d_large)]
+        if len(nums_small) != len(nums_large):
+            # Sliver-ring divergence; tolerated, but bounded by the ratio
+            # assertion below.
+            continue
+        for a, b in zip(nums_small, nums_large):
+            assert b == pytest.approx(a * 2, abs=1e-6)
+        exact += 1
+
+    # The overwhelming majority must be exactly proportional. If this ratio
+    # slips, subtraction has become materially scale-sensitive and the
+    # frontend optimisation is no longer safe.
+    assert exact >= 0.95 * len(paths_small), (
+        f"only {exact}/{len(paths_small)} paths scaled exactly"
+    )
+
+    # And the viewBox itself scales exactly.
+    vb_small = re.search(r'viewBox="([^"]+)"', small).group(1).split()
+    vb_large = re.search(r'viewBox="([^"]+)"', large).group(1).split()
+    for a, b in zip(vb_small, vb_large):
+        assert float(b) == pytest.approx(float(a) * 2, abs=1e-3)
