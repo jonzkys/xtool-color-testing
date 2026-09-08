@@ -11,6 +11,7 @@ on strokes aren't meaningful.
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 
 from shapely.geometry import MultiPolygon, Polygon
@@ -171,17 +172,38 @@ def subtract_overlapping_shapes(shapes: list[ParsedShape]) -> list[ParsedShape]:
     return result
 
 
-# Post-subtract d-strings are emitted at %.4f mm while the bbox they carry
-# came from unrounded shapely bounds, so a flattened ring can land ~5e-5 mm
-# outside its own bbox. Demand containment by more than an order of magnitude
-# beyond that before trusting the bbox as a proxy for the geometry.
+# Small guard band on the bbox test. Post-subtract d-strings are emitted at
+# %.4f mm while the bbox they carry came from unrounded shapely bounds, so a
+# ring can land ~5e-5 mm outside its own bbox from rounding alone.
 _BBOX_MARGIN_MM = 1e-3
+
+# Arc commands. See ``_bbox_inside`` — svgelements' Arc.bbox() does not bound
+# our flattening of that arc, so the bbox is not a safe proxy for any path
+# containing one.
+_ARC_CMD_RE = re.compile(r"[Aa]")
 
 
 def _bbox_inside(
     sh: ParsedShape, x: float, y: float, width: float, height: float
 ) -> bool:
-    """True when ``sh``'s recorded bbox sits strictly inside the rect."""
+    """True when ``sh``'s recorded bbox provably contains its own geometry AND
+    sits inside the rect.
+
+    The bbox is only usable as a stand-in for the geometry because
+    ``_path_to_rings`` samples curves at points that lie ON the curve: for
+    lines, cubics and quadratics the sampled polygon is inscribed in the true
+    curve, so svgelements' exact segment bbox necessarily contains it.
+
+    **Arcs break that.** svgelements 1.9.6's ``Arc.bbox()`` under-estimates the
+    extrema of an eccentric rotated arc, so the flattened ring can extend
+    beyond the bbox the shape carries — measured at 0.034 mm on
+    ``M 10 50 A 40 15 30 1 0 90 50 Z``. Trusting the bbox there lets geometry
+    bleed past the canvas, which is the exact failure this clip exists to
+    prevent. So any path carrying an arc command falls through to a real
+    intersection.
+    """
+    if _ARC_CMD_RE.search(sh.d):
+        return False
     m = _BBOX_MARGIN_MM
     return (
         sh.bbox_x_mm >= x + m
@@ -205,10 +227,12 @@ def subtract_and_clip(
     largest phase in the whole pipeline, spent rebuilding something we had
     just thrown away.
 
-    Keeping the geometry in hand across both steps also means a shape that is
-    untouched by subtraction AND inside the canvas keeps its original
-    ``d`` — curves included — instead of being flattened to polylines for no
-    reason.
+    Output is geometrically equivalent to running the two separately. A small
+    number of d-strings differ byte-for-byte (1 of 122 on Pikachu): the fused
+    pass unions an ``intersects``-filtered candidate set and clips from
+    unrounded geometry, where the separate path unioned a bbox-query set and
+    clipped from a re-parsed %.4f string. That is float noise, not a change in
+    what gets burned.
     """
     canvas = Polygon([
         (x, y), (x + width, y),
@@ -236,9 +260,12 @@ def subtract_and_clip(
                 if geom.is_empty:
                     continue  # fully covered by shapes above it
 
-        if clip_enabled and not _bbox_inside(sh, x, y, width, height):
-            # Only shapes near the canvas edge pay for a real intersection,
-            # and we already hold the geometry so there is nothing to re-parse.
+        if clip_enabled:
+            # No bbox shortcut here: we are already holding the geometry, so
+            # ``geom.bounds`` is a trivial envelope read AND it is exact for
+            # what we will actually emit. Consulting the shape's recorded bbox
+            # instead would be no faster and, for arc paths, wrong (see
+            # ``_bbox_inside``).
             bounds = geom.bounds
             if not (
                 bounds[0] >= x and bounds[1] >= y
