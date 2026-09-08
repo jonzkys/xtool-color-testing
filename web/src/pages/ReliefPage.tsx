@@ -32,11 +32,13 @@ import { CollapsibleGroup } from "../components/relief/CollapsibleGroup";
 import { CutoutControls } from "../components/relief/CutoutControls";
 import { SurfaceControls } from "../components/relief/SurfaceControls";
 import { XsImportDialog } from "../components/relief/XsImportDialog";
+import { BitDepthToggle } from "../components/relief/BitDepthToggle";
 import { parseXsDepthMaps, pngBlob, type XsDepthJob } from "../lib/relief/xsImport";
 import {
   DEFAULT_RELIEF_PARAMS,
   downscaleForPreview,
   padToCanvas,
+  reliefExport,
   reliefSmooth,
   sampleRgb,
   scaleParamsForPreview,
@@ -146,6 +148,13 @@ export function ReliefPage() {
   const [status, setStatus] = useState<Status>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [bitDepth, setBitDepth] = useState<8 | 16>(
+    () => (localStorage.getItem("relief.bitDepth") === "8" ? 8 : 16),
+  );
+  useEffect(() => {
+    localStorage.setItem("relief.bitDepth", String(bitDepth));
+  }, [bitDepth]);
+  const [originalBlob, setOriginalBlob] = useState<Blob | null>(null);
   // Bumping forces the preview effect to re-run even when nothing else
   // changed — drives the manual "Re-render" button.
   const [renderTick, setRenderTick] = useState(0);
@@ -277,6 +286,9 @@ export function ReliefPage() {
       prev?.close();
       return bmp;
     });
+    // Retain the original bytes for the backend-rendered export (preserves
+    // 16-bit input; avoids re-encoding through canvas).
+    setOriginalBlob(blob);
     // Swap in the new original URL, revoking the old one first.
     setOriginalUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -508,63 +520,24 @@ export function ReliefPage() {
     stretchParams.removeEmptyLayers,
   ]);
 
-  // ── Export: full-res, unscaled params ─────────────────────────────
+  // ── Export: full-precision backend render ─────────────────────────
   const onExport = useCallback(async () => {
-    if (!workingSource) return;
+    if (!originalBlob) return;
     setExporting(true);
     setErrorMsg(null);
     try {
-      // Re-encode the FULL-RES source (incl. any expand padding) to a PNG blob.
-      const canvas = document.createElement("canvas");
-      canvas.width = workingSource.width;
-      canvas.height = workingSource.height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Failed to get 2D context");
-      ctx.drawImage(workingSource, 0, 0);
-      const fullBlob = await new Promise<Blob>((resolve, reject) =>
-        canvas.toBlob(
-          (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
-          "image/png",
-        ),
-      );
-      const opts = {
-        clahe:
-          stretchParams.mode === "clahe"
-            ? {
-                clipLimit: stretchParams.claheClipLimit,
-                tiles: stretchParams.claheTiles,
-              }
-            : undefined,
+      const finalBlob = await reliefExport(originalBlob, {
+        params,
+        stretch: stretchParams,
         background: bgOpts(),
-      };
-      const smoothed = await reliefSmooth(fullBlob, params, opts);
-
-      // Apply the SAME client LUT to the full-res result (identity for CLAHE),
-      // so the exported PNG matches the preview exactly.
-      const smoothedBitmap = await createImageBitmap(smoothed);
-      const oc = document.createElement("canvas");
-      oc.width = smoothedBitmap.width;
-      oc.height = smoothedBitmap.height;
-      const octx = oc.getContext("2d", { willReadFrequently: true });
-      if (!octx) throw new Error("Failed to get 2D context");
-      octx.drawImage(smoothedBitmap, 0, 0);
-      smoothedBitmap.close();
-      const srcData = octx.getImageData(0, 0, oc.width, oc.height);
-      const finalData = applyLut(
-        srcData,
-        buildLut(stretchParams, histogram(srcData)),
-      );
-      octx.putImageData(finalData, 0, 0);
-      const finalBlob = await new Promise<Blob>((resolve, reject) =>
-        oc.toBlob(
-          (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
-          "image/png",
-        ),
-      );
+        expandPct: stretchParams.expandPct,
+        padColor,
+        bitDepth,
+      });
       const url = URL.createObjectURL(finalBlob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "relief.png";
+      a.download = bitDepth === 16 ? "relief-16bit.png" : "relief.png";
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -575,7 +548,7 @@ export function ReliefPage() {
     } finally {
       setExporting(false);
     }
-  }, [workingSource, params, stretchParams, bgOpts]);
+  }, [originalBlob, params, stretchParams, bgOpts, padColor, bitDepth]);
 
   // ── Centre host: measure CSS box for the compare canvas ───────────
   // The host is mounted only once a depth map exists, so attach the
@@ -641,6 +614,7 @@ export function ReliefPage() {
         <Toolbar
           trailing={
             <>
+              <BitDepthToggle value={bitDepth} onChange={setBitDepth} />
               <Button
                 variant="ghost"
                 size="sm"

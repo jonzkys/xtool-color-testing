@@ -1,4 +1,4 @@
-import type { Subtraction } from "../components/relief/stretch";
+import type { Subtraction, StretchParams } from "../components/relief/stretch";
 
 export interface ReliefParams {
   strength: number;       // bilateral spatial radius (px, full-res)
@@ -92,6 +92,74 @@ export async function reliefSmooth(
   }
   const res = await fetch("/api/relief/smooth", { method: "POST", body: fd });
   if (!res.ok) throw new Error(`relief smooth failed: ${res.status}`);
+  return res.blob();
+}
+
+/** Background-removal opts — the exact shape `ReliefPage.bgOpts()` returns. */
+export interface ReliefBackgroundOpts {
+  subtractions: Subtraction[];
+  perimeterPct: number;
+  trimPct: number;
+  falloffPct: number;
+  falloffMode: "inward" | "outward";
+  falloffTarget: number;
+  falloffIntensity: number;
+  shapeInternal: boolean;
+}
+
+export interface ReliefExportArgs {
+  params: ReliefParams;
+  stretch: StretchParams;
+  background?: ReliefBackgroundOpts;
+  expandPct: number;
+  padColor: [number, number, number];
+  bitDepth: 8 | 16;
+}
+
+/** POST the ORIGINAL source bytes + the full param set to the full-precision
+ *  backend render and resolve the 8/16-bit PNG blob. Unlike reliefSmooth this
+ *  carries the tone mode (applied on the backend, not as a client LUT) and the
+ *  bit depth, and sends the unmodified source so 16-bit input is preserved. */
+export async function reliefExport(originalBytes: Blob, a: ReliefExportArgs): Promise<Blob> {
+  const fd = new FormData();
+  fd.append("file", originalBytes, "source.png");
+  fd.append("bit_depth", String(a.bitDepth));
+  const p = a.params;
+  fd.append("strength", String(p.strength));
+  fd.append("edge_preserve", String(p.edgePreserve));
+  fd.append("edge_threshold", String(p.edgeThreshold));
+  fd.append("spike_removal", String(p.spikeRemoval));
+  fd.append("median_ksize", String(p.medianKsize));
+  fd.append("smooth", String(p.smoothEnabled));
+  const s = a.stretch;
+  fd.append("tone_mode", s.mode);
+  fd.append("clip_low_pct", String(s.clipLowPct));
+  fd.append("clip_high_pct", String(s.clipHighPct));
+  fd.append("clip_pct", String(s.clipPct));
+  fd.append("gamma", String(s.gamma));
+  fd.append("asinh_strength", String(s.asinhStrength));
+  fd.append("remove_empty_layers", String(s.removeEmptyLayers));
+  fd.append("clahe_clip", String(s.claheClipLimit));
+  fd.append("clahe_tiles", String(s.claheTiles));
+  fd.append("expand_pct", String(a.expandPct));
+  fd.append("pad_color", `${a.padColor[0]},${a.padColor[1]},${a.padColor[2]}`);
+  if (a.background) {
+    const b = a.background;
+    fd.append("remove_bg", "true");
+    fd.append("subtractions", JSON.stringify(b.subtractions.map((x) => ({
+      method: x.method, threshold: x.threshold, color: x.color,
+      tolerance: x.tolerance, seedX: x.seedX, seedY: x.seedY,
+    }))));
+    fd.append("shape_internal", String(b.shapeInternal));
+    fd.append("perimeter_pct", String(b.perimeterPct));
+    fd.append("trim_pct", String(b.trimPct));
+    fd.append("falloff_pct", String(b.falloffPct));
+    fd.append("falloff_mode", b.falloffMode);
+    fd.append("falloff_target", String(b.falloffTarget));
+    fd.append("falloff_intensity", String(b.falloffIntensity));
+  }
+  const res = await fetch("/api/relief/export", { method: "POST", body: fd });
+  if (!res.ok) throw new Error(`relief export failed: ${res.status}`);
   return res.blob();
 }
 

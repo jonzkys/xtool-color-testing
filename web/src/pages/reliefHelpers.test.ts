@@ -1,12 +1,14 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   DEFAULT_RELIEF_PARAMS,
   padToCanvas,
   previewRatio,
+  reliefExport,
   reliefSmooth,
   scaleParamsForPreview,
   sampleRgb,
 } from "./reliefHelpers";
+import { DEFAULT_STRETCH_PARAMS } from "../components/relief/stretch";
 
 // jsdom doesn't ship the ImageData constructor. Shim a structural
 // equivalent with the data-first signature used elsewhere in the repo.
@@ -128,6 +130,30 @@ describe("sampleRgb", () => {
   it("clamps out-of-range fractions", () => {
     const data = new ImageData(new Uint8ClampedArray([1, 2, 3, 255]), 1, 1);
     expect(sampleRgb(data, -5, 9)).toEqual([1, 2, 3]);
+  });
+});
+
+describe("reliefExport", () => {
+  beforeEach(() => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob() } as Response);
+  });
+  it("posts bit_depth, tone_mode and the original bytes to /api/relief/export", async () => {
+    const orig = new Blob(["X"], { type: "image/png" });
+    await reliefExport(orig, {
+      params: DEFAULT_RELIEF_PARAMS,
+      stretch: { ...DEFAULT_STRETCH_PARAMS, mode: "gamma", gamma: 0.6 },
+      background: undefined,
+      expandPct: 0,
+      padColor: [0, 0, 0],
+      bitDepth: 16,
+    });
+    const [url, init] = (global.fetch as any).mock.calls[0];
+    expect(url).toBe("/api/relief/export");
+    const fd = init.body as FormData;
+    expect(fd.get("bit_depth")).toBe("16");
+    expect(fd.get("tone_mode")).toBe("gamma");
+    expect(fd.get("gamma")).toBe("0.6");
+    expect(fd.get("file")).toBeInstanceOf(Blob);
   });
 });
 
