@@ -1,0 +1,60 @@
+{
+  "pkg": "xcs-gen-web",
+  "shape": "package",
+  "projectId": "f421ef52-e3cb-4547-aca9-353bbea9408f",
+  "globalName": "WorkshopInstrument",
+  "entry": "./web/src/ui/index.ts",
+  "srcDir": "src/ui",
+  "tsconfig": "tsconfig.json",
+  "buildCmd": "cd web && npx tsc -p tsconfig.ds.json && npm run build && sed 's|url(/assets/|url(./|g' dist/assets/index-*.css > dist/assets/ds-styles.css",
+  "cssEntry": "dist/assets/ds-styles.css",
+  "componentSrcMap": {
+    "CardHeader": null,
+    "CardTitle": null,
+    "CardFooter": null,
+    "TabList": null,
+    "Tab": null,
+    "TabPanel": null,
+    "DialogTrigger": null,
+    "DialogClose": null,
+    "DialogContent": null,
+    "DialogHeader": null,
+    "DialogTitle": null,
+    "DialogDescription": null,
+    "TabBar": "src/ui/Tabs.tsx",
+    "ToastHost": "src/ui/Toast.tsx"
+  },
+  "docsDir": "../.design-sync/docs",
+  "dtsPropsFor": {
+    "Button": "  className?: string;\n  id?: string;\n  style?: React.CSSProperties;\n  children?: React.ReactNode;\n  /** Visual weight. `primary` is the ember-filled call to action. */\n  variant?: \"primary\" | \"secondary\" | \"ghost\" | \"destructive\" | \"link\";\n  size?: \"sm\" | \"md\" | \"lg\";\n  disabled?: boolean;\n  type?: \"button\" | \"submit\" | \"reset\";\n  title?: string;\n  onClick?: React.MouseEventHandler<HTMLButtonElement>;",
+    "IconButton": "  className?: string;\n  id?: string;\n  style?: React.CSSProperties;\n  /** The glyph to render. A 14-16px lucide-react icon is the house style. */\n  icon: React.ReactNode;\n  /** Required \u2014 IconButton has no visible text. */\n  \"aria-label\": string;\n  variant?: \"default\" | \"ghost\" | \"active\";\n  size?: \"sm\" | \"md\";\n  disabled?: boolean;\n  title?: string;\n  type?: \"button\" | \"submit\" | \"reset\";\n  onClick?: React.MouseEventHandler<HTMLButtonElement>;",
+    "Input": "  className?: string;\n  id?: string;\n  style?: React.CSSProperties;\n  /** Red border + ring. Pair with `Field`'s `error` for the message. */\n  invalid?: boolean;\n  /** Render the value in JetBrains Mono for numeric/technical input. */\n  mono?: boolean;\n  type?: string;\n  value?: string | number;\n  defaultValue?: string | number;\n  placeholder?: string;\n  disabled?: boolean;\n  readOnly?: boolean;\n  required?: boolean;\n  name?: string;\n  min?: number | string;\n  max?: number | string;\n  step?: number | string;\n  onChange?: React.ChangeEventHandler<HTMLInputElement>;",
+    "Textarea": "  className?: string;\n  id?: string;\n  style?: React.CSSProperties;\n  /** Red border + ring. Pair with `Field`'s `error` for the message. */\n  invalid?: boolean;\n  value?: string;\n  defaultValue?: string;\n  placeholder?: string;\n  rows?: number;\n  disabled?: boolean;\n  readOnly?: boolean;\n  onChange?: React.ChangeEventHandler<HTMLTextAreaElement>;",
+    "Select": "  className?: string;\n  id?: string;\n  style?: React.CSSProperties;\n  /** Native `<option>` elements. */\n  children?: React.ReactNode;\n  /** Red border + ring. Pair with `Field`'s `error` for the message. */\n  invalid?: boolean;\n  value?: string | number;\n  defaultValue?: string | number;\n  disabled?: boolean;\n  name?: string;\n  onChange?: React.ChangeEventHandler<HTMLSelectElement>;",
+    "Tabs": "  /** Compose as `<Tabs><TabList><Tab value=\u2026/></TabList><TabPanel value=\u2026/></Tabs>`. */\n  children?: React.ReactNode;\n  className?: string;\n  /** Selected tab value when controlled. */\n  value?: string;\n  /** Selected tab value when uncontrolled. */\n  defaultValue?: string;\n  onValueChange?: (value: string) => void;\n  orientation?: \"horizontal\" | \"vertical\";\n  dir?: \"ltr\" | \"rtl\";\n  activationMode?: \"automatic\" | \"manual\";",
+    "ToastHost": "  /** No props. Mount once near the app root, then call `notify(message, level)`\n   *  from anywhere \u2014 including outside React \u2014 to raise a toast. */",
+    "ThemeToggle": "  /** No props. Cycles light -> dark -> system and persists the choice; the\n   *  chosen mode is applied by toggling `.dark` on `<html>`. */"
+  },
+  "overrides": {
+    "Dialog": {
+      "cardMode": "single",
+      "primaryStory": "SimplifyShapes"
+    },
+    "ToastHost": {
+      "cardMode": "single"
+    },
+    "Toolbar": {
+      "cardMode": "column"
+    },
+    "MetalBar": {
+      "cardMode": "column"
+    },
+    "PageContainer": {
+      "cardMode": "column"
+    },
+    "TabBar": {
+      "cardMode": "column"
+    }
+  },
+  "readmeHeader": ".design-sync/conventions.md"
+}
