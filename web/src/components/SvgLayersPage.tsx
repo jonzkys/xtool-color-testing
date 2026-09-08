@@ -54,6 +54,9 @@ import {
   patchPaletteEntry,
   queryPalette,
 } from "../api/palette";
+import { listTests } from "../api/tests";
+import { listResults } from "../api/results";
+import { formatRoute } from "../router";
 import { getCurrentMachineId } from "../state/machine";
 import { deltaE76, hexToLab, type Lab } from "../color/math";
 import { computePager } from "../svg/favoritesPager";
@@ -1991,6 +1994,104 @@ export function paletteParamsToLayerPatch(
   return out;
 }
 
+/* ── Empty-palette hint ───────────────────────────────────
+ *
+ * "No palette entries for this material yet" used to stop at "burn a
+ * test and upload it" — which is exactly what the user standing in
+ * front of this message has usually already done. Entries only appear
+ * once a validation test has ≥ 2 uploaded runs *and* its stable cells
+ * are saved on the Stability page, so when a validation test for this
+ * material is already in flight we say where it stalled instead of
+ * repeating advice they followed.
+ */
+
+/** Runs a validation test needs before its save gate can measure
+ *  stability. Mirrors ``MIN_RESULTS`` in ``services/validate.py``: a
+ *  cell with one run has nothing to compare against, so every cell
+ *  skips as ``insufficient_runs`` and the save writes no entries. */
+export const MIN_VALIDATION_RUNS = 2;
+
+export interface ValidationProgress {
+  id: number;
+  name: string;
+  /** Non-excluded uploaded results — what the backend counts as runs. */
+  runCount: number;
+}
+
+/** Pick the validation test worth pointing at when a material's
+ *  palette is empty: the one closest to saveable (most runs), newest
+ *  on a tie. Tests with no uploads are ignored — they would only
+ *  restate the generic "burn a test" advice. */
+export function pickStalledValidation(
+  tests: ValidationProgress[],
+): ValidationProgress | null {
+  const withRuns = tests.filter((t) => t.runCount > 0);
+  if (withRuns.length === 0) return null;
+  return withRuns.reduce((best, t) => (
+    t.runCount > best.runCount
+    || (t.runCount === best.runCount && t.id > best.id)
+      ? t
+      : best
+  ));
+}
+
+function PaletteEmptyHint({ materialId }: { materialId: string }) {
+  const [stalled, setStalled] = useState<ValidationProgress | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setStalled(null);
+    const matIdNum = Number(materialId);
+    if (!matIdNum) return;
+    (async () => {
+      const tests = await listTests({
+        material_id: matIdNum, kind: "validation",
+      });
+      // Only the newest few are worth a results round-trip each —
+      // an older stalled test is noise, not a next action.
+      const recent = [...tests].sort((a, b) => b.id - a.id).slice(0, 3);
+      const progress = await Promise.all(recent.map(async (t) => ({
+        id: t.id,
+        name: t.name,
+        // ``/results`` includes excluded rows; the validate gate
+        // doesn't count them, so neither do we.
+        runCount: (await listResults(t.id)).filter((r) => !r.excluded).length,
+      })));
+      if (!cancelled) setStalled(pickStalledValidation(progress));
+    })().catch(() => {
+      /* Best-effort hint — fall back to the generic copy. */
+    });
+    return () => { cancelled = true; };
+  }, [materialId]);
+
+  if (!stalled) {
+    return (
+      <p className="text-[12px] text-[color:var(--color-ink-muted)]">
+        No palette entries for this material yet. Burn a test and upload it
+        on the Palette tab.
+      </p>
+    );
+  }
+
+  return (
+    <p className="text-[12px] text-[color:var(--color-ink-muted)]">
+      No palette entries for this material yet.{" "}
+      <a
+        href={formatRoute({ name: "stability", id: stalled.id })}
+        className="text-[color:var(--color-secondary)] hover:underline"
+      >
+        Test #{stalled.id} · {stalled.name}
+      </a>{" "}
+      {stalled.runCount < MIN_VALIDATION_RUNS
+        ? `has ${stalled.runCount} of the ${MIN_VALIDATION_RUNS} runs needed `
+          + "to measure stability — upload another photo of the burn, then "
+          + "save its stable cells."
+        : `has ${stalled.runCount} runs ready — save its stable cells to fill `
+          + "the palette."}
+    </p>
+  );
+}
+
 function PaletteMatchSection({
   layerColor,
   materialId,
@@ -2112,10 +2213,7 @@ function PaletteMatchSection({
         <p className="text-[12px] text-[color:var(--color-destructive)]">{error}</p>
       )}
       {!loading && !error && results.length === 0 && (
-        <p className="text-[12px] text-[color:var(--color-ink-muted)]">
-          No palette entries for this material yet. Burn a test and upload it
-          on the Palette tab.
-        </p>
+        <PaletteEmptyHint materialId={materialId} />
       )}
       {selected && (
         <div className="flex flex-col gap-2.5">
