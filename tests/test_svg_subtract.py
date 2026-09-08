@@ -199,10 +199,12 @@ def test_subtract_and_clip_matches_running_the_two_steps_separately():
     assert len(fused) == len(separate)
     assert [s.fill for s in fused] == [s.fill for s in separate]
 
-    # Most d-strings are byte-identical. Where they differ it is because the
-    # fused pass keeps a shape's ORIGINAL curve-bearing d when neither step
-    # touched it, instead of flattening it to polylines for nothing — a
-    # fidelity improvement, so compare by area rather than by bytes.
+    # Most d-strings are byte-identical. The few that differ are float noise —
+    # the fused pass unions an ``intersects``-filtered candidate set and clips
+    # from unrounded geometry, where the separate path unions a bbox-query set
+    # and clips from a re-parsed %.4f string. Compare by area, not by bytes.
+    # (Both paths already preserved a shape's original curves when neither
+    # step touched it; measured 120/122 on this fixture either way.)
     for a, b in zip(fused, separate):
         if a.d == b.d:
             continue
@@ -247,3 +249,57 @@ def test_bbox_fast_path_does_not_trust_a_shape_sitting_exactly_on_the_edge():
 
     well_inside = _sq(2, 2, 6, 6)
     assert _bbox_inside(well_inside, 0, 0, 10, 10)
+
+
+def test_clip_does_not_trust_the_bbox_of_an_arc_path():
+    """An arc path must be clipped by real geometry, not by its recorded bbox.
+
+    ``_path_to_rings`` samples curves at points that lie ON the curve, so for
+    lines, cubics and quadratics the flattened polygon is inscribed in the true
+    curve and svgelements' exact segment bbox necessarily contains it — which
+    is what makes the bbox fast path sound.
+
+    svgelements 1.9.6's ``Arc.bbox()`` breaks that: it under-estimates the
+    extrema of an eccentric rotated arc, so the flattened ring extends BEYOND
+    the bbox the shape carries. Waving such a shape through on its bbox lets
+    geometry bleed past the canvas — the exact failure this clip exists to
+    prevent.
+    """
+    import os
+    import tempfile
+
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">'
+        '<path d="M 10 50 A 40 15 30 1 0 90 50 Z" fill="#ff0000"/></svg>'
+    )
+    fd, path = tempfile.mkstemp(suffix=".svg")
+    os.write(fd, svg.encode())
+    os.close(fd)
+    try:
+        parsed = parse_svg(path, total_width=100, total_height=None)
+    finally:
+        os.unlink(path)
+
+    shape = parsed.shapes[0]
+    poly = svg_d_to_polygon(shape.d, fill_rule=shape.fill_rule)
+
+    # Precondition: the flattened geometry really does exceed its own bbox.
+    # If svgelements ever fixes Arc.bbox() this assertion fails loudly and the
+    # guard below can be reconsidered, rather than silently becoming dead code.
+    recorded_right = shape.bbox_x_mm + shape.bbox_width_mm
+    assert poly.bounds[2] > recorded_right, (
+        "Arc.bbox() no longer under-estimates; revisit the _bbox_inside guard"
+    )
+
+    # Put the canvas edge between the two so only real geometry can decide.
+    width = poly.bounds[2] - 0.002
+    out = clip_shapes_to_rect([shape], x=0, y=0, width=width, height=100)
+    assert out, "the shape should survive, trimmed"
+    clipped = svg_d_to_polygon(out[0].d, fill_rule=out[0].fill_rule)
+    # Tolerance is one %.4f quantum: ``_geom_to_svg_d`` writes coordinates at
+    # four decimal places, so a correctly-clipped edge can still read back up
+    # to 5e-5 mm high. The unclipped bleed this guards against is ~0.03 mm,
+    # nearly three orders of magnitude larger.
+    assert clipped.bounds[2] <= width + 1e-4, (
+        f"geometry bled {clipped.bounds[2] - width:.4f} mm past the canvas"
+    )

@@ -758,7 +758,17 @@ export function SvgLayersPage() {
       const cleaned = await preBakeOverlaps(traced.svg, request.width_mm);
       setOriginalSvgContent(cleaned);
       const currentName = request.name;
-      await applyDetectedSvg(cleaned, currentName);
+      // Inherit the existing layers by colour, so a re-trace stops resetting
+      // every layer's power/speed/enabled/processing to the material default.
+      //
+      // How much survives depends on what changed. Re-tracing at the SAME
+      // resolution with different knobs (speckle, colour precision) re-derives
+      // the same palette from the same pixels, so the hexes match and the
+      // params carry over — verified in the browser. Changing the RESOLUTION
+      // re-derives the palette from a resized image, which shifts the colours,
+      // so most layers miss and fall back to defaults exactly as before. The
+      // resolution controls say so rather than pretending otherwise.
+      await applyDetectedSvg(cleaned, currentName, request.layers);
       setTracePending(false);
     } catch (err) {
       setDetectError((err as Error).message);
@@ -1192,6 +1202,7 @@ export function SvgLayersPage() {
                         <button
                           type="button"
                           className="underline underline-offset-2 hover:text-[color:var(--color-primary)]"
+                          title="Re-traces at the source resolution. The colour palette is re-derived from the full-size image, so layer colours shift and per-layer params reset to the material default."
                           onClick={() => {
                             const next = {
                               ...traceOptions,
@@ -1219,6 +1230,7 @@ export function SvgLayersPage() {
                             <button
                               type="button"
                               className="underline underline-offset-2 hover:text-[color:var(--color-primary)]"
+                              title="Re-traces smaller and faster. The colour palette is re-derived from the resized image, so layer colours shift and per-layer params reset to the material default."
                               onClick={() => {
                                 const next = {
                                   ...traceOptions,
@@ -1829,10 +1841,18 @@ function PreviewBlock({
  *  also renders in restricted mode (no scripts, no external fetches), which is
  *  strictly safer for an untrusted upload than dangerouslySetInnerHTML.
  *
- *  "Original" means the untouched upload. Merge, Simplify and Re-trace all
- *  rewrite ``request.svg_content`` but leave ``rasterDataUrl`` /
- *  ``originalSvgContent`` alone, so this pane correctly stays put while the
- *  render below it changes — which is the whole point of showing them stacked.
+ *  "Original" means the untouched upload, and which field carries it decides
+ *  how that holds:
+ *
+ *  - Raster upload: ``rasterDataUrl`` is written only by ``handleFile``, so it
+ *    survives Merge, Simplify AND Re-trace untouched.
+ *  - SVG upload: ``originalSvgContent`` is the uploaded text. Re-trace DOES
+ *    rewrite it — but Re-trace only runs when ``rasterDataUrl`` is set, and in
+ *    that case this pane is showing the raster, not the SVG. So the field this
+ *    pane actually reads is stable either way.
+ *
+ *  Either way the pane stays put while the render below it changes, which is
+ *  the whole point of showing them stacked.
  */
 function OriginalPreview({
   rasterDataUrl,
