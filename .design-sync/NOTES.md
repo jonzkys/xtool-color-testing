@@ -112,11 +112,8 @@ Both are re-run by `cfg.buildCmd`. If either disappears, the symptom is
   `src/ui/theme.css`** (`#8A5C10` light / `#F0C674` dark — 5.10:1 and
   9.35:1 on the warning tint) because the notice's request for it was
   legitimate and `--color-warning` only reaches 2.58:1 there.
-  - **Cross-PR note:** the uploaded DS was built with that token present
-    while PR #168 was still open, so `_ds_bundle.css` and
-    `conventions.md`'s token list are one commit ahead of `main`. Once #168
-    merges they agree. If #168 were ever abandoned, drop
-    `--color-warning-ink` from `conventions.md` and re-sync.
+  - Resolved: #168 merged 2026-09-08, so `main`, the uploaded
+    `_ds_bundle.css` and `conventions.md`'s token list all agree.
   - Still outstanding, deliberately: `Badge variant="warning"` paints its
     own label with `--color-warning` on `--color-warning-tint` (2.58:1).
     Left alone — changing a DS component is a design call, not a fix.
@@ -332,3 +329,28 @@ the small `ConfirmDestructiveSm` confirm instead of the canonical dialog.
 `ToastHost` is deliberately left unpinned: its alphabetically-first export
 `AtCapacity` is the richest demo (both toast levels plus the 4-item
 eviction).
+
+## First re-sync (2026-09-08, same day) — what the anchor bought
+
+Ran `resync.mjs --remote` against merged `main` right after PRs #167/#168
+landed. Worth knowing because it is the mechanism working, not a problem:
+
+- **`verify: 21 verified-by-upload (skip capture/grade), 0 changed, 0 new`**
+  — the capture stage was skipped entirely and nothing was re-graded. The
+  whole run was ~3 minutes, versus hours for the first sync. That is what
+  the uploaded `_ds_sync.json` is for; do not delete it to "force a clean
+  sync" without meaning to pay for a full re-verify.
+- **`upload.any: true` with `styling: true` and `bundle: false`,
+  `components: []`.** PR #169 (an unrelated SVG-Layers empty-palette hint)
+  added markup, which added utility classes to the app's compiled Tailwind
+  — and since `cfg.cssEntry` *is* that stylesheet, `styleSha` moved while
+  every component contract and all 21 `renderHashes` stayed byte-identical.
+  Uploaded `_ds_bundle.css` + `styles.css` + `fonts/fonts.css` and
+  re-anchored; nothing else.
+- **So: expect a styling-only delta from app-side UI work that never
+  touches `src/ui`.** That is the documented "shipped CSS tracks the app's
+  class usage" risk showing up benignly. The thing to actually worry about
+  is the inverse — a refactor that *stops* using a utility silently drops
+  it from the DS stylesheet. `renderHashes` won't catch that (the cards
+  don't use it); only a preview or an agent-built design going unstyled
+  will.
