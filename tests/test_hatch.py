@@ -1,7 +1,7 @@
 """Tests for the hatch module: polygon construction and segment generation."""
 
 import pytest
-from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry import MultiPolygon, Point, Polygon
 
 from xcs_gen.hatch import svg_d_to_polygon
 
@@ -195,3 +195,108 @@ def test_hatch_spacing_ramp_clamped_to_min():
     # Without clamping, this would hang in an infinite loop.
     assert len(segs) > 0
     assert len(segs) < 10000  # sanity upper bound
+
+
+# ── inline curve evaluation (B2) ─────────────────────────────────────────────
+
+def test_path_to_rings_matches_svgelements_point_exactly():
+    """The inlined Bezier arithmetic must be bit-identical to ``seg.point(t)``.
+
+    ``_path_to_rings`` evaluates cubics and quadratics inline rather than
+    calling ``seg.point(t)``, which routes through ``npoint([t])`` and
+    allocates a numpy array per sample. The expression order deliberately
+    mirrors svgelements' own ``_compute_point`` so float association matches;
+    if someone "simplifies" the algebra, this test catches the drift.
+    """
+    from svgelements import (
+        Arc, Close, CubicBezier, Line, Move, Path as SVGPath, QuadraticBezier,
+    )
+    from xcs_gen.hatch import _CURVE_TS, _path_to_rings
+
+    d = "M 0 0 C 10 20 30 -5 40 10 Q 50 30 60 0 L 70 5 Z"
+    path = SVGPath(d)
+
+    # Reference: the pre-optimisation implementation, verbatim.
+    rings: list[list[tuple[float, float]]] = []
+    current: list[tuple[float, float]] = []
+
+    def flush() -> None:
+        if len(current) >= 3:
+            if current[0] != current[-1]:
+                current.append(current[0])
+            rings.append(list(current))
+
+    for seg in path.segments():
+        if isinstance(seg, Move):
+            flush()
+            current.clear()
+            if seg.end is not None:
+                current.append((float(seg.end.x), float(seg.end.y)))
+        elif isinstance(seg, Close):
+            continue
+        elif isinstance(seg, Line):
+            if seg.end is not None:
+                current.append((float(seg.end.x), float(seg.end.y)))
+        elif isinstance(seg, (CubicBezier, QuadraticBezier, Arc)):
+            for t in _CURVE_TS:
+                pt = seg.point(t)
+                current.append((float(pt.x), float(pt.y)))
+    flush()
+
+    assert _path_to_rings(path) == rings
+
+
+def test_path_to_rings_handles_arcs_via_the_library_fallback():
+    """Arcs are not inlined — they must still round-trip through seg.point."""
+    from svgelements import Path as SVGPath
+    from xcs_gen.hatch import _path_to_rings
+
+    # A circle decomposes to Arc segments, which take the fallback branch.
+    rings = _path_to_rings(SVGPath("M 10 5 A 5 5 0 1 0 10 4.99 Z"))
+    assert rings, "arc path produced no rings"
+    xs = [p[0] for p in rings[0]]
+    ys = [p[1] for p in rings[0]]
+    # Sampled points should trace out something round, not collapse to a line.
+    assert max(xs) - min(xs) > 5
+    assert max(ys) - min(ys) > 5
+
+
+# ── even-odd nesting (B3) ────────────────────────────────────────────────────
+
+def test_evenodd_nesting_three_levels_deep():
+    """Ring-in-ring-in-ring: depth 2 is solid again, not a hole.
+
+    The STRtree rewrite has to reduce by container RANK, and shapely evaluates
+    ``input.predicate(tree_geom)`` — so finding a ring's containers means
+    asking ``within``, not ``contains``. Getting that backwards inverts the
+    nesting and this test is what notices.
+    """
+    from xcs_gen.hatch import svg_d_to_polygon
+
+    d = (
+        "M 0 0 L 100 0 L 100 100 L 0 100 Z "      # outer, depth 0
+        "M 20 20 L 80 20 L 80 80 L 20 80 Z "      # hole, depth 1
+        "M 40 40 L 60 40 L 60 60 L 40 60 Z"       # island inside hole, depth 2
+    )
+    poly = svg_d_to_polygon(d, fill_rule="evenodd")
+    assert poly is not None and not poly.is_empty
+    # 100x100 minus a 60x60 hole plus a 20x20 island back in.
+    assert poly.area == pytest.approx(100 * 100 - 60 * 60 + 20 * 20, abs=1e-6)
+    assert poly.contains(Point(50, 50))     # the island is solid
+    assert not poly.contains(Point(30, 30))  # the hole is not
+    assert poly.contains(Point(10, 10))     # the outer band is
+
+
+def test_evenodd_two_disjoint_shapes_each_with_a_hole():
+    """Two independent rings-with-holes must not adopt each other's holes."""
+    from xcs_gen.hatch import svg_d_to_polygon
+
+    d = (
+        "M 0 0 L 40 0 L 40 40 L 0 40 Z "
+        "M 10 10 L 30 10 L 30 30 L 10 30 Z "
+        "M 100 0 L 140 0 L 140 40 L 100 40 Z "
+        "M 110 10 L 130 10 L 130 30 L 110 30 Z"
+    )
+    poly = svg_d_to_polygon(d, fill_rule="evenodd")
+    assert poly is not None
+    assert poly.area == pytest.approx(2 * (40 * 40 - 20 * 20), abs=1e-6)

@@ -170,7 +170,11 @@ def _normalize_shape(
     fill = _normalize_color(getattr(element, "fill", None))
     stroke = _normalize_color(getattr(element, "stroke", None))
     fill_rule = _fill_rule(element)
-    is_close = _is_close_path(path)
+    # ``_is_close_path`` used to re-run ``path.d()`` — the same serialisation
+    # performed six lines above, and not a cheap one: profiling a 3253-shape
+    # trace showed d() called 6498 times for 3253 shapes, 0.88 s of a 4.25 s
+    # parse. The d-string is right here, so just look at it.
+    is_close = d_str.strip().endswith(("z", "Z"))
 
     ps = ParsedShape(
         kind=kind,
@@ -294,12 +298,6 @@ def _fill_rule(element: SVGShape) -> Literal["evenodd", "nonzero"]:
         return "evenodd"
     r = str(rule).lower()
     return "nonzero" if r == "nonzero" else "evenodd"
-
-
-def _is_close_path(path: SVGPath) -> bool:
-    # Check for a 'Z' / 'z' close-path command in the d-string.
-    d = path.d() or ""
-    return d.strip().endswith(("z", "Z"))
 
 
 @dataclass

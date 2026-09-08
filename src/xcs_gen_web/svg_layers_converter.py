@@ -26,7 +26,11 @@ from .schemas import (
     SvgPreviewResponse,
 )
 from .svg_guard import assert_shape_count
-from .svg_subtract import clip_shapes_to_rect, subtract_overlapping_shapes
+from .svg_subtract import (
+    clip_shapes_to_rect,
+    subtract_and_clip,
+    subtract_overlapping_shapes,
+)
 from .timing import TimingReport
 
 
@@ -102,16 +106,29 @@ def build_svg_layers_project(
     # occlude shapes below them (hide-but-still-mask), matching how
     # design tools treat hidden layers. Then we filter to enabled colors.
     shapes = list(parse_result.shapes)
-    if request.subtract_overlaps:
-        with _phase("subtract"):
-            shapes = subtract_overlapping_shapes(shapes)
-
     # Always clip to the canvas — vtracer can emit fractional-pixel
     # overhang from anti-alias edges; without this, a "base colour" can
     # bleed past the source image's footprint. parse_svg bakes the
     # start_x/start_y offset into every shape, so the clip rect uses
     # the same offset frame to match the shape positions.
-    if parse_result.output_width_mm > 0 and parse_result.output_height_mm > 0:
+    has_canvas = (
+        parse_result.output_width_mm > 0 and parse_result.output_height_mm > 0
+    )
+    if request.subtract_overlaps:
+        with _phase("subtract"):
+            if has_canvas:
+                # Fused: the clip reuses subtraction's in-memory geometry
+                # instead of re-parsing the d-string it just wrote.
+                shapes = subtract_and_clip(
+                    shapes,
+                    x=request.start_x,
+                    y=request.start_y,
+                    width=parse_result.output_width_mm,
+                    height=parse_result.output_height_mm,
+                )
+            else:
+                shapes = subtract_overlapping_shapes(shapes)
+    elif has_canvas:
         shapes = clip_shapes_to_rect(
             shapes,
             x=request.start_x,
@@ -299,12 +316,21 @@ def svg_preview(request: SvgPreviewRequest) -> SvgPreviewResponse:
     # Subtraction runs against the FULL z-stack so disabled layers still
     # occlude shapes below them. Then we filter down to enabled colors so
     # the preview matches what will actually be engraved.
-    if request.subtract_overlaps and shapes:
-        shapes = subtract_overlapping_shapes(shapes)
-
     # Same canvas-clip as the build pipeline applies — keeps preview and
-    # final .xcs in lockstep so what the user sees is what burns.
-    if shapes and parsed.output_width_mm > 0 and parsed.output_height_mm > 0:
+    # final .xcs in lockstep so what the user sees is what burns. Fused with
+    # subtraction when both run so the geometry is built once rather than
+    # serialised to a d-string and immediately re-parsed.
+    has_canvas = parsed.output_width_mm > 0 and parsed.output_height_mm > 0
+    if request.subtract_overlaps and shapes:
+        if has_canvas:
+            shapes = subtract_and_clip(
+                shapes, x=0.0, y=0.0,
+                width=parsed.output_width_mm,
+                height=parsed.output_height_mm,
+            )
+        else:
+            shapes = subtract_overlapping_shapes(shapes)
+    elif shapes and has_canvas:
         shapes = clip_shapes_to_rect(
             shapes, x=0.0, y=0.0,
             width=parsed.output_width_mm,

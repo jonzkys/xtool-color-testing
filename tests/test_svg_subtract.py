@@ -2,8 +2,12 @@
 
 from pathlib import Path
 
+import pytest
+
+from xcs_gen.hatch import svg_d_to_polygon
 from xcs_gen_web.svg_subtract import (
     clip_shapes_to_rect,
+    subtract_and_clip,
     subtract_overlapping_shapes,
 )
 from xcs_gen.svg_source import ParsedShape, parse_svg
@@ -171,3 +175,75 @@ def test_clip_stroke_only_passes_through():
     out = clip_shapes_to_rect([s], x=0, y=0, width=2, height=2)
     assert len(out) == 1
     assert out[0].fill is None
+
+
+# ── subtract_and_clip (fused) ───────────────────────────────────────────────
+
+def test_subtract_and_clip_matches_running_the_two_steps_separately():
+    """The fused pass must agree with subtract-then-clip on real geometry.
+
+    Fusing exists because the separate steps build every polygon twice:
+    subtraction computes a shapely geometry, serialises it to a d-string, and
+    the clip immediately parses that string back just to ask whether it sits
+    inside the canvas.
+    """
+    parse_result = parse_svg(str(PIKACHU_SVG), total_width=50, total_height=None)
+    shapes = list(parse_result.shapes)
+    w, h = parse_result.output_width_mm, parse_result.output_height_mm
+
+    fused = subtract_and_clip(shapes, x=0, y=0, width=w, height=h)
+    separate = clip_shapes_to_rect(
+        subtract_overlapping_shapes(shapes), x=0, y=0, width=w, height=h,
+    )
+
+    assert len(fused) == len(separate)
+    assert [s.fill for s in fused] == [s.fill for s in separate]
+
+    # Most d-strings are byte-identical. Where they differ it is because the
+    # fused pass keeps a shape's ORIGINAL curve-bearing d when neither step
+    # touched it, instead of flattening it to polylines for nothing — a
+    # fidelity improvement, so compare by area rather than by bytes.
+    for a, b in zip(fused, separate):
+        if a.d == b.d:
+            continue
+        pa = svg_d_to_polygon(a.d, fill_rule=a.fill_rule)
+        pb = svg_d_to_polygon(b.d, fill_rule=b.fill_rule)
+        if pa is None or pb is None:
+            continue
+        assert pa.symmetric_difference(pb).area < 1e-4
+
+
+def test_subtract_and_clip_still_subtracts():
+    """Sanity: the fused pass has not quietly become clip-only."""
+    bottom = _sq(0, 0, 10, 10, "#ff0000")
+    top = _sq(0, 0, 5, 10, "#00ff00")
+    out = subtract_and_clip([bottom, top], x=0, y=0, width=10, height=10)
+    assert len(out) == 2
+    red = next(s for s in out if s.fill == "#ff0000")
+    poly = svg_d_to_polygon(red.d, fill_rule=red.fill_rule)
+    # The left half was covered by the green shape above it.
+    assert poly.area == pytest.approx(50, abs=0.5)
+
+
+def test_subtract_and_clip_drops_a_shape_fully_outside_the_canvas():
+    lone = _sq(20, 20, 10, 10, "#0000ff")
+    out = subtract_and_clip([lone], x=0, y=0, width=10, height=10)
+    assert out == []
+
+
+def test_bbox_fast_path_does_not_trust_a_shape_sitting_exactly_on_the_edge():
+    """A shape flush with the canvas edge must not take the bbox shortcut.
+
+    Post-subtract d-strings are written at %.4f while the bbox came from
+    unrounded shapely bounds, so a flattened ring can sit fractionally outside
+    its own recorded bbox. ``_bbox_inside`` therefore demands a margin; a shape
+    whose bbox exactly equals the canvas must fall through to a real
+    intersection rather than being waved past.
+    """
+    from xcs_gen_web.svg_subtract import _bbox_inside
+
+    flush_with_edge = _sq(0, 0, 10, 10)
+    assert not _bbox_inside(flush_with_edge, 0, 0, 10, 10)
+
+    well_inside = _sq(2, 2, 6, 6)
+    assert _bbox_inside(well_inside, 0, 0, 10, 10)
