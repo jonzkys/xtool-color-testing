@@ -244,7 +244,7 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
                   "px-2 py-1 text-[11px] font-mono uppercase rounded transition-colors",
                   i === idx
                     ? "bg-[var(--color-primary)] text-[var(--color-on-primary,#fff)]"
-                    : "text-[var(--color-ink-muted)] hover:text-[var(--color-fg)] border border-[var(--color-border)]",
+                    : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] border border-[var(--color-border)]",
                 )}
               >
                 {s.label}
@@ -490,7 +490,7 @@ export function ForgeStageParams({ config, onChange, sourceParams, frameless, lo
               type="button"
               onClick={resetToSource}
               title={isDetailSpiral ? "Clear overrides — fields inherit Main" : "Clear overrides — fields use the source incise value"}
-              className="shrink-0 px-2 py-1 text-[10px] font-mono uppercase rounded border border-[var(--color-border)] text-[var(--color-ink-muted)] hover:text-[var(--color-fg)] transition-colors"
+              className="shrink-0 px-2 py-1 text-[10px] font-mono uppercase rounded border border-[var(--color-border)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-colors"
             >
               Default
             </button>

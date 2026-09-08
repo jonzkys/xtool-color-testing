@@ -232,7 +232,7 @@ export function ForgeControls({ config, onChange }: ForgeControlsProps) {
                 <col className="w-10" />
               </colgroup>
               <thead>
-                <tr className="text-left text-[var(--color-muted)]">
+                <tr className="text-left text-[var(--color-ink-muted)]">
                   <th></th><th>name</th><th className="text-right pr-1">cum.</th><th className="text-right">×b</th>
                 </tr>
               </thead>
