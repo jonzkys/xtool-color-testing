@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { paletteParamsToLayerPatch } from "./SvgLayersPage";
+import { paletteParamsToLayerPatch, pickStalledValidation } from "./SvgLayersPage";
 
 /* Regression coverage for the previously-silent bug where the SVG
  * layer auto-match dropped ``crosshatch``, ``angle_mode`` and
@@ -111,5 +111,37 @@ describe("paletteParamsToLayerPatch", () => {
       power: 1, speed: 1, frequency: 1, density: 1, passes: 1, pulse_width: 1, laser: "blue",
     });
     expect(blue.base_params.laser).toBe("blue");
+  });
+});
+
+/* The empty-palette hint on the layers page points at the validation
+ * test that stalled short of the two runs the save gate needs. Real
+ * case that prompted it: a freshly validated material read "no palette
+ * entries" because its only test had a single uploaded run, so every
+ * cell skipped as insufficient_runs and nothing was ever written.
+ */
+
+describe("pickStalledValidation", () => {
+  test("ignores tests with no uploaded runs", () => {
+    expect(pickStalledValidation([
+      { id: 1, name: "Never burned", runCount: 0 },
+    ])).toBeNull();
+    expect(pickStalledValidation([])).toBeNull();
+  });
+
+  test("prefers the test closest to saveable", () => {
+    const pick = pickStalledValidation([
+      { id: 3, name: "One shoot", runCount: 1 },
+      { id: 2, name: "Two shoots", runCount: 2 },
+    ]);
+    expect(pick?.id).toBe(2);
+  });
+
+  test("breaks a run-count tie on the newest test", () => {
+    const pick = pickStalledValidation([
+      { id: 4, name: "Older", runCount: 1 },
+      { id: 9, name: "Newer", runCount: 1 },
+    ]);
+    expect(pick?.id).toBe(9);
   });
 });
