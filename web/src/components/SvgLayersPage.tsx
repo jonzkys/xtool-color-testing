@@ -29,6 +29,8 @@ import { detectSvgLayers } from "../svg/detectLayers";
 // Tracing runs in the browser via vtracer-wasm — no network roundtrip,
 // no backend CPU burn, instant feedback when knobs change.
 import { traceImageToSvg } from "../tracer/vtracer";
+import type { TraceResult } from "../tracer/vtracer";
+import { DEFAULT_TRACE_MAX_PX, TRACE_NATIVE } from "../tracer/resolution";
 import type {
   BaseParams,
   DetectedLayer,
@@ -228,6 +230,10 @@ export function SvgLayersPage() {
     ...DEFAULT_RASTER_TRACE_OPTIONS,
   }));
   const [tracing, setTracing] = useState(false);
+  // What the last trace actually did — native vs traced dimensions and the
+  // co-scaled speckle value. Drives the "traced at N x M" note so a downscale
+  // is never silent.
+  const [traceInfo, setTraceInfo] = useState<TraceResult | null>(null);
   // True whenever the current traceOptions differ from what produced
   // the displayed SVG. Drives the Re-trace button's "dirty" styling
   // and lets the user see they have unsaved knob changes.
@@ -709,8 +715,9 @@ export function SvgLayersPage() {
     setRasterDataUrl(dataUrl);
     setTracing(true);
     try {
-      const svg = await traceImageToSvg(dataUrl, traceOptions);
-      const cleaned = await preBakeOverlaps(svg, request.width_mm);
+      const traced = await traceImageToSvg(dataUrl, traceOptions);
+      setTraceInfo(traced);
+      const cleaned = await preBakeOverlaps(traced.svg, request.width_mm);
       setOriginalSvgContent(cleaned);
       await applyDetectedSvg(cleaned, suggested);
     } catch (err) {
@@ -725,8 +732,9 @@ export function SvgLayersPage() {
     setDetectError(undefined);
     setTracing(true);
     try {
-      const svg = await traceImageToSvg(rasterDataUrl, opts);
-      const cleaned = await preBakeOverlaps(svg, request.width_mm);
+      const traced = await traceImageToSvg(rasterDataUrl, opts);
+      setTraceInfo(traced);
+      const cleaned = await preBakeOverlaps(traced.svg, request.width_mm);
       setOriginalSvgContent(cleaned);
       const currentName = request.name;
       await applyDetectedSvg(cleaned, currentName);
@@ -1136,7 +1144,78 @@ export function SvgLayersPage() {
                     onChange={(v) => updateTraceOptions({ filter_speckle: v })}
                     help="Drops isolated regions smaller than N pixels. Kills JPEG / photo-grain noise. Default 8. Capped at 64 — larger drops legitimate detail too."
                   />
+                  <NumberField
+                    label="Trace at (px)"
+                    value={traceOptions.max_dimension}
+                    integer
+                    min={0}
+                    max={8000}
+                    onChange={(v) => updateTraceOptions({ max_dimension: v })}
+                    help="Longest-edge cap applied before tracing. Trace time, shape count and preview time all scale with pixel count, and a phone photo is 12 MP. Default 1200. Set 0 to trace at native resolution. Filter speckle is scaled to match, so lowering this doesn't silently eat thin detail."
+                  />
                 </div>
+                {traceInfo && (
+                  <p className="mt-2 text-[11px] text-[color:var(--color-ink-subtle)]">
+                    {traceInfo.downscaled ? (
+                      <>
+                        Traced at{" "}
+                        <span className="font-mono">
+                          {traceInfo.tracedWidth}×{traceInfo.tracedHeight}
+                        </span>{" "}
+                        from{" "}
+                        <span className="font-mono">
+                          {traceInfo.nativeWidth}×{traceInfo.nativeHeight}
+                        </span>
+                        , speckle{" "}
+                        <span className="font-mono">{traceInfo.filterSpeckle}</span>.{" "}
+                        <button
+                          type="button"
+                          className="underline underline-offset-2 hover:text-[color:var(--color-primary)]"
+                          onClick={() => {
+                            const next = {
+                              ...traceOptions,
+                              max_dimension: TRACE_NATIVE,
+                            };
+                            setTraceOptions(next);
+                            void retrace(next);
+                          }}
+                          disabled={tracing}
+                        >
+                          Trace at full resolution
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        Traced at native{" "}
+                        <span className="font-mono">
+                          {traceInfo.nativeWidth}×{traceInfo.nativeHeight}
+                        </span>
+                        .
+                        {Math.max(traceInfo.nativeWidth, traceInfo.nativeHeight)
+                          > DEFAULT_TRACE_MAX_PX && (
+                          <>
+                            {" "}
+                            <button
+                              type="button"
+                              className="underline underline-offset-2 hover:text-[color:var(--color-primary)]"
+                              onClick={() => {
+                                const next = {
+                                  ...traceOptions,
+                                  max_dimension: DEFAULT_TRACE_MAX_PX,
+                                };
+                                setTraceOptions(next);
+                                void retrace(next);
+                              }}
+                              disabled={tracing}
+                            >
+                              Trace at {DEFAULT_TRACE_MAX_PX} px instead
+                            </button>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </p>
+                )}
               </Section>
             )}
 

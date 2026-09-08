@@ -57,6 +57,7 @@ import { HatchPassesEditor } from "../components/HatchPassesEditor";
 import { BaseParamsEditor } from "../components/BaseParamsEditor";
 import { DEFAULT_OUTPUT_FORMAT, svgLayersAndDownload } from "../generate";
 import { traceImageToSvg } from "../tracer/vtracer";
+import { TRACE_NATIVE } from "../tracer/resolution";
 import { DEFAULT_RASTER_TRACE_OPTIONS, type RasterTraceOptions } from "../generate";
 import { FormatToggle } from "../components/FormatToggle";
 
@@ -289,6 +290,11 @@ export function LoomPage() {
   const [traceOptions, setTraceOptions] = useState<RasterTraceOptions>(() => ({
     ...DEFAULT_RASTER_TRACE_OPTIONS,
     max_colors: 0, // Loom is silhouette-first; max_colors=0 = no pre-quantise
+    // Loom traces a silhouette mask, where the outline IS the output — keep
+    // it at native resolution rather than inheriting the svg-layers default
+    // downscale. Adopting the cap here should be a deliberate, separately
+    // verified change.
+    max_dimension: TRACE_NATIVE,
   }));
   const [error, setError] = useState<string | undefined>();
   const [generating, setGenerating] = useState(false);
@@ -364,7 +370,7 @@ export function LoomPage() {
         // Run in the next tick so the "tracing…" state paints first.
         setTimeout(async () => {
           try {
-            const svg = await traceImageToSvg(dataUrl, traceOptions);
+            const { svg } = await traceImageToSvg(dataUrl, traceOptions);
             setSilhouette({
               kind: "raster",
               rasterDataUrl: dataUrl,
@@ -387,7 +393,10 @@ export function LoomPage() {
     if (!silhouette || silhouette.kind !== "raster" || !silhouette.rasterDataUrl) return;
     setTracing(true);
     try {
-      const svg = await traceImageToSvg(silhouette.rasterDataUrl, traceOptions);
+      const { svg } = await traceImageToSvg(
+        silhouette.rasterDataUrl,
+        traceOptions,
+      );
       setSilhouette({
         ...silhouette,
         svgContent: collapseFills(svg),

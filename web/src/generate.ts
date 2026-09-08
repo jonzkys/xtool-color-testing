@@ -1,6 +1,7 @@
 import type { OutputFormat, PixelArtRequest, SvgLayersRequest, SvgStackRequest } from "./types";
 import { ApiError } from "./api/_fetch";
 import { captureHandledError } from "./sentry";
+import { DEFAULT_TRACE_MAX_PX } from "./tracer/resolution";
 
 /** Default output container for every generator download. ``xs`` returns a
  *  ZIP; ``xcs`` returns the legacy single-file XCS JSON. Keep this the
@@ -111,6 +112,12 @@ export interface RasterTraceOptions {
   layer_difference: number;
   filter_speckle: number;
   max_colors: number;  // 0 = disabled, 2-256 = PIL pre-quantize palette size
+  /** Longest-edge pixel cap applied to the raster BEFORE tracing.
+   *  ``0`` (``TRACE_NATIVE``) traces at native resolution. Trace cost and
+   *  every downstream cost scale roughly linearly with pixel count, and a
+   *  phone photo is 12 MP, so the default caps it. See
+   *  ``web/src/tracer/resolution.ts`` for the measured basis. */
+  max_dimension: number;
   /** vtracer output style. ``spline`` (default) emits cubic Bézier
    *  paths, preserving smooth curves; ``polygon`` emits M/L-only
    *  paths so the Simplify dialog's path-tolerance slider can
@@ -123,6 +130,7 @@ export const DEFAULT_RASTER_TRACE_OPTIONS: RasterTraceOptions = {
   layer_difference: 32,
   filter_speckle: 8,
   max_colors: 6,  // Default for raster: cap palette at 6 colors - best UX for photos
+  max_dimension: DEFAULT_TRACE_MAX_PX,
   mode: "spline",
 };
 
