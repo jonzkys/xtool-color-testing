@@ -38,7 +38,7 @@ className="text-[color:var(--color-ink-muted)] bg-[color:var(--color-surface)] b
 --color-border-strong` · `--color-primary --color-primary-hover
 --color-primary-tint` · `--color-secondary --color-secondary-tint` ·
 `--color-success --color-success-tint` · `--color-warning
---color-warning-tint` · `--color-destructive --color-destructive-hover
+--color-warning-tint --color-warning-ink` · `--color-destructive --color-destructive-hover
 --color-destructive-tint` · `--color-substrate --color-substrate-ink` ·
 `--font-sans --font-mono` · `--metal-bar --metal-bar-soft` · `--shadow-card
 --shadow-popover` · `--radius --radius-sm --radius-md`.

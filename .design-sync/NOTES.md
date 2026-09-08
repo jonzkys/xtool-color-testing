@@ -100,17 +100,26 @@ Both are re-run by `cfg.buildCmd`. If either disappears, the symptom is
 
 ## Known render warns (triaged — a warn NOT in this list is new)
 
-- `[TOKENS_MISSING] --color-danger, --color-warning-ink, --color-muted,
-  --color-fg` — **not a DS problem.** These four are referenced by *app*
-  code, not by `src/ui`, and no stylesheet defines them, so those colours
-  silently fall back today:
-  - `--color-danger` → `src/components/MobileQrTab.tsx:93`
-  - `--color-warning-ink` → `src/pages/Spectrum2DPage.tsx:1077`
-  - `--color-muted` → `src/components/forge/ForgeControls.tsx:235`
-  - `--color-fg` → `src/components/forge/ForgeStageParams.tsx:247,493`
-  Almost certainly meant to be `--color-destructive`, `--color-ink-muted`,
-  `--color-ink`. Real (small) app bugs found by this sync; fixing them is
-  app work, not sync work.
+- `[TOKENS_MISSING]` — **fixed, expect zero now.** The first sync found four
+  custom properties referenced by *app* code (never by `src/ui`) that no
+  stylesheet defined, so those colours silently inherited:
+  `--color-danger` (`MobileQrTab.tsx:93`), `--color-warning-ink`
+  (`Spectrum2DPage.tsx:1077`), `--color-muted`
+  (`forge/ForgeControls.tsx:235`), `--color-fg`
+  (`forge/ForgeStageParams.tsx:247,493`). All four are resolved in PR #168:
+  three were re-pointed at `--color-destructive` / `--color-ink-muted` /
+  `--color-ink`, and `--color-warning-ink` was **added to
+  `src/ui/theme.css`** (`#8A5C10` light / `#F0C674` dark — 5.10:1 and
+  9.35:1 on the warning tint) because the notice's request for it was
+  legitimate and `--color-warning` only reaches 2.58:1 there.
+  - **Cross-PR note:** the uploaded DS was built with that token present
+    while PR #168 was still open, so `_ds_bundle.css` and
+    `conventions.md`'s token list are one commit ahead of `main`. Once #168
+    merges they agree. If #168 were ever abandoned, drop
+    `--color-warning-ink` from `conventions.md` and re-sync.
+  - Still outstanding, deliberately: `Badge variant="warning"` paints its
+    own label with `--color-warning` on `--color-warning-tint` (2.58:1).
+    Left alone — changing a DS component is a design call, not a fix.
 
 ## Environment
 
