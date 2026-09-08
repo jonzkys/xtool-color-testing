@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "allowImportingTsExtensions": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "rootDir": "src",
+    "outDir": "dist-ds",
+    "declarationDir": "dist-ds"
+  },
+  "include": ["src/ui/index.ts", "src/vite-env.d.ts"],
+  "references": []
+}
