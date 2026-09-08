@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { paletteParamsToLayerPatch, pickStalledValidation } from "./SvgLayersPage";
+import {
+  mapLayersStable,
+  paletteParamsToLayerPatch,
+  pickStalledValidation,
+} from "./SvgLayersPage";
+import type { LayerSpec } from "../types";
 
 /* Regression coverage for the previously-silent bug where the SVG
  * layer auto-match dropped ``crosshatch``, ``angle_mode`` and
@@ -143,5 +148,59 @@ describe("pickStalledValidation", () => {
       { id: 9, name: "Newer", runCount: 1 },
     ]);
     expect(pick?.id).toBe(9);
+  });
+});
+
+
+/* ``request.layers`` array identity is load-bearing: ``enabledColors`` is
+ * memoised on it, and the preview effect keys off that Set. Before this
+ * helper existed, every layer-editor control allocated a fresh array — even
+ * for a write that changed nothing — which minted a new Set and fired a
+ * multi-second /api/svg-preview round trip for geometry that had not moved.
+ */
+
+function layer(color: string, power = 10): LayerSpec {
+  return {
+    color,
+    name: color,
+    enabled: true,
+    processing_type: "COLOR_FILL_ENGRAVE",
+    scan_angle: 90,
+    base_params: { power } as LayerSpec["base_params"],
+    angle_mode: "fixed",
+    crosshatch: false,
+    material_id: null,
+    hatch_passes: [],
+  };
+}
+
+describe("mapLayersStable", () => {
+  test("returns the SAME array reference when nothing changed", () => {
+    const layers = [layer("#aaa"), layer("#bbb")];
+    const out = mapLayersStable(layers, (l) => l);
+    expect(out).toBe(layers);
+  });
+
+  test("returns a new array when any element changed", () => {
+    const layers = [layer("#aaa"), layer("#bbb")];
+    const out = mapLayersStable(layers, (l) =>
+      l.color === "#bbb" ? { ...l, enabled: false } : l,
+    );
+    expect(out).not.toBe(layers);
+    expect(out[0]).toBe(layers[0]);
+    expect(out[1].enabled).toBe(false);
+  });
+
+  test("a patch aimed at a colour that is not present is a no-op", () => {
+    const layers = [layer("#aaa"), layer("#bbb")];
+    const out = mapLayersStable(layers, (l) =>
+      l.color === "#zzz" ? { ...l, enabled: false } : l,
+    );
+    expect(out).toBe(layers);
+  });
+
+  test("an empty layer list stays the same reference", () => {
+    const layers: LayerSpec[] = [];
+    expect(mapLayersStable(layers, (l) => l)).toBe(layers);
   });
 });

@@ -138,6 +138,32 @@ function hexHue(hex: string): number {
   return h < 0 ? h + 360 : h;
 }
 
+/** ``layers.map(fn)`` that hands back the ORIGINAL array when every element
+ *  came back identical (``fn`` returned the same reference).
+ *
+ *  Array identity is load-bearing here: ``enabledColors`` is memoised on
+ *  ``request.layers``, so a freshly-allocated array for a no-op edit minted a
+ *  new Set, which re-ran everything downstream of it. It also spares React a
+ *  reconciliation pass over every layer row — and this page routinely renders
+ *  hundreds of them.
+ *
+ *  Guard the ARRAY, not the elements: comparing each patch field against the
+ *  layer to decide whether to allocate is a different (and subtly wrong)
+ *  optimisation — it silently swallows writes that set a field to a value
+ *  that is `===` but semantically fresh. */
+export function mapLayersStable(
+  layers: LayerSpec[],
+  fn: (l: LayerSpec) => LayerSpec,
+): LayerSpec[] {
+  let changed = false;
+  const next = layers.map((l) => {
+    const out = fn(l);
+    if (out !== l) changed = true;
+    return out;
+  });
+  return changed ? next : layers;
+}
+
 function defaultRequest(materialId: string): SvgLayersRequest {
   return {
     name: "svg-layers",
@@ -207,6 +233,13 @@ export function SvgLayersPage() {
   // and lets the user see they have unsaved knob changes.
   const [tracePending, setTracePending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // The exact SVG string ``preBakeOverlaps`` produced, when it succeeded.
+  // The preview effect compares ``request.svg_content`` against it to skip a
+  // redundant second subtraction pass. Holding the string (not a boolean)
+  // means any later edit that replaces svg_content — Simplify moves
+  // vertices and can re-introduce overlap — naturally misses and gets a
+  // real subtraction, with no invalidation bookkeeping to get wrong.
+  const prebakedRef = useRef<string | null>(null);
 
   const [predictedByColor, setPredictedByColor] = useState<Record<string, string>>(
     {},
@@ -304,16 +337,33 @@ export function SvgLayersPage() {
       setPreviewLoading(false);
       return;
     }
-    // Debounce the preview call: every width/enable-toggle change fires this
-    // effect, and /api/svg-preview runs shapely unary_union + difference on
-    // the server. Without a delay, dragging a slider queues one request per
-    // tick and pegs a backend CPU. 300 ms feels instant to the user and
-    // collapses a drag into ~1 request.
+    // ``preBakeOverlaps`` already ran this exact subtraction on the traced
+    // SVG and its result IS ``svg_content`` — so re-subtracting is a
+    // measured no-op (pass 1 removes ~50% of shape area, pass 2 removes
+    // 0.00009%: float slivers three orders of magnitude under kerf) that
+    // costs MORE than the first pass, because it chews on the polyline-
+    // flattened output. Skip it. The ref is only set on preBake's success
+    // path, so a failed pre-bake (which returns the raw SVG) still gets a
+    // real subtraction here.
+    if (request.svg_content === prebakedRef.current) {
+      setSubtractedSvg(request.svg_content);
+      setPreviewLoading(false);
+      return;
+    }
+    // Debounce the preview call: /api/svg-preview runs shapely unary_union
+    // + difference on the server. Without a delay, a burst of edits queues
+    // one request per tick and pegs a backend CPU. 300 ms feels instant to
+    // the user and collapses a burst into ~1 request.
     let cancelled = false;
     setPreviewLoading(true);
     const timer = window.setTimeout(() => {
+      // ``enabled_colors`` is deliberately NOT sent. The endpoint subtracts
+      // and clips against the FULL z-stack and only filters by colour at the
+      // very end, so it changes no geometry and saves no server work — and
+      // SvgPreview already hides disabled colours in the browser via
+      // ``display: none``. Sending it only made the response uncacheable and
+      // turned every layer toggle into a multi-second round trip.
       previewSvg(request.svg_content, {
-        enabled_colors: [...enabledColors],
         subtract_overlaps: true,
         width_mm: request.width_mm,
       })
@@ -334,7 +384,16 @@ export function SvgLayersPage() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [request.subtract_overlaps, request.svg_content, request.width_mm, enabledColors]);
+    // ``width_mm`` is intentionally absent: ``parse_svg(total_width=…)`` is a
+    // uniform scale, so the response differs only by a constant factor on
+    // both the coordinates and the viewBox, and SvgPreview renders it at
+    // width/height 100% with preserveAspectRatio — identical on-screen
+    // pixels. ``enabledColors`` is absent for the reason above; including it
+    // meant every layer-editor control (power, speed, scan angle, a palette
+    // match…) rebuilt request.layers, minted a new Set, and fired a full
+    // round trip for geometry that had not changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request.subtract_overlaps, request.svg_content]);
 
   useEffect(() => {
     if (rawDetected.length === 0) return;
@@ -352,10 +411,12 @@ export function SvgLayersPage() {
     setRequest((prev) => ({ ...prev, ...patch }));
   }
   function updateLayer(color: string, patch: Partial<LayerSpec>) {
-    setRequest((prev) => ({
-      ...prev,
-      layers: prev.layers.map((l) => (l.color === color ? { ...l, ...patch } : l)),
-    }));
+    setRequest((prev) => {
+      const layers = mapLayersStable(prev.layers, (l) =>
+        l.color === color ? { ...l, ...patch } : l,
+      );
+      return layers === prev.layers ? prev : { ...prev, layers };
+    });
   }
   // Re-fetch validation status whenever the project's material flips.
   // The set is small (one row per palette entry for the material) and
@@ -389,14 +450,14 @@ export function SvgLayersPage() {
   }, [request.material_id]);
 
   function updateBase(color: string, patch: Partial<LayerSpec["base_params"]>) {
-    setRequest((prev) => ({
-      ...prev,
-      layers: prev.layers.map((l) =>
+    setRequest((prev) => {
+      const layers = mapLayersStable(prev.layers, (l) =>
         l.color === color
           ? { ...l, base_params: { ...l.base_params, ...patch } }
           : l,
-      ),
-    }));
+      );
+      return layers === prev.layers ? prev : { ...prev, layers };
+    });
   }
   function applyPaletteMatch(
     color: string,
@@ -464,9 +525,8 @@ export function SvgLayersPage() {
       let noMatch = 0;
       const nextPredicted: Record<string, string> = { ...predictedByColor };
       const nextEntryIds: Record<string, number> = { ...matchedEntryIdByColor };
-      setRequest((prev) => ({
-        ...prev,
-        layers: prev.layers.map((l) => {
+      setRequest((prev) => {
+        const layers = mapLayersStable(prev.layers, (l) => {
           const match = results.find((r) => r.layer.color === l.color);
           if (!match?.best) {
             noMatch += 1;
@@ -504,8 +564,9 @@ export function SvgLayersPage() {
             ...(patch.angle_mode != null ? { angle_mode: patch.angle_mode } : {}),
             ...(patch.crosshatch != null ? { crosshatch: patch.crosshatch } : {}),
           };
-        }),
-      }));
+        });
+        return layers === prev.layers ? prev : { ...prev, layers };
+      });
       setPredictedByColor(nextPredicted);
       setMatchedEntryIdByColor(nextEntryIds);
 
@@ -691,10 +752,16 @@ export function SvgLayersPage() {
    *  output than fail the trace entirely. */
   async function preBakeOverlaps(svg: string, widthMm: number): Promise<string> {
     try {
-      return await previewSvg(svg, {
+      const baked = await previewSvg(svg, {
         subtract_overlaps: true,
         width_mm: widthMm > 0 ? widthMm : 100,
       });
+      // Record it so the preview effect can recognise this exact string as
+      // already-subtracted and skip a second pass. Set ONLY here, inside the
+      // try — the catch below returns the RAW svg, which genuinely still
+      // needs subtracting.
+      prebakedRef.current = baked;
+      return baked;
     } catch {
       return svg;
     }
