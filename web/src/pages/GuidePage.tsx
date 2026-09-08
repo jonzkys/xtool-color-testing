@@ -1353,8 +1353,8 @@ function LayersSection({ onOpenLayers }: { onOpenLayers: () => void }) {
                 label="FIG. 5.6 — PREVIEW + GENERATE"
                 aspect="16 / 10"
                 pins={[
-                  { xPct: 80, yPct: 30, tag: 1, caption: "Design — the traced artwork with original colours." },
-                  { xPct: 80, yPct: 75, tag: 2, caption: "Expected burn — what will actually be engraved." },
+                  { xPct: 80, yPct: 25, tag: 1, caption: "Original — the file you uploaded, untouched." },
+                  { xPct: 80, yPct: 70, tag: 2, caption: "Render — DESIGN paints detected colours, BURN the matched palette." },
                   { xPct: 88, yPct: 9,  tag: 3, caption: "Generate .xcs — XCS Studio import-ready." },
                 ]}
               />

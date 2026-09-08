@@ -285,6 +285,19 @@ export function SvgLayersPage() {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("svgLayers:validatedOnly") === "1";
   });
+  // Which colours the single render pane paints with: the colours detected in
+  // the file ("design"), or the matched palette colours the machine will
+  // actually burn ("burn"). Replaces the old side-by-side pair of panes.
+  const [previewColors, setPreviewColors] = useState<"design" | "burn">(() => {
+    if (typeof window === "undefined") return "design";
+    return window.localStorage.getItem("svgLayers:previewColors") === "burn"
+      ? "burn"
+      : "design";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("svgLayers:previewColors", previewColors);
+  }, [previewColors]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(
@@ -336,6 +349,14 @@ export function SvgLayersPage() {
   );
   const collapseBefore = paramGroups.reduce((n, g) => n + g.length, 0);
   const collapseAfter = paramGroups.length;
+
+  // The BURN segment is meaningless until at least one layer has a palette
+  // match. Resolve the persisted preference against that rather than blocking
+  // it: a user who left the toggle on BURN sees DESIGN until matches land,
+  // then watches it switch itself on — which is the behaviour they asked for.
+  const hasMatches = Object.keys(predictedByColor).length > 0;
+  const renderColors: "design" | "burn" =
+    previewColors === "burn" && hasMatches ? "burn" : "design";
 
   useEffect(() => {
     if (!request.subtract_overlaps || !request.svg_content) {
@@ -1613,58 +1634,100 @@ export function SvgLayersPage() {
           </div>
         </Card>
 
-        {/* RIGHT: previews */}
+        {/* RIGHT: the source above, the render below */}
         <div className="flex flex-col gap-3 self-start sticky top-4 min-w-0">
           <PreviewBlock
-            title="Design"
-            trailing={
-              <IconButton
-                aria-label={isolateSelected ? "Show all layers" : "Isolate selected layer"}
-                size="sm"
-                variant={isolateSelected ? "active" : "default"}
-                disabled={!selectedColor}
-                icon={
-                  isolateSelected ? (
-                    <Eye className="h-4 w-4" />
-                  ) : (
-                    <EyeOff className="h-4 w-4" />
-                  )
-                }
-                onClick={() => setIsolateSelected((v) => !v)}
-                title={isolateSelected ? "Show all layers" : "Isolate selected layer"}
-              />
-            }
+            title="Original"
+            className="shrink-0"
+            paneClassName="h-[24vh] min-h-[140px] max-h-[240px]"
+          >
+            <OriginalPreview
+              rasterDataUrl={rasterDataUrl}
+              svgContent={originalSvgContent}
+            />
+          </PreviewBlock>
+
+          {/* The design system's own signature separator — this is a change of
+              subject (source vs output), not just another block. */}
+          <div className="h-px w-full bg-[image:var(--metal-bar-soft)] shrink-0" />
+
+          <PreviewBlock
+            title="Render"
+            paneClassName="h-[46vh] min-h-[260px] max-h-[520px]"
+            loading={previewLoading}
             subtext={
               isolateSelected && selectedColor ? (
-                <span className="font-mono text-[11px] text-[color:var(--color-primary)]">
+                <span className="font-mono text-[11px] text-[color:var(--color-primary)] truncate">
                   {selectedColor}
                 </span>
               ) : undefined
             }
-            loading={previewLoading}
+            trailing={
+              <span className="flex items-center gap-1.5">
+                <span
+                  role="tablist"
+                  aria-label="Render colours"
+                  className="inline-flex items-stretch rounded-[6px] border border-[color:var(--color-border)] overflow-hidden"
+                >
+                  {(["design", "burn"] as const).map((mode) => {
+                    const active = renderColors === mode;
+                    const burnDisabled = mode === "burn" && !hasMatches;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        disabled={burnDisabled}
+                        onClick={() => setPreviewColors(mode)}
+                        title={
+                          burnDisabled
+                            ? "Apply palette matches to preview the burn colours"
+                            : mode === "design"
+                              ? "Paint with the colours detected in the file"
+                              : "Paint with the matched palette colours the machine will burn"
+                        }
+                        className={cn(
+                          "px-2 py-1 font-mono text-[9.5px] tracking-[0.16em] uppercase font-semibold transition-colors",
+                          active
+                            ? "bg-[color:var(--color-primary)] text-white"
+                            : burnDisabled
+                              ? "bg-[color:var(--color-surface)] text-[color:var(--color-ink-subtle)] opacity-50 cursor-not-allowed"
+                              : "bg-[color:var(--color-surface)] text-[color:var(--color-ink-muted)] hover:bg-[color:var(--color-surface-elevated)]",
+                        )}
+                      >
+                        {mode}
+                      </button>
+                    );
+                  })}
+                </span>
+                <IconButton
+                  aria-label={
+                    isolateSelected ? "Show all layers" : "Isolate selected layer"
+                  }
+                  size="sm"
+                  variant={isolateSelected ? "active" : "default"}
+                  disabled={!selectedColor}
+                  icon={
+                    isolateSelected ? (
+                      <Eye className="h-4 w-4" />
+                    ) : (
+                      <EyeOff className="h-4 w-4" />
+                    )
+                  }
+                  onClick={() => setIsolateSelected((v) => !v)}
+                  title={
+                    isolateSelected ? "Show all layers" : "Isolate selected layer"
+                  }
+                />
+              </span>
+            }
           >
             <SvgPreview
               svg={subtractedSvg ?? request.svg_content}
               highlightColor={isolateSelected ? selectedColor : null}
               enabledColors={enabledColors}
-            />
-          </PreviewBlock>
-          <PreviewBlock
-            title="Expected burn"
-            subtext={
-              Object.keys(predictedByColor).length === 0 ? (
-                <span className="text-[color:var(--color-warning)]">
-                  Apply palette matches to populate
-                </span>
-              ) : undefined
-            }
-            loading={previewLoading}
-          >
-            <SvgPreview
-              svg={subtractedSvg ?? request.svg_content}
-              highlightColor={null}
-              enabledColors={enabledColors}
-              colorMap={predictedByColor}
+              colorMap={renderColors === "burn" ? predictedByColor : undefined}
             />
           </PreviewBlock>
         </div>
@@ -1692,6 +1755,8 @@ function PreviewBlock({
   trailing,
   subtext,
   loading,
+  className,
+  paneClassName,
   children,
 }: {
   title: string;
@@ -1702,12 +1767,17 @@ function PreviewBlock({
    *  (subtract-overlaps recompute) so it's clear something's happening
    *  after a slider tick or a Simplify/Merge apply. */
   loading?: boolean;
+  /** Outer wrapper classes — lets the column decide how each block shares
+   *  the available height. */
+  className?: string;
+  /** Classes for the Card that holds the preview itself. */
+  paneClassName?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-2 min-w-0">
-      <div className="flex items-center gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)]">
+    <div className={cn("flex flex-col gap-2 min-w-0", className)}>
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--color-ink-subtle)] shrink-0">
           {title}
         </span>
         {subtext && <span className="text-[11px]">{subtext}</span>}
@@ -1725,7 +1795,7 @@ function PreviewBlock({
       <Card
         variant="inset"
         padded={false}
-        className="relative h-[40vh] min-h-[240px] overflow-hidden"
+        className={cn("relative overflow-hidden", paneClassName)}
       >
         {children}
         {loading && (
@@ -1745,6 +1815,79 @@ function PreviewBlock({
           </div>
         )}
       </Card>
+    </div>
+  );
+}
+
+/** The uploaded file, shown as-is above the render.
+ *
+ *  Deliberately an ``<img>``, never a second ``SvgPreview``. SvgPreview parses
+ *  the SVG into live DOM and then walks every element to apply
+ *  hide/highlight/recolour — for a detailed trace that is thousands of nodes
+ *  and a walk per interaction. The original never needs any of that: it is a
+ *  fixed reference image. One node, no blocking work. SVG inside ``<img>``
+ *  also renders in restricted mode (no scripts, no external fetches), which is
+ *  strictly safer for an untrusted upload than dangerouslySetInnerHTML.
+ *
+ *  "Original" means the untouched upload. Merge, Simplify and Re-trace all
+ *  rewrite ``request.svg_content`` but leave ``rasterDataUrl`` /
+ *  ``originalSvgContent`` alone, so this pane correctly stays put while the
+ *  render below it changes — which is the whole point of showing them stacked.
+ */
+function OriginalPreview({
+  rasterDataUrl,
+  svgContent,
+}: {
+  rasterDataUrl: string | null;
+  svgContent: string | null;
+}) {
+  const [svgUrl, setSvgUrl] = useState<string | null>(null);
+
+  // Create AND revoke inside a single effect. Minting the URL in a useMemo and
+  // revoking it in a cleanup looks equivalent but breaks under StrictMode,
+  // which runs mount -> cleanup -> re-mount WITHOUT re-running the memo: the
+  // <img> is then pointed at a URL that has already been revoked, and it fails
+  // to load. Only relevant when there is no raster to show.
+  useEffect(() => {
+    if (rasterDataUrl || !svgContent) {
+      setSvgUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(
+      new Blob([svgContent], { type: "image/svg+xml" }),
+    );
+    setSvgUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+      setSvgUrl(null);
+    };
+  }, [rasterDataUrl, svgContent]);
+
+  const src = rasterDataUrl ?? svgUrl;
+
+  if (!rasterDataUrl && !svgContent) {
+    return (
+      <div className="w-full h-full flex items-center justify-center p-3">
+        <EmptyState
+          icon={<FileImage className="h-6 w-6" />}
+          title="No file yet"
+          description="The image you upload appears here, unchanged."
+        />
+      </div>
+    );
+  }
+
+  // Blob URL still being minted — render an empty pane rather than the empty
+  // state, so an SVG upload doesn't flash "No file yet" for a frame.
+  if (!src) return <div className="w-full h-full" />;
+
+  return (
+    <div className="w-full h-full flex items-center justify-center p-3">
+      <img
+        src={src}
+        alt="The uploaded file, before any layer processing"
+        className="max-w-full max-h-full object-contain"
+      />
     </div>
   );
 }
@@ -2059,8 +2202,8 @@ function SvgPreview({
       ) : (
         <EmptyState
           icon={<FileCode2 className="h-6 w-6" />}
-          title="Upload an SVG"
-          description="Drop a file on the left panel to preview it here."
+          title="Nothing to render yet"
+          description="Drop an SVG, PNG or JPG on the left to see the layer render here."
         />
       )}
     </div>
