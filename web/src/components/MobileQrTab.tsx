@@ -90,7 +90,7 @@ export function MobileQrTab() {
   return (
     <div className="flex flex-col items-center gap-4 p-6">
       {error && (
-        <div className="text-[12.5px] text-[color:var(--color-danger)]">
+        <div className="text-[12.5px] text-[color:var(--color-destructive)]">
           {error}
         </div>
       )}

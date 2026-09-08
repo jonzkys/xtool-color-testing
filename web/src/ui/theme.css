@@ -30,6 +30,9 @@
   --color-success-tint: #E6F0EA;
   --color-warning: #C98A1E;
   --color-warning-tint: #FBEFD9;
+  /* Readable ink for text on a warning tint — `--color-warning` itself only
+   * reaches 2.6:1 there, which fails AA for body-sized copy. */
+  --color-warning-ink: #8A5C10;
   --color-destructive: #9B2430;
   --color-destructive-hover: #7F1B28;
   --color-destructive-tint: #FBE2E5;
@@ -96,6 +99,7 @@
   --color-success-tint: #1C2B22;
   --color-warning: #E0B062;
   --color-warning-tint: #2F2512;
+  --color-warning-ink: #F0C674;
   --color-destructive: #D86A76;
   --color-destructive-hover: #E28893;
   --color-destructive-tint: #3A1F24;
