@@ -17,7 +17,12 @@
  */
 
 import type { RasterTraceOptions } from "../generate";
-import { quantizeRgba } from "./quantize";
+import { quantizeRgbaWithPalette, snapFillsToPalette } from "./quantize";
+import {
+  DEFAULT_TRACE_MAX_PX,
+  scaleFilterSpeckle,
+  traceScaleFor,
+} from "./resolution";
 
 // Full config shape the wasm module wants — learned from
 // https://github.com/jsscheller/vtracer-wasm/blob/master/src/lib.rs
@@ -87,10 +92,13 @@ async function getTracer() {
  * when available for slightly faster paths; falling back to the Image
  * + canvas dance for older Safari.
  */
-async function decodeImage(dataUrl: string): Promise<{
+async function decodeImage(dataUrl: string, maxPx: number): Promise<{
   pixels: Uint8ClampedArray;
   width: number;
   height: number;
+  nativeWidth: number;
+  nativeHeight: number;
+  scale: number;
 }> {
   // createImageBitmap is faster where available; Safari < 15 lacks it for
   // blob inputs, so fall back to the classic Image+canvas route.
@@ -121,34 +129,69 @@ async function decodeImage(dataUrl: string): Promise<{
     source = img;
   }
 
+  // Downscale during the draw. drawImage's built-in resampling is the cheap
+  // route — it never materialises the full-resolution ImageData, so a 12 MP
+  // phone photo costs one scaled blit instead of 48 MB of RGBA we would then
+  // throw away.
+  const fit = traceScaleFor(width, height, maxPx);
+
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = fit.width;
+  canvas.height = fit.height;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("2D canvas context unavailable");
-  ctx.drawImage(source, 0, 0);
-  const imageData = ctx.getImageData(0, 0, width, height);
+  if (fit.downscaled) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+  }
+  ctx.drawImage(source, 0, 0, fit.width, fit.height);
+  const imageData = ctx.getImageData(0, 0, fit.width, fit.height);
   bitmap?.close?.();
-  return { pixels: imageData.data, width, height };
+  return {
+    pixels: imageData.data,
+    width: fit.width,
+    height: fit.height,
+    nativeWidth: width,
+    nativeHeight: height,
+    scale: fit.scale,
+  };
 }
 
-/**
- * Main entry point. Same signature as the old ``rasterToSvg`` API
- * helper, so call sites don't need to change.
- */
+/** What the tracer actually did, for the UI to report back to the user.
+ *  ``traced`` differs from ``native`` whenever ``max_dimension`` bit. */
+export interface TraceResult {
+  svg: string;
+  nativeWidth: number;
+  nativeHeight: number;
+  tracedWidth: number;
+  tracedHeight: number;
+  /** ``filter_speckle`` actually handed to vtracer after co-scaling. */
+  filterSpeckle: number;
+  downscaled: boolean;
+}
+
+/** Main entry point: decode, optionally downscale, quantise, trace, snap. */
 export async function traceImageToSvg(
   dataUrl: string,
   opts: RasterTraceOptions,
-): Promise<string> {
-  const [{ pixels, width, height }, { toSvg }] = await Promise.all([
-    decodeImage(dataUrl),
-    getTracer(),
-  ]);
+): Promise<TraceResult> {
+  const maxPx = opts.max_dimension ?? DEFAULT_TRACE_MAX_PX;
+  const [
+    { pixels, width, height, nativeWidth, nativeHeight, scale },
+    { toSvg },
+  ] = await Promise.all([decodeImage(dataUrl, maxPx), getTracer()]);
 
   // Optional pre-quantisation (the old backend's PIL step). Disabled at
   // max_colors === 0, otherwise collapse the palette before vtracer sees it.
-  const processed =
-    opts.max_colors > 1 ? quantizeRgba(pixels, opts.max_colors) : pixels;
+  // Keep the palette: vtracer will invent colours between these entries and
+  // we snap them back afterwards.
+  let processed = pixels;
+  let palette: [number, number, number][] = [];
+  if (opts.max_colors > 1) {
+    const q = quantizeRgbaWithPalette(pixels, opts.max_colors);
+    processed = q.pixels;
+    palette = q.palette;
+  }
 
   const config: VtracerConfig = {
     ...FIXED_CONFIG,
@@ -162,13 +205,18 @@ export async function traceImageToSvg(
     // and 1 over-splits — backwards from the knob's help text.
     colorPrecision: Math.max(0, Math.min(8, 8 - opts.color_precision)),
     layerDifference: opts.layer_difference,
-    filterSpeckle: opts.filter_speckle,
+    // Co-scale with any downscale: filterSpeckle is an AREA threshold in px²,
+    // so leaving it fixed while shrinking the image silently makes it far more
+    // aggressive and eats the thin features the user wanted.
+    filterSpeckle: scaleFilterSpeckle(opts.filter_speckle, scale),
   };
+  const filterSpeckle = config.filterSpeckle;
   // vtracer-wasm wants a plain Uint8Array; getImageData gives Uint8ClampedArray.
   const svg = toSvg(
     new Uint8Array(processed.buffer, processed.byteOffset, processed.byteLength),
     width, height, config,
   );
+
 
   // Backdrop layers: vtracer's stacked output partitions pixels into N
   // colour buckets, but anti-aliased edges and gradient slivers near the
@@ -178,7 +226,29 @@ export async function traceImageToSvg(
   // corner — so a missed sliver in (say) the top-left picks up sky
   // blue, the bottom-left picks up the ground colour, and so on. Most
   // central content is still painted by vtracer over the top.
-  return injectCornerBackdrops(svg, processed, width, height);
+  // Snap every fill back onto the quantised palette. Without this, "Max
+  // colours: 6" is a suggestion the tracer ignores: vtracer averages the
+  // pixels inside each traced region, so regions straddling a palette
+  // boundary land between entries and each one becomes its own UI layer.
+  // Measured on a real user file: 1057 distinct fills (444 layers) collapsing
+  // to exactly 6, with an identical path count.
+  //
+  // Snap AFTER injectCornerBackdrops, not before: sampleCornerColor averages
+  // a patch of up to 16x16 pixels, and a patch straddling two palette colours
+  // averages to a third colour that is in neither — which would quietly leak
+  // extra layers back in through the backdrop rects.
+  const withBackdrops = injectCornerBackdrops(svg, processed, width, height);
+  return {
+    svg: palette.length > 0
+      ? snapFillsToPalette(withBackdrops, palette)
+      : withBackdrops,
+    nativeWidth,
+    nativeHeight,
+    tracedWidth: width,
+    tracedHeight: height,
+    filterSpeckle,
+    downscaled: scale < 1,
+  };
 }
 
 function sampleCornerColor(

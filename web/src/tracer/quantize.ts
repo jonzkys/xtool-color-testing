@@ -12,6 +12,70 @@
  * colour. Fully-opaque pixels only; alpha channel preserved verbatim.
  */
 
+/** An `#rrggbb` string for an RGB triple, uppercase to match vtracer's own
+ *  output casing so a snapped fill is byte-comparable with an unsnapped one. */
+export function rgbToHex(r: number, g: number, b: number): string {
+  return (
+    "#" + [r, g, b].map((c) => c.toString(16).padStart(2, "0")).join("")
+  ).toUpperCase();
+}
+
+/** ``quantizeRgba`` plus the palette it chose.
+ *
+ *  The palette matters downstream: vtracer computes each traced region's OWN
+ *  average colour, so it happily emits colours the quantised input never
+ *  contained — 6 input colours became 1057 distinct fills (and 444 UI layers)
+ *  on a real user file. Snapping vtracer's fills back to this palette is what
+ *  makes ``max_colors`` actually mean what the label says. */
+export function quantizeRgbaWithPalette(
+  rgba: Uint8ClampedArray,
+  maxColors: number,
+): { pixels: Uint8ClampedArray; palette: [number, number, number][] } {
+  const pixels = quantizeRgba(rgba, maxColors);
+  // Read the palette back off the result rather than plumbing it out of the
+  // median-cut internals: the buffer holds at most ``maxColors`` distinct
+  // colours by construction, so this is a bounded scan and it stays correct
+  // if the quantiser's internals ever change.
+  const seen = new Set<number>();
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (pixels[i + 3] === 0) continue;
+    seen.add((pixels[i] << 16) | (pixels[i + 1] << 8) | pixels[i + 2]);
+  }
+  const palette = [...seen].map(
+    (v) => [(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff] as [number, number, number],
+  );
+  return { pixels, palette };
+}
+
+/** Rewrite every ``fill="#rrggbb"`` in ``svg`` to its nearest palette entry
+ *  by squared RGB distance. No-op when the palette is empty. */
+export function snapFillsToPalette(
+  svg: string,
+  palette: [number, number, number][],
+): string {
+  if (palette.length === 0) return svg;
+  const cache = new Map<string, string>();
+  return svg.replace(/fill="#([0-9a-fA-F]{6})"/g, (_m, hex: string) => {
+    const cached = cache.get(hex);
+    if (cached !== undefined) return cached;
+    const n = parseInt(hex, 16);
+    const r = (n >> 16) & 0xff, g = (n >> 8) & 0xff, b = n & 0xff;
+    let best = palette[0];
+    let bestD = Infinity;
+    for (const p of palette) {
+      const dr = r - p[0], dg = g - p[1], db = b - p[2];
+      const d = dr * dr + dg * dg + db * db;
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    const out = `fill="${rgbToHex(best[0], best[1], best[2])}"`;
+    cache.set(hex, out);
+    return out;
+  });
+}
+
 export function quantizeRgba(
   rgba: Uint8ClampedArray,
   maxColors: number,
