@@ -210,6 +210,27 @@ def main(argv: list[str] | None = None) -> None:
         help="Rewrite every row, even those already at the current formula version.",
     )
 
+    # --- repair-palette-params command ---
+    rp_p = sub.add_parser(
+        "repair-palette-params",
+        help=(
+            "Backfill palette entries that recorded only the parameters their "
+            "cell varied, dropping the test's constants. Dry-run by default."
+        ),
+    )
+    rp_p.add_argument(
+        "--material-id", type=int, default=None,
+        help="Limit the repair to one material.",
+    )
+    rp_p.add_argument(
+        "--apply", action="store_true",
+        help="Actually write the repair. Without this, only report what would change.",
+    )
+    rp_p.add_argument(
+        "--verbose", action="store_true",
+        help="List every entry, not just the summary.",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "svg":
@@ -291,6 +312,34 @@ def main(argv: list[str] | None = None) -> None:
             port=args.port,
             log_level="info",
         )
+        return
+
+    elif args.command == "repair-palette-params":
+        from xcs_gen_web.repositories.palette import repair_partial_params
+
+        report = repair_partial_params(
+            dry_run=not args.apply, material_id=args.material_id,
+        )
+        print(f"scanned            {report['scanned']}")
+        print(f"already complete   {report['already_complete']}")
+        print(f"repairable         {report['repaired']}")
+        print(f"NOT repairable     {report['unrepairable']}")
+        if args.verbose:
+            for ch in report["changes"]:
+                if ch["status"] == "repaired":
+                    filled = ", ".join(f"{k}={v}" for k, v in ch["filled"].items())
+                    print(f"  {ch['hex']} (#{ch['id']}) + {filled}")
+                else:
+                    print(
+                        f"  {ch['hex']} (#{ch['id']}) SKIPPED — test cannot supply "
+                        + ", ".join(ch["still_missing"])
+                    )
+        if report["dry_run"]:
+            print()
+            print("Dry run — nothing written. Re-run with --apply to make these changes.")
+        else:
+            print()
+            print(f"Wrote {report['repaired']} entries.")
         return
 
     elif args.command == "recompute-indices":

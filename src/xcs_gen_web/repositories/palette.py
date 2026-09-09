@@ -1041,3 +1041,110 @@ def invalidate_entry(
             select(palette_entries).where(palette_entries.c.id == eid),
         ).one()
     return _row_to_entry(out)
+
+
+# Keys a palette entry needs before it can state a complete burn recipe.
+# ``scan_angle`` / ``angle_mode`` / ``crosshatch`` are deliberately absent:
+# they are layer-level in some consumers and legitimately optional here.
+_RECIPE_KEYS = (
+    "power", "speed", "frequency", "density", "passes", "pulse_width", "laser",
+)
+
+
+def repair_partial_params(
+    *,
+    dry_run: bool = True,
+    material_id: int | None = None,
+    owner_id: int = STANDALONE_USER_ID,
+) -> dict[str, Any]:
+    """Backfill entries that recorded only the parameters their cell varied.
+
+    Until the validate-batch ingest was fixed, a palette entry created by
+    validating a test stored just the cell's own params overlay and dropped
+    every parameter the test held constant. Such an entry cannot state the
+    recipe that produced its colour, and applying it downstream writes holes
+    into whatever consumes it.
+
+    The missing values are recoverable, and provably so: ``converter.py``
+    burns a validation cell as ``_to_processing_params(test.base_params)``
+    with the cell's params overlaid, so ``{**base_params, **cell_params}`` is
+    by construction what the machine ran.
+
+    This is deliberately conservative:
+
+    * only keys that are currently absent or ``None`` are filled — an
+      existing value is never overwritten, so the entry's own measurements
+      always win over the test default;
+    * the source is the entry's OWN test (``validated_test_id`` first, then
+      ``test_id``), never a sibling or a guess;
+    * an entry whose test cannot supply every missing key is left alone and
+      reported, rather than half-filled;
+    * the derived exposure indices are recomputed, because the stored ones
+      were calculated from the incomplete params and are wrong (a missing
+      ``density`` silently became a default line spacing).
+
+    Returns a report; with ``dry_run`` (the default) nothing is written.
+    """
+    report: dict[str, Any] = {
+        "scanned": 0, "already_complete": 0, "repaired": 0,
+        "unrepairable": 0, "dry_run": dry_run, "changes": [],
+    }
+
+    from .tests import get as _get_test
+
+    with session_scope() as s:
+        where = [palette_entries.c.owner_id == owner_id]
+        if material_id is not None:
+            where.append(palette_entries.c.material_id == material_id)
+        rows = s.execute(
+            select(palette_entries).where(and_(*where))
+        ).all()
+
+        spec_cache: dict[int, dict[str, Any]] = {}
+
+        def base_params_for(tid: int | None) -> dict[str, Any]:
+            if tid is None:
+                return {}
+            if tid not in spec_cache:
+                t = _get_test(tid, owner_id=owner_id)
+                spec_cache[tid] = ((t or {}).get("spec") or {}).get("base_params") or {}
+            return spec_cache[tid]
+
+        for r in rows:
+            report["scanned"] += 1
+            params = json.loads(r.params_json or "{}")
+            missing = [k for k in _RECIPE_KEYS if params.get(k) is None]
+            if not missing:
+                report["already_complete"] += 1
+                continue
+
+            base = base_params_for(r.validated_test_id or r.test_id)
+            fillable = {k: base[k] for k in missing if base.get(k) is not None}
+            if len(fillable) != len(missing):
+                report["unrepairable"] += 1
+                report["changes"].append({
+                    "id": r.id, "hex": r.hex, "status": "unrepairable",
+                    "missing": missing,
+                    "still_missing": [k for k in missing if k not in fillable],
+                })
+                continue
+
+            merged = {**params, **fillable}
+            report["repaired"] += 1
+            report["changes"].append({
+                "id": r.id, "hex": r.hex, "status": "repaired",
+                "filled": fillable,
+            })
+            if dry_run:
+                continue
+            s.execute(
+                palette_entries.update()
+                .where(palette_entries.c.id == r.id)
+                .values(
+                    params_json=json.dumps(merged, separators=(",", ":")),
+                    # The stored indices came from the incomplete params.
+                    **_compute_index_values(merged),
+                )
+            )
+
+    return report
