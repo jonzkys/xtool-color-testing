@@ -2504,6 +2504,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         cells_for_buckets = []
         cell_params: dict[int, dict] = {}
         cell_src_entry: dict[int, int | None] = {}
+        # Test-level constants every cell inherits. ``angle_mode`` /
+        # ``crosshatch`` are normalised the same way the sibling ingest paths
+        # do, so a legacy ``angle_mode="crosshatch"`` doesn't reach the
+        # palette in a form consumers have to special-case.
+        validation_base = dict(t["spec"].get("base_params") or {})
+        _v_angle_mode = t["spec"].get("angle_mode", "fixed")
+        _v_crosshatch = bool(t["spec"].get("crosshatch", False))
+        if _v_angle_mode == "crosshatch":
+            _v_angle_mode = "fixed"
+            _v_crosshatch = True
+        validation_base["angle_mode"] = _v_angle_mode
+        validation_base["crosshatch"] = _v_crosshatch
         for c in cells_full:
             exp = c.get("expected_lab")
             if not isinstance(exp, list) or len(exp) != 3:
@@ -2515,7 +2527,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "expected_lab_a": exp[1],
                 "expected_lab_b": exp[2],
             })
-            cell_params[c["cell_index"]] = c.get("params") or {}
+            # Merge onto the TEST's base_params, because that is exactly how
+            # the cell was burned: converter.py builds
+            # ``_to_processing_params(t.base_params, ...)`` and then overlays
+            # the cell's own params on top of it. Recording only the overlay
+            # loses every parameter the test held constant, and a palette
+            # entry that cannot state its full recipe is not a recipe.
+            #
+            # This is what the two sibling ingest paths already do
+            # (``tests_ingest_to_palette`` and the sweep ingest-batch, both
+            # ``params = dict(base)`` first). This path was the odd one out,
+            # and it produced 100 entries carrying nothing but the two swept
+            # axes — which then broke SVG-layers Generate (see #175).
+            cell_params[c["cell_index"]] = {
+                **validation_base,
+                **{k: v for k, v in (c.get("params") or {}).items() if v is not None},
+            }
             cell_src_entry[c["cell_index"]] = c.get("palette_entry_id")
 
         buckets = validate_service.compute_validation_buckets(
