@@ -131,3 +131,70 @@ def test_patch_validation_cells_404_on_missing(fresh_db):
     c, _ = _client_and_material(fresh_db)
     r = c.patch("/api/tests/99999/validation-cells", json={"cells": []})
     assert r.status_code == 404
+
+
+def test_validate_batch_records_the_full_burn_recipe(fresh_db):
+    """A palette entry created by validating must carry the WHOLE recipe.
+
+    ``converter.py`` burns a validation cell as
+    ``_to_processing_params(test.base_params)`` with the cell's own params
+    overlaid on top. The palette entry has to record that same merge —
+    otherwise it remembers only the axes the test happened to vary and
+    silently forgets everything the test held constant.
+
+    This path used to store the cell's params verbatim, which produced 100
+    real entries carrying nothing but ``speed`` and ``frequency``. Auto-match
+    then applied them to an SVG layer, every absent field became NaN ->
+    ``null`` over JSON, and Generate came back a wall of 422s (see #175).
+    """
+    from xcs_gen_web.repositories import palette as pal_repo
+    from xcs_gen_web.repositories import results as r_repo
+
+    client, mid = _client_and_material(fresh_db)
+    tid = t_repo.create(
+        name="v", material_id=mid, spec=SPEC, kind="validation",
+    )["id"]
+
+    # One cell that varies ONLY speed — power/density/passes/pulse_width are
+    # constants held by the test, exactly like the real failing data.
+    client.patch(
+        f"/api/tests/{tid}/validation-cells",
+        json={"cells": [{
+            "cell_index": 0,
+            "palette_entry_id": None,
+            "expected_hex": "#404040",
+            "expected_lab": [40.0, 0.0, 0.0],
+            "params": {"speed": 1234},
+        }]},
+    )
+
+    # Two runs agreeing tightly, so the cell buckets as stable and persists.
+    for run in range(2):
+        r_repo.create(
+            test_id=tid,
+            image_path=f"/dev/null/{run}",
+            image_sha256=("v" * 63) + str(run),
+            swatches=[{
+                "row": 0, "col": 0, "x_value": 0, "y_value": None,
+                "hex": "#404040", "lab": [40.0 + run * 0.1, 0.0, 0.0],
+                "sigma": 0.5,
+            }],
+        )
+
+    resp = client.post(f"/api/tests/{tid}/validate", json={"dry_run": False})
+    assert resp.status_code == 200, resp.text
+    persisted = [e for e in resp.json()["stable"] if e.get("new_entry_id")]
+    assert persisted, f"expected a persisted entry, got {resp.json()}"
+
+    entry = pal_repo.get_by_id(persisted[0]["new_entry_id"])
+    params = entry["params"]
+
+    # The cell's own value wins...
+    assert params["speed"] == 1234
+    # ...and every constant the test held is still present.
+    for key in ("power", "frequency", "density", "passes", "pulse_width", "laser"):
+        assert params.get(key) is not None, (
+            f"{key} missing from the palette entry: {params}"
+        )
+    assert params["power"] == BASE["power"]
+    assert params["pulse_width"] == BASE["pulse_width"]
