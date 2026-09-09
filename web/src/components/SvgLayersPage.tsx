@@ -2260,18 +2260,43 @@ type LayerPatch = {
 export function paletteParamsToLayerPatch(
   params: { [k: string]: string | number },
 ): LayerPatch {
-  const laser = params["laser"];
-  const toInt = (v: string | number) =>
-    typeof v === "number" ? Math.round(v) : Math.round(Number(v));
-  const base_params: Partial<BaseParams> = {
-    power: typeof params["power"] === "number" ? params["power"] : Number(params["power"]),
-    speed: toInt(params["speed"]),
-    frequency: toInt(params["frequency"]),
-    density: toInt(params["density"]),
-    passes: toInt(params["passes"]),
-    pulse_width: toInt(params["pulse_width"]),
-    laser: laser === "blue" ? "blue" : "red",
+  // A palette entry need not carry every burn parameter — entries produced by
+  // a 2D speed x frequency sweep hold only those two axes (100 of 1429 in a
+  // real database). Absent keys must be OMITTED, not coerced: this patch is
+  // applied as ``{...layer.base_params, ...patch.base_params}``, so omitting
+  // leaves the layer's existing value alone, which is the same principle the
+  // crosshatch / angle_mode fields below already follow.
+  //
+  // Running an absent key through ``Number(undefined)`` yields NaN, which
+  // ``JSON.stringify`` writes as ``null``, which /api/svg-layers then rejects
+  // with one validation error per null field — surfacing as a wall of text on
+  // the Generate button.
+  const num = (v: string | number | undefined): number | undefined => {
+    if (v === undefined || v === null || v === "") return undefined;
+    const n = typeof v === "number" ? v : Number(v);
+    return Number.isFinite(n) ? n : undefined;
   };
+  const int = (v: string | number | undefined): number | undefined => {
+    const n = num(v);
+    return n === undefined ? undefined : Math.round(n);
+  };
+
+  const base_params: Partial<BaseParams> = {};
+  const assign = <K extends keyof BaseParams>(
+    key: K, value: BaseParams[K] | undefined,
+  ) => {
+    if (value !== undefined) base_params[key] = value;
+  };
+  assign("power", num(params["power"]));
+  assign("speed", int(params["speed"]));
+  assign("frequency", int(params["frequency"]));
+  assign("density", int(params["density"]));
+  assign("passes", int(params["passes"]));
+  assign("pulse_width", int(params["pulse_width"]));
+  const laser = params["laser"];
+  if (laser !== undefined && laser !== null && laser !== "") {
+    base_params.laser = laser === "blue" ? "blue" : "red";
+  }
   const out: LayerPatch = { base_params };
   // ``scan_angle`` is duplicated on BaseParams + LayerSpec; the
   // exporter reads top-level, so write the layer field here. Keep
