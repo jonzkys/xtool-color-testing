@@ -204,3 +204,58 @@ describe("mapLayersStable", () => {
     expect(mapLayersStable(layers, (l) => l)).toBe(layers);
   });
 });
+
+
+/* A palette entry does not have to carry every burn parameter. Entries
+ * produced by a 2D speed x frequency sweep hold only those two axes — 100 of
+ * 1429 entries in a real database. ``paletteParamsToLayerPatch`` used to run
+ * every field through ``Number(...)`` unconditionally, so an absent key became
+ * NaN, ``JSON.stringify`` turned that into ``null``, and /api/svg-layers
+ * rejected the whole request with a validation error per null field. The user
+ * saw "a long exception" on Generate.
+ *
+ * Absent keys must be OMITTED, so the layer keeps whatever it already had —
+ * the patch is applied as ``{...layer.base_params, ...patch.base_params}``.
+ */
+describe("paletteParamsToLayerPatch with partial entries", () => {
+  test("omits keys the entry does not carry, rather than emitting NaN", () => {
+    const patch = paletteParamsToLayerPatch({
+      speed: 2073.7191768265,
+      frequency: 249.87046870252885,
+    });
+    expect(patch.base_params).toEqual({ speed: 2074, frequency: 250 });
+    for (const [k, v] of Object.entries(patch.base_params)) {
+      expect(Number.isNaN(v as number), `${k} is NaN`).toBe(false);
+    }
+  });
+
+  test("survives a JSON round-trip without producing nulls", () => {
+    const patch = paletteParamsToLayerPatch({ speed: 1585, frequency: 197 });
+    const merged = { power: 12, speed: 1000, frequency: 125, density: 5000,
+      passes: 1, pulse_width: 80, laser: "red", scan_angle: 90,
+      ...patch.base_params };
+    const round = JSON.parse(JSON.stringify(merged));
+    for (const [k, v] of Object.entries(round)) {
+      expect(v, `${k} serialised to null`).not.toBeNull();
+    }
+    // The entry's values win; everything else keeps the layer's existing value.
+    expect(round.speed).toBe(1585);
+    expect(round.power).toBe(12);
+    expect(round.pulse_width).toBe(80);
+  });
+
+  test("an empty entry produces an empty patch, not a wall of NaN", () => {
+    expect(paletteParamsToLayerPatch({}).base_params).toEqual({});
+  });
+
+  test("still reads a complete entry exactly as before", () => {
+    const patch = paletteParamsToLayerPatch({
+      power: 12, speed: 564, frequency: 240, density: 5000,
+      passes: 2, pulse_width: 80, laser: "blue",
+    });
+    expect(patch.base_params).toEqual({
+      power: 12, speed: 564, frequency: 240, density: 5000,
+      passes: 2, pulse_width: 80, laser: "blue",
+    });
+  });
+});
