@@ -3,6 +3,8 @@ import {
   cellRectInImagePx,
   imagePxToCell,
   resolveSwatchIndex,
+  sweepAxes,
+  sweepCellValues,
 } from "./cellInspectorMath";
 import type { GridLayout } from "../types";
 
@@ -147,5 +149,35 @@ describe("cellRectInImagePx", () => {
     expect(r).toEqual({
       left: 100, top: 200, width: 100, height: 80,  // <- 80, not 100
     });
+  });
+});
+
+describe("sweepCellValues", () => {
+  const PW_SPEC = {
+    x_param: "frequency", x_min: 80, x_max: 900, x_steps: 13,
+    y_param: "pulse_width", y_min: 2, y_max: 500, y_steps: 16,
+  } as const;
+
+  it("2D reads x by col and y by row — pulse_width from the presets", () => {
+    const axes = sweepAxes(PW_SPEC);
+    expect(sweepCellValues(axes, TWO_D, { row: 8, col: 0 })).toEqual({ x: 80, y: 60 });
+    expect(sweepCellValues(axes, TWO_D, { row: 15, col: 12 })).toEqual({ x: 900, y: 500 });
+  });
+
+  it("wrapped 1D reads x by the flat cell index", () => {
+    const axes = sweepAxes({
+      x_param: "pulse_width", x_min: 2, x_max: 500, x_steps: 10,
+      y_param: null, y_min: null, y_max: null, y_steps: null,
+    });
+    // Row 1, col 2 on a 4-per-row wrap is flat cell 6 → the 7th preset.
+    expect(sweepCellValues(axes, WRAPPED_1D, { row: 1, col: 2 })).toEqual({ x: 30, y: null });
+  });
+
+  it("returns null past the end of the axis", () => {
+    const axes = sweepAxes({
+      x_param: "pulse_width", x_min: 2, x_max: 13, x_steps: 9,
+      y_param: null, y_min: null, y_max: null, y_steps: null,
+    });
+    expect(sweepCellValues(axes, WRAPPED_1D, { row: 2, col: 0 })).toEqual({ x: null, y: null });
   });
 });

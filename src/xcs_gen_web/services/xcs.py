@@ -97,6 +97,25 @@ def _cell_list_for_test(*, test: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _cap_pulse_width_steps(spec: dict[str, Any]) -> dict[str, Any]:
+    """``spec`` with any ``pulse_width`` axis capped to the step count the
+    generator actually burns (see :func:`effective_step_count`)."""
+    from xcs_gen.generators import effective_step_count
+
+    patch: dict[str, int] = {}
+    for axis in ("x", "y"):
+        param = spec.get(f"{axis}_param")
+        steps = spec.get(f"{axis}_steps")
+        if param != "pulse_width" or not steps:
+            continue
+        capped = effective_step_count(
+            param, float(spec[f"{axis}_min"]), float(spec[f"{axis}_max"]), int(steps),
+        )
+        if capped != steps:
+            patch[f"{axis}_steps"] = capped
+    return {**spec, **patch} if patch else spec
+
+
 def effective_spec_for_layout(
     *,
     spec: dict[str, Any],
@@ -115,12 +134,14 @@ def effective_spec_for_layout(
     :func:`bytes_for_test` so both the .xcs builder and the analysis
     pipeline use identical layout numbers.
 
-    For ``kind="sweep"`` the spec is returned unchanged (apart from
-    ``dict(spec)`` so callers don't accidentally mutate the caller's
-    copy).
+    For ``kind="sweep"`` the only override is the step count of a
+    ``pulse_width`` axis: the generator caps it to the presets inside
+    ``[min, max]`` (the editor keeps the requested count and shows
+    "Capped to N"), so the burned grid has N cells along that axis.
+    A sweep that needs no cap comes back as the same object.
     """
     if kind != "validation":
-        return spec
+        return _cap_pulse_width_steps(spec)
     import math
     cells = validation_cells or []
     cell_count = max(2, len(cells))

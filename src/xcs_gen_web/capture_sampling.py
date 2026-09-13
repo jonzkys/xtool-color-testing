@@ -12,6 +12,8 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
+from xcs_gen.generators import _axis_values
+
 # Sample window — central N% of the cell pitch each side. 30% keeps the
 # window strictly inside the burned area even when the burn doesn't fill
 # the full cell (low-power corners, small dot tests). Bumped down from
@@ -29,6 +31,17 @@ def _round_param(name: str, value: float) -> float:
     if name in _INT_PARAMS:
         return float(round(value))
     return round(value, 1)
+
+
+def sweep_axis_values(param: str, lo: float, hi: float, steps: int) -> list[float]:
+    """Per-cell values along a sweep axis — the ones the generator burned.
+
+    Most params are a linear ramp, but ``pulse_width`` steps through the
+    machine's preset list (and may yield fewer than ``steps`` values), so
+    this defers to the generator's own ``_axis_values`` rather than
+    interpolating ``lo..hi``.
+    """
+    return [_round_param(param, v) for v in _axis_values(param, lo, hi, steps)]
 
 
 @dataclass
@@ -162,6 +175,12 @@ def sample_grid(
     ox, oy = grid_origin_mm
     gw, gh = grid_size_mm
 
+    # A pulse_width axis can hold fewer presets than the steps asked for;
+    # the generator burns only that many cells, so lay the grid out for
+    # the same count.
+    x_values = sweep_axis_values(x_param, x_min, x_max, x_steps)
+    x_steps = len(x_values)
+
     # 1D wrapped gets its own path — the Y coordinate of each cell depends
     # on (i // per_row) with the explicit stride, which the generic 1D / 2D
     # logic below can't express.
@@ -172,7 +191,6 @@ def sample_grid(
         stride_mm = row_stride_mm if row_stride_mm is not None else row_h_mm
         cell_w_px = cell_w_mm * px_per_mm
         cell_h_px = row_h_mm * px_per_mm
-        x_values = [_round_param(x_param, v) for v in _linspace(x_min, x_max, x_steps)]
 
         swatches: list[Swatch] = []
         for i in range(x_steps):
@@ -194,17 +212,15 @@ def sample_grid(
         return swatches
 
     # 1D flat or 2D grid.
+    y_values: list[float | None] = (
+        list(sweep_axis_values(y_param, y_min, y_max, y_steps))
+        if y_param is not None else [None]
+    )
+    n_y = len(y_values)
     cell_w_mm = gw / x_steps
-    n_y = y_steps if y_param is not None else 1
     cell_h_mm = gh / n_y
     cell_w_px = cell_w_mm * px_per_mm
     cell_h_px = cell_h_mm * px_per_mm
-
-    x_values = [_round_param(x_param, v) for v in _linspace(x_min, x_max, x_steps)]
-    if y_param is not None:
-        y_values: list[float | None] = [_round_param(y_param, v) for v in _linspace(y_min, y_max, n_y)]
-    else:
-        y_values = [None] * n_y
 
     swatches = []
     for yi in range(n_y):

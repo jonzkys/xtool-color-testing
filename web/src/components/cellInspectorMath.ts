@@ -7,7 +7,8 @@
  * directions, so the agreement holds by construction.
  */
 
-import type { GridLayout } from "../types";
+import { sweepAxisValues } from "../laser/sweepAxis";
+import type { GridLayout, TestSpec } from "../types";
 
 export interface PhysicalCell {
   physicalRow: number;
@@ -89,6 +90,41 @@ export function resolveSwatchIndex(
     if (flatIdx >= totalCols) return null;
   }
   return { row: cell.physicalRow, col: cell.displayedCol };
+}
+
+/** Per-cell values along each axis of a sweep test, as burned. */
+export interface SweepAxes {
+  x: number[];
+  y: number[] | null;
+}
+
+type AxisSpec = Pick<
+  TestSpec,
+  "x_min" | "x_max" | "x_steps" | "y_min" | "y_max" | "y_steps"
+> & { x_param: string; y_param: string | null };
+
+export function sweepAxes(spec: AxisSpec): SweepAxes {
+  return {
+    x: sweepAxisValues(spec.x_param, spec.x_min, spec.x_max, spec.x_steps),
+    y: spec.y_param === null
+      ? null
+      : sweepAxisValues(
+        spec.y_param, spec.y_min ?? 0, spec.y_max ?? 0, spec.y_steps ?? 1,
+      ),
+  };
+}
+
+/** The (x, y) values a sweep swatch was burned with. 2D reads x by
+ *  column and y by row; 1D (single-row or wrapped) reads x by the flat
+ *  cell index. ``null`` where the cell falls outside an axis. */
+export function sweepCellValues(
+  axes: SweepAxes, layout: GridLayout, cell: SwatchIndex,
+): { x: number | null; y: number | null } {
+  if (layout.is_2d) {
+    return { x: axes.x[cell.col] ?? null, y: axes.y?.[cell.row] ?? null };
+  }
+  const flatIdx = cell.row * layout.cells_per_physical_row + cell.col;
+  return { x: axes.x[flatIdx] ?? null, y: null };
 }
 
 /** Translate viewport coords → image-pixel coords using a rendered

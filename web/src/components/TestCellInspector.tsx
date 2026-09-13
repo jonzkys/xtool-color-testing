@@ -7,8 +7,11 @@ import {
   displayedImageRect,
   imagePxToCell,
   resolveSwatchIndex,
+  sweepAxes,
+  sweepCellValues,
   viewportToImagePx,
   type PhysicalCell,
+  type SweepAxes,
 } from "./cellInspectorMath";
 
 export interface TestCellInspectorProps {
@@ -68,6 +71,13 @@ export function TestCellInspector({
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
   const [stickyCell, setStickyCell] = useState<PhysicalCell | null>(null);
 
+  // Axis values as burned — ``pulse_width`` steps through the machine's
+  // presets rather than a ramp. Labels and tooltip both read from here,
+  // so they agree with the burn even for results captured before the
+  // sampler learned about presets (their stored swatch values are a
+  // linear ramp).
+  const axes = useMemo(() => sweepAxes(spec), [spec]);
+
   // Index swatches by (row, col) once for O(1) lookup on every move.
   const swatchByCell = useMemo(() => {
     const m = new Map<string, ResultSwatch>();
@@ -84,7 +94,7 @@ export function TestCellInspector({
   // validation mode so the wrap math accepts the real grid.
   const effectiveCols = validationCells && validationCells.length > 0
     ? validationCells.length
-    : spec.x_steps;
+    : axes.x.length;
   const activeCell = stickyCell ?? hoverCell;
   const activeIdx = activeCell
     ? resolveSwatchIndex(layout, activeCell, effectiveCols)
@@ -186,7 +196,7 @@ export function TestCellInspector({
         draggable={false}
       />
 
-      <AxisOverlay layout={layout} spec={spec} kind={kind} />
+      <AxisOverlay layout={layout} spec={spec} axes={axes} kind={kind} />
 
       {highlightStyle && (
         <div
@@ -200,6 +210,7 @@ export function TestCellInspector({
         <CellTooltip
           swatch={activeSwatch}
           spec={spec}
+          values={sweepCellValues(axes, layout, activeSwatch)}
           validationCell={activeValidationCell}
           containerRect={containerRef.current.getBoundingClientRect()}
           anchor={pointerPos}
@@ -215,9 +226,10 @@ export function TestCellInspector({
 }
 
 function AxisOverlay({
-  layout, spec, kind,
+  layout, spec, axes, kind,
 }: {
-  layout: GridLayout; spec: TestSpec; kind?: "sweep" | "validation";
+  layout: GridLayout; spec: TestSpec; axes: SweepAxes;
+  kind?: "sweep" | "validation";
 }) {
   // SVG that overlays the image with viewBox = image-pixel space.
   // The image and SVG share the same parent, so the SVG scales to
@@ -225,7 +237,7 @@ function AxisOverlay({
   //
   // Validation tests skip x-axis labels: every cell carries its own
   // params (the source-sweep's x_min/x_max/x_steps are inherited but
-  // meaningless), so paramValueAt's interpolation produces nonsense.
+  // meaningless), so reading values off them produces nonsense.
   // The y-axis row indices stay — they orient the user inside the
   // wrapped grid even without a swept axis.
   const isValidation = kind === "validation";
@@ -236,13 +248,15 @@ function AxisOverlay({
       viewBox={`0 0 ${layout.image_width_px} ${layout.image_height_px}`}
       preserveAspectRatio="xMidYMid meet"
     >
-      <YAxisLabels layout={layout} spec={spec} />
-      {!isValidation && <XAxisLabels layout={layout} spec={spec} />}
+      <YAxisLabels layout={layout} spec={spec} axes={axes} />
+      {!isValidation && <XAxisLabels layout={layout} spec={spec} axes={axes} />}
     </svg>
   );
 }
 
-function XAxisLabels({ layout, spec }: { layout: GridLayout; spec: TestSpec }) {
+function XAxisLabels({
+  layout, spec, axes,
+}: { layout: GridLayout; spec: TestSpec; axes: SweepAxes }) {
   // Cap label size so labels don't overlap on dense X axes (20+ cells).
   const labelSize = Math.max(7, Math.min(layout.cell_width_px * 0.55, 14));
   // Skip every Nth label when the cells are too narrow for the label glyph
@@ -269,8 +283,8 @@ function XAxisLabels({ layout, spec }: { layout: GridLayout; spec: TestSpec }) {
       const flatCol = layout.is_2d
         ? pcol
         : prow * layout.cells_per_physical_row + pcol;
-      if (!layout.is_2d && flatCol >= spec.x_steps) continue;
-      const xVal = paramValueAt(spec.x_min, spec.x_max, spec.x_steps, flatCol);
+      const xVal = axes.x[flatCol];
+      if (xVal === undefined) continue;
       const labelX =
         layout.grid_origin_x_px + (pcol + 0.5) * layout.cell_width_px;
       lines.push(
@@ -294,7 +308,9 @@ function XAxisLabels({ layout, spec }: { layout: GridLayout; spec: TestSpec }) {
   return <g>{lines}</g>;
 }
 
-function YAxisLabels({ layout, spec }: { layout: GridLayout; spec: TestSpec }) {
+function YAxisLabels({
+  layout, spec, axes,
+}: { layout: GridLayout; spec: TestSpec; axes: SweepAxes }) {
   const labelSize = Math.max(7, Math.min(layout.cell_height_px * 0.55, 14));
   const lines: React.ReactElement[] = [];
   // Stride-skip when cell heights are tight (2D with 14+ rows).
@@ -309,9 +325,8 @@ function YAxisLabels({ layout, spec }: { layout: GridLayout; spec: TestSpec }) {
     const labelX = layout.grid_origin_x_px - labelSize * 0.4;
     let text: string;
     if (layout.is_2d) {
-      const yVal = paramValueAt(
-        spec.y_min ?? 0, spec.y_max ?? 0, spec.y_steps ?? 1, prow,
-      );
+      const yVal = axes.y?.[prow];
+      if (yVal === undefined) continue;
       text = formatParamValue(spec.y_param ?? "", yVal);
     } else {
       // 1D: row index keeps the gutter labelled but doesn't pretend
@@ -336,11 +351,6 @@ function YAxisLabels({ layout, spec }: { layout: GridLayout; spec: TestSpec }) {
     );
   }
   return <g>{lines}</g>;
-}
-
-function paramValueAt(min: number, max: number, steps: number, idx: number): number {
-  if (steps <= 1) return min;
-  return min + ((max - min) * idx) / (steps - 1);
 }
 
 function formatParamValue(param: string, value: number): string {
@@ -395,13 +405,15 @@ function _deltaE76(
 }
 
 function CellTooltip({
-  swatch, spec,
+  swatch, spec, values,
   validationCell,
   containerRect, anchor,
   onInspect,
 }: {
   swatch: ResultSwatch;
   spec: TestSpec;
+  /** The cell's burned axis values, derived from the spec. */
+  values: { x: number | null; y: number | null };
   validationCell: ValidationCell | null;
   containerRect: DOMRect;
   anchor: { x: number; y: number };
@@ -524,9 +536,11 @@ function CellTooltip({
   }
 
   // ── Sweep-mode body (original) ───────────────────────────────────────
-  const xLabel = `${spec.x_param} = ${formatParamValue(spec.x_param, swatch.x_value)}`;
-  const yLabel = swatch.y_value !== null && spec.y_param
-    ? `${spec.y_param} = ${formatParamValue(spec.y_param, swatch.y_value)}`
+  const xValue = values.x ?? swatch.x_value;
+  const yValue = values.y ?? swatch.y_value;
+  const xLabel = `${spec.x_param} = ${formatParamValue(spec.x_param, xValue)}`;
+  const yLabel = yValue !== null && spec.y_param
+    ? `${spec.y_param} = ${formatParamValue(spec.y_param, yValue)}`
     : null;
 
   return (

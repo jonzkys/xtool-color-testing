@@ -633,11 +633,13 @@ def inspect_cell(
     # index (which already accounts for wrapped 1D row offsets); a bare
     # ``col`` lookup would round-trip the row-0 value for every row,
     # which was the bug this fix addresses.
-    from xcs_gen_web.capture_sampling import _linspace, _round_param
-    x_val = _round_param(spec["x_param"], _linspace(spec["x_min"], spec["x_max"], x_steps)[flat_idx])
+    from xcs_gen_web.capture_sampling import sweep_axis_values
+    x_val = sweep_axis_values(spec["x_param"], spec["x_min"], spec["x_max"], x_steps)[flat_idx]
     y_val: float | None
     if spec.get("y_param") is not None and y_steps:
-        y_val = _round_param(spec["y_param"], _linspace(spec.get("y_min", 0.0), spec.get("y_max", 0.0), y_steps)[row])
+        y_val = sweep_axis_values(
+            spec["y_param"], spec.get("y_min", 0.0), spec.get("y_max", 0.0), y_steps,
+        )[row]
     else:
         y_val = None
 
