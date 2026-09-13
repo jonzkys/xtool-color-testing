@@ -231,6 +231,23 @@ def main(argv: list[str] | None = None) -> None:
         help="List every entry, not just the summary.",
     )
 
+    # --- repair-pulse-width-values command ---
+    rpw_p = sub.add_parser(
+        "repair-pulse-width-values",
+        help=(
+            "Rewrite the pulse widths that pulse-width sweeps stored as a linear "
+            "ramp instead of the presets they burned. Dry-run by default."
+        ),
+    )
+    rpw_p.add_argument(
+        "--apply", action="store_true",
+        help="Actually write the repair. Without this, only report what would change.",
+    )
+    rpw_p.add_argument(
+        "--verbose", action="store_true",
+        help="List every result and entry, not just the summary.",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "svg":
@@ -340,6 +357,58 @@ def main(argv: list[str] | None = None) -> None:
         else:
             print()
             print(f"Wrote {report['repaired']} entries.")
+        return
+
+    elif args.command == "repair-pulse-width-values":
+        from xcs_gen_web.services.pulse_width_repair import repair_pulse_width_values
+
+        report = repair_pulse_width_values(dry_run=not args.apply)
+        print(f"pulse-width sweeps  {report['sweep_tests']}")
+        for label, key in (("results", "results"), ("palette entries", "entries")):
+            c = report[key]
+            print()
+            print(label)
+            print(f"  scanned           {c['scanned']}")
+            print(f"  already correct   {c['already_correct']}")
+            print(f"  repairable        {c['repaired']}")
+            print(f"  NOT repairable    {c['unrepairable']}")
+        if args.verbose:
+            print()
+            for ch in report["changes"]:
+                where = f"{ch['kind']} #{ch['id']} (test #{ch['test_id']})"
+                if ch["status"] == "unrepairable":
+                    print(f"  {where} SKIPPED — {ch['reason'].replace('_', ' ')}")
+                elif ch["kind"] == "result":
+                    print(f"  {where} {ch['swatches']} swatches")
+                else:
+                    old, new = ch["pulse_width"]
+                    print(f"  {where} {ch['hex']} pulse_width {old} → {new}")
+
+        flagged = report["flagged"]
+        if flagged["validation_tests"] or flagged["entries"] or flagged["saved_spectrums"]:
+            print()
+            print("Left untouched — a non-preset pulse width was burned or saved here,")
+            print("and what the machine made of it is unknown:")
+            for vt in flagged["validation_tests"]:
+                pws = ", ".join(f"{p:g}" for p in vt["pulse_widths"])
+                noun = "cell" if vt["cells"] == 1 else "cells"
+                print(f"  validation test #{vt['test_id']}: {vt['cells']} {noun} burned with {pws}")
+            if flagged["entries"]:
+                print(f"  {len(flagged['entries'])} palette entries outside a pulse-width sweep")
+                if args.verbose:
+                    for fe in flagged["entries"]:
+                        print(f"    #{fe['id']} {fe['hex']} (test #{fe['test_id']}) pulse_width {fe['pulse_width']}")
+            for sp in flagged["saved_spectrums"]:
+                print(f"  saved spectrum #{sp['id']} {sp['name']!r} — fitted over the old ramp values")
+
+        print()
+        if report["dry_run"]:
+            print("Dry run — nothing written. Re-run with --apply to make these changes.")
+        else:
+            print(
+                f"Wrote {report['results']['repaired']} results and "
+                f"{report['entries']['repaired']} palette entries."
+            )
         return
 
     elif args.command == "recompute-indices":
