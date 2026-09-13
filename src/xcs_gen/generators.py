@@ -1022,6 +1022,9 @@ def _axis_values(param: str, lo: float, hi: float, n: int) -> list[float]:
     end up with fewer points than ``n`` requested (enforced by
     :func:`effective_step_count`, which the caller uses to keep
     ``x_steps`` / ``y_steps`` in sync with reality).
+
+    Mirrored for the inspector in ``web/src/laser/sweepAxis.ts``; keep
+    the two in sync.
     """
     if param == "pulse_width":
         allowed = allowed_pulse_widths_in_range(lo, hi)

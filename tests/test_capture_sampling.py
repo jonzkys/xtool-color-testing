@@ -145,3 +145,81 @@ def test_sample_cell_dispatches_aggregator():
     # Mean might equal it here too if region is uniform; the key thing
     # is both calls succeed and return valid hex strings.
     assert hex_mean.startswith("#") and len(hex_mean) == 7
+
+
+# ── Pulse-width axes follow the machine's preset list ────────────────
+#
+# Regression: a frequency × pulse_width sweep (pulse_width 2–500 over 16
+# rows) burns the 16 F2 Ultra presets — 2, 4, 6, 9, 13, … 350, 500 —
+# but the sampler labelled the rows with a linear ramp (2, 35.2, 68.4,
+# …). Row 8 burned at 60 ns was stored as 268 ns, and ingest copied
+# that into the palette recipe. The sampler must agree with the burn.
+
+_PW_PRESETS = [2, 4, 6, 9, 13, 20, 30, 45, 60, 80, 100, 150, 200, 250, 350, 500]
+
+
+def _swatch_axis_values(swatches):
+    return {(s.row, s.col): (s.x_value, s.y_value) for s in swatches}
+
+
+def test_sample_grid_pulse_width_y_axis_uses_presets():
+    img = _make_warped_grid([[(0, 0, 0)] * 3 for _ in range(16)])
+    swatches = sample_grid(
+        img,
+        grid_origin_mm=(0.0, 0.0),
+        grid_size_mm=(30.0, 160.0),
+        px_per_mm=5.0,
+        x_param="frequency", x_min=80, x_max=900, x_steps=3,
+        y_param="pulse_width", y_min=2, y_max=500, y_steps=16,
+    )
+    ys = [s.y_value for s in swatches if s.col == 0]
+    assert ys == _PW_PRESETS
+    # The non-quantised axis keeps its linear ramp.
+    assert [s.x_value for s in swatches if s.row == 0] == [80, 490, 900]
+
+
+def test_sample_grid_pulse_width_x_axis_wrapped_1d_uses_presets():
+    """Wrapped 1D: the value is indexed by the flat cell position."""
+    img = _make_warped_grid([[(0, 0, 0)] * 3 for _ in range(3)])
+    swatches = sample_grid(
+        img,
+        grid_origin_mm=(0.0, 0.0),
+        grid_size_mm=(30.0, 30.0),
+        px_per_mm=5.0,
+        x_param="pulse_width", x_min=13, x_max=500, x_steps=9,
+        y_param=None, rows=3, row_stride_mm=10.0,
+    )
+    assert [s.x_value for s in sorted(swatches, key=lambda s: (s.row, s.col))] == [
+        13, 20, 30, 45, 60, 80, 100, 150, 200,
+    ]
+
+
+def test_sample_grid_axis_values_match_the_burned_cells():
+    """The invariant the bug broke: (row, col) → params must be the
+    same pair the .xcs builder burned into that cell."""
+    from xcs_gen_web.services.xcs import _cell_list_for_test
+
+    spec = {
+        "x_param": "frequency", "x_min": 50, "x_max": 400, "x_steps": 4,
+        "y_param": "pulse_width", "y_min": 13, "y_max": 500, "y_steps": 12,
+        "base_params": {},
+    }
+    burned = _cell_list_for_test(test={"kind": "sweep", "spec": spec})
+
+    img = _make_warped_grid([[(0, 0, 0)] * 4 for _ in range(12)])
+    swatches = sample_grid(
+        img,
+        grid_origin_mm=(0.0, 0.0),
+        grid_size_mm=(40.0, 120.0),
+        px_per_mm=5.0,
+        x_param=spec["x_param"], x_min=spec["x_min"], x_max=spec["x_max"],
+        x_steps=spec["x_steps"],
+        y_param=spec["y_param"], y_min=spec["y_min"], y_max=spec["y_max"],
+        y_steps=spec["y_steps"],
+    )
+    sampled = [
+        (s.x_value, s.y_value)
+        for s in sorted(swatches, key=lambda s: (s.row, s.col))
+    ]
+    assert sampled == [(round(c["x_value"]), c["y_value"]) for c in burned]
+
